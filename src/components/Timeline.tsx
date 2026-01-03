@@ -202,7 +202,45 @@ export function Timeline() {
         }
       }
     });
-  }, [playheadPosition, clips, tracks, isPlaying]);
+
+    // Handle audio tracks - sync audio elements with playhead
+    const audioTracks = tracks.filter(t => t.type === 'audio');
+    audioTracks.forEach((track) => {
+      const clip = clipsAtTime.find(c => c.trackId === track.id);
+
+      if (clip?.source?.audioElement) {
+        const audio = clip.source.audioElement;
+        const clipTime = playheadPosition - clip.startTime + clip.inPoint;
+        const timeDiff = Math.abs(audio.currentTime - clipTime);
+
+        // Sync audio position if out of sync (but not while scrubbing to avoid choppy audio)
+        if (timeDiff > 0.1 && !isDraggingPlayhead) {
+          audio.currentTime = clipTime;
+        }
+
+        // Handle mute state
+        audio.muted = track.muted;
+
+        // Play/pause audio based on timeline state (pause while scrubbing)
+        const shouldPlay = isPlaying && !track.muted && !isDraggingPlayhead;
+        if (shouldPlay && audio.paused) {
+          audio.play().catch(() => {});
+        } else if (!shouldPlay && !audio.paused) {
+          audio.pause();
+        }
+      }
+    });
+
+    // Also pause audio from clips that are no longer at playhead
+    clips.forEach(clip => {
+      if (clip.source?.audioElement) {
+        const isAtPlayhead = clipsAtTime.some(c => c.id === clip.id);
+        if (!isAtPlayhead && !clip.source.audioElement.paused) {
+          clip.source.audioElement.pause();
+        }
+      }
+    });
+  }, [playheadPosition, clips, tracks, isPlaying, isDraggingPlayhead]);
 
   // Get clips at time helper
   const getClipsAtTime = useCallback((time: number) => {
