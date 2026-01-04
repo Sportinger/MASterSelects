@@ -45,13 +45,10 @@ export function useEngine() {
     // Stats update throttle
     let lastStatsUpdate = 0;
 
-    // Track last cache time for throttled playback caching
-    let lastCacheTime = 0;
-
     const renderFrame = () => {
       try {
         // Always try to use cached frame first (works even during RAM preview rendering)
-        const { playheadPosition, isPlaying: timelinePlaying, isRamPreviewing, isDraggingPlayhead } = useTimelineStore.getState();
+        const { playheadPosition, isRamPreviewing } = useTimelineStore.getState();
         if (engine.renderCachedFrame(playheadPosition)) {
           // Successfully rendered cached frame, skip live render
           return;
@@ -80,22 +77,8 @@ export function useEngine() {
         // Render with snapshotted layers
         engine.render(frameLayers);
 
-        // Cache frames during playback (like After Effects' green line)
-        // Throttled to every 100ms (~10fps) to avoid performance impact
-        // CRITICAL: Skip caching while user is dragging playhead - videos are seeking to
-        // conflicting positions and would cache wrong frames
-        // Only cache if RAM Preview is enabled
-        const now = performance.now();
-        const ramPreviewEnabled = useTimelineStore.getState().ramPreviewEnabled;
-        if (ramPreviewEnabled && timelinePlaying && !isDraggingPlayhead && now - lastCacheTime > 100) {
-          // Cache this frame asynchronously (don't block render loop)
-          engine.cacheCompositeFrame(playheadPosition).catch(() => {});
-          lastCacheTime = now;
-          // Update cached range in timeline store
-          useTimelineStore.getState().addCachedFrame(playheadPosition);
-        }
-
         // Throttle stats updates to reduce React re-renders
+        const now = performance.now();
         if (now - lastStatsUpdate > 500) {
           useMixerStore.getState().setEngineStats(engine.getStats());
           lastStatsUpdate = now;
