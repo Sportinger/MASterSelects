@@ -115,6 +115,11 @@ interface TimelineStore {
   inPoint: number | null;
   outPoint: number | null;
 
+  // Loop playback between in/out points
+  loopPlayback: boolean;
+  setLoopPlayback: (loop: boolean) => void;
+  toggleLoopPlayback: () => void;
+
   // Track actions
   addTrack: (type: 'video' | 'audio') => void;
   removeTrack: (id: string) => void;
@@ -176,6 +181,7 @@ export const useTimelineStore = create<TimelineStore>()(
     selectedClipId: null,
     inPoint: null,
     outPoint: null,
+    loopPlayback: false,
 
     // Track actions
     addTrack: (type) => {
@@ -734,6 +740,14 @@ export const useTimelineStore = create<TimelineStore>()(
     setOutPointAtPlayhead: () => {
       const { playheadPosition } = get();
       get().setOutPoint(playheadPosition);
+    },
+
+    setLoopPlayback: (loop) => {
+      set({ loopPlayback: loop });
+    },
+
+    toggleLoopPlayback: () => {
+      set({ loopPlayback: !get().loopPlayback });
     },
 
     // Utils

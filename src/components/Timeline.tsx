@@ -36,6 +36,8 @@ export function Timeline() {
     clearInOut,
     getSnappedPosition,
     findNonOverlappingPosition,
+    loopPlayback,
+    toggleLoopPlayback,
   } = useTimelineStore();
 
 
@@ -125,11 +127,18 @@ export function Timeline() {
         clearInOut();
         return;
       }
+
+      // L: toggle loop playback
+      if (e.key === 'l' || e.key === 'L') {
+        e.preventDefault();
+        toggleLoopPlayback();
+        return;
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPlaying, play, pause, setInPointAtPlayhead, setOutPointAtPlayhead, clearInOut]);
+  }, [isPlaying, play, pause, setInPointAtPlayhead, setOutPointAtPlayhead, clearInOut, toggleLoopPlayback]);
 
   // Track last seek time to throttle during scrubbing
   const lastSeekRef = useRef<{ [clipId: string]: number }>({});
@@ -340,11 +349,24 @@ export function Timeline() {
       const delta = (now - lastTime) / 1000;
       lastTime = now;
 
-      const { playheadPosition, duration } = useTimelineStore.getState();
+      const { playheadPosition, duration, inPoint, outPoint, loopPlayback, pause } = useTimelineStore.getState();
       let newPosition = playheadPosition + delta;
 
-      if (newPosition >= duration) {
-        newPosition = 0; // Loop
+      // Determine effective end point (out point if set, otherwise duration)
+      const effectiveEnd = outPoint !== null ? outPoint : duration;
+      const effectiveStart = inPoint !== null ? inPoint : 0;
+
+      if (newPosition >= effectiveEnd) {
+        if (loopPlayback) {
+          // Loop back to in point (or start)
+          newPosition = effectiveStart;
+        } else {
+          // Stop at out point
+          newPosition = effectiveEnd;
+          pause();
+          setPlayheadPosition(newPosition);
+          return; // Don't schedule next frame
+        }
       }
 
       setPlayheadPosition(newPosition);
@@ -1010,6 +1032,13 @@ export function Timeline() {
           <button className="btn btn-sm" onClick={stop} title="Stop">⏹</button>
           <button className={`btn btn-sm ${isPlaying ? 'btn-active' : ''}`} onClick={isPlaying ? pause : play}>
             {isPlaying ? '⏸' : '▶'}
+          </button>
+          <button
+            className={`btn btn-sm ${loopPlayback ? 'btn-active' : ''}`}
+            onClick={toggleLoopPlayback}
+            title={loopPlayback ? 'Loop On (L)' : 'Loop Off (L)'}
+          >
+            🔁
           </button>
         </div>
         <div className="timeline-time">

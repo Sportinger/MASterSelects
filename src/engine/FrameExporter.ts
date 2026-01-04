@@ -204,7 +204,14 @@ export class FrameExporter {
         const layers = this.buildLayersAtTime(time);
 
         if (frame === 0) {
-          console.log(`[FrameExporter] First frame layers:`, layers.length, layers.map(l => l.name));
+          console.log(`[FrameExporter] First frame at time ${time}:`);
+          console.log(`  - Layers: ${layers.length}`, layers.map(l => l.name));
+          for (const layer of layers) {
+            if (layer.source?.videoElement) {
+              const v = layer.source.videoElement;
+              console.log(`  - Video: readyState=${v.readyState}, seeking=${v.seeking}, currentTime=${v.currentTime}, paused=${v.paused}`);
+            }
+          }
         }
 
         if (layers.length === 0) {
@@ -212,9 +219,6 @@ export class FrameExporter {
         }
 
         engine.render(layers);
-
-        // Wait for GPU to finish rendering
-        await new Promise(resolve => requestAnimationFrame(resolve));
 
         const pixels = await engine.readPixels();
         if (!pixels) {
@@ -277,26 +281,30 @@ export class FrameExporter {
 
   private seekVideo(video: HTMLVideoElement, time: number): Promise<void> {
     return new Promise((resolve) => {
-      if (Math.abs(video.currentTime - time) < 0.001 && !video.seeking) {
+      if (Math.abs(video.currentTime - time) < 0.001 && !video.seeking && video.readyState >= 2) {
         resolve();
         return;
       }
 
       const timeout = setTimeout(() => {
-        console.warn('[FrameExporter] Seek timeout');
+        console.warn('[FrameExporter] Seek timeout at', time);
         resolve();
-      }, 2000);
+      }, 1000);
 
       const onSeeked = () => {
         clearTimeout(timeout);
         video.removeEventListener('seeked', onSeeked);
-        // Wait for video frame to be actually available
-        // Use requestVideoFrameCallback if available, otherwise double rAF
-        if ('requestVideoFrameCallback' in video) {
-          (video as any).requestVideoFrameCallback(() => resolve());
-        } else {
-          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-        }
+
+        // Wait for video to be fully ready (not seeking, has data)
+        const waitForReady = () => {
+          if (!video.seeking && video.readyState >= 2) {
+            // Give browser one more frame to finalize
+            requestAnimationFrame(() => resolve());
+          } else {
+            requestAnimationFrame(waitForReady);
+          }
+        };
+        waitForReady();
       };
 
       video.addEventListener('seeked', onSeeked);

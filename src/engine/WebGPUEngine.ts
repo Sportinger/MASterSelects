@@ -594,10 +594,12 @@ export class WebGPUEngine {
       // readyState >= 2 means HAVE_CURRENT_DATA (has at least one frame)
       // Also check we're not in middle of seeking which can cause blank frames
       if (source.readyState < 2 || source.videoWidth === 0 || source.videoHeight === 0) {
+        console.log(`[WebGPU] importVideoTexture failed: readyState=${source.readyState}, size=${source.videoWidth}x${source.videoHeight}`);
         return null;
       }
       // Skip if video is seeking - frame might not be ready
       if (source.seeking) {
+        console.log(`[WebGPU] importVideoTexture failed: video is seeking`);
         return null;
       }
     } else if (source instanceof VideoFrame) {
@@ -894,6 +896,9 @@ export class WebGPUEngine {
     this.profileData.importTexture = performance.now() - t1;
 
     // Early exit if nothing to render - save CPU!
+    if (this.layerRenderData.length === 0 && layers.length > 0) {
+      console.warn(`[WebGPU] No render data for ${layers.length} layers - all textures failed to import`);
+    }
     if (this.layerRenderData.length === 0) {
       // Just clear the preview to black
       if (this.previewContext) {
