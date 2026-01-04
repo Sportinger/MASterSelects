@@ -433,73 +433,70 @@ export const useTimelineStore = create<TimelineStore>()(
           });
         }
 
-        // Wait for video to be ready for thumbnails
-        await new Promise<void>((resolve) => {
-          if (video.readyState >= 2) {
-            resolve();
-          } else {
-            video.oncanplay = () => resolve();
-          }
-        });
-
-        // Generate thumbnails (using HTMLVideoElement)
-        let thumbnails: string[] = [];
-        try {
-          thumbnails = await generateThumbnails(video, naturalDuration);
-          console.log(`[Timeline] Generated ${thumbnails.length} thumbnails for ${file.name}`);
-        } catch (e) {
-          console.warn('Failed to generate thumbnails:', e);
-        }
-
-        video.currentTime = 0;
-
-        // Wait for video to be ready again after seeking to 0
-        await new Promise<void>((resolve) => {
-          if (video.readyState >= 2) {
-            resolve();
-          } else {
-            video.onseeked = () => resolve();
-            // Fallback timeout
-            setTimeout(resolve, 500);
-          }
-        });
-
-        // WebCodecs Stream Mode disabled - captureStream() doesn't bypass video decode
-        // and adds overhead without real benefit. Using direct HTMLVideoElement with
-        // frame tracking (requestVideoFrameCallback) is more efficient.
-        const webCodecsPlayer: WebCodecsPlayer | null = null;
-
-        // Final update with thumbnails, WebCodecs player, and isLoading=false
+        // Mark clip as ready immediately - thumbnails will load in background
         updateClip(clipId, {
           source: {
             type: 'video',
             videoElement: video,
-            webCodecsPlayer: webCodecsPlayer ?? undefined,
             naturalDuration,
             mediaFileId,
           },
-          thumbnails,
           isLoading: false,
         });
 
-        // Load audio
+        // Generate thumbnails in background (non-blocking)
+        (async () => {
+          try {
+            // Wait for video to be ready for thumbnails
+            await new Promise<void>((resolve) => {
+              if (video.readyState >= 2) {
+                resolve();
+              } else {
+                video.oncanplay = () => resolve();
+                setTimeout(resolve, 2000); // Timeout fallback
+              }
+            });
+
+            const thumbnails = await generateThumbnails(video, naturalDuration);
+            console.log(`[Timeline] Generated ${thumbnails.length} thumbnails for ${file.name}`);
+
+            // Update clip with thumbnails
+            const currentClips = get().clips;
+            set({
+              clips: currentClips.map(c => c.id === clipId ? { ...c, thumbnails } : c)
+            });
+
+            // Seek back to start
+            video.currentTime = 0;
+          } catch (e) {
+            console.warn('Failed to generate thumbnails:', e);
+          }
+        })();
+
+        // Load audio - make it ready immediately, waveform loads in background
         if (audioTrackId && audioClipId) {
           const audioFromVideo = document.createElement('audio');
           audioFromVideo.src = URL.createObjectURL(file);
           audioFromVideo.preload = 'auto';
 
-          let audioWaveform: number[] = [];
-          try {
-            audioWaveform = await generateWaveform(file);
-          } catch (e) {
-            console.warn('Failed to generate waveform:', e);
-          }
-
+          // Mark audio clip as ready immediately
           updateClip(audioClipId, {
             source: { type: 'audio', audioElement: audioFromVideo, naturalDuration },
-            waveform: audioWaveform,
             isLoading: false,
           });
+
+          // Generate waveform in background (non-blocking)
+          (async () => {
+            try {
+              const audioWaveform = await generateWaveform(file);
+              const currentClips = get().clips;
+              set({
+                clips: currentClips.map(c => c.id === audioClipId ? { ...c, waveform: audioWaveform } : c)
+              });
+            } catch (e) {
+              console.warn('Failed to generate waveform:', e);
+            }
+          })();
         }
 
         // Sync to media store

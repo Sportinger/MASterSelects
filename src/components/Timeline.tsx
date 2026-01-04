@@ -518,10 +518,11 @@ export function Timeline() {
           // Try to get frame from proxyFrameCache (might be sync if already cached)
           const cachedInService = proxyFrameCache.getCachedFrame(mediaFile.id, frameIndex);
 
-          console.log('[Proxy] Frame lookup:', frameIndex, 'cachedInService:', !!cachedInService, 'cachedLocal:', !!cached, cached?.frameIndex);
+          console.log('[Proxy] Frame lookup:', frameIndex, 'cachedInService:', !!cachedInService, 'cachedLocal:', !!cached, 'cachedLocalFrame:', cached?.frameIndex);
 
           if (cachedInService) {
             // Frame is already in the service cache - use it immediately
+            console.log('[Proxy] Using cached frame:', frameIndex, 'image:', cachedInService.src?.slice(0, 50));
             proxyFramesRef.current.set(cacheKey, { frameIndex, image: cachedInService });
 
             const transform = clip.transform;
