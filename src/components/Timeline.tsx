@@ -323,12 +323,14 @@ export function Timeline() {
     // But MUST re-sync when clips change (clip boundaries crossed)
     // IMPORTANT: Don't skip if proxy is enabled - we need to update frames each tick
     const mediaStoreState = useMediaStore.getState();
+    // Check if proxy is enabled for any video clip (ready OR generating with available frames)
     const hasActiveProxies = mediaStoreState.proxyEnabled &&
       clipsAtTime.some(clip => {
         const mediaFile = mediaStoreState.files.find(f =>
           f.id === clip.source?.mediaFileId || f.name === clip.name
         );
-        return mediaFile?.proxyStatus === 'ready';
+        return mediaFile?.proxyStatus === 'ready' ||
+          (mediaFile?.proxyStatus === 'generating' && (mediaFile?.proxyProgress || 0) > 0);
       });
 
     if (isPlaying && !hasActiveProxies && activeClipIdsRef.current.startsWith('playing:')) {
@@ -476,20 +478,32 @@ export function Timeline() {
         // Check if we should use proxy frames for this clip
         const mediaStore = useMediaStore.getState();
         const mediaFile = mediaStore.files.find(f => f.name === clip.name || clip.source?.mediaFileId === f.id);
-        // Use proxy if enabled AND (ready OR generating with some frames available)
-        const hasProxyFrames = mediaFile?.proxyStatus === 'ready' ||
-          (mediaFile?.proxyStatus === 'generating' && (mediaFile?.proxyProgress || 0) > 0);
-        const useProxy = mediaStore.proxyEnabled && hasProxyFrames && mediaFile?.proxyFps;
         const proxyFps = mediaFile?.proxyFps || 30;
 
-        // Debug logging
-        if (mediaStore.proxyEnabled && mediaFile) {
-          console.log('[Proxy] Clip:', clip.name, 'mediaFileId:', mediaFile.id, 'status:', mediaFile?.proxyStatus, 'fps:', mediaFile?.proxyFps, 'useProxy:', useProxy);
+        // Calculate if the requested frame is within generated range
+        const frameIndex = Math.floor(clipTime * proxyFps);
+        let useProxy = false;
+
+        if (mediaStore.proxyEnabled && mediaFile?.proxyFps) {
+          if (mediaFile.proxyStatus === 'ready') {
+            // Fully ready - use proxy for all frames
+            useProxy = true;
+          } else if (mediaFile.proxyStatus === 'generating' && (mediaFile.proxyProgress || 0) > 0) {
+            // Generating - only use proxy if the frame has been generated
+            // Estimate max available frame based on progress and duration
+            const totalFrames = Math.ceil((mediaFile.duration || 10) * proxyFps);
+            const maxGeneratedFrame = Math.floor(totalFrames * (mediaFile.proxyProgress || 0) / 100);
+            useProxy = frameIndex < maxGeneratedFrame;
+          }
+        }
+
+        // Debug logging (minimal)
+        if (isPlaying && frameIndex % 30 === 0) {
+          console.log('[Proxy] status:', mediaFile?.proxyStatus, 'frame:', frameIndex, 'useProxy:', useProxy);
         }
 
         if (useProxy && mediaFile) {
           // Use proxy frames for DISPLAY but let video play for audio sync
-          const frameIndex = Math.floor(clipTime * proxyFps);
           const cacheKey = `${mediaFile.id}_${clip.id}`;
           const cached = proxyFramesRef.current.get(cacheKey);
 
@@ -519,11 +533,8 @@ export function Timeline() {
           // Pass fps to trigger preloading of upcoming frames
           const cachedInService = proxyFrameCache.getCachedFrame(mediaFile.id, frameIndex, proxyFps);
 
-          console.log('[Proxy] Frame lookup:', frameIndex, 'cachedInService:', !!cachedInService, 'cachedLocal:', !!cached, 'cachedLocalFrame:', cached?.frameIndex);
-
           if (cachedInService) {
             // Frame is already in the service cache - use it immediately
-            console.log('[Proxy] Using cached frame:', frameIndex, 'image:', cachedInService.src?.slice(0, 50));
             proxyFramesRef.current.set(cacheKey, { frameIndex, image: cachedInService });
 
             const transform = clip.transform;

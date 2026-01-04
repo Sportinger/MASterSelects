@@ -78,7 +78,6 @@ class ProxyFrameCache {
   private async loadFrame(mediaFileId: string, frameIndex: number): Promise<HTMLImageElement | null> {
     try {
       const frame = await projectDB.getProxyFrame(mediaFileId, frameIndex);
-      console.log('[ProxyCache] loadFrame:', mediaFileId, frameIndex, 'found:', !!frame);
       if (!frame) return null;
 
       // Create image from blob
