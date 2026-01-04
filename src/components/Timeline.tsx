@@ -160,62 +160,51 @@ export function Timeline() {
 
   // Auto-start RAM Preview after 2 seconds of idle (like After Effects)
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastActivityRef = useRef<number>(Date.now());
-
-  // Reset idle timer on activity
-  useEffect(() => {
-    const resetIdleTimer = () => {
-      lastActivityRef.current = Date.now();
-      if (idleTimerRef.current) {
-        clearTimeout(idleTimerRef.current);
-        idleTimerRef.current = null;
-      }
-    };
-
-    // Track user activity
-    window.addEventListener('mousemove', resetIdleTimer);
-    window.addEventListener('keydown', resetIdleTimer);
-    window.addEventListener('mousedown', resetIdleTimer);
-    window.addEventListener('wheel', resetIdleTimer);
-
-    return () => {
-      window.removeEventListener('mousemove', resetIdleTimer);
-      window.removeEventListener('keydown', resetIdleTimer);
-      window.removeEventListener('mousedown', resetIdleTimer);
-      window.removeEventListener('wheel', resetIdleTimer);
-      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
-    };
-  }, []);
 
   // Check for idle state and auto-start RAM preview
   useEffect(() => {
+    // Clear any existing timer
+    if (idleTimerRef.current) {
+      clearTimeout(idleTimerRef.current);
+      idleTimerRef.current = null;
+    }
+
     // Don't auto-render if:
     // - Currently playing
     // - Currently RAM previewing
     // - Scrubbing
-    // - No in/out points set
-    // - Already have RAM preview for this range
-    if (isPlaying || isRamPreviewing || isDraggingPlayhead) {
+    // - No clips on timeline
+    if (isPlaying || isRamPreviewing || isDraggingPlayhead || clips.length === 0) {
+      console.log('[RAM Preview] Skipping auto-render:', { isPlaying, isRamPreviewing, isDraggingPlayhead, clipsCount: clips.length });
       return;
     }
 
-    if (inPoint === null || outPoint === null) {
+    // Determine render range: use In/Out if set, otherwise use clips extent
+    const renderStart = inPoint ?? 0;
+    const renderEnd = outPoint ?? Math.max(...clips.map(c => c.startTime + c.duration));
+
+    // Skip if range is too small
+    if (renderEnd - renderStart < 0.1) {
+      console.log('[RAM Preview] Range too small:', renderEnd - renderStart);
       return;
     }
 
-    // Check if we already have RAM preview for this exact range
+    // Check if we already have RAM preview for this range
     if (ramPreviewRange &&
-        ramPreviewRange.start === inPoint &&
-        ramPreviewRange.end === outPoint) {
+        ramPreviewRange.start <= renderStart &&
+        ramPreviewRange.end >= renderEnd) {
+      console.log('[RAM Preview] Already cached for range');
       return;
     }
+
+    console.log('[RAM Preview] Starting 2-second idle timer for range:', renderStart, '-', renderEnd);
 
     // Start timer to auto-render after 2 seconds of idle
     idleTimerRef.current = setTimeout(() => {
       // Double-check conditions before starting
       const state = useTimelineStore.getState();
-      if (!state.isPlaying && !state.isRamPreviewing &&
-          state.inPoint !== null && state.outPoint !== null) {
+      console.log('[RAM Preview] Timer fired, checking state:', { isPlaying: state.isPlaying, isRamPreviewing: state.isRamPreviewing });
+      if (!state.isPlaying && !state.isRamPreviewing) {
         console.log('[RAM Preview] Auto-starting after idle');
         startRamPreview();
       }
@@ -227,7 +216,7 @@ export function Timeline() {
         idleTimerRef.current = null;
       }
     };
-  }, [isPlaying, isRamPreviewing, isDraggingPlayhead, inPoint, outPoint, ramPreviewRange, startRamPreview]);
+  }, [isPlaying, isRamPreviewing, isDraggingPlayhead, inPoint, outPoint, ramPreviewRange, clips, startRamPreview]);
 
   // Track last seek time to throttle during scrubbing
   const lastSeekRef = useRef<{ [clipId: string]: number }>({});
