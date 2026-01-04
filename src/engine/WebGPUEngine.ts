@@ -221,6 +221,14 @@ export class WebGPUEngine {
   private compositeCacheOrder: number[] = []; // LRU order
   private maxCompositeCacheFrames = 900; // 30 seconds at 30fps
 
+  // Reusable resources for RAM Preview playback (avoid creating per-frame)
+  private ramPlaybackCanvas: HTMLCanvasElement | null = null;
+  private ramPlaybackCtx: CanvasRenderingContext2D | null = null;
+  private ramPlaybackTexture: GPUTexture | null = null;
+  private ramPlaybackTextureView: GPUTextureView | null = null;
+  private ramPlaybackBindGroup: GPUBindGroup | null = null;
+  private ramPlaybackTextureSize: { width: number; height: number } | null = null;
+
   async initialize(): Promise<boolean> {
     // Prevent multiple initializations with promise-based lock
     if (this.isInitialized && this.device) {
@@ -849,6 +857,14 @@ export class WebGPUEngine {
   clearCompositeCache(): void {
     this.compositeCache.clear();
     this.compositeCacheOrder = [];
+    // Also clear reusable playback resources
+    this.ramPlaybackTexture?.destroy();
+    this.ramPlaybackTexture = null;
+    this.ramPlaybackTextureView = null;
+    this.ramPlaybackBindGroup = null;
+    this.ramPlaybackTextureSize = null;
+    this.ramPlaybackCanvas = null;
+    this.ramPlaybackCtx = null;
     console.log('[WebGPU] Composite cache cleared');
   }
 
@@ -875,68 +891,78 @@ export class WebGPUEngine {
     const imageData = this.compositeCache.get(key);
 
     if (!imageData) {
-      console.log(`[RAM Playback] No cache for time ${time} (key ${key}), cache size: ${this.compositeCache.size}`);
       return false;
     }
 
-    if (!this.previewContext) {
-      console.log('[RAM Playback] No preview context');
+    if (!this.previewContext || !this.device) {
       return false;
     }
-
-    console.log(`[RAM Playback] Using cached frame for time ${time}, size: ${imageData.width}x${imageData.height}`);
-
-    // Create a temporary canvas to convert ImageData to texture
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = imageData.width;
-    tempCanvas.height = imageData.height;
-    const ctx = tempCanvas.getContext('2d');
-    if (!ctx) return false;
-
-    ctx.putImageData(imageData, 0, 0);
-
-    // Now we need to draw this to the WebGPU preview
-    // We'll create a texture from the canvas and render it
-    if (!this.device) return false;
 
     try {
-      // Copy the canvas to the preview context using WebGPU
-      const texture = this.device.createTexture({
-        size: [imageData.width, imageData.height],
-        format: 'rgba8unorm',
-        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
-      });
+      const width = imageData.width;
+      const height = imageData.height;
 
+      // Reuse or create canvas for ImageData -> GPU transfer
+      if (!this.ramPlaybackCanvas || !this.ramPlaybackCtx) {
+        this.ramPlaybackCanvas = document.createElement('canvas');
+        this.ramPlaybackCanvas.width = width;
+        this.ramPlaybackCanvas.height = height;
+        this.ramPlaybackCtx = this.ramPlaybackCanvas.getContext('2d', { willReadFrequently: false });
+      } else if (this.ramPlaybackCanvas.width !== width || this.ramPlaybackCanvas.height !== height) {
+        this.ramPlaybackCanvas.width = width;
+        this.ramPlaybackCanvas.height = height;
+      }
+
+      if (!this.ramPlaybackCtx) return false;
+
+      // Put imageData to canvas
+      this.ramPlaybackCtx.putImageData(imageData, 0, 0);
+
+      // Reuse or create GPU texture (only recreate if size changed)
+      const needNewTexture = !this.ramPlaybackTexture ||
+        !this.ramPlaybackTextureSize ||
+        this.ramPlaybackTextureSize.width !== width ||
+        this.ramPlaybackTextureSize.height !== height;
+
+      if (needNewTexture) {
+        this.ramPlaybackTexture?.destroy();
+        this.ramPlaybackTexture = this.device.createTexture({
+          size: [width, height],
+          format: 'rgba8unorm',
+          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+        });
+        this.ramPlaybackTextureSize = { width, height };
+        // Recreate view and bind group since texture changed
+        this.ramPlaybackTextureView = this.ramPlaybackTexture.createView();
+        this.ramPlaybackBindGroup = this.device.createBindGroup({
+          layout: this.outputBindGroupLayout!,
+          entries: [
+            { binding: 0, resource: this.sampler! },
+            { binding: 1, resource: this.ramPlaybackTextureView },
+          ],
+        });
+      }
+
+      // Copy canvas to GPU texture
       this.device.queue.copyExternalImageToTexture(
-        { source: tempCanvas },
-        { texture },
-        [imageData.width, imageData.height]
+        { source: this.ramPlaybackCanvas },
+        { texture: this.ramPlaybackTexture! },
+        [width, height]
       );
 
-      // Render texture to preview
+      // Render texture to preview using cached bind group
       const commandEncoder = this.device.createCommandEncoder();
-      const textureView = texture.createView();
 
-      // Create bind group for output
-      const bindGroup = this.device.createBindGroup({
-        layout: this.outputBindGroupLayout!,
-        entries: [
-          { binding: 0, resource: this.sampler! },
-          { binding: 1, resource: textureView },
-        ],
-      });
-
-      this.renderToCanvasCached(commandEncoder, this.previewContext, bindGroup);
+      this.renderToCanvasCached(commandEncoder, this.previewContext, this.ramPlaybackBindGroup!);
 
       // Also render to output windows
       for (const output of this.outputWindows.values()) {
         if (output.context) {
-          this.renderToCanvasCached(commandEncoder, output.context, bindGroup);
+          this.renderToCanvasCached(commandEncoder, output.context, this.ramPlaybackBindGroup!);
         }
       }
 
       this.device.queue.submit([commandEncoder.finish()]);
-      texture.destroy();
 
       return true;
     } catch (e) {
@@ -1474,6 +1500,9 @@ export class WebGPUEngine {
 
     // Destroy scrubbing cache
     this.clearScrubbingCache();
+
+    // Destroy composite cache and RAM playback resources
+    this.clearCompositeCache();
 
     this.layerUniformBuffer?.destroy();
     this.device?.destroy();

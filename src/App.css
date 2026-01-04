@@ -1485,9 +1485,29 @@ input[type="checkbox"] {
   border: 1px solid #22c55e;
 }
 
-/* Loading state for clips */
+/* Loading state for clips - dashed style like drag preview */
 .timeline-clip.loading {
-  opacity: 0.7;
+  background: rgba(34, 197, 94, 0.3) !important;
+  border: 2px dashed #22c55e !important;
+  box-shadow: none !important;
+}
+
+.timeline-clip.loading.audio {
+  background: rgba(59, 130, 246, 0.3) !important;
+  border-color: rgba(59, 130, 246, 0.8) !important;
+}
+
+.timeline-clip.loading .clip-thumbnails,
+.timeline-clip.loading .clip-waveform {
+  display: none;
+}
+
+.timeline-clip.loading .clip-content {
+  background: transparent !important;
+}
+
+.timeline-clip.loading .clip-name {
+  opacity: 0.8;
 }
 
 .timeline-clip.loading::after {
@@ -1500,7 +1520,7 @@ input[type="checkbox"] {
   background: linear-gradient(
     90deg,
     transparent,
-    rgba(255, 255, 255, 0.1),
+    rgba(255, 255, 255, 0.15),
     transparent
   );
   animation: clip-loading-shimmer 1.5s infinite;
