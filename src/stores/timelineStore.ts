@@ -240,20 +240,31 @@ export const useTimelineStore = create<TimelineStore>()(
       set({
         tracks: tracks.map(t => t.id === id ? { ...t, muted } : t),
       });
+      // Audio changes don't affect video cache
     },
 
     setTrackVisible: (id, visible) => {
       const { tracks } = get();
+      const track = tracks.find(t => t.id === id);
       set({
         tracks: tracks.map(t => t.id === id ? { ...t, visible } : t),
       });
+      // Invalidate cache if video track visibility changed
+      if (track?.type === 'video') {
+        get().invalidateCache();
+      }
     },
 
     setTrackSolo: (id, solo) => {
       const { tracks } = get();
+      const track = tracks.find(t => t.id === id);
       set({
         tracks: tracks.map(t => t.id === id ? { ...t, solo } : t),
       });
+      // Invalidate cache if video track solo changed
+      if (track?.type === 'video') {
+        get().invalidateCache();
+      }
     },
 
     setTrackHeight: (id, height) => {
@@ -714,6 +725,8 @@ export const useTimelineStore = create<TimelineStore>()(
           };
         }),
       });
+      // Invalidate cache - transform affects rendered output
+      get().invalidateCache();
     },
 
     // Playback actions
