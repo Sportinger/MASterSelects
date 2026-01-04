@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useEngine } from '../hooks/useEngine';
 import { useMixerStore } from '../stores/mixerStore';
 import { useTimelineStore } from '../stores/timelineStore';
+import type { Layer } from '../types';
 
 export function Preview() {
   const { canvasRef, isEngineReady } = useEngine();
@@ -13,15 +14,77 @@ export function Preview() {
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 1920, height: 1080 });
 
-  // Overlay padding to show handles/outlines beyond canvas bounds
-  const OVERLAY_PADDING = 100;
-
   // Edit mode state
   const [editMode, setEditMode] = useState(false);
   const [viewZoom, setViewZoom] = useState(1);
   const [viewPan, setViewPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const panStart = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
+
+  // Drag state for moving layers
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragLayerId, setDragLayerId] = useState<string | null>(null);
+  const dragStart = useRef({ x: 0, y: 0, layerPosX: 0, layerPosY: 0 });
+
+  // Helper function to calculate layer bounding box in canvas coordinates
+  // This matches the shader's transform calculation
+  const calculateLayerBounds = useCallback((layer: Layer, canvasW: number, canvasH: number) => {
+    // Get source dimensions
+    let sourceWidth = outputResolution.width;
+    let sourceHeight = outputResolution.height;
+
+    if (layer.source?.videoElement) {
+      sourceWidth = layer.source.videoElement.videoWidth || sourceWidth;
+      sourceHeight = layer.source.videoElement.videoHeight || sourceHeight;
+    } else if (layer.source?.imageElement) {
+      sourceWidth = layer.source.imageElement.naturalWidth || sourceWidth;
+      sourceHeight = layer.source.imageElement.naturalHeight || sourceHeight;
+    }
+
+    // Calculate aspect ratios (same as shader)
+    const sourceAspect = sourceWidth / sourceHeight;
+    const outputAspect = outputResolution.width / outputResolution.height;
+    const aspectRatio = sourceAspect / outputAspect;
+
+    // Calculate display size in canvas coordinates
+    // The shader fits the source into the output while maintaining aspect ratio
+    let displayWidth: number;
+    let displayHeight: number;
+
+    if (aspectRatio > 1) {
+      // Source is wider than output - fit to width, letterbox top/bottom
+      displayWidth = canvasW;
+      displayHeight = canvasH / aspectRatio;
+    } else {
+      // Source is taller than output - fit to height, pillarbox left/right
+      displayWidth = canvasW * aspectRatio;
+      displayHeight = canvasH;
+    }
+
+    // Apply user scale
+    displayWidth *= layer.scale.x;
+    displayHeight *= layer.scale.y;
+
+    // Calculate center position
+    // In shader: position is subtracted from UV after centering
+    // position.x positive = layer moves right
+    // position.y positive = layer moves up (in our coordinate system)
+    const centerX = canvasW / 2;
+    const centerY = canvasH / 2;
+
+    // Position is in normalized coordinates (-1 to 1)
+    // Multiply by canvas size / 2 to get pixel offset
+    const posX = centerX + (layer.position.x * canvasW / 2);
+    const posY = centerY - (layer.position.y * canvasH / 2);
+
+    return {
+      x: posX,
+      y: posY,
+      width: displayWidth,
+      height: displayHeight,
+      rotation: layer.rotation,
+    };
+  }, [outputResolution]);
 
   // Calculate canvas size to fit container while maintaining aspect ratio
   useEffect(() => {
@@ -128,75 +191,35 @@ export function Preview() {
     if (!ctx) return;
 
     const draw = () => {
-      ctx.clearRect(0, 0, overlayRef.current!.width, overlayRef.current!.height);
-
-      // The overlay canvas is larger than the video canvas by OVERLAY_PADDING on each side
-      // So the video canvas area starts at (OVERLAY_PADDING, OVERLAY_PADDING)
-      const videoCanvasWidth = overlayRef.current!.width - OVERLAY_PADDING * 2;
-      const videoCanvasHeight = overlayRef.current!.height - OVERLAY_PADDING * 2;
+      const overlayWidth = overlayRef.current!.width;
+      const overlayHeight = overlayRef.current!.height;
+      ctx.clearRect(0, 0, overlayWidth, overlayHeight);
 
       // Get visible layers (from timeline clips)
       const visibleLayers = layers.filter(l => l?.visible && l?.source);
 
-      visibleLayers.forEach((layer, index) => {
+      visibleLayers.forEach((layer) => {
         if (!layer) return;
 
         const isSelected = layer.id === selectedLayerId ||
           clips.find(c => c.id === selectedClipId)?.name === layer.name;
 
-        // Calculate bounding box based on layer transform
-        // Center is now offset by OVERLAY_PADDING
-        const centerX = OVERLAY_PADDING + videoCanvasWidth / 2;
-        const centerY = OVERLAY_PADDING + videoCanvasHeight / 2;
-
-        // Get source dimensions
-        let sourceWidth = outputResolution.width;
-        let sourceHeight = outputResolution.height;
-
-        if (layer.source?.videoElement) {
-          sourceWidth = layer.source.videoElement.videoWidth || sourceWidth;
-          sourceHeight = layer.source.videoElement.videoHeight || sourceHeight;
-        } else if (layer.source?.imageElement) {
-          sourceWidth = layer.source.imageElement.naturalWidth || sourceWidth;
-          sourceHeight = layer.source.imageElement.naturalHeight || sourceHeight;
-        }
-
-        // Calculate aspect ratio correction (same as shader)
-        const sourceAspect = sourceWidth / sourceHeight;
-        const outputAspect = outputResolution.width / outputResolution.height;
-
-        let displayWidth = videoCanvasWidth;
-        let displayHeight = videoCanvasHeight;
-
-        if (sourceAspect > outputAspect) {
-          // Source is wider - fit to width
-          displayHeight = displayWidth / sourceAspect;
-        } else {
-          // Source is taller - fit to height
-          displayWidth = displayHeight * sourceAspect;
-        }
-
-        // Apply layer scale
-        displayWidth *= layer.scale.x;
-        displayHeight *= layer.scale.y;
-
-        // Apply layer position (in normalized coordinates)
-        const posX = centerX + layer.position.x * (videoCanvasWidth / 2);
-        const posY = centerY - layer.position.y * (videoCanvasHeight / 2);
+        // Calculate bounding box using the helper function
+        const bounds = calculateLayerBounds(layer, canvasSize.width, canvasSize.height);
 
         // Save context for rotation
         ctx.save();
-        ctx.translate(posX, posY);
-        ctx.rotate(layer.rotation);
+        ctx.translate(bounds.x, bounds.y);
+        ctx.rotate(bounds.rotation);
 
         // Draw bounding box
-        const halfW = displayWidth / 2;
-        const halfH = displayHeight / 2;
+        const halfW = bounds.width / 2;
+        const halfH = bounds.height / 2;
 
         ctx.strokeStyle = isSelected ? '#00d4ff' : 'rgba(255, 255, 255, 0.5)';
         ctx.lineWidth = isSelected ? 2 : 1;
         ctx.setLineDash(isSelected ? [] : [5, 5]);
-        ctx.strokeRect(-halfW, -halfH, displayWidth, displayHeight);
+        ctx.strokeRect(-halfW, -halfH, bounds.width, bounds.height);
 
         // Draw corner handles for selected layer
         if (isSelected) {
@@ -239,7 +262,7 @@ export function Preview() {
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
       ctx.lineWidth = 2;
       ctx.setLineDash([10, 10]);
-      ctx.strokeRect(OVERLAY_PADDING, OVERLAY_PADDING, videoCanvasWidth, videoCanvasHeight);
+      ctx.strokeRect(0, 0, canvasSize.width, canvasSize.height);
     };
 
     draw();
@@ -251,79 +274,96 @@ export function Preview() {
     });
 
     return () => cancelAnimationFrame(animId);
-  }, [editMode, layers, selectedLayerId, selectedClipId, clips, outputResolution, viewZoom]);
+  }, [editMode, layers, selectedLayerId, selectedClipId, clips, canvasSize, calculateLayerBounds]);
 
-  // Handle click to select layer
-  const handleOverlayClick = useCallback((e: React.MouseEvent) => {
-    if (!editMode || !overlayRef.current || e.altKey) return;
-
-    const rect = overlayRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    // The overlay canvas is larger than the video canvas by OVERLAY_PADDING
-    const videoCanvasWidth = overlayRef.current.width - OVERLAY_PADDING * 2;
-    const videoCanvasHeight = overlayRef.current.height - OVERLAY_PADDING * 2;
-
-    // Check which layer was clicked (in reverse order - top layers first)
+  // Find layer at mouse position
+  const findLayerAtPosition = useCallback((x: number, y: number): Layer | null => {
     const visibleLayers = layers.filter(l => l?.visible && l?.source).reverse();
 
     for (const layer of visibleLayers) {
       if (!layer) continue;
 
-      const centerX = OVERLAY_PADDING + videoCanvasWidth / 2;
-      const centerY = OVERLAY_PADDING + videoCanvasHeight / 2;
-
-      let sourceWidth = outputResolution.width;
-      let sourceHeight = outputResolution.height;
-
-      if (layer.source?.videoElement) {
-        sourceWidth = layer.source.videoElement.videoWidth || sourceWidth;
-        sourceHeight = layer.source.videoElement.videoHeight || sourceHeight;
-      } else if (layer.source?.imageElement) {
-        sourceWidth = layer.source.imageElement.naturalWidth || sourceWidth;
-        sourceHeight = layer.source.imageElement.naturalHeight || sourceHeight;
-      }
-
-      const sourceAspect = sourceWidth / sourceHeight;
-      const outputAspect = outputResolution.width / outputResolution.height;
-
-      let displayWidth = videoCanvasWidth;
-      let displayHeight = videoCanvasHeight;
-
-      if (sourceAspect > outputAspect) {
-        displayHeight = displayWidth / sourceAspect;
-      } else {
-        displayWidth = displayHeight * sourceAspect;
-      }
-
-      displayWidth *= layer.scale.x;
-      displayHeight *= layer.scale.y;
-
-      const posX = centerX + layer.position.x * (videoCanvasWidth / 2);
-      const posY = centerY - layer.position.y * (videoCanvasHeight / 2);
+      const bounds = calculateLayerBounds(layer, canvasSize.width, canvasSize.height);
 
       // Simple bounding box hit test (ignoring rotation for simplicity)
-      const halfW = displayWidth / 2;
-      const halfH = displayHeight / 2;
+      const halfW = bounds.width / 2;
+      const halfH = bounds.height / 2;
 
-      if (x >= posX - halfW && x <= posX + halfW &&
-          y >= posY - halfH && y <= posY + halfH) {
-
-        // Find corresponding clip
-        const clip = clips.find(c => c.name === layer.name);
-        if (clip) {
-          selectClip(clip.id);
-        }
-        selectLayer(layer.id);
-        return;
+      if (x >= bounds.x - halfW && x <= bounds.x + halfW &&
+          y >= bounds.y - halfH && y <= bounds.y + halfH) {
+        return layer;
       }
     }
+    return null;
+  }, [layers, canvasSize, calculateLayerBounds]);
 
-    // Click on empty space - deselect
-    selectClip(null);
-    selectLayer(null);
-  }, [editMode, layers, clips, outputResolution, selectClip, selectLayer]);
+  // Handle mouse down on overlay - select or start dragging
+  const handleOverlayMouseDown = useCallback((e: React.MouseEvent) => {
+    if (!editMode || !overlayRef.current || e.altKey) return;
+    if (e.button !== 0) return; // Only left click
+
+    const rect = overlayRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    const layer = findLayerAtPosition(x, y);
+
+    if (layer) {
+      // Select the layer
+      const clip = clips.find(c => c.name === layer.name);
+      if (clip) {
+        selectClip(clip.id);
+      }
+      selectLayer(layer.id);
+
+      // Start dragging
+      setIsDragging(true);
+      setDragLayerId(layer.id);
+      dragStart.current = {
+        x: e.clientX,
+        y: e.clientY,
+        layerPosX: layer.position.x,
+        layerPosY: layer.position.y,
+      };
+    } else {
+      // Click on empty space - deselect
+      selectClip(null);
+      selectLayer(null);
+    }
+  }, [editMode, findLayerAtPosition, clips, selectClip, selectLayer]);
+
+  // Handle mouse move - drag layer
+  const handleOverlayMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isDragging || !dragLayerId) return;
+
+    const dx = e.clientX - dragStart.current.x;
+    const dy = e.clientY - dragStart.current.y;
+
+    // Convert pixel movement to normalized position (-1 to 1)
+    // Account for view zoom
+    const normalizedDx = (dx / viewZoom) / (canvasSize.width / 2);
+    const normalizedDy = -(dy / viewZoom) / (canvasSize.height / 2); // Y is inverted
+
+    const newPosX = dragStart.current.layerPosX + normalizedDx;
+    const newPosY = dragStart.current.layerPosY + normalizedDy;
+
+    // Find the corresponding clip and update its transform
+    const layer = layers.find(l => l?.id === dragLayerId);
+    if (layer) {
+      const clip = clips.find(c => c.name === layer.name);
+      if (clip) {
+        updateClipTransform(clip.id, {
+          position: { x: newPosX, y: newPosY, z: 0 },
+        });
+      }
+    }
+  }, [isDragging, dragLayerId, viewZoom, canvasSize, layers, clips, updateClipTransform]);
+
+  // Handle mouse up - stop dragging
+  const handleOverlayMouseUp = useCallback(() => {
+    setIsDragging(false);
+    setDragLayerId(null);
+  }, []);
 
   // Calculate transform for zoomed/panned view
   const viewTransform = editMode ? {
@@ -389,15 +429,17 @@ export function Preview() {
             {editMode && (
               <canvas
                 ref={overlayRef}
-                width={canvasSize.width + OVERLAY_PADDING * 2}
-                height={canvasSize.height + OVERLAY_PADDING * 2}
+                width={canvasSize.width}
+                height={canvasSize.height}
                 className="preview-overlay"
-                onClick={handleOverlayClick}
+                onMouseDown={handleOverlayMouseDown}
+                onMouseMove={handleOverlayMouseMove}
+                onMouseUp={handleOverlayMouseUp}
+                onMouseLeave={handleOverlayMouseUp}
                 style={{
-                  width: canvasSize.width + OVERLAY_PADDING * 2,
-                  height: canvasSize.height + OVERLAY_PADDING * 2,
-                  left: -OVERLAY_PADDING,
-                  top: -OVERLAY_PADDING,
+                  width: canvasSize.width,
+                  height: canvasSize.height,
+                  cursor: isDragging ? 'grabbing' : 'crosshair',
                 }}
               />
             )}
@@ -407,7 +449,7 @@ export function Preview() {
 
       {editMode && (
         <div className="preview-edit-hint">
-          Shift+Scroll: Zoom | Alt+Drag: Pan | Click: Select
+          Drag: Move Layer | Shift+Scroll: Zoom | Alt+Drag: Pan
         </div>
       )}
     </div>

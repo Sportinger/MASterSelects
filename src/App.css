@@ -1851,13 +1851,10 @@ input[type="checkbox"] {
 
 .preview-overlay {
   position: absolute;
+  top: 0;
+  left: 0;
   pointer-events: auto;
   z-index: 10;
-}
-
-/* Allow overlay to extend beyond video bounds in edit mode */
-.preview-canvas-wrapper {
-  overflow: visible !important;
 }
 
 .preview-edit-hint {
