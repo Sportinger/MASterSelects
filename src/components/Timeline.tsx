@@ -488,14 +488,28 @@ export function Timeline() {
         }
 
         if (useProxy && mediaFile) {
-          // Use proxy frames instead of video decode - ALWAYS use proxy when available
+          // Use proxy frames for DISPLAY but let video play for audio sync
           const frameIndex = Math.floor(clipTime * proxyFps);
           const cacheKey = `${mediaFile.id}_${clip.id}`;
           const cached = proxyFramesRef.current.get(cacheKey);
 
-          // Always pause video when using proxy mode - we don't need video decode
-          if (!video.paused) {
+          // Let video play for audio sync - we just won't display its frames
+          // Mute video since audio comes from linked audio track
+          if (!video.muted) {
+            video.muted = true;
+          }
+          if (isPlaying && video.paused) {
+            video.play().catch(() => {});
+          } else if (!isPlaying && !video.paused) {
             video.pause();
+          }
+
+          // Sync video position when scrubbing (not playing)
+          if (!isPlaying) {
+            const timeDiff = Math.abs(video.currentTime - clipTime);
+            if (timeDiff > 0.1) {
+              video.currentTime = clipTime;
+            }
           }
 
           // Load proxy frame - use synchronous path if already cached in proxyFrameCache
@@ -503,6 +517,8 @@ export function Timeline() {
 
           // Try to get frame from proxyFrameCache (might be sync if already cached)
           const cachedInService = proxyFrameCache.getCachedFrame(mediaFile.id, frameIndex);
+
+          console.log('[Proxy] Frame lookup:', frameIndex, 'cachedInService:', !!cachedInService, 'cachedLocal:', !!cached, cached?.frameIndex);
 
           if (cachedInService) {
             // Frame is already in the service cache - use it immediately
