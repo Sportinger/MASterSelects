@@ -1308,23 +1308,19 @@ export class WebGPUEngine {
           ],
         });
       } else if (data.textureView) {
-        // Images can use cached bind groups
+        // Images - create bind group each frame since texture may change (proxy frames)
+        // External textures (video) are ephemeral by nature, but image textures can also
+        // change when using proxy frames, so we always create fresh bind groups
         pipeline = this.compositePipeline!;
-        const bindGroupKey = `${layer.id}_${usePing ? 'ping' : 'pong'}`;
-        let cached = this.cachedCompositeBindGroups.get(bindGroupKey);
-        if (!cached) {
-          cached = this.device.createBindGroup({
-            layout: this.compositeBindGroupLayout!,
-            entries: [
-              { binding: 0, resource: this.sampler! },
-              { binding: 1, resource: readView },
-              { binding: 2, resource: data.textureView },
-              { binding: 3, resource: { buffer: uniformBuffer } },
-            ],
-          });
-          this.cachedCompositeBindGroups.set(bindGroupKey, cached);
-        }
-        bindGroup = cached;
+        bindGroup = this.device.createBindGroup({
+          layout: this.compositeBindGroupLayout!,
+          entries: [
+            { binding: 0, resource: this.sampler! },
+            { binding: 1, resource: readView },
+            { binding: 2, resource: data.textureView },
+            { binding: 3, resource: { buffer: uniformBuffer } },
+          ],
+        });
       } else {
         continue;
       }
