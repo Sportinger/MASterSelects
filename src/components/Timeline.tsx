@@ -1322,7 +1322,7 @@ export function Timeline() {
                   className="timeline-clip-preview"
                   style={{
                     left: timeToPixel(externalDrag.startTime),
-                    width: timeToPixel(5), // Default 5 seconds preview
+                    width: timeToPixel(externalDrag.duration ?? 5),
                   }}
                 >
                   <div className="clip-content">
@@ -1336,7 +1336,7 @@ export function Timeline() {
                   className="timeline-clip-preview audio"
                   style={{
                     left: timeToPixel(externalDrag.startTime),
-                    width: timeToPixel(5), // Default 5 seconds preview
+                    width: timeToPixel(externalDrag.duration ?? 5),
                   }}
                 >
                   <div className="clip-content">
@@ -1359,7 +1359,7 @@ export function Timeline() {
                 className="timeline-clip-preview audio"
                 style={{
                   left: timeToPixel(externalDrag.startTime),
-                  width: timeToPixel(5),
+                  width: timeToPixel(externalDrag.duration ?? 5),
                 }}
               >
                 <div className="clip-content">
