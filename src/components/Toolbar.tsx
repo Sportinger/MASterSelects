@@ -1,15 +1,65 @@
 // Toolbar component
 
+import { useState, useEffect, useCallback } from 'react';
 import { useEngine } from '../hooks/useEngine';
 import { useMixerStore } from '../stores/mixerStore';
 import { useDockStore } from '../stores/dockStore';
+import { useMediaStore } from '../stores/mediaStore';
 import { useMIDI } from '../hooks/useMIDI';
+import type { StoredProject } from '../services/projectDB';
 
 export function Toolbar() {
   const { isEngineReady, createOutputWindow } = useEngine();
   const { isPlaying, setPlaying, outputResolution, setResolution } = useMixerStore();
   const { resetLayout } = useDockStore();
+  const {
+    currentProjectName,
+    setProjectName,
+    saveProject,
+    loadProject,
+    getProjectList,
+    deleteProject,
+    isLoading
+  } = useMediaStore();
   const { isSupported: midiSupported, isEnabled: midiEnabled, enableMIDI, disableMIDI, devices } = useMIDI();
+
+  const [showProjectMenu, setShowProjectMenu] = useState(false);
+  const [projects, setProjects] = useState<StoredProject[]>([]);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editName, setEditName] = useState(currentProjectName);
+
+  // Load project list when menu opens
+  useEffect(() => {
+    if (showProjectMenu) {
+      getProjectList().then(setProjects);
+    }
+  }, [showProjectMenu, getProjectList]);
+
+  const handleSave = useCallback(async () => {
+    await saveProject();
+    setShowProjectMenu(false);
+  }, [saveProject]);
+
+  const handleLoad = useCallback(async (projectId: string) => {
+    await loadProject(projectId);
+    setShowProjectMenu(false);
+  }, [loadProject]);
+
+  const handleDelete = useCallback(async (projectId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (confirm('Delete this project?')) {
+      await deleteProject(projectId);
+      const updated = await getProjectList();
+      setProjects(updated);
+    }
+  }, [deleteProject, getProjectList]);
+
+  const handleNameSubmit = useCallback(() => {
+    if (editName.trim()) {
+      setProjectName(editName.trim());
+    }
+    setIsEditingName(false);
+  }, [editName, setProjectName]);
 
   const handleNewOutput = () => {
     const output = createOutputWindow(`Output ${Date.now()}`);
@@ -21,7 +71,78 @@ export function Toolbar() {
   return (
     <div className="toolbar">
       <div className="toolbar-section">
-        <span className="logo">WebVJ Mixer</span>
+        <span className="logo">MASterSelects</span>
+      </div>
+
+      {/* Project Section */}
+      <div className="toolbar-section project-section">
+        {isEditingName ? (
+          <input
+            type="text"
+            className="project-name-input"
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            onBlur={handleNameSubmit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleNameSubmit();
+              if (e.key === 'Escape') setIsEditingName(false);
+            }}
+            autoFocus
+          />
+        ) : (
+          <span
+            className="project-name"
+            onClick={() => {
+              setEditName(currentProjectName);
+              setIsEditingName(true);
+            }}
+            title="Click to rename project"
+          >
+            {currentProjectName}
+          </span>
+        )}
+        <div className="project-buttons">
+          <button className="btn btn-sm" onClick={handleSave} disabled={isLoading}>
+            Save
+          </button>
+          <button
+            className="btn btn-sm"
+            onClick={() => setShowProjectMenu(!showProjectMenu)}
+            disabled={isLoading}
+          >
+            {isLoading ? 'Loading...' : 'Open'}
+          </button>
+        </div>
+        {showProjectMenu && (
+          <div className="project-menu">
+            <div className="project-menu-header">Recent Projects</div>
+            {projects.length === 0 ? (
+              <div className="project-menu-empty">No saved projects</div>
+            ) : (
+              projects
+                .sort((a, b) => b.updatedAt - a.updatedAt)
+                .map((project) => (
+                  <div
+                    key={project.id}
+                    className="project-menu-item"
+                    onClick={() => handleLoad(project.id)}
+                  >
+                    <span className="project-menu-name">{project.name}</span>
+                    <span className="project-menu-date">
+                      {new Date(project.updatedAt).toLocaleDateString()}
+                    </span>
+                    <button
+                      className="project-menu-delete"
+                      onClick={(e) => handleDelete(project.id, e)}
+                      title="Delete project"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))
+            )}
+          </div>
+        )}
       </div>
 
       <div className="toolbar-section">

@@ -3,6 +3,7 @@
 import { create } from 'zustand';
 import { subscribeWithSelector, persist } from 'zustand/middleware';
 import { useTimelineStore } from './timelineStore';
+import { projectDB, type StoredMediaFile, type StoredProject } from '../services/projectDB';
 
 // Media item types
 export type MediaType = 'video' | 'audio' | 'image' | 'composition';
@@ -96,6 +97,17 @@ interface MediaState {
   // Composition management
   setActiveComposition: (id: string | null) => void;
   getActiveComposition: () => Composition | undefined;
+
+  // Project persistence (IndexedDB)
+  initFromDB: () => Promise<void>;
+  saveProject: (name?: string) => Promise<string>;
+  loadProject: (projectId: string) => Promise<void>;
+  getProjectList: () => Promise<StoredProject[]>;
+  deleteProject: (projectId: string) => Promise<void>;
+  currentProjectId: string | null;
+  currentProjectName: string;
+  setProjectName: (name: string) => void;
+  isLoading: boolean;
 }
 
 // Generate unique ID
@@ -210,6 +222,9 @@ export const useMediaStore = create<MediaState>()(
         activeCompositionId: 'comp-1',
         selectedIds: [],
         expandedFolderIds: [],
+        currentProjectId: null,
+        currentProjectName: 'Untitled Project',
+        isLoading: false,
 
         importFile: async (file: File) => {
           const type = getMediaType(file);
@@ -234,6 +249,29 @@ export const useMediaStore = create<MediaState>()(
           set((state) => ({
             files: [...state.files, mediaFile],
           }));
+
+          // Save file blob to IndexedDB for persistence
+          try {
+            const storedFile: StoredMediaFile = {
+              id: mediaFile.id,
+              name: file.name,
+              type,
+              blob: file,
+              duration: info.duration,
+              width: info.width,
+              height: info.height,
+              createdAt: mediaFile.createdAt,
+            };
+            // Store thumbnail as blob if it's a data URL
+            if (thumbnailUrl && thumbnailUrl.startsWith('data:')) {
+              const response = await fetch(thumbnailUrl);
+              storedFile.thumbnailBlob = await response.blob();
+            }
+            await projectDB.saveMediaFile(storedFile);
+            console.log('[MediaStore] Saved file to IndexedDB:', file.name);
+          } catch (e) {
+            console.warn('[MediaStore] Failed to save file to IndexedDB:', e);
+          }
 
           return mediaFile;
         },
@@ -464,6 +502,164 @@ export const useMediaStore = create<MediaState>()(
           const { compositions, activeCompositionId } = get();
           return compositions.find((c) => c.id === activeCompositionId);
         },
+
+        setProjectName: (name: string) => {
+          set({ currentProjectName: name });
+        },
+
+        // Initialize from IndexedDB - restore file blobs
+        initFromDB: async () => {
+          set({ isLoading: true });
+          try {
+            const storedFiles = await projectDB.getAllMediaFiles();
+            const { files } = get();
+
+            // Match stored blobs with existing file metadata
+            const updatedFiles = files.map((mediaFile) => {
+              const stored = storedFiles.find((sf) => sf.id === mediaFile.id);
+              if (stored) {
+                // Restore file blob and URL
+                const file = new File([stored.blob], stored.name, { type: stored.blob.type });
+                const url = URL.createObjectURL(file);
+                let thumbnailUrl = mediaFile.thumbnailUrl;
+                if (stored.thumbnailBlob) {
+                  thumbnailUrl = URL.createObjectURL(stored.thumbnailBlob);
+                }
+                return { ...mediaFile, file, url, thumbnailUrl };
+              }
+              return mediaFile;
+            });
+
+            set({ files: updatedFiles, isLoading: false });
+            console.log('[MediaStore] Restored', storedFiles.length, 'files from IndexedDB');
+          } catch (e) {
+            console.error('[MediaStore] Failed to init from IndexedDB:', e);
+            set({ isLoading: false });
+          }
+        },
+
+        // Save current project
+        saveProject: async (name?: string) => {
+          const state = get();
+          const projectName = name || state.currentProjectName;
+          const projectId = state.currentProjectId || generateId();
+
+          // Save current timeline to active composition first
+          if (state.activeCompositionId) {
+            const timelineStore = useTimelineStore.getState();
+            const timelineData = timelineStore.getSerializableState();
+            set((s) => ({
+              compositions: s.compositions.map((c) =>
+                c.id === state.activeCompositionId ? { ...c, timelineData } : c
+              ),
+            }));
+          }
+
+          const project: StoredProject = {
+            id: projectId,
+            name: projectName,
+            createdAt: state.currentProjectId ? Date.now() : Date.now(),
+            updatedAt: Date.now(),
+            data: {
+              compositions: get().compositions,
+              folders: state.folders,
+              activeCompositionId: state.activeCompositionId,
+              expandedFolderIds: state.expandedFolderIds,
+              mediaFileIds: state.files.map((f) => f.id),
+            },
+          };
+
+          await projectDB.saveProject(project);
+          set({ currentProjectId: projectId, currentProjectName: projectName });
+          console.log('[MediaStore] Project saved:', projectName);
+          return projectId;
+        },
+
+        // Load a project
+        loadProject: async (projectId: string) => {
+          set({ isLoading: true });
+          try {
+            const project = await projectDB.getProject(projectId);
+            if (!project) {
+              throw new Error('Project not found');
+            }
+
+            // Load media files from IndexedDB
+            const storedFiles = await projectDB.getAllMediaFiles();
+            const mediaFileMap = new Map(storedFiles.map((f) => [f.id, f]));
+
+            // Restore files with blobs
+            const files: MediaFile[] = [];
+            for (const fileId of project.data.mediaFileIds) {
+              const stored = mediaFileMap.get(fileId);
+              if (stored) {
+                const file = new File([stored.blob], stored.name, { type: stored.blob.type });
+                const url = URL.createObjectURL(file);
+                let thumbnailUrl: string | undefined;
+                if (stored.thumbnailBlob) {
+                  thumbnailUrl = URL.createObjectURL(stored.thumbnailBlob);
+                }
+                files.push({
+                  id: stored.id,
+                  name: stored.name,
+                  type: stored.type,
+                  parentId: null,
+                  createdAt: stored.createdAt,
+                  file,
+                  url,
+                  thumbnailUrl,
+                  duration: stored.duration,
+                  width: stored.width,
+                  height: stored.height,
+                });
+              }
+            }
+
+            // Clear timeline first
+            const timelineStore = useTimelineStore.getState();
+            timelineStore.clearTimeline();
+
+            // Restore state
+            set({
+              files,
+              compositions: project.data.compositions as Composition[],
+              folders: project.data.folders as MediaFolder[],
+              activeCompositionId: null, // Will be set below
+              expandedFolderIds: project.data.expandedFolderIds,
+              currentProjectId: projectId,
+              currentProjectName: project.name,
+              isLoading: false,
+            });
+
+            // Load active composition's timeline
+            if (project.data.activeCompositionId) {
+              const comp = (project.data.compositions as Composition[]).find(
+                (c) => c.id === project.data.activeCompositionId
+              );
+              if (comp) {
+                await timelineStore.loadState(comp.timelineData);
+                set({ activeCompositionId: project.data.activeCompositionId });
+              }
+            }
+
+            console.log('[MediaStore] Project loaded:', project.name);
+          } catch (e) {
+            console.error('[MediaStore] Failed to load project:', e);
+            set({ isLoading: false });
+            throw e;
+          }
+        },
+
+        // Get list of all projects
+        getProjectList: async () => {
+          return projectDB.getAllProjects();
+        },
+
+        // Delete a project
+        deleteProject: async (projectId: string) => {
+          await projectDB.deleteProject(projectId);
+          console.log('[MediaStore] Project deleted:', projectId);
+        },
       }),
       {
         name: 'webvj-media',
@@ -474,8 +670,18 @@ export const useMediaStore = create<MediaState>()(
           folders: state.folders,
           activeCompositionId: state.activeCompositionId,
           expandedFolderIds: state.expandedFolderIds,
+          currentProjectId: state.currentProjectId,
+          currentProjectName: state.currentProjectName,
         }),
       }
     )
   )
 );
+
+// Auto-initialize from IndexedDB on app load
+if (typeof window !== 'undefined') {
+  // Delay init slightly to ensure store is ready
+  setTimeout(() => {
+    useMediaStore.getState().initFromDB();
+  }, 100);
+}
