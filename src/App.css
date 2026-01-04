@@ -710,6 +710,99 @@ body {
   color: var(--text-secondary);
 }
 
+/* Clip Properties Panel */
+.clip-properties-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.clip-properties-panel .panel-header {
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.clip-properties-panel .panel-header h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.properties-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.properties-section {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 8px;
+}
+
+.properties-section h4 {
+  margin: 0 0 10px 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+}
+
+.properties-section .control-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.properties-section .control-row:last-child {
+  margin-bottom: 0;
+}
+
+.properties-section .control-row label {
+  min-width: 20px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.properties-section .control-row input[type="range"] {
+  flex: 1;
+}
+
+.properties-section .control-row .value {
+  min-width: 45px;
+  text-align: right;
+  font-size: 11px;
+  font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+  color: var(--text-primary);
+}
+
+.properties-section .control-row select {
+  flex: 1;
+  padding: 4px 8px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.properties-actions {
+  padding: 8px;
+  text-align: center;
+}
+
+.properties-actions .btn {
+  width: 100%;
+}
+
 /* Buttons */
 .btn {
   padding: 6px 12px;

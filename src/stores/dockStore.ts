@@ -46,6 +46,7 @@ const DEFAULT_LAYOUT: DockLayout = {
             kind: 'tab-group',
             id: 'right-group',
             panels: [
+              { id: 'clip-properties', type: 'clip-properties', title: 'Properties' },
               { id: 'effects', type: 'effects', title: 'Effects' },
               { id: 'slots', type: 'slots', title: 'Slots' },
             ],

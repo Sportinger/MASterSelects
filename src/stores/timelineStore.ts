@@ -344,6 +344,7 @@ export const useTimelineStore = create<TimelineStore>()(
             },
             linkedClipId: clipId, // Link to video clip
             waveform: audioWaveform,
+            transform: { ...DEFAULT_TRANSFORM },
           };
 
           // Add audio clip and link video to audio
@@ -360,6 +361,7 @@ export const useTimelineStore = create<TimelineStore>()(
             source,
             thumbnails,
             linkedClipId: audioClipId, // Link to audio clip
+            transform: { ...DEFAULT_TRANSFORM },
           };
 
           set({ clips: [...currentClips, videoClip, audioClip] });
@@ -432,6 +434,7 @@ export const useTimelineStore = create<TimelineStore>()(
         outPoint: naturalDuration,
         source,
         thumbnails,
+        transform: { ...DEFAULT_TRANSFORM },
       };
 
       const { clips, updateDuration } = get();

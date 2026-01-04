@@ -1,7 +1,7 @@
 // Dock system type definitions
 
 // Panel types that can be docked
-export type PanelType = 'preview' | 'effects' | 'timeline' | 'slots';
+export type PanelType = 'preview' | 'effects' | 'timeline' | 'slots' | 'clip-properties' | 'media';
 
 // A panel instance
 export interface DockPanel {
@@ -99,6 +99,20 @@ export const PANEL_CONFIGS: Record<PanelType, PanelConfig> = {
   slots: {
     type: 'slots',
     title: 'Slots',
+    minWidth: 200,
+    minHeight: 200,
+    closable: false,
+  },
+  'clip-properties': {
+    type: 'clip-properties',
+    title: 'Properties',
+    minWidth: 200,
+    minHeight: 150,
+    closable: false,
+  },
+  media: {
+    type: 'media',
+    title: 'Media',
     minWidth: 200,
     minHeight: 200,
     closable: false,
