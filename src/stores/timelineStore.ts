@@ -1552,7 +1552,7 @@ export const useTimelineStore = create<TimelineStore>()(
           id: clip.id,
           trackId: clip.trackId,
           name: clip.name,
-          mediaFileId: mediaFile?.id || '', // Reference to media file
+          mediaFileId: clip.isComposition ? '' : (mediaFile?.id || ''), // Comp clips don't have media files
           startTime: clip.startTime,
           duration: clip.duration,
           inPoint: clip.inPoint,
@@ -1563,6 +1563,9 @@ export const useTimelineStore = create<TimelineStore>()(
           linkedClipId: clip.linkedClipId,
           waveform: clip.waveform,
           transform: clip.transform,
+          // Nested composition support
+          isComposition: clip.isComposition,
+          compositionId: clip.compositionId,
         };
       });
 
@@ -1624,7 +1627,126 @@ export const useTimelineStore = create<TimelineStore>()(
       const mediaStore = useMediaStore.getState();
 
       for (const serializedClip of data.clips) {
-        // Find the media file
+        // Handle composition clips specially
+        if (serializedClip.isComposition && serializedClip.compositionId) {
+          const composition = mediaStore.compositions.find(c => c.id === serializedClip.compositionId);
+          if (composition) {
+            // Use addCompClip to properly load nested composition
+            // But we need to restore specific settings, so create clip manually first
+            const compClip: TimelineClip = {
+              id: serializedClip.id,
+              trackId: serializedClip.trackId,
+              name: serializedClip.name,
+              file: new File([], serializedClip.name),
+              startTime: serializedClip.startTime,
+              duration: serializedClip.duration,
+              inPoint: serializedClip.inPoint,
+              outPoint: serializedClip.outPoint,
+              source: {
+                type: 'video',
+                naturalDuration: serializedClip.duration,
+              },
+              thumbnails: serializedClip.thumbnails,
+              transform: serializedClip.transform,
+              isLoading: true,
+              isComposition: true,
+              compositionId: serializedClip.compositionId,
+              nestedClips: [],
+              nestedTracks: [],
+            };
+
+            // Add clip to state
+            set(state => ({
+              clips: [...state.clips, compClip],
+            }));
+
+            // Load nested composition content in background
+            if (composition.timelineData) {
+              const nestedClips: TimelineClip[] = [];
+              const nestedTracks = composition.timelineData.tracks;
+
+              for (const nestedSerializedClip of composition.timelineData.clips) {
+                const nestedMediaFile = mediaStore.files.find(f => f.id === nestedSerializedClip.mediaFileId);
+                if (!nestedMediaFile || !nestedMediaFile.file) continue;
+
+                const nestedClip: TimelineClip = {
+                  id: `nested-${compClip.id}-${nestedSerializedClip.id}`,
+                  trackId: nestedSerializedClip.trackId,
+                  name: nestedSerializedClip.name,
+                  file: nestedMediaFile.file,
+                  startTime: nestedSerializedClip.startTime,
+                  duration: nestedSerializedClip.duration,
+                  inPoint: nestedSerializedClip.inPoint,
+                  outPoint: nestedSerializedClip.outPoint,
+                  source: null,
+                  thumbnails: nestedSerializedClip.thumbnails,
+                  transform: nestedSerializedClip.transform,
+                  isLoading: true,
+                };
+
+                nestedClips.push(nestedClip);
+
+                // Load media element
+                const nestedType = nestedSerializedClip.sourceType;
+                const nestedFileUrl = URL.createObjectURL(nestedMediaFile.file);
+
+                if (nestedType === 'video') {
+                  const video = document.createElement('video');
+                  video.src = nestedFileUrl;
+                  video.muted = true;
+                  video.playsInline = true;
+                  video.preload = 'auto';
+                  video.crossOrigin = 'anonymous';
+
+                  video.addEventListener('canplaythrough', () => {
+                    nestedClip.source = {
+                      type: 'video',
+                      videoElement: video,
+                      naturalDuration: video.duration,
+                    };
+                    nestedClip.isLoading = false;
+                    // Trigger update
+                    const currentClips = get().clips;
+                    set({ clips: [...currentClips] });
+                  }, { once: true });
+                } else if (nestedType === 'image') {
+                  const img = new Image();
+                  img.src = nestedFileUrl;
+                  img.addEventListener('load', () => {
+                    nestedClip.source = {
+                      type: 'image',
+                      imageElement: img,
+                    };
+                    nestedClip.isLoading = false;
+                    const currentClips = get().clips;
+                    set({ clips: [...currentClips] });
+                  }, { once: true });
+                }
+              }
+
+              // Update comp clip with nested data
+              set(state => ({
+                clips: state.clips.map(c =>
+                  c.id === compClip.id
+                    ? { ...c, nestedClips, nestedTracks, isLoading: false }
+                    : c
+                ),
+              }));
+            } else {
+              // No timeline data
+              set(state => ({
+                clips: state.clips.map(c =>
+                  c.id === compClip.id ? { ...c, isLoading: false } : c
+                ),
+              }));
+            }
+          } else {
+            console.warn('Could not find composition for clip:', serializedClip.name);
+          }
+          continue;
+        }
+
+        // Regular media clips
         const mediaFile = mediaStore.files.find(f => f.id === serializedClip.mediaFileId);
         if (!mediaFile || !mediaFile.file) {
           console.warn('Could not find media file for clip:', serializedClip.name);

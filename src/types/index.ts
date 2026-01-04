@@ -178,6 +178,9 @@ export interface SerializableClip {
   linkedClipId?: string;
   waveform?: number[];
   transform: ClipTransform;
+  // Nested composition support
+  isComposition?: boolean;
+  compositionId?: string;
 }
 
 // Serializable timeline data for composition storage
