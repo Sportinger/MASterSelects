@@ -141,18 +141,44 @@ export function MediaPanel() {
     closeContextMenu();
   }, [createFolder, closeContextMenu]);
 
+  // Handle drag start for media files (to drag to Timeline)
+  const handleDragStart = useCallback((e: React.DragEvent, item: ProjectItem) => {
+    // Only allow dragging media files (not folders or compositions)
+    if ('isExpanded' in item || item.type === 'composition') {
+      e.preventDefault();
+      return;
+    }
+
+    // Get the file from the media item
+    const mediaFile = item as MediaFile;
+    if (!mediaFile.file) {
+      // File not available (e.g., after page refresh)
+      e.preventDefault();
+      return;
+    }
+
+    // Set the file in dataTransfer so Timeline can receive it
+    e.dataTransfer.setData('application/x-media-file', mediaFile.id);
+    e.dataTransfer.items.add(mediaFile.file);
+    e.dataTransfer.effectAllowed = 'copy';
+  }, []);
+
   // Render a single item
   const renderItem = (item: ProjectItem, depth: number = 0) => {
     const isFolder = 'isExpanded' in item;
     const isSelected = selectedIds.includes(item.id);
     const isRenaming = renamingId === item.id;
     const isExpanded = isFolder && expandedFolderIds.includes(item.id);
+    const isMediaFile = !isFolder && item.type !== 'composition';
+    const hasFile = isMediaFile && 'file' in item && !!(item as MediaFile).file;
 
     return (
       <div key={item.id}>
         <div
-          className={`media-item ${isSelected ? 'selected' : ''} ${isFolder ? 'folder' : ''}`}
+          className={`media-item ${isSelected ? 'selected' : ''} ${isFolder ? 'folder' : ''} ${isMediaFile && !hasFile ? 'no-file' : ''}`}
           style={{ paddingLeft: `${12 + depth * 16}px` }}
+          draggable={isMediaFile && hasFile}
+          onDragStart={(e) => handleDragStart(e, item)}
           onClick={(e) => handleItemClick(item.id, e)}
           onDoubleClick={() => handleItemDoubleClick(item)}
           onContextMenu={(e) => handleContextMenu(e, item.id)}
@@ -172,6 +198,7 @@ export function MediaPanel() {
               src={item.thumbnailUrl}
               alt=""
               className="media-item-thumbnail"
+              draggable={false}
             />
           )}
 
