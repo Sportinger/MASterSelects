@@ -51,7 +51,7 @@ export function useEngine() {
     const renderFrame = () => {
       try {
         // Always try to use cached frame first (works even during RAM preview rendering)
-        const { playheadPosition, isPlaying: timelinePlaying, isRamPreviewing } = useTimelineStore.getState();
+        const { playheadPosition, isPlaying: timelinePlaying, isRamPreviewing, isDraggingPlayhead } = useTimelineStore.getState();
         if (engine.renderCachedFrame(playheadPosition)) {
           // Successfully rendered cached frame, skip live render
           return;
@@ -82,8 +82,10 @@ export function useEngine() {
 
         // Cache frames during playback (like After Effects' green line)
         // Throttled to every 100ms (~10fps) to avoid performance impact
+        // CRITICAL: Skip caching while user is dragging playhead - videos are seeking to
+        // conflicting positions and would cache wrong frames
         const now = performance.now();
-        if (timelinePlaying && now - lastCacheTime > 100) {
+        if (timelinePlaying && !isDraggingPlayhead && now - lastCacheTime > 100) {
           // Cache this frame asynchronously (don't block render loop)
           engine.cacheCompositeFrame(playheadPosition).catch(() => {});
           lastCacheTime = now;

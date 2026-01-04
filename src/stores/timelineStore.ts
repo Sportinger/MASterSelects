@@ -109,6 +109,7 @@ interface TimelineStore {
   zoom: number;  // pixels per second
   scrollX: number;
   isPlaying: boolean;
+  isDraggingPlayhead: boolean;  // Track when user is scrubbing
   selectedClipId: string | null;
 
   // In/Out markers for work area
@@ -155,6 +156,7 @@ interface TimelineStore {
 
   // Playback actions
   setPlayheadPosition: (position: number) => void;
+  setDraggingPlayhead: (dragging: boolean) => void;
   play: () => void;
   pause: () => void;
   stop: () => void;
@@ -193,6 +195,7 @@ export const useTimelineStore = create<TimelineStore>()(
     zoom: 50, // 50 pixels per second
     scrollX: 0,
     isPlaying: false,
+    isDraggingPlayhead: false,
     selectedClipId: null,
     inPoint: null,
     outPoint: null,
@@ -733,6 +736,9 @@ export const useTimelineStore = create<TimelineStore>()(
     setPlayheadPosition: (position) => {
       const { duration } = get();
       set({ playheadPosition: Math.max(0, Math.min(position, duration)) });
+    },
+    setDraggingPlayhead: (dragging) => {
+      set({ isDraggingPlayhead: dragging });
     },
 
     play: () => {

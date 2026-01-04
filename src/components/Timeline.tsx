@@ -45,12 +45,13 @@ export function Timeline() {
     cancelRamPreview,
     clearRamPreview,
     getCachedRanges,
+    isDraggingPlayhead,
+    setDraggingPlayhead,
   } = useTimelineStore();
 
 
   const timelineRef = useRef<HTMLDivElement>(null);
   const trackLanesRef = useRef<HTMLDivElement>(null);
-  const [isDraggingPlayhead, setIsDraggingPlayhead] = useState(false);
 
   // Premiere-style clip dragging state
   const [clipDrag, setClipDrag] = useState<{
@@ -573,7 +574,7 @@ export function Timeline() {
     setPlayheadPosition(Math.max(0, Math.min(time, duration)));
 
     // Enter drag mode immediately
-    setIsDraggingPlayhead(true);
+    setDraggingPlayhead(true);
   };
 
   // Handle playhead drag
@@ -583,7 +584,7 @@ export function Timeline() {
     if (isRamPreviewing) {
       cancelRamPreview();
     }
-    setIsDraggingPlayhead(true);
+    setDraggingPlayhead(true);
   };
 
   // Handle In/Out marker drag
@@ -645,7 +646,7 @@ export function Timeline() {
     };
 
     const handleMouseUp = () => {
-      setIsDraggingPlayhead(false);
+      setDraggingPlayhead(false);
     };
 
     window.addEventListener('mousemove', handleMouseMove);
