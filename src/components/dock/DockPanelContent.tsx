@@ -3,6 +3,7 @@
 import type { PanelType } from '../../types/dock';
 import { Preview } from '../Preview';
 import { EffectsPanel } from '../EffectsPanel';
+import { ExportPanel } from '../ExportPanel';
 import { ClipPropertiesPanel } from '../ClipPropertiesPanel';
 import { LayerPanel } from '../LayerPanel';
 import { Timeline } from '../Timeline';
@@ -18,6 +19,8 @@ export function DockPanelContent({ type }: DockPanelContentProps) {
       return <Preview />;
     case 'effects':
       return <EffectsPanel />;
+    case 'export':
+      return <ExportPanel />;
     case 'clip-properties':
       return <ClipPropertiesPanel />;
     case 'slots':

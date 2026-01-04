@@ -721,6 +721,162 @@ body {
   color: var(--text-secondary);
 }
 
+/* Export Panel */
+.export-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.export-panel .panel-header {
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.export-panel .panel-header h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.export-form {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.export-panel .control-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.export-panel .control-row label {
+  min-width: 80px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.export-panel select,
+.export-panel input[type="text"] {
+  flex: 1;
+  padding: 6px 8px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.export-input-group {
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.export-input-group input {
+  flex: 1;
+  border-radius: 4px 0 0 4px;
+}
+
+.export-extension {
+  padding: 6px 8px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-left: none;
+  border-radius: 0 4px 4px 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.export-summary {
+  padding: 10px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.export-error {
+  padding: 10px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid var(--danger);
+  border-radius: 4px;
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.export-start-btn {
+  width: 100%;
+  padding: 10px;
+  background: var(--accent);
+  color: var(--bg-primary);
+  border: none;
+  border-radius: 4px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.export-start-btn:hover {
+  background: var(--accent-hover);
+}
+
+.export-start-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.export-progress-container {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.export-progress-bar {
+  height: 8px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.export-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.1s ease-out;
+}
+
+.export-progress-info {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.export-eta {
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.export-cancel-btn {
+  width: 100%;
+  padding: 8px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.export-cancel-btn:hover {
+  background: var(--bg-hover);
+}
+
 /* Clip Properties Panel */
 .clip-properties-panel {
   display: flex;
@@ -1130,6 +1286,23 @@ input[type="checkbox"] {
   color: var(--text-secondary);
 }
 
+.timeline-inout-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.timeline-inout-controls .btn-sm {
+  min-width: 24px;
+  padding: 4px 8px;
+  font-weight: bold;
+}
+
+.timeline-inout-controls .btn-active {
+  background: #f59e0b;
+  color: white;
+}
+
 .timeline-tracks-controls {
   margin-left: auto;
   display: flex;
@@ -1299,6 +1472,47 @@ input[type="checkbox"] {
 .timeline-clip.audio {
   background: linear-gradient(180deg, #16a34a, #15803d);
   border: 1px solid #22c55e;
+}
+
+/* Loading state for clips */
+.timeline-clip.loading {
+  opacity: 0.7;
+}
+
+.timeline-clip.loading::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.1),
+    transparent
+  );
+  animation: clip-loading-shimmer 1.5s infinite;
+}
+
+@keyframes clip-loading-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.clip-loading-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: clip-spinner 0.8s linear infinite;
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+
+@keyframes clip-spinner {
+  to { transform: rotate(360deg); }
 }
 
 .timeline-clip.image {
@@ -1524,6 +1738,98 @@ input[type="checkbox"] {
   z-index: 99;
   pointer-events: none;
   box-shadow: 0 0 8px var(--success, #4ade80);
+}
+
+/* In/Out Work Area Markers */
+.work-area-overlay {
+  position: absolute;
+  top: 24px; /* Below time ruler */
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  z-index: 10;
+}
+
+.work-area-overlay::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 100%;
+  background: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 10px,
+    rgba(0, 0, 0, 0.1) 10px,
+    rgba(0, 0, 0, 0.1) 20px
+  );
+}
+
+.in-out-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 95;
+  pointer-events: none;
+}
+
+.in-out-marker .marker-flag {
+  position: absolute;
+  top: 0;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: bold;
+  color: white;
+  border-radius: 2px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.in-marker .marker-flag {
+  background: #f59e0b;
+  left: 0;
+  border-radius: 0 2px 2px 0;
+}
+
+.out-marker .marker-flag {
+  background: #f59e0b;
+  right: 0;
+  border-radius: 2px 0 0 2px;
+}
+
+.in-out-marker .marker-line {
+  position: absolute;
+  top: 16px;
+  bottom: 0;
+  width: 2px;
+  background: #f59e0b;
+}
+
+.in-marker .marker-line {
+  left: 0;
+}
+
+.out-marker .marker-line {
+  right: 0;
+}
+
+.in-out-marker .marker-flag:hover {
+  transform: scale(1.1);
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.6);
+}
+
+.in-out-marker.dragging .marker-flag {
+  transform: scale(1.2);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.8);
+}
+
+.in-out-marker.dragging .marker-line {
+  width: 3px;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.5);
 }
 
 /* Audio Waveform */

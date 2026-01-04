@@ -113,6 +113,7 @@ export interface TimelineClip {
   linkedClipId?: string;  // ID of linked clip (e.g., audio linked to video)
   waveform?: number[];    // Array of normalized amplitude values (0-1) for audio waveform
   transform: ClipTransform;  // Visual transform properties
+  isLoading?: boolean;    // True while media is being loaded
 }
 
 export interface TimelineTrack {

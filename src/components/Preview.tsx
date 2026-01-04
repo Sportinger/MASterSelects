@@ -69,11 +69,10 @@ export function Preview() {
     const centerX = canvasW / 2;
     const centerY = canvasH / 2;
 
-    // In shader: uv = uv + 0.5 - pos
-    // This means: posX > 0 moves image LEFT, posY > 0 moves image UP
-    // In screen coordinates (Y down positive):
-    // - posX > 0 → box moves LEFT (subtract from centerX)
-    // - posY > 0 → box moves UP (subtract from centerY)
+    // Position mapping: match the shader's visual output
+    // Shader does: uv = uv + 0.5 - pos
+    // When pos.x > 0: samples right side of texture → image moves LEFT → box.x decreases
+    // When pos.y > 0: samples bottom of texture → image moves UP → box.y decreases
     const posX = centerX - (layer.position.x * canvasW / 2);
     const posY = centerY - (layer.position.y * canvasH / 2);
 

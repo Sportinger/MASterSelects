@@ -111,6 +111,10 @@ interface TimelineStore {
   isPlaying: boolean;
   selectedClipId: string | null;
 
+  // In/Out markers for work area
+  inPoint: number | null;
+  outPoint: number | null;
+
   // Track actions
   addTrack: (type: 'video' | 'audio') => void;
   removeTrack: (id: string) => void;
@@ -139,6 +143,13 @@ interface TimelineStore {
   setZoom: (zoom: number) => void;
   setScrollX: (scrollX: number) => void;
 
+  // In/Out marker actions
+  setInPoint: (time: number | null) => void;
+  setOutPoint: (time: number | null) => void;
+  clearInOut: () => void;
+  setInPointAtPlayhead: () => void;
+  setOutPointAtPlayhead: () => void;
+
   // Utils
   getClipsAtTime: (time: number) => TimelineClip[];
   updateDuration: () => void;
@@ -163,6 +174,8 @@ export const useTimelineStore = create<TimelineStore>()(
     scrollX: 0,
     isPlaying: false,
     selectedClipId: null,
+    inPoint: null,
+    outPoint: null,
 
     // Track actions
     addTrack: (type) => {
@@ -275,36 +288,94 @@ export const useTimelineStore = create<TimelineStore>()(
         return;
       }
 
-      // Sync file to media store (if not already there)
-      const mediaStore = useMediaStore.getState();
-      if (!mediaStore.getFileByName(file.name)) {
-        await mediaStore.importFile(file);
-        console.log('[Timeline] Added file to media store:', file.name);
-      }
-
       const clipId = `clip-${Date.now()}`;
+      const audioClipId = isVideo ? `clip-audio-${Date.now()}` : undefined;
 
-      // Create media element to get duration
-      let naturalDuration = 5; // Default for images
-      let source: TimelineClip['source'] = null;
-      let thumbnails: string[] = [];
+      // Estimate initial duration (will be updated when media loads)
+      const estimatedDuration = 5;
 
+      // Helper to update clip when loaded
+      const updateClip = (id: string, updates: Partial<TimelineClip>) => {
+        const currentClips = get().clips;
+        set({
+          clips: currentClips.map(c => c.id === id ? { ...c, ...updates } : c)
+        });
+        get().updateDuration();
+      };
+
+      // For video: add loading placeholder for both video and audio clips immediately
       if (isVideo) {
+        const { findAvailableAudioTrack, clips: currentClips, updateDuration } = get();
+        const audioTrackId = findAvailableAudioTrack(startTime, estimatedDuration);
+
+        // Create loading placeholder clips immediately
+        const videoClip: TimelineClip = {
+          id: clipId,
+          trackId,
+          name: file.name,
+          file,
+          startTime,
+          duration: estimatedDuration,
+          inPoint: 0,
+          outPoint: estimatedDuration,
+          source: { type: 'video', naturalDuration: estimatedDuration },
+          linkedClipId: audioTrackId ? audioClipId : undefined,
+          transform: { ...DEFAULT_TRANSFORM },
+          isLoading: true,
+        };
+
+        const clipsToAdd: TimelineClip[] = [videoClip];
+
+        if (audioTrackId && audioClipId) {
+          const audioClip: TimelineClip = {
+            id: audioClipId,
+            trackId: audioTrackId,
+            name: `${file.name} (Audio)`,
+            file,
+            startTime,
+            duration: estimatedDuration,
+            inPoint: 0,
+            outPoint: estimatedDuration,
+            source: { type: 'audio', naturalDuration: estimatedDuration },
+            linkedClipId: clipId,
+            transform: { ...DEFAULT_TRANSFORM },
+            isLoading: true,
+          };
+          clipsToAdd.push(audioClip);
+        }
+
+        set({ clips: [...currentClips, ...clipsToAdd] });
+        updateDuration();
+
+        // Now load media in background
         const video = document.createElement('video');
         video.src = URL.createObjectURL(file);
         video.preload = 'auto';
         video.muted = true;
         video.crossOrigin = 'anonymous';
 
+        // Wait for metadata
         await new Promise<void>((resolve) => {
-          video.onloadedmetadata = () => {
-            naturalDuration = video.duration;
-            resolve();
-          };
+          video.onloadedmetadata = () => resolve();
           video.onerror = () => resolve();
         });
 
-        // Wait for video to be ready for thumbnail extraction
+        const naturalDuration = video.duration || estimatedDuration;
+
+        // Update clip duration immediately once we know it
+        updateClip(clipId, {
+          duration: naturalDuration,
+          outPoint: naturalDuration,
+          source: { type: 'video', videoElement: video, naturalDuration },
+        });
+        if (audioTrackId && audioClipId) {
+          updateClip(audioClipId, {
+            duration: naturalDuration,
+            outPoint: naturalDuration,
+          });
+        }
+
+        // Wait for video to be ready for thumbnails
         await new Promise<void>((resolve) => {
           if (video.readyState >= 2) {
             resolve();
@@ -314,6 +385,7 @@ export const useTimelineStore = create<TimelineStore>()(
         });
 
         // Generate thumbnails
+        let thumbnails: string[] = [];
         try {
           thumbnails = await generateThumbnails(video, naturalDuration);
           console.log(`[Timeline] Generated ${thumbnails.length} thumbnails for ${file.name}`);
@@ -321,103 +393,124 @@ export const useTimelineStore = create<TimelineStore>()(
           console.warn('Failed to generate thumbnails:', e);
         }
 
-        // Reset video to start
         video.currentTime = 0;
 
-        source = {
-          type: 'video',
-          videoElement: video,
-          naturalDuration,
-        };
+        // Final update with thumbnails and isLoading=false
+        updateClip(clipId, {
+          source: { type: 'video', videoElement: video, naturalDuration },
+          thumbnails,
+          isLoading: false,
+        });
 
-        // Create linked audio clip - find available audio track or create new one
-        const { findAvailableAudioTrack } = get();
-        const audioTrackId = findAvailableAudioTrack(startTime, naturalDuration);
-        if (audioTrackId) {
-          // Create audio element from same video file
+        // Load audio
+        if (audioTrackId && audioClipId) {
           const audioFromVideo = document.createElement('audio');
           audioFromVideo.src = URL.createObjectURL(file);
           audioFromVideo.preload = 'auto';
 
-          // Generate waveform for audio
           let audioWaveform: number[] = [];
           try {
             audioWaveform = await generateWaveform(file);
-            console.log('[Timeline] Generated waveform for', file.name);
           } catch (e) {
             console.warn('Failed to generate waveform:', e);
           }
 
-
-          const audioClipId = `clip-audio-${Date.now()}`;
-          const audioClip: TimelineClip = {
-            id: audioClipId,
-            trackId: audioTrackId,
-            name: `${file.name} (Audio)`,
-            file,
-            startTime,
-            duration: naturalDuration,
-            inPoint: 0,
-            outPoint: naturalDuration,
-            source: {
-              type: 'audio',
-              audioElement: audioFromVideo,
-              naturalDuration,
-            },
-            linkedClipId: clipId, // Link to video clip
+          updateClip(audioClipId, {
+            source: { type: 'audio', audioElement: audioFromVideo, naturalDuration },
             waveform: audioWaveform,
-            transform: { ...DEFAULT_TRANSFORM },
-          };
-
-          // Add audio clip and link video to audio
-          const { clips: currentClips, updateDuration } = get();
-          const videoClip: TimelineClip = {
-            id: clipId,
-            trackId,
-            name: file.name,
-            file,
-            startTime,
-            duration: naturalDuration,
-            inPoint: 0,
-            outPoint: naturalDuration,
-            source,
-            thumbnails,
-            linkedClipId: audioClipId, // Link to audio clip
-            transform: { ...DEFAULT_TRANSFORM },
-          };
-
-          set({ clips: [...currentClips, videoClip, audioClip] });
-          updateDuration();
-          return; // Exit early, we've handled everything
+            isLoading: false,
+          });
         }
-      } else if (isAudio) {
+
+        // Sync to media store
+        const mediaStore = useMediaStore.getState();
+        if (!mediaStore.getFileByName(file.name)) {
+          mediaStore.importFile(file);
+        }
+
+        return;
+      }
+
+      // For audio: add loading placeholder immediately
+      if (isAudio) {
+        const { clips: currentClips, updateDuration } = get();
+
+        const audioClip: TimelineClip = {
+          id: clipId,
+          trackId,
+          name: file.name,
+          file,
+          startTime,
+          duration: estimatedDuration,
+          inPoint: 0,
+          outPoint: estimatedDuration,
+          source: { type: 'audio', naturalDuration: estimatedDuration },
+          transform: { ...DEFAULT_TRANSFORM },
+          isLoading: true,
+        };
+
+        set({ clips: [...currentClips, audioClip] });
+        updateDuration();
+
+        // Load audio in background
         const audio = document.createElement('audio');
         audio.src = URL.createObjectURL(file);
         audio.preload = 'metadata';
 
         await new Promise<void>((resolve) => {
-          audio.onloadedmetadata = () => {
-            naturalDuration = audio.duration;
-            resolve();
-          };
+          audio.onloadedmetadata = () => resolve();
           audio.onerror = () => resolve();
         });
 
-        source = {
-          type: 'audio',
-          audioElement: audio,
-          naturalDuration,
-        };
+        const naturalDuration = audio.duration || estimatedDuration;
 
-        // Generate waveform for standalone audio
+        // Generate waveform
+        let waveform: number[] = [];
         try {
-          const waveformData = await generateWaveform(file);
-          console.log('[Timeline] Generated waveform for', file.name);
-          (source as any)._waveform = waveformData;
+          waveform = await generateWaveform(file);
         } catch (e) {
           console.warn('Failed to generate waveform:', e);
         }
-      } else if (isImage) {
+
+        updateClip(clipId, {
+          duration: naturalDuration,
+          outPoint: naturalDuration,
+          source: { type: 'audio', audioElement: audio, naturalDuration },
+          waveform,
+          isLoading: false,
+        });
+
+        // Sync to media store
+        const mediaStore = useMediaStore.getState();
+        if (!mediaStore.getFileByName(file.name)) {
+          mediaStore.importFile(file);
+        }
+
+        return;
+      }
+
+      // For images: add loading placeholder immediately
+      if (isImage) {
+        const { clips: currentClips, updateDuration } = get();
+
+        const imageClip: TimelineClip = {
+          id: clipId,
+          trackId,
+          name: file.name,
+          file,
+          startTime,
+          duration: estimatedDuration,
+          inPoint: 0,
+          outPoint: estimatedDuration,
+          source: { type: 'image', naturalDuration: estimatedDuration },
+          transform: { ...DEFAULT_TRANSFORM },
+          isLoading: true,
+        };
+
+        set({ clips: [...currentClips, imageClip] });
+        updateDuration();
+
+        // Load image in background
         const img = new Image();
         img.src = URL.createObjectURL(file);
 
@@ -426,7 +519,8 @@ export const useTimelineStore = create<TimelineStore>()(
           img.onerror = () => resolve();
         });
 
-        // Generate single thumbnail for image
+        // Generate thumbnail
+        let thumbnails: string[] = [];
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         if (ctx) {
@@ -438,30 +532,18 @@ export const useTimelineStore = create<TimelineStore>()(
           thumbnails = [canvas.toDataURL('image/jpeg', 0.6)];
         }
 
-        source = {
-          type: 'image',
-          imageElement: img,
-          naturalDuration: 5, // Default 5 seconds for images
-        };
+        updateClip(clipId, {
+          source: { type: 'image', imageElement: img, naturalDuration: estimatedDuration },
+          thumbnails,
+          isLoading: false,
+        });
+
+        // Sync to media store
+        const mediaStore = useMediaStore.getState();
+        if (!mediaStore.getFileByName(file.name)) {
+          mediaStore.importFile(file);
+        }
       }
-
-      const newClip: TimelineClip = {
-        id: clipId,
-        trackId,
-        name: file.name,
-        file,
-        startTime,
-        duration: naturalDuration,
-        inPoint: 0,
-        outPoint: naturalDuration,
-        source,
-        thumbnails,
-        transform: { ...DEFAULT_TRANSFORM },
-      };
-
-      const { clips, updateDuration } = get();
-      set({ clips: [...clips, newClip] });
-      updateDuration();
     },
 
     removeClip: (id) => {
@@ -615,6 +697,43 @@ export const useTimelineStore = create<TimelineStore>()(
 
     setScrollX: (scrollX) => {
       set({ scrollX: Math.max(0, scrollX) });
+    },
+
+    // In/Out marker actions
+    setInPoint: (time) => {
+      const { outPoint, duration } = get();
+      if (time === null) {
+        set({ inPoint: null });
+        return;
+      }
+      // Ensure in point doesn't exceed out point or duration
+      const clampedTime = Math.max(0, Math.min(time, outPoint ?? duration));
+      set({ inPoint: clampedTime });
+    },
+
+    setOutPoint: (time) => {
+      const { inPoint, duration } = get();
+      if (time === null) {
+        set({ outPoint: null });
+        return;
+      }
+      // Ensure out point doesn't precede in point and doesn't exceed duration
+      const clampedTime = Math.max(inPoint ?? 0, Math.min(time, duration));
+      set({ outPoint: clampedTime });
+    },
+
+    clearInOut: () => {
+      set({ inPoint: null, outPoint: null });
+    },
+
+    setInPointAtPlayhead: () => {
+      const { playheadPosition } = get();
+      get().setInPoint(playheadPosition);
+    },
+
+    setOutPointAtPlayhead: () => {
+      const { playheadPosition } = get();
+      get().setOutPoint(playheadPosition);
     },
 
     // Utils

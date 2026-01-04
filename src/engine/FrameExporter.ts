@@ -202,7 +202,19 @@ export class FrameExporter {
 
         await this.seekAllClipsToTime(time);
         const layers = this.buildLayersAtTime(time);
+
+        if (frame === 0) {
+          console.log(`[FrameExporter] First frame layers:`, layers.length, layers.map(l => l.name));
+        }
+
+        if (layers.length === 0) {
+          console.warn(`[FrameExporter] No layers at time ${time}`);
+        }
+
         engine.render(layers);
+
+        // Wait for GPU to finish rendering
+        await new Promise(resolve => requestAnimationFrame(resolve));
 
         const pixels = await engine.readPixels();
         if (!pixels) {
@@ -265,7 +277,7 @@ export class FrameExporter {
 
   private seekVideo(video: HTMLVideoElement, time: number): Promise<void> {
     return new Promise((resolve) => {
-      if (Math.abs(video.currentTime - time) < 0.001) {
+      if (Math.abs(video.currentTime - time) < 0.001 && !video.seeking) {
         resolve();
         return;
       }
@@ -273,12 +285,18 @@ export class FrameExporter {
       const timeout = setTimeout(() => {
         console.warn('[FrameExporter] Seek timeout');
         resolve();
-      }, 1000);
+      }, 2000);
 
       const onSeeked = () => {
         clearTimeout(timeout);
         video.removeEventListener('seeked', onSeeked);
-        requestAnimationFrame(() => resolve());
+        // Wait for video frame to be actually available
+        // Use requestVideoFrameCallback if available, otherwise double rAF
+        if ('requestVideoFrameCallback' in video) {
+          (video as any).requestVideoFrameCallback(() => resolve());
+        } else {
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        }
       };
 
       video.addEventListener('seeked', onSeeked);

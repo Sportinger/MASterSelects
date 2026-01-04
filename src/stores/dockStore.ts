@@ -49,6 +49,7 @@ const DEFAULT_LAYOUT: DockLayout = {
               { id: 'media', type: 'media', title: 'Media' },
               { id: 'clip-properties', type: 'clip-properties', title: 'Properties' },
               { id: 'effects', type: 'effects', title: 'Effects' },
+              { id: 'export', type: 'export', title: 'Export' },
               // Slots panel disabled - uses same layer system as timeline, causing conflicts
               // TODO: Create separate timelineLayers system for proper separation
             ],

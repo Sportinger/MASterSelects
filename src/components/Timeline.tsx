@@ -15,6 +15,8 @@ export function Timeline() {
     scrollX,
     isPlaying,
     selectedClipId,
+    inPoint,
+    outPoint,
     addTrack,
     addClip,
     moveClip,
@@ -27,6 +29,11 @@ export function Timeline() {
     play,
     pause,
     stop,
+    setInPoint,
+    setOutPoint,
+    setInPointAtPlayhead,
+    setOutPointAtPlayhead,
+    clearInOut,
     getSnappedPosition,
     findNonOverlappingPosition,
   } = useTimelineStore();
@@ -61,6 +68,13 @@ export function Timeline() {
     altKey: boolean;  // If true, don't trim linked clip
   } | null>(null);
 
+  // In/Out marker drag state
+  const [markerDrag, setMarkerDrag] = useState<{
+    type: 'in' | 'out';
+    startX: number;
+    originalTime: number;
+  } | null>(null);
+
   // External file drag preview state
   const [externalDrag, setExternalDrag] = useState<{
     trackId: string;
@@ -72,14 +86,15 @@ export function Timeline() {
   } | null>(null);
   const dragCounterRef = useRef(0); // Track drag enter/leave balance
 
-  // Space key to toggle play/pause (global, works regardless of focus)
+  // Keyboard shortcuts (global, works regardless of focus)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Only handle space if not typing in an input
+      // Only handle if not typing in an input
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
         return;
       }
 
+      // Space: toggle play/pause
       if (e.code === 'Space' || e.key === ' ') {
         e.preventDefault();
         if (isPlaying) {
@@ -87,12 +102,34 @@ export function Timeline() {
         } else {
           play();
         }
+        return;
+      }
+
+      // I: set In point at playhead
+      if (e.key === 'i' || e.key === 'I') {
+        e.preventDefault();
+        setInPointAtPlayhead();
+        return;
+      }
+
+      // O: set Out point at playhead
+      if (e.key === 'o' || e.key === 'O') {
+        e.preventDefault();
+        setOutPointAtPlayhead();
+        return;
+      }
+
+      // X: clear In/Out points
+      if (e.key === 'x' || e.key === 'X') {
+        e.preventDefault();
+        clearInOut();
+        return;
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPlaying, play, pause]);
+  }, [isPlaying, play, pause, setInPointAtPlayhead, setOutPointAtPlayhead, clearInOut]);
 
   // Track last seek time to throttle during scrubbing
   const lastSeekRef = useRef<{ [clipId: string]: number }>({});
@@ -401,6 +438,53 @@ export function Timeline() {
     e.stopPropagation();
     setIsDraggingPlayhead(true);
   };
+
+  // Handle In/Out marker drag
+  const handleMarkerMouseDown = (e: React.MouseEvent, type: 'in' | 'out') => {
+    e.stopPropagation();
+    e.preventDefault();
+    const originalTime = type === 'in' ? inPoint : outPoint;
+    if (originalTime === null) return;
+
+    setMarkerDrag({
+      type,
+      startX: e.clientX,
+      originalTime,
+    });
+  };
+
+  // Handle marker dragging
+  useEffect(() => {
+    if (!markerDrag) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!timelineRef.current) return;
+      const rect = timelineRef.current.getBoundingClientRect();
+      const x = e.clientX - rect.left + scrollX;
+      const time = Math.max(0, Math.min(pixelToTime(x), duration));
+
+      if (markerDrag.type === 'in') {
+        // In point can't exceed out point
+        const maxTime = outPoint !== null ? outPoint : duration;
+        setInPoint(Math.min(time, maxTime));
+      } else {
+        // Out point can't precede in point
+        const minTime = inPoint !== null ? inPoint : 0;
+        setOutPoint(Math.max(time, minTime));
+      }
+    };
+
+    const handleMouseUp = () => {
+      setMarkerDrag(null);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [markerDrag, scrollX, duration, inPoint, outPoint, setInPoint, setOutPoint]);
 
   useEffect(() => {
     if (!isDraggingPlayhead) return;
@@ -865,7 +949,8 @@ export function Timeline() {
       isLinkedToDragging ? 'linked-dragging' : '',
       isTrimming ? 'trimming' : '',
       isLinkedToTrimming ? 'linked-trimming' : '',
-      clip.source?.type || 'video'
+      clip.source?.type || 'video',
+      clip.isLoading ? 'loading' : ''
     ].filter(Boolean).join(' ');
 
     return (
@@ -900,6 +985,7 @@ export function Timeline() {
           </div>
         )}
         <div className="clip-content">
+          {clip.isLoading && <div className="clip-loading-spinner" />}
           <span className="clip-name">{clip.name}</span>
           <span className="clip-duration">{formatTime(displayDuration)}</span>
         </div>
@@ -933,6 +1019,31 @@ export function Timeline() {
           <button className="btn btn-sm" onClick={() => setZoom(zoom - 10)}>−</button>
           <span>{Math.round(zoom)}px/s</span>
           <button className="btn btn-sm" onClick={() => setZoom(zoom + 10)}>+</button>
+        </div>
+        <div className="timeline-inout-controls">
+          <button
+            className={`btn btn-sm ${inPoint !== null ? 'btn-active' : ''}`}
+            onClick={setInPointAtPlayhead}
+            title="Set In point (I)"
+          >
+            I
+          </button>
+          <button
+            className={`btn btn-sm ${outPoint !== null ? 'btn-active' : ''}`}
+            onClick={setOutPointAtPlayhead}
+            title="Set Out point (O)"
+          >
+            O
+          </button>
+          {(inPoint !== null || outPoint !== null) && (
+            <button
+              className="btn btn-sm"
+              onClick={clearInOut}
+              title="Clear In/Out (X)"
+            >
+              X
+            </button>
+          )}
         </div>
         <div className="timeline-tracks-controls">
           <button className="btn btn-sm" onClick={() => addTrack('video')}>+ Video Track</button>
@@ -1066,6 +1177,62 @@ export function Timeline() {
               className="snap-line"
               style={{ left: timeToPixel(clipDrag.snappedTime) }}
             />
+          )}
+
+          {/* In/Out work area - grey out regions outside */}
+          {(inPoint !== null || outPoint !== null) && (
+            <>
+              {/* Grey overlay before In point */}
+              {inPoint !== null && inPoint > 0 && (
+                <div
+                  className="work-area-overlay before"
+                  style={{
+                    left: 0,
+                    width: timeToPixel(inPoint),
+                  }}
+                />
+              )}
+              {/* Grey overlay after Out point */}
+              {outPoint !== null && (
+                <div
+                  className="work-area-overlay after"
+                  style={{
+                    left: timeToPixel(outPoint),
+                    width: timeToPixel(duration - outPoint),
+                  }}
+                />
+              )}
+            </>
+          )}
+
+          {/* In point marker */}
+          {inPoint !== null && (
+            <div
+              className={`in-out-marker in-marker ${markerDrag?.type === 'in' ? 'dragging' : ''}`}
+              style={{ left: timeToPixel(inPoint) }}
+              title={`In: ${formatTime(inPoint)} (drag to move)`}
+            >
+              <div
+                className="marker-flag"
+                onMouseDown={(e) => handleMarkerMouseDown(e, 'in')}
+              >I</div>
+              <div className="marker-line" />
+            </div>
+          )}
+
+          {/* Out point marker */}
+          {outPoint !== null && (
+            <div
+              className={`in-out-marker out-marker ${markerDrag?.type === 'out' ? 'dragging' : ''}`}
+              style={{ left: timeToPixel(outPoint) }}
+              title={`Out: ${formatTime(outPoint)} (drag to move)`}
+            >
+              <div
+                className="marker-flag"
+                onMouseDown={(e) => handleMarkerMouseDown(e, 'out')}
+              >O</div>
+              <div className="marker-line" />
+            </div>
           )}
 
           {/* Playhead */}
