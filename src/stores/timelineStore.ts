@@ -2,7 +2,16 @@
 
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
-import type { TimelineClip, TimelineTrack } from '../types';
+import type { TimelineClip, TimelineTrack, ClipTransform, BlendMode } from '../types';
+
+// Default transform for new clips
+const DEFAULT_TRANSFORM: ClipTransform = {
+  opacity: 1,
+  blendMode: 'normal',
+  position: { x: 0, y: 0, z: 0 },
+  scale: { x: 1, y: 1 },
+  rotation: { x: 0, y: 0, z: 0 },
+};
 
 // Generate waveform data from audio file
 async function generateWaveform(file: File, sampleCount: number = 200): Promise<number[]> {
@@ -114,6 +123,7 @@ interface TimelineStore {
   moveClip: (id: string, newStartTime: number, newTrackId?: string, skipLinked?: boolean) => void;
   trimClip: (id: string, inPoint: number, outPoint: number) => void;
   selectClip: (id: string | null) => void;
+  updateClipTransform: (id: string, transform: Partial<ClipTransform>) => void;
 
   // Playback actions
   setPlayheadPosition: (position: number) => void;
@@ -508,6 +518,31 @@ export const useTimelineStore = create<TimelineStore>()(
 
     selectClip: (id) => {
       set({ selectedClipId: id });
+    },
+
+    updateClipTransform: (id, transform) => {
+      const { clips } = get();
+      set({
+        clips: clips.map(c => {
+          if (c.id !== id) return c;
+          return {
+            ...c,
+            transform: {
+              ...c.transform,
+              ...transform,
+              position: transform.position
+                ? { ...c.transform.position, ...transform.position }
+                : c.transform.position,
+              scale: transform.scale
+                ? { ...c.transform.scale, ...transform.scale }
+                : c.transform.scale,
+              rotation: transform.rotation
+                ? { ...c.transform.rotation, ...transform.rotation }
+                : c.transform.rotation,
+            },
+          };
+        }),
+      });
     },
 
     // Playback actions

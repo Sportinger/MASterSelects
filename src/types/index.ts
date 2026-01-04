@@ -85,6 +85,14 @@ export interface EngineStats {
 }
 
 // Timeline types
+export interface ClipTransform {
+  opacity: number;          // 0-1
+  blendMode: BlendMode;
+  position: { x: number; y: number; z: number };
+  scale: { x: number; y: number };
+  rotation: { x: number; y: number; z: number };  // degrees
+}
+
 export interface TimelineClip {
   id: string;
   trackId: string;
@@ -104,6 +112,7 @@ export interface TimelineClip {
   thumbnails?: string[];  // Array of data URLs for filmstrip preview
   linkedClipId?: string;  // ID of linked clip (e.g., audio linked to video)
   waveform?: number[];    // Array of normalized amplitude values (0-1) for audio waveform
+  transform: ClipTransform;  // Visual transform properties
 }
 
 export interface TimelineTrack {
