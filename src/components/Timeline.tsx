@@ -108,17 +108,22 @@ export function Timeline() {
   }, [isDraggingPlayhead, clips]);
 
   // Sync timeline playback with Preview - update mixer layers based on clips at playhead
+  // IMPORTANT: This uses batched updates to prevent flickering from race conditions
   useEffect(() => {
     const clipsAtTime = getClipsAtTime(playheadPosition);
-    const { layers } = useMixerStore.getState();
+    const currentLayers = useMixerStore.getState().layers;
 
     // Get video tracks sorted by index (for layer order)
     const videoTracks = tracks.filter(t => t.type === 'video');
 
-    // Update each layer based on timeline clips
+    // Build new layers array atomically - don't setState inside loop!
+    const newLayers = [...currentLayers];
+    let layersChanged = false;
+
+    // Process each video layer and collect updates
     videoTracks.forEach((track, layerIndex) => {
       const clip = clipsAtTime.find(c => c.trackId === track.id);
-      const layer = layers[layerIndex];
+      const layer = currentLayers[layerIndex];
 
       if (clip?.source?.videoElement) {
         // Seek video to correct position within clip
@@ -153,7 +158,7 @@ export function Timeline() {
           video.pause();
         }
 
-        // Update mixer layer - apply clip's transform properties
+        // Check if layer needs update
         const transform = clip.transform;
         const needsUpdate = !layer ||
           layer.source?.videoElement !== video ||
@@ -166,8 +171,7 @@ export function Timeline() {
           layer.rotation !== (transform.rotation.z * Math.PI / 180);
 
         if (needsUpdate) {
-          const currentLayers = [...useMixerStore.getState().layers];
-          currentLayers[layerIndex] = {
+          newLayers[layerIndex] = {
             id: `timeline_layer_${layerIndex}`,
             name: clip.name,
             visible: track.visible,
@@ -180,12 +184,12 @@ export function Timeline() {
             effects: [],
             position: { x: transform.position.x, y: transform.position.y },
             scale: { x: transform.scale.x, y: transform.scale.y },
-            rotation: transform.rotation.z * Math.PI / 180, // Convert degrees to radians
+            rotation: transform.rotation.z * Math.PI / 180,
           };
-          useMixerStore.setState({ layers: currentLayers });
+          layersChanged = true;
         }
       } else if (clip?.source?.imageElement) {
-        // Handle image clips - apply clip's transform properties
+        // Handle image clips
         const img = clip.source.imageElement;
         const transform = clip.transform;
         const needsUpdate = !layer ||
@@ -199,8 +203,7 @@ export function Timeline() {
           layer.rotation !== (transform.rotation.z * Math.PI / 180);
 
         if (needsUpdate) {
-          const currentLayers = [...useMixerStore.getState().layers];
-          currentLayers[layerIndex] = {
+          newLayers[layerIndex] = {
             id: `timeline_layer_${layerIndex}`,
             name: clip.name,
             visible: track.visible,
@@ -215,17 +218,21 @@ export function Timeline() {
             scale: { x: transform.scale.x, y: transform.scale.y },
             rotation: transform.rotation.z * Math.PI / 180,
           };
-          useMixerStore.setState({ layers: currentLayers });
+          layersChanged = true;
         }
       } else {
         // No clip at this position - clear the layer
         if (layer?.source) {
-          const currentLayers = [...useMixerStore.getState().layers];
-          currentLayers[layerIndex] = undefined as any;
-          useMixerStore.setState({ layers: currentLayers });
+          newLayers[layerIndex] = undefined as any;
+          layersChanged = true;
         }
       }
     });
+
+    // Single atomic update for all layer changes - prevents flickering!
+    if (layersChanged) {
+      useMixerStore.setState({ layers: newLayers });
+    }
 
     // Handle audio tracks - sync audio elements with playhead
     const audioTracks = tracks.filter(t => t.type === 'audio');

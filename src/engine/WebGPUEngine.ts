@@ -572,7 +572,13 @@ export class WebGPUEngine {
 
     // Check if source is valid
     if (source instanceof HTMLVideoElement) {
+      // readyState >= 2 means HAVE_CURRENT_DATA (has at least one frame)
+      // Also check we're not in middle of seeking which can cause blank frames
       if (source.readyState < 2 || source.videoWidth === 0 || source.videoHeight === 0) {
+        return null;
+      }
+      // Skip if video is seeking - frame might not be ready
+      if (source.seeking) {
         return null;
       }
     } else if (source instanceof VideoFrame) {

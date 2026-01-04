@@ -49,7 +49,8 @@ const DEFAULT_LAYOUT: DockLayout = {
               { id: 'media', type: 'media', title: 'Media' },
               { id: 'clip-properties', type: 'clip-properties', title: 'Properties' },
               { id: 'effects', type: 'effects', title: 'Effects' },
-              { id: 'slots', type: 'slots', title: 'Slots' },
+              // Slots panel disabled - uses same layer system as timeline, causing conflicts
+              // TODO: Create separate timelineLayers system for proper separation
             ],
             activeIndex: 0,
           },
@@ -95,7 +96,7 @@ interface DockState {
   bringToFront: (floatingId: string) => void;
 
   // Drag state actions
-  startDrag: (panel: DockPanel, sourceGroupId: string, offset: { x: number; y: number }) => void;
+  startDrag: (panel: DockPanel, sourceGroupId: string, offset: { x: number; y: number }, initialPos?: { x: number; y: number }) => void;
   updateDrag: (pos: { x: number; y: number }, dropTarget: DropTarget | null) => void;
   endDrag: () => void;
   cancelDrag: () => void;
@@ -252,7 +253,7 @@ export const useDockStore = create<DockState>()(
           }));
         },
 
-        startDrag: (panel, sourceGroupId, offset) => {
+        startDrag: (panel, sourceGroupId, offset, initialPos) => {
           set({
             dragState: {
               isDragging: true,
@@ -260,7 +261,7 @@ export const useDockStore = create<DockState>()(
               sourceGroupId,
               dropTarget: null,
               dragOffset: offset,
-              currentPos: { x: 0, y: 0 },
+              currentPos: initialPos || { x: 0, y: 0 },
             },
           });
         },

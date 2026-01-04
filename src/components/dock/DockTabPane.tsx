@@ -81,9 +81,8 @@ export function DockTabPane({ group }: DockTabPaneProps) {
       if (holdStartRef.current) {
         setHoldProgress('ready');
         const { panel: p, offset: o, mousePos: pos } = holdStartRef.current;
-        startDrag(p, group.id, o);
-        // Initialize drag position with stored mouse pos
-        updateDrag(pos, null);
+        // Start drag with correct initial position
+        startDrag(p, group.id, o, pos);
         // Reset hold state after drag starts
         setTimeout(() => {
           setHoldProgress('idle');
@@ -91,18 +90,17 @@ export function DockTabPane({ group }: DockTabPaneProps) {
         }, 100);
       }
     }, HOLD_DURATION);
-  }, [group.id, setActiveTab, startDrag, updateDrag]);
+  }, [group.id, setActiveTab, startDrag]);
 
   const handleTabMouseUp = useCallback(() => {
-    cancelHold();
-  }, [cancelHold]);
-
-  const handleTabMouseLeaveForHold = useCallback(() => {
-    // If holding but not yet dragging, cancel
+    // Only cancel if we're still in holding phase (not yet dragging)
     if (holdProgress === 'holding') {
       cancelHold();
     }
   }, [holdProgress, cancelHold]);
+
+  // Note: We don't cancel on mouse leave anymore - user can move mouse during hold
+  // The global mouseup handler will cancel if they release early
 
   // Clean up timer on unmount and handle global mouse events during hold
   useEffect(() => {
@@ -197,7 +195,6 @@ export function DockTabPane({ group }: DockTabPaneProps) {
               onClick={() => handleTabClick(index)}
               onMouseDown={(e) => handleTabMouseDown(e, panel, index)}
               onMouseUp={handleTabMouseUp}
-              onMouseLeave={handleTabMouseLeaveForHold}
             >
               <span className="dock-tab-title">{panel.title}</span>
             </div>

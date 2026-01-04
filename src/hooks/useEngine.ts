@@ -37,7 +37,7 @@ export function useEngine() {
     }
   }, [isEngineReady]);
 
-  // Render loop - optimized to pass layers directly
+  // Render loop - optimized with layer snapshotting to prevent flickering
   useEffect(() => {
     if (!isEngineReady) return;
 
@@ -46,11 +46,16 @@ export function useEngine() {
 
     const renderFrame = () => {
       try {
-        // Get current layers from store (avoid closure stale data)
-        const currentLayers = useMixerStore.getState().layers;
+        // IMPORTANT: Snapshot layers array at start of frame to ensure consistency
+        // This prevents flickering from reading partially updated state
+        const layersSnapshot = useMixerStore.getState().layers;
 
-        // Render
-        engine.render(currentLayers);
+        // Create a stable copy for this frame (shallow copy is sufficient
+        // since we only read from it, never modify)
+        const frameLayers = layersSnapshot.slice();
+
+        // Render with snapshotted layers
+        engine.render(frameLayers);
 
         // Throttle stats updates to reduce React re-renders
         const now = performance.now();
