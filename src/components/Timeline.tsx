@@ -748,6 +748,7 @@ export function Timeline() {
 
     // Single atomic update for all layer changes - prevents flickering!
     if (layersChanged) {
+      console.log('[LayerSync] Updating layers, count:', newLayers.length, 'types:', newLayers.map(l => l?.source?.type).join(','));
       useMixerStore.setState({ layers: newLayers });
     }
 
