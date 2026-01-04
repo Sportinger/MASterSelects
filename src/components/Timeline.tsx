@@ -20,6 +20,7 @@ export function Timeline() {
     outPoint,
     addTrack,
     addClip,
+    addCompClip,
     moveClip,
     trimClip,
     removeClip,
@@ -951,7 +952,13 @@ export function Timeline() {
     const x = e.clientX - rect.left + scrollX;
     const startTime = pixelToTime(x);
 
-    // Check if dragging from MediaPanel
+    // Check if dragging composition from MediaPanel
+    if (e.dataTransfer.types.includes('application/x-composition-id')) {
+      setExternalDrag({ trackId, startTime, x: e.clientX, y: e.clientY, duration: 5, isVideo: true });
+      return;
+    }
+
+    // Check if dragging media file from MediaPanel
     if (e.dataTransfer.types.includes('application/x-media-file-id')) {
       // We can't access the data during dragenter, but we can show a preview
       // The actual mediaFileId will be read on drop
@@ -1001,11 +1008,12 @@ export function Timeline() {
     e.dataTransfer.dropEffect = 'copy';
 
     // Check if dragging from MediaPanel or external files
+    const isCompDrag = e.dataTransfer.types.includes('application/x-composition-id');
     const isMediaPanelDrag = e.dataTransfer.types.includes('application/x-media-file-id');
     const isFileDrag = e.dataTransfer.types.includes('Files');
 
     // Update preview position
-    if ((isMediaPanelDrag || isFileDrag) && timelineRef.current) {
+    if ((isCompDrag || isMediaPanelDrag || isFileDrag) && timelineRef.current) {
       const rect = timelineRef.current.getBoundingClientRect();
       const x = e.clientX - rect.left + scrollX;
       const startTime = pixelToTime(x);
@@ -1072,6 +1080,21 @@ export function Timeline() {
 
     dragCounterRef.current = 0;
     setExternalDrag(null);
+
+    // Check for composition from MediaPanel
+    const compositionId = e.dataTransfer.getData('application/x-composition-id');
+    if (compositionId) {
+      const mediaStore = useMediaStore.getState();
+      const comp = mediaStore.compositions.find(c => c.id === compositionId);
+      if (comp) {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const x = e.clientX - rect.left + scrollX;
+        const startTime = pixelToTime(x);
+        // Add composition as a clip (uses composition duration)
+        addCompClip(trackId, comp, Math.max(0, startTime));
+        return;
+      }
+    }
 
     // Check for media file from MediaPanel
     const mediaFileId = e.dataTransfer.getData('application/x-media-file-id');

@@ -141,15 +141,32 @@ export function MediaPanel() {
     closeContextMenu();
   }, [createFolder, closeContextMenu]);
 
-  // Handle drag start for media files (to drag to Timeline)
+  // Handle drag start for media files and compositions (to drag to Timeline)
   const handleDragStart = useCallback((e: React.DragEvent, item: ProjectItem) => {
-    // Only allow dragging media files (not folders or compositions)
-    if ('isExpanded' in item || item.type === 'composition') {
+    // Don't allow dragging folders
+    if ('isExpanded' in item) {
       e.preventDefault();
       return;
     }
 
-    // Get the file from the media item
+    // Handle composition drag
+    if (item.type === 'composition') {
+      const comp = item as Composition;
+      // Don't allow dragging comp into itself (check active comp)
+      const { activeCompositionId } = useMediaStore.getState();
+      if (comp.id === activeCompositionId) {
+        e.preventDefault();
+        return;
+      }
+      e.dataTransfer.setData('application/x-composition-id', comp.id);
+      e.dataTransfer.effectAllowed = 'copy';
+      if (e.currentTarget instanceof HTMLElement) {
+        e.dataTransfer.setDragImage(e.currentTarget, 10, 10);
+      }
+      return;
+    }
+
+    // Handle media file drag
     const mediaFile = item as MediaFile;
     if (!mediaFile.file) {
       // File not available (e.g., after page refresh)
@@ -174,14 +191,17 @@ export function MediaPanel() {
     const isRenaming = renamingId === item.id;
     const isExpanded = isFolder && expandedFolderIds.includes(item.id);
     const isMediaFile = !isFolder && item.type !== 'composition';
+    const isComposition = item.type === 'composition';
     const hasFile = isMediaFile && 'file' in item && !!(item as MediaFile).file;
+    // Compositions are always draggable, media files only if they have the blob
+    const canDrag = isComposition || hasFile;
 
     return (
       <div key={item.id}>
         <div
           className={`media-item ${isSelected ? 'selected' : ''} ${isFolder ? 'folder' : ''} ${isMediaFile && !hasFile ? 'no-file' : ''}`}
           style={{ paddingLeft: `${12 + depth * 16}px` }}
-          draggable={isMediaFile && hasFile}
+          draggable={canDrag}
           onDragStart={(e) => handleDragStart(e, item)}
           onClick={(e) => handleItemClick(item.id, e)}
           onDoubleClick={() => handleItemDoubleClick(item)}

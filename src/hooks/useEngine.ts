@@ -69,12 +69,7 @@ export function useEngine() {
         // since we only read from it, never modify)
         const frameLayers = layersSnapshot.slice();
 
-        // Skip if no layers to render
-        if (frameLayers.length === 0 || frameLayers.every(l => !l?.source)) {
-          return;
-        }
-
-        // Render with snapshotted layers
+        // Render with snapshotted layers (engine handles empty layers by clearing to black)
         engine.render(frameLayers);
 
         // Throttle stats updates to reduce React re-renders (every 100ms for responsive display)

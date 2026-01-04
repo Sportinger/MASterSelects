@@ -2,8 +2,9 @@
 
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
-import type { TimelineClip, TimelineTrack, ClipTransform, BlendMode, CompositionTimelineData, SerializableClip } from '../types';
+import type { TimelineClip, TimelineTrack, ClipTransform, CompositionTimelineData, SerializableClip } from '../types';
 import { useMediaStore } from './mediaStore';
+import { useMixerStore } from './mixerStore';
 import { WebCodecsPlayer } from '../engine/WebCodecsPlayer';
 
 // Default transform for new clips
@@ -151,6 +152,7 @@ interface TimelineStore {
 
   // Clip actions
   addClip: (trackId: string, file: File, startTime: number, estimatedDuration?: number) => Promise<void>;
+  addCompClip: (trackId: string, composition: import('./mediaStore').Composition, startTime: number) => void;
   removeClip: (id: string) => void;
   moveClip: (id: string, newStartTime: number, newTrackId?: string, skipLinked?: boolean) => void;
   trimClip: (id: string, inPoint: number, outPoint: number) => void;
@@ -627,6 +629,39 @@ export const useTimelineStore = create<TimelineStore>()(
         // Invalidate RAM preview cache - new content added
         get().invalidateCache();
       }
+    },
+
+    // Add a composition as a clip (nested composition)
+    addCompClip: (trackId, composition, startTime) => {
+      const { clips, updateDuration, findNonOverlappingPosition } = get();
+
+      const clipId = `clip-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+      // Find non-overlapping position
+      const finalStartTime = findNonOverlappingPosition(clipId, startTime, trackId, composition.duration);
+
+      const compClip: TimelineClip = {
+        id: clipId,
+        trackId,
+        name: composition.name,
+        file: new File([], composition.name), // Placeholder file
+        startTime: finalStartTime,
+        duration: composition.duration,
+        inPoint: 0,
+        outPoint: composition.duration,
+        source: {
+          type: 'video', // Comp clips are treated as video
+          naturalDuration: composition.duration,
+        },
+        transform: { ...DEFAULT_TRANSFORM },
+        isLoading: false,
+        isComposition: true,
+        compositionId: composition.id,
+      };
+
+      set({ clips: [...clips, compClip] });
+      updateDuration();
+      get().invalidateCache();
     },
 
     removeClip: (id) => {
@@ -1582,6 +1617,9 @@ export const useTimelineStore = create<TimelineStore>()(
           clip.source.webCodecsPlayer.destroy();
         }
       });
+
+      // Clear mixer store layers so preview shows black
+      useMixerStore.setState({ layers: [] });
 
       set({
         clips: [],
