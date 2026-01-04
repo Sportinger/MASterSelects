@@ -561,6 +561,11 @@ export function Timeline() {
     e.stopPropagation();
     e.preventDefault();
 
+    // IMMEDIATELY cancel RAM preview before any seeking to prevent race condition
+    if (isRamPreviewing) {
+      cancelRamPreview();
+    }
+
     // Jump playhead immediately
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left + scrollX;
@@ -574,6 +579,10 @@ export function Timeline() {
   // Handle playhead drag
   const handlePlayheadMouseDown = (e: React.MouseEvent) => {
     e.stopPropagation();
+    // IMMEDIATELY cancel RAM preview before any seeking to prevent race condition
+    if (isRamPreviewing) {
+      cancelRamPreview();
+    }
     setIsDraggingPlayhead(true);
   };
 

@@ -1059,10 +1059,14 @@ export const useTimelineStore = create<TimelineStore>()(
       }
     },
 
-    cancelRamPreview: async () => {
-      const { engine } = await import('../engine/WebGPUEngine');
-      engine.setGeneratingRamPreview(false);
+    cancelRamPreview: () => {
+      // IMMEDIATELY set state to cancel the loop - this must be synchronous!
+      // The RAM preview loop checks !get().isRamPreviewing to know when to stop
       set({ isRamPreviewing: false, ramPreviewProgress: null });
+      // Then async cleanup the engine
+      import('../engine/WebGPUEngine').then(({ engine }) => {
+        engine.setGeneratingRamPreview(false);
+      });
     },
 
     clearRamPreview: async () => {
