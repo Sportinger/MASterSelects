@@ -13,6 +13,9 @@ export function Preview() {
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 1920, height: 1080 });
 
+  // Overlay padding to show handles/outlines beyond canvas bounds
+  const OVERLAY_PADDING = 100;
+
   // Edit mode state
   const [editMode, setEditMode] = useState(false);
   const [viewZoom, setViewZoom] = useState(1);
@@ -127,6 +130,11 @@ export function Preview() {
     const draw = () => {
       ctx.clearRect(0, 0, overlayRef.current!.width, overlayRef.current!.height);
 
+      // The overlay canvas is larger than the video canvas by OVERLAY_PADDING on each side
+      // So the video canvas area starts at (OVERLAY_PADDING, OVERLAY_PADDING)
+      const videoCanvasWidth = overlayRef.current!.width - OVERLAY_PADDING * 2;
+      const videoCanvasHeight = overlayRef.current!.height - OVERLAY_PADDING * 2;
+
       // Get visible layers (from timeline clips)
       const visibleLayers = layers.filter(l => l?.visible && l?.source);
 
@@ -137,8 +145,9 @@ export function Preview() {
           clips.find(c => c.id === selectedClipId)?.name === layer.name;
 
         // Calculate bounding box based on layer transform
-        const centerX = overlayRef.current!.width / 2;
-        const centerY = overlayRef.current!.height / 2;
+        // Center is now offset by OVERLAY_PADDING
+        const centerX = OVERLAY_PADDING + videoCanvasWidth / 2;
+        const centerY = OVERLAY_PADDING + videoCanvasHeight / 2;
 
         // Get source dimensions
         let sourceWidth = outputResolution.width;
@@ -156,8 +165,8 @@ export function Preview() {
         const sourceAspect = sourceWidth / sourceHeight;
         const outputAspect = outputResolution.width / outputResolution.height;
 
-        let displayWidth = overlayRef.current!.width;
-        let displayHeight = overlayRef.current!.height;
+        let displayWidth = videoCanvasWidth;
+        let displayHeight = videoCanvasHeight;
 
         if (sourceAspect > outputAspect) {
           // Source is wider - fit to width
@@ -172,8 +181,8 @@ export function Preview() {
         displayHeight *= layer.scale.y;
 
         // Apply layer position (in normalized coordinates)
-        const posX = centerX + layer.position.x * (overlayRef.current!.width / 2);
-        const posY = centerY - layer.position.y * (overlayRef.current!.height / 2);
+        const posX = centerX + layer.position.x * (videoCanvasWidth / 2);
+        const posY = centerY - layer.position.y * (videoCanvasHeight / 2);
 
         // Save context for rotation
         ctx.save();
@@ -226,13 +235,11 @@ export function Preview() {
         ctx.restore();
       });
 
-      // Draw canvas bounds indicator when zoomed out
-      if (viewZoom < 1) {
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([10, 10]);
-        ctx.strokeRect(0, 0, overlayRef.current!.width, overlayRef.current!.height);
-      }
+      // Draw canvas bounds indicator (the dashed line showing video bounds)
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([10, 10]);
+      ctx.strokeRect(OVERLAY_PADDING, OVERLAY_PADDING, videoCanvasWidth, videoCanvasHeight);
     };
 
     draw();
@@ -254,14 +261,18 @@ export function Preview() {
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
+    // The overlay canvas is larger than the video canvas by OVERLAY_PADDING
+    const videoCanvasWidth = overlayRef.current.width - OVERLAY_PADDING * 2;
+    const videoCanvasHeight = overlayRef.current.height - OVERLAY_PADDING * 2;
+
     // Check which layer was clicked (in reverse order - top layers first)
     const visibleLayers = layers.filter(l => l?.visible && l?.source).reverse();
 
     for (const layer of visibleLayers) {
       if (!layer) continue;
 
-      const centerX = overlayRef.current.width / 2;
-      const centerY = overlayRef.current.height / 2;
+      const centerX = OVERLAY_PADDING + videoCanvasWidth / 2;
+      const centerY = OVERLAY_PADDING + videoCanvasHeight / 2;
 
       let sourceWidth = outputResolution.width;
       let sourceHeight = outputResolution.height;
@@ -277,8 +288,8 @@ export function Preview() {
       const sourceAspect = sourceWidth / sourceHeight;
       const outputAspect = outputResolution.width / outputResolution.height;
 
-      let displayWidth = overlayRef.current.width;
-      let displayHeight = overlayRef.current.height;
+      let displayWidth = videoCanvasWidth;
+      let displayHeight = videoCanvasHeight;
 
       if (sourceAspect > outputAspect) {
         displayHeight = displayWidth / sourceAspect;
@@ -289,8 +300,8 @@ export function Preview() {
       displayWidth *= layer.scale.x;
       displayHeight *= layer.scale.y;
 
-      const posX = centerX + layer.position.x * (overlayRef.current.width / 2);
-      const posY = centerY - layer.position.y * (overlayRef.current.height / 2);
+      const posX = centerX + layer.position.x * (videoCanvasWidth / 2);
+      const posY = centerY - layer.position.y * (videoCanvasHeight / 2);
 
       // Simple bounding box hit test (ignoring rotation for simplicity)
       const halfW = displayWidth / 2;
@@ -378,13 +389,15 @@ export function Preview() {
             {editMode && (
               <canvas
                 ref={overlayRef}
-                width={canvasSize.width}
-                height={canvasSize.height}
+                width={canvasSize.width + OVERLAY_PADDING * 2}
+                height={canvasSize.height + OVERLAY_PADDING * 2}
                 className="preview-overlay"
                 onClick={handleOverlayClick}
                 style={{
-                  width: canvasSize.width,
-                  height: canvasSize.height,
+                  width: canvasSize.width + OVERLAY_PADDING * 2,
+                  height: canvasSize.height + OVERLAY_PADDING * 2,
+                  left: -OVERLAY_PADDING,
+                  top: -OVERLAY_PADDING,
                 }}
               />
             )}

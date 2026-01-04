@@ -97,6 +97,9 @@ function seekVideo(video: HTMLVideoElement, time: number): Promise<void> {
   });
 }
 
+// Snap threshold in seconds (clips will snap when within this distance)
+const SNAP_THRESHOLD_SECONDS = 0.1;
+
 interface TimelineStore {
   // State
   tracks: TimelineTrack[];
@@ -140,6 +143,8 @@ interface TimelineStore {
   getClipsAtTime: (time: number) => TimelineClip[];
   updateDuration: () => void;
   findAvailableAudioTrack: (startTime: number, duration: number) => string;
+  getSnappedPosition: (clipId: string, desiredStartTime: number, trackId: string) => { startTime: number; snapped: boolean };
+  findNonOverlappingPosition: (clipId: string, desiredStartTime: number, trackId: string, duration: number) => number;
 }
 
 const DEFAULT_TRACKS: TimelineTrack[] = [
@@ -469,9 +474,11 @@ export const useTimelineStore = create<TimelineStore>()(
     },
 
     moveClip: (id, newStartTime, newTrackId, skipLinked = false) => {
-      const { clips, tracks, updateDuration } = get();
+      const { clips, tracks, updateDuration, getSnappedPosition, findNonOverlappingPosition } = get();
       const movingClip = clips.find(c => c.id === id);
       if (!movingClip) return;
+
+      const targetTrackId = newTrackId ?? movingClip.trackId;
 
       // Validate track type if changing tracks
       if (newTrackId && newTrackId !== movingClip.trackId) {
@@ -492,8 +499,26 @@ export const useTimelineStore = create<TimelineStore>()(
         }
       }
 
+      // Apply snapping first
+      const { startTime: snappedTime } = getSnappedPosition(id, newStartTime, targetTrackId);
+
+      // Then find non-overlapping position
+      const finalStartTime = findNonOverlappingPosition(id, snappedTime, targetTrackId, movingClip.duration);
+
       // Calculate time delta to apply to linked clips
-      const timeDelta = newStartTime - movingClip.startTime;
+      const timeDelta = finalStartTime - movingClip.startTime;
+
+      // For linked clip, also find non-overlapping position
+      const linkedClip = clips.find(c => c.id === movingClip.linkedClipId || c.linkedClipId === id);
+      let linkedFinalTime = linkedClip ? linkedClip.startTime + timeDelta : 0;
+      if (linkedClip && !skipLinked) {
+        linkedFinalTime = findNonOverlappingPosition(
+          linkedClip.id,
+          linkedClip.startTime + timeDelta,
+          linkedClip.trackId,
+          linkedClip.duration
+        );
+      }
 
       set({
         clips: clips.map(c => {
@@ -501,15 +526,15 @@ export const useTimelineStore = create<TimelineStore>()(
           if (c.id === id) {
             return {
               ...c,
-              startTime: Math.max(0, newStartTime),
-              trackId: newTrackId ?? c.trackId,
+              startTime: Math.max(0, finalStartTime),
+              trackId: targetTrackId,
             };
           }
           // Also move linked clip (keep it in sync) - unless skipLinked is true
           if (!skipLinked && (c.id === movingClip.linkedClipId || c.linkedClipId === id)) {
             return {
               ...c,
-              startTime: Math.max(0, c.startTime + timeDelta),
+              startTime: Math.max(0, linkedFinalTime),
               // Keep linked clip on its own track (don't change track)
             };
           }
@@ -633,6 +658,146 @@ export const useTimelineStore = create<TimelineStore>()(
       const newTrack = updatedTracks[updatedTracks.length - 1];
       console.log('[Timeline] Created new audio track:', newTrack.name);
       return newTrack.id;
+    },
+
+    // Get snapped position - snaps to edges of other clips on the same track
+    getSnappedPosition: (clipId: string, desiredStartTime: number, trackId: string) => {
+      const { clips } = get();
+      const movingClip = clips.find(c => c.id === clipId);
+      if (!movingClip) return { startTime: desiredStartTime, snapped: false };
+
+      const clipDuration = movingClip.duration;
+      const desiredEndTime = desiredStartTime + clipDuration;
+
+      // Get other clips on the same track (excluding the moving clip and its linked clip)
+      const otherClips = clips.filter(c =>
+        c.trackId === trackId &&
+        c.id !== clipId &&
+        c.id !== movingClip.linkedClipId &&
+        c.linkedClipId !== clipId
+      );
+
+      let snappedStart = desiredStartTime;
+      let snapped = false;
+      let minSnapDistance = SNAP_THRESHOLD_SECONDS;
+
+      // Check snap points
+      for (const clip of otherClips) {
+        const clipEnd = clip.startTime + clip.duration;
+
+        // Snap start of moving clip to end of other clip
+        const distToEnd = Math.abs(desiredStartTime - clipEnd);
+        if (distToEnd < minSnapDistance) {
+          snappedStart = clipEnd;
+          minSnapDistance = distToEnd;
+          snapped = true;
+        }
+
+        // Snap start of moving clip to start of other clip
+        const distToStart = Math.abs(desiredStartTime - clip.startTime);
+        if (distToStart < minSnapDistance) {
+          snappedStart = clip.startTime;
+          minSnapDistance = distToStart;
+          snapped = true;
+        }
+
+        // Snap end of moving clip to start of other clip
+        const distEndToStart = Math.abs(desiredEndTime - clip.startTime);
+        if (distEndToStart < minSnapDistance) {
+          snappedStart = clip.startTime - clipDuration;
+          minSnapDistance = distEndToStart;
+          snapped = true;
+        }
+
+        // Snap end of moving clip to end of other clip
+        const distEndToEnd = Math.abs(desiredEndTime - clipEnd);
+        if (distEndToEnd < minSnapDistance) {
+          snappedStart = clipEnd - clipDuration;
+          minSnapDistance = distEndToEnd;
+          snapped = true;
+        }
+      }
+
+      // Also snap to timeline start (0)
+      if (Math.abs(desiredStartTime) < SNAP_THRESHOLD_SECONDS) {
+        snappedStart = 0;
+        snapped = true;
+      }
+
+      return { startTime: Math.max(0, snappedStart), snapped };
+    },
+
+    // Find a valid non-overlapping position for a clip
+    findNonOverlappingPosition: (clipId: string, desiredStartTime: number, trackId: string, duration: number) => {
+      const { clips } = get();
+      const movingClip = clips.find(c => c.id === clipId);
+
+      // Get other clips on the same track (excluding the moving clip and its linked clip)
+      const otherClips = clips.filter(c =>
+        c.trackId === trackId &&
+        c.id !== clipId &&
+        (movingClip ? c.id !== movingClip.linkedClipId && c.linkedClipId !== clipId : true)
+      ).sort((a, b) => a.startTime - b.startTime);
+
+      const desiredEndTime = desiredStartTime + duration;
+
+      // Check if desired position overlaps with any clip
+      let overlappingClip: TimelineClip | null = null;
+      for (const clip of otherClips) {
+        const clipEnd = clip.startTime + clip.duration;
+        // Check if time ranges overlap
+        if (!(desiredEndTime <= clip.startTime || desiredStartTime >= clipEnd)) {
+          overlappingClip = clip;
+          break;
+        }
+      }
+
+      // If no overlap, use desired position
+      if (!overlappingClip) {
+        return Math.max(0, desiredStartTime);
+      }
+
+      // There's an overlap - push clip to the nearest edge
+      const overlappingEnd = overlappingClip.startTime + overlappingClip.duration;
+
+      // Check which side is closer
+      const distToStart = Math.abs(desiredStartTime - overlappingClip.startTime);
+      const distToEnd = Math.abs(desiredStartTime - overlappingEnd);
+
+      if (distToStart < distToEnd) {
+        // Push to left side (end at overlapping clip's start)
+        const newStart = overlappingClip.startTime - duration;
+
+        // Check if this position overlaps with another clip
+        const wouldOverlap = otherClips.some(c => {
+          if (c.id === overlappingClip!.id) return false;
+          const cEnd = c.startTime + c.duration;
+          const newEnd = newStart + duration;
+          return !(newEnd <= c.startTime || newStart >= cEnd);
+        });
+
+        if (!wouldOverlap && newStart >= 0) {
+          return newStart;
+        }
+      }
+
+      // Push to right side (start at overlapping clip's end)
+      const newStart = overlappingEnd;
+
+      // Check if this position overlaps with another clip
+      const wouldOverlap = otherClips.some(c => {
+        if (c.id === overlappingClip!.id) return false;
+        const cEnd = c.startTime + c.duration;
+        const newEnd = newStart + duration;
+        return !(newEnd <= c.startTime || newStart >= cEnd);
+      });
+
+      if (!wouldOverlap) {
+        return newStart;
+      }
+
+      // As a fallback, return the desired position (shouldn't happen often)
+      return Math.max(0, desiredStartTime);
     },
   }))
 );

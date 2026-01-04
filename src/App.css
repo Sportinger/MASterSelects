@@ -1514,6 +1514,17 @@ input[type="checkbox"] {
   margin-left: 0;
 }
 
+/* Snap indicator line */
+.snap-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--success, #4ade80);
+  z-index: 99;
+  pointer-events: none;
+  box-shadow: 0 0 8px var(--success, #4ade80);
+}
 
 /* Audio Waveform */
 .clip-waveform {
@@ -1840,10 +1851,13 @@ input[type="checkbox"] {
 
 .preview-overlay {
   position: absolute;
-  top: 0;
-  left: 0;
   pointer-events: auto;
   z-index: 10;
+}
+
+/* Allow overlay to extend beyond video bounds in edit mode */
+.preview-canvas-wrapper {
+  overflow: visible !important;
 }
 
 .preview-edit-hint {

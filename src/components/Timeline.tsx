@@ -27,6 +27,8 @@ export function Timeline() {
     play,
     pause,
     stop,
+    getSnappedPosition,
+    findNonOverlappingPosition,
   } = useTimelineStore();
 
 
@@ -42,6 +44,8 @@ export function Timeline() {
     grabOffsetX: number;  // Where on the clip we grabbed (in pixels)
     currentX: number;     // Current mouse X position
     currentTrackId: string;
+    snappedTime: number | null;  // Snapped position (if snapping)
+    isSnapping: boolean;         // Whether currently snapping
   } | null>(null);
 
   // Clip trimming state
@@ -442,6 +446,8 @@ export function Timeline() {
       grabOffsetX,
       currentX: e.clientX,
       currentTrackId: clip.trackId,
+      snappedTime: null,
+      isSnapping: false,
     });
   };
 
@@ -450,7 +456,7 @@ export function Timeline() {
     if (!clipDrag) return;
 
     const handleMouseMove = (e: MouseEvent) => {
-      if (!trackLanesRef.current) return;
+      if (!trackLanesRef.current || !timelineRef.current) return;
 
       // Find which track the mouse is over
       const lanesRect = trackLanesRef.current.getBoundingClientRect();
@@ -468,10 +474,20 @@ export function Timeline() {
         currentY += track.height;
       }
 
+      // Calculate current drag position in time
+      const rect = timelineRef.current.getBoundingClientRect();
+      const x = e.clientX - rect.left + scrollX - clipDrag.grabOffsetX;
+      const rawTime = Math.max(0, pixelToTime(x));
+
+      // Check for snapping
+      const { startTime: snappedTime, snapped } = getSnappedPosition(clipDrag.clipId, rawTime, newTrackId);
+
       setClipDrag(prev => prev ? {
         ...prev,
         currentX: e.clientX,
         currentTrackId: newTrackId,
+        snappedTime: snapped ? snappedTime : null,
+        isSnapping: snapped,
       } : null);
     };
 
@@ -482,7 +498,7 @@ export function Timeline() {
       const x = e.clientX - rect.left + scrollX - clipDrag.grabOffsetX;
       const newStartTime = Math.max(0, pixelToTime(x));
 
-      // Move clip to new position and track
+      // Move clip to new position and track (store handles snapping and collision)
       moveClip(clipDrag.clipId, newStartTime, clipDrag.currentTrackId);
       setClipDrag(null);
     };
@@ -493,7 +509,7 @@ export function Timeline() {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [clipDrag, tracks, scrollX, moveClip, pixelToTime]);
+  }, [clipDrag, tracks, scrollX, moveClip, pixelToTime, getSnappedPosition]);
 
   // Handle trim start (mousedown on trim handle)
   const handleTrimStart = (e: React.MouseEvent, clipId: string, edge: 'left' | 'right') => {
@@ -802,17 +818,27 @@ export function Timeline() {
 
     const width = timeToPixel(displayDuration);
 
-    // Calculate position - if dragging, use live position from mouse
+    // Calculate position - if dragging, use snapped position if available
     let left = timeToPixel(displayStartTime);
     if (isDragging && clipDrag && timelineRef.current) {
-      const rect = timelineRef.current.getBoundingClientRect();
-      const x = clipDrag.currentX - rect.left + scrollX - clipDrag.grabOffsetX;
-      left = Math.max(0, x);
+      // Use snapped time if snapping, otherwise raw position
+      if (clipDrag.isSnapping && clipDrag.snappedTime !== null) {
+        left = timeToPixel(clipDrag.snappedTime);
+      } else {
+        const rect = timelineRef.current.getBoundingClientRect();
+        const x = clipDrag.currentX - rect.left + scrollX - clipDrag.grabOffsetX;
+        left = Math.max(0, x);
+      }
     } else if (isLinkedToDragging && clipDrag && timelineRef.current && draggedClip) {
-      // Move linked clip in sync
-      const rect = timelineRef.current.getBoundingClientRect();
-      const dragX = clipDrag.currentX - rect.left + scrollX - clipDrag.grabOffsetX;
-      const newDragTime = pixelToTime(Math.max(0, dragX));
+      // Move linked clip in sync - use snapped position if available
+      let newDragTime: number;
+      if (clipDrag.isSnapping && clipDrag.snappedTime !== null) {
+        newDragTime = clipDrag.snappedTime;
+      } else {
+        const rect = timelineRef.current.getBoundingClientRect();
+        const dragX = clipDrag.currentX - rect.left + scrollX - clipDrag.grabOffsetX;
+        newDragTime = pixelToTime(Math.max(0, dragX));
+      }
       const timeDelta = newDragTime - draggedClip.startTime;
       left = timeToPixel(Math.max(0, clip.startTime + timeDelta));
     }
@@ -1032,6 +1058,14 @@ export function Timeline() {
                 </div>
               </div>
             </div>
+          )}
+
+          {/* Snap indicator line - shows when clip is snapping to another */}
+          {clipDrag?.isSnapping && clipDrag.snappedTime !== null && (
+            <div
+              className="snap-line"
+              style={{ left: timeToPixel(clipDrag.snappedTime) }}
+            />
           )}
 
           {/* Playhead */}
