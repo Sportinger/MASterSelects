@@ -140,7 +140,7 @@ interface TimelineStore {
 
 
   // Clip actions
-  addClip: (trackId: string, file: File, startTime: number) => Promise<void>;
+  addClip: (trackId: string, file: File, startTime: number, estimatedDuration?: number) => Promise<void>;
   removeClip: (id: string) => void;
   moveClip: (id: string, newStartTime: number, newTrackId?: string, skipLinked?: boolean) => void;
   trimClip: (id: string, inPoint: number, outPoint: number) => void;
@@ -288,7 +288,7 @@ export const useTimelineStore = create<TimelineStore>()(
     },
 
     // Clip actions
-    addClip: async (trackId, file, startTime) => {
+    addClip: async (trackId, file, startTime, providedDuration) => {
       const isVideo = file.type.startsWith('video/');
       const isAudio = file.type.startsWith('audio/');
       const isImage = file.type.startsWith('image/');
@@ -316,8 +316,8 @@ export const useTimelineStore = create<TimelineStore>()(
       const clipId = `clip-${Date.now()}`;
       const audioClipId = isVideo ? `clip-audio-${Date.now()}` : undefined;
 
-      // Estimate initial duration (will be updated when media loads)
-      const estimatedDuration = 5;
+      // Use provided duration or estimate (will be updated when media loads)
+      const estimatedDuration = providedDuration ?? 5;
 
       // Helper to update clip when loaded
       const updateClip = (id: string, updates: Partial<TimelineClip>) => {

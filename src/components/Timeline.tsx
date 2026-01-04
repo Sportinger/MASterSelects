@@ -902,6 +902,10 @@ export function Timeline() {
   // Handle external file drop on track
   const handleTrackDrop = (e: React.DragEvent, trackId: string) => {
     e.preventDefault();
+
+    // Get cached duration before clearing state
+    const cachedDuration = externalDrag?.duration ?? dragDurationCacheRef.current?.duration;
+
     dragCounterRef.current = 0;
     setExternalDrag(null);
 
@@ -911,7 +915,7 @@ export function Timeline() {
         const rect = e.currentTarget.getBoundingClientRect();
         const x = e.clientX - rect.left + scrollX;
         const startTime = pixelToTime(x);
-        addClip(trackId, file, Math.max(0, startTime));
+        addClip(trackId, file, Math.max(0, startTime), cachedDuration);
       }
     }
   };
