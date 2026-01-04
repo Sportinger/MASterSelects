@@ -873,6 +873,15 @@ export const useTimelineStore = create<TimelineStore>()(
 
           const time = frameTimes[frame];
 
+          // Skip frames that are already cached (reuse existing work)
+          const quantizedTime = Math.round(time * 30) / 30;
+          if (get().cachedFrameTimes.has(quantizedTime)) {
+            // Update progress even for skipped frames
+            const progress = ((frame + 1) / totalFrames) * 100;
+            set({ ramPreviewProgress: progress });
+            continue;
+          }
+
           // Get clips at this time
           const clipsAtTime = clips.filter(c =>
             time >= c.startTime && time < c.startTime + c.duration
