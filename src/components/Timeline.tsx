@@ -175,7 +175,6 @@ export function Timeline() {
     // - Scrubbing
     // - No clips on timeline
     if (isPlaying || isRamPreviewing || isDraggingPlayhead || clips.length === 0) {
-      console.log('[RAM Preview] Skipping auto-render:', { isPlaying, isRamPreviewing, isDraggingPlayhead, clipsCount: clips.length });
       return;
     }
 
@@ -185,7 +184,6 @@ export function Timeline() {
 
     // Skip if range is too small
     if (renderEnd - renderStart < 0.1) {
-      console.log('[RAM Preview] Range too small:', renderEnd - renderStart);
       return;
     }
 
@@ -193,19 +191,14 @@ export function Timeline() {
     if (ramPreviewRange &&
         ramPreviewRange.start <= renderStart &&
         ramPreviewRange.end >= renderEnd) {
-      console.log('[RAM Preview] Already cached for range');
       return;
     }
-
-    console.log('[RAM Preview] Starting 2-second idle timer for range:', renderStart, '-', renderEnd);
 
     // Start timer to auto-render after 2 seconds of idle
     idleTimerRef.current = setTimeout(() => {
       // Double-check conditions before starting
       const state = useTimelineStore.getState();
-      console.log('[RAM Preview] Timer fired, checking state:', { isPlaying: state.isPlaying, isRamPreviewing: state.isRamPreviewing });
       if (!state.isPlaying && !state.isRamPreviewing) {
-        console.log('[RAM Preview] Auto-starting after idle');
         startRamPreview();
       }
     }, 2000);

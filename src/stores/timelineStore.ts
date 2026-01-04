@@ -132,6 +132,7 @@ interface TimelineStore {
   cachedFrameTimes: Set<number>;  // Set of quantized times that are cached
   addCachedFrame: (time: number) => void;
   getCachedRanges: () => Array<{ start: number; end: number }>;
+  invalidateCache: () => void;  // Clear cache when content changes
 
   // Track actions
   addTrack: (type: 'video' | 'audio') => void;
@@ -458,6 +459,8 @@ export const useTimelineStore = create<TimelineStore>()(
         if (!mediaStore.getFileByName(file.name)) {
           mediaStore.importFile(file);
         }
+        // Invalidate RAM preview cache - new video content added
+        get().invalidateCache();
 
         return;
       }
@@ -516,6 +519,8 @@ export const useTimelineStore = create<TimelineStore>()(
         if (!mediaStore.getFileByName(file.name)) {
           mediaStore.importFile(file);
         }
+        // Invalidate RAM preview cache - audio affects composition
+        get().invalidateCache();
 
         return;
       }
@@ -574,6 +579,8 @@ export const useTimelineStore = create<TimelineStore>()(
         if (!mediaStore.getFileByName(file.name)) {
           mediaStore.importFile(file);
         }
+        // Invalidate RAM preview cache - new content added
+        get().invalidateCache();
       }
     },
 
@@ -584,6 +591,8 @@ export const useTimelineStore = create<TimelineStore>()(
         selectedClipId: selectedClipId === id ? null : selectedClipId,
       });
       updateDuration();
+      // Invalidate RAM preview cache - content changed
+      get().invalidateCache();
     },
 
     moveClip: (id, newStartTime, newTrackId, skipLinked = false) => {
@@ -655,6 +664,8 @@ export const useTimelineStore = create<TimelineStore>()(
         }),
       });
       updateDuration();
+      // Invalidate RAM preview cache - content changed
+      get().invalidateCache();
     },
 
     trimClip: (id, inPoint, outPoint) => {
@@ -672,6 +683,8 @@ export const useTimelineStore = create<TimelineStore>()(
         }),
       });
       updateDuration();
+      // Invalidate RAM preview cache - content changed
+      get().invalidateCache();
     },
 
     selectClip: (id) => {
@@ -803,32 +816,46 @@ export const useTimelineStore = create<TimelineStore>()(
       const fps = 30; // Preview at 30fps
       const frameInterval = 1 / fps;
 
+      // Helper: check if there's a video clip at a given time
+      const hasVideoAt = (time: number) => {
+        return clips.some(c =>
+          time >= c.startTime &&
+          time < c.startTime + c.duration &&
+          (c.source?.type === 'video' || c.source?.type === 'image')
+        );
+      };
+
       // Generate frame times spreading outward from playhead
-      // Clamp playhead to the render range
+      // Only include times where there are video clips
       const centerTime = Math.max(start, Math.min(end, playheadPosition));
       const frameTimes: number[] = [];
 
-      // Add center frame first
-      frameTimes.push(centerTime);
+      // Add center frame if it has video
+      if (hasVideoAt(centerTime)) {
+        frameTimes.push(centerTime);
+      }
 
-      // Alternate left and right from center
+      // Alternate left and right from center, only adding frames with video
       let offset = frameInterval;
-      while (true) {
+      while (offset <= (end - start)) {
         const rightTime = centerTime + offset;
         const leftTime = centerTime - offset;
-        let addedAny = false;
 
-        if (rightTime <= end) {
+        if (rightTime <= end && hasVideoAt(rightTime)) {
           frameTimes.push(rightTime);
-          addedAny = true;
         }
-        if (leftTime >= start) {
+        if (leftTime >= start && hasVideoAt(leftTime)) {
           frameTimes.push(leftTime);
-          addedAny = true;
         }
 
-        if (!addedAny) break;
         offset += frameInterval;
+      }
+
+      // No frames to render
+      if (frameTimes.length === 0) {
+        engine.setGeneratingRamPreview(false);
+        set({ isRamPreviewing: false, ramPreviewProgress: null });
+        return;
       }
 
       const totalFrames = frameTimes.length;
@@ -1005,6 +1032,19 @@ export const useTimelineStore = create<TimelineStore>()(
       ranges.push({ start: rangeStart, end: rangeEnd + frameInterval });
 
       return ranges;
+    },
+
+    // Invalidate cache when content changes (clip moved, trimmed, etc.)
+    invalidateCache: () => {
+      // Cancel any ongoing RAM preview
+      set({ isRamPreviewing: false });
+      // Clear the cache
+      import('../engine/WebGPUEngine').then(({ engine }) => {
+        engine.setGeneratingRamPreview(false);
+        engine.clearCompositeCache();
+      });
+      // Clear cached frame times
+      set({ cachedFrameTimes: new Set(), ramPreviewRange: null, ramPreviewProgress: null });
     },
 
     // Utils
