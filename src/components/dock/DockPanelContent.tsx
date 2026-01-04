@@ -6,6 +6,7 @@ import { EffectsPanel } from '../EffectsPanel';
 import { ClipPropertiesPanel } from '../ClipPropertiesPanel';
 import { LayerPanel } from '../LayerPanel';
 import { Timeline } from '../Timeline';
+import { MediaPanel } from '../MediaPanel';
 
 interface DockPanelContentProps {
   type: PanelType;
@@ -23,6 +24,8 @@ export function DockPanelContent({ type }: DockPanelContentProps) {
       return <LayerPanel />;
     case 'timeline':
       return <Timeline />;
+    case 'media':
+      return <MediaPanel />;
     default:
       return <div className="panel-placeholder">Unknown panel: {type}</div>;
   }

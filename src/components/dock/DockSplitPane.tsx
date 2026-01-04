@@ -1,6 +1,6 @@
 // Split container with two children and resize handle
 
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import type { DockSplit } from '../../types/dock';
 import { useDockStore } from '../../stores/dockStore';
 import { DockNode } from './DockNode';
@@ -9,9 +9,14 @@ interface DockSplitPaneProps {
   split: DockSplit;
 }
 
+// Minimum sizes for panels (in pixels)
+const MIN_PANEL_SIZE = 150;
+const MIN_PREVIEW_HEIGHT = 200; // Preview needs more height for video
+
 export function DockSplitPane({ split }: DockSplitPaneProps) {
   const { setSplitRatio } = useDockStore();
   const [isResizing, setIsResizing] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const isHorizontal = split.direction === 'horizontal';
 
@@ -24,10 +29,11 @@ export function DockSplitPane({ split }: DockSplitPaneProps) {
     if (!isResizing) return;
 
     const handleMouseMove = (e: MouseEvent) => {
-      const container = document.querySelector(`[data-split-id="${split.id}"]`);
+      const container = containerRef.current;
       if (!container) return;
 
       const rect = container.getBoundingClientRect();
+      const dimension = isHorizontal ? rect.width : rect.height;
       let ratio: number;
 
       if (isHorizontal) {
@@ -35,6 +41,14 @@ export function DockSplitPane({ split }: DockSplitPaneProps) {
       } else {
         ratio = (e.clientY - rect.top) / rect.height;
       }
+
+      // Calculate min ratios based on pixel constraints
+      const minSize = isHorizontal ? MIN_PANEL_SIZE : MIN_PREVIEW_HEIGHT;
+      const minRatio = minSize / dimension;
+      const maxRatio = 1 - (MIN_PANEL_SIZE / dimension);
+
+      // Clamp ratio to respect minimum sizes
+      ratio = Math.max(minRatio, Math.min(maxRatio, ratio));
 
       setSplitRatio(split.id, ratio);
     };
@@ -54,14 +68,17 @@ export function DockSplitPane({ split }: DockSplitPaneProps) {
 
   const firstChildStyle = {
     [isHorizontal ? 'width' : 'height']: `calc(${split.ratio * 100}% - 2px)`,
+    [isHorizontal ? 'minWidth' : 'minHeight']: isHorizontal ? MIN_PANEL_SIZE : MIN_PREVIEW_HEIGHT,
   };
 
   const secondChildStyle = {
     [isHorizontal ? 'width' : 'height']: `calc(${(1 - split.ratio) * 100}% - 2px)`,
+    [isHorizontal ? 'minWidth' : 'minHeight']: MIN_PANEL_SIZE,
   };
 
   return (
     <div
+      ref={containerRef}
       className={`dock-split ${isHorizontal ? 'horizontal' : 'vertical'} ${isResizing ? 'resizing' : ''}`}
       data-split-id={split.id}
     >
