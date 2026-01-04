@@ -153,45 +153,67 @@ export function Timeline() {
           video.pause();
         }
 
-        // Update mixer layer if needed
-        if (!layer || layer.source?.videoElement !== video) {
+        // Update mixer layer - apply clip's transform properties
+        const transform = clip.transform;
+        const needsUpdate = !layer ||
+          layer.source?.videoElement !== video ||
+          layer.opacity !== transform.opacity ||
+          layer.blendMode !== transform.blendMode ||
+          layer.position.x !== transform.position.x ||
+          layer.position.y !== transform.position.y ||
+          layer.scale.x !== transform.scale.x ||
+          layer.scale.y !== transform.scale.y ||
+          layer.rotation !== (transform.rotation.z * Math.PI / 180);
+
+        if (needsUpdate) {
           const currentLayers = [...useMixerStore.getState().layers];
           currentLayers[layerIndex] = {
             id: `timeline_layer_${layerIndex}`,
-            name: `Timeline ${layerIndex + 1}`,
+            name: clip.name,
             visible: track.visible,
-            opacity: 1,
-            blendMode: 'normal',
+            opacity: transform.opacity,
+            blendMode: transform.blendMode,
             source: {
               type: 'video',
               videoElement: video,
             },
             effects: [],
-            position: { x: 0, y: 0 },
-            scale: { x: 1, y: 1 },
-            rotation: 0,
+            position: { x: transform.position.x, y: transform.position.y },
+            scale: { x: transform.scale.x, y: transform.scale.y },
+            rotation: transform.rotation.z * Math.PI / 180, // Convert degrees to radians
           };
           useMixerStore.setState({ layers: currentLayers });
         }
       } else if (clip?.source?.imageElement) {
-        // Handle image clips
+        // Handle image clips - apply clip's transform properties
         const img = clip.source.imageElement;
-        if (!layer || layer.source?.imageElement !== img) {
+        const transform = clip.transform;
+        const needsUpdate = !layer ||
+          layer.source?.imageElement !== img ||
+          layer.opacity !== transform.opacity ||
+          layer.blendMode !== transform.blendMode ||
+          layer.position.x !== transform.position.x ||
+          layer.position.y !== transform.position.y ||
+          layer.scale.x !== transform.scale.x ||
+          layer.scale.y !== transform.scale.y ||
+          layer.rotation !== (transform.rotation.z * Math.PI / 180);
+
+        if (needsUpdate) {
           const currentLayers = [...useMixerStore.getState().layers];
           currentLayers[layerIndex] = {
             id: `timeline_layer_${layerIndex}`,
-            name: `Timeline ${layerIndex + 1}`,
+            name: clip.name,
             visible: track.visible,
-            opacity: 1,
-            blendMode: 'normal',
+            opacity: transform.opacity,
+            blendMode: transform.blendMode,
             source: {
               type: 'image',
               imageElement: img,
             },
             effects: [],
-            position: { x: 0, y: 0 },
-            scale: { x: 1, y: 1 },
-            rotation: 0,
+            position: { x: transform.position.x, y: transform.position.y },
+            scale: { x: transform.scale.x, y: transform.scale.y },
+            rotation: transform.rotation.z * Math.PI / 180,
           };
           useMixerStore.setState({ layers: currentLayers });
         }
