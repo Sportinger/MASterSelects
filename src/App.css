@@ -844,6 +844,18 @@ body {
 
 .btn-active:hover:not(:disabled) {
   background: var(--accent-hover);
+}
+
+.btn-export {
+  background: linear-gradient(135deg, #00d4ff 0%, #00a8cc 100%);
+  border-color: #00d4ff;
+  color: #000;
+  font-weight: 600;
+}
+
+.btn-export:hover:not(:disabled) {
+  background: linear-gradient(135deg, #00e8ff 0%, #00b8e6 100%);
+  border-color: #00e8ff;
   border-color: var(--accent-hover);
 }
 
@@ -1708,4 +1720,147 @@ input[type="checkbox"] {
   height: 1px;
   background: var(--border-color);
   margin: 4px 0;
+}
+
+/* ========== PRECISION SLIDER ========== */
+.precision-slider {
+  flex: 1;
+  height: 20px;
+  cursor: ew-resize;
+  display: flex;
+  align-items: center;
+}
+
+.precision-slider-track {
+  width: 100%;
+  height: 4px;
+  background: var(--bg-primary);
+  border-radius: 2px;
+  position: relative;
+}
+
+.precision-slider-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.precision-slider-thumb {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  background: var(--accent);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.precision-slider:hover .precision-slider-thumb {
+  box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.3);
+}
+
+.precision-slider:active {
+  cursor: grabbing;
+}
+
+.precision-slider:active .precision-slider-thumb {
+  background: var(--accent-hover);
+  box-shadow: 0 0 0 4px rgba(0, 212, 255, 0.4);
+}
+
+/* ========== PREVIEW EDIT MODE ========== */
+.preview-container {
+  position: relative;
+  overflow: hidden;
+}
+
+.preview-controls {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 20;
+}
+
+.preview-edit-btn {
+  padding: 4px 10px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.preview-edit-btn:hover {
+  background: rgba(0, 0, 0, 0.8);
+  color: var(--text-primary);
+  border-color: #555;
+}
+
+.preview-edit-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #000;
+}
+
+.preview-zoom-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: rgba(0, 0, 0, 0.6);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-family: monospace;
+}
+
+.preview-reset-btn {
+  padding: 4px 8px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.preview-reset-btn:hover {
+  background: rgba(0, 0, 0, 0.8);
+  color: var(--text-primary);
+}
+
+.preview-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: auto;
+  z-index: 10;
+}
+
+.preview-edit-hint {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: var(--text-secondary);
+  background: rgba(0, 0, 0, 0.7);
+  padding: 4px 12px;
+  border-radius: 4px;
+  white-space: nowrap;
+  z-index: 20;
+}
+
+.preview-canvas-wrapper {
+  transform-origin: center center;
+  transition: transform 0.1s ease-out;
 }

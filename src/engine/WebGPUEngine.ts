@@ -199,6 +199,9 @@ export class WebGPUEngine {
   private frameTimeIndex = 0;
   private frameTimeCount = 0;
 
+  // Track which texture has the final composited frame (for export)
+  private lastRenderWasPing = false;
+
   // === FRAME CACHING FOR SMOOTH SCRUBBING ===
   // Last valid frame cache - keeps last frame visible during seeks
   private lastFrameTextures: Map<HTMLVideoElement, GPUTexture> = new Map();
@@ -313,13 +316,13 @@ export class WebGPUEngine {
     this.pingTexture = this.device.createTexture({
       size: [this.outputWidth, this.outputHeight],
       format: 'rgba8unorm',
-      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
     });
 
     this.pongTexture = this.device.createTexture({
       size: [this.outputWidth, this.outputHeight],
       format: 'rgba8unorm',
-      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
     });
 
     // Cache views
@@ -1021,6 +1024,8 @@ export class WebGPUEngine {
     this.profileData.renderPass = performance.now() - t2;
 
     this.lastLayerCount = this.layerRenderData.length;
+    // Track which buffer has the final composited result (readView after loop)
+    this.lastRenderWasPing = !usePing;
 
     // Get cached output bind group
     const finalIsPing = !usePing;
@@ -1183,6 +1188,67 @@ export class WebGPUEngine {
 
   getDevice(): GPUDevice | null {
     return this.device;
+  }
+
+  // Get output dimensions (for export)
+  getOutputDimensions(): { width: number; height: number } {
+    return { width: this.outputWidth, height: this.outputHeight };
+  }
+
+  // Read pixels from the final composited frame (for video export)
+  // Returns RGBA pixel data as Uint8ClampedArray
+  async readPixels(): Promise<Uint8ClampedArray | null> {
+    if (!this.device || !this.pingTexture || !this.pongTexture) return null;
+
+    // Determine which texture has the final composited frame
+    const sourceTexture = this.lastRenderWasPing ? this.pingTexture : this.pongTexture;
+
+    // WebGPU requires bytesPerRow to be aligned to 256 bytes
+    const bytesPerPixel = 4;
+    const unalignedBytesPerRow = this.outputWidth * bytesPerPixel;
+    const bytesPerRow = Math.ceil(unalignedBytesPerRow / 256) * 256;
+    const bufferSize = bytesPerRow * this.outputHeight;
+
+    // Create staging buffer for GPU -> CPU transfer
+    const stagingBuffer = this.device.createBuffer({
+      size: bufferSize,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+
+    // Copy texture to staging buffer
+    const commandEncoder = this.device.createCommandEncoder();
+    commandEncoder.copyTextureToBuffer(
+      { texture: sourceTexture },
+      { buffer: stagingBuffer, bytesPerRow, rowsPerImage: this.outputHeight },
+      [this.outputWidth, this.outputHeight]
+    );
+    this.device.queue.submit([commandEncoder.finish()]);
+
+    // Wait for GPU to finish and map buffer
+    await stagingBuffer.mapAsync(GPUMapMode.READ);
+    const arrayBuffer = stagingBuffer.getMappedRange();
+
+    // Copy data, removing row padding if any
+    const result = new Uint8ClampedArray(this.outputWidth * this.outputHeight * bytesPerPixel);
+    const srcView = new Uint8Array(arrayBuffer);
+
+    if (bytesPerRow === unalignedBytesPerRow) {
+      // No padding, direct copy
+      result.set(srcView.subarray(0, result.length));
+    } else {
+      // Remove row padding
+      for (let y = 0; y < this.outputHeight; y++) {
+        const srcOffset = y * bytesPerRow;
+        const dstOffset = y * unalignedBytesPerRow;
+        result.set(srcView.subarray(srcOffset, srcOffset + unalignedBytesPerRow), dstOffset);
+      }
+    }
+
+    // Cleanup
+    stagingBuffer.unmap();
+    stagingBuffer.destroy();
+
+    return result;
   }
 
   destroy(): void {
