@@ -99,8 +99,12 @@ export function DockTabPane({ group }: DockTabPaneProps) {
     }
   }, [holdProgress, cancelHold]);
 
-  // Note: We don't cancel on mouse leave anymore - user can move mouse during hold
-  // The global mouseup handler will cancel if they release early
+  const handleTabMouseLeave = useCallback(() => {
+    // Cancel hold if mouse leaves the tab before 500ms is reached
+    if (holdProgress === 'holding') {
+      cancelHold();
+    }
+  }, [holdProgress, cancelHold]);
 
   // Clean up timer on unmount and handle global mouse events during hold
   useEffect(() => {
@@ -202,6 +206,7 @@ export function DockTabPane({ group }: DockTabPaneProps) {
               onClick={() => handleTabClick(index)}
               onMouseDown={(e) => handleTabMouseDown(e, panel, index)}
               onMouseUp={handleTabMouseUp}
+              onMouseLeave={handleTabMouseLeave}
             >
               <span className="dock-tab-title">{panel.title}</span>
             </div>

@@ -93,6 +93,7 @@ export function Timeline() {
   // Track last seek time to throttle during scrubbing
   const lastSeekRef = useRef<{ [clipId: string]: number }>({});
   const pendingSeekRef = useRef<{ [clipId: string]: number }>({});
+  const lastCacheTimeRef = useRef<number>(0);
 
   // Apply pending seeks when scrubbing stops
   useEffect(() => {
@@ -159,9 +160,12 @@ export function Timeline() {
           video.pause();
         }
 
-        // Cache frame for smooth scrubbing (only when not seeking)
-        if (!video.seeking && video.readyState >= 2) {
+        // Cache frame for smooth scrubbing (only during normal playback, throttled)
+        // Don't cache while scrubbing - the video is seeking and frames aren't reliable
+        const now = performance.now();
+        if (!isDraggingPlayhead && !video.seeking && video.readyState >= 2 && now - lastCacheTimeRef.current > 100) {
           engine.cacheFrameAtTime(video, clipTime);
+          lastCacheTimeRef.current = now;
         }
 
         // Check if layer needs update
