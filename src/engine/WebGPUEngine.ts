@@ -135,8 +135,11 @@ export class WebGPUEngine {
   private sampler: GPUSampler | null = null;
   private layerUniformBuffer: GPUBuffer | null = null;
 
-  // Pre-allocated uniform data (12 floats = 48 bytes)
-  private uniformData = new Float32Array(12);
+  // Pre-allocated uniform data (12 x 4 bytes = 48 bytes)
+  // Using ArrayBuffer with typed views to handle mixed float/uint data
+  private uniformBuffer = new ArrayBuffer(48);
+  private uniformData = new Float32Array(this.uniformBuffer);
+  private uniformDataU32 = new Uint32Array(this.uniformBuffer);
 
   // Output windows
   private outputWindows: Map<string, OutputWindow> = new Map();
@@ -947,7 +950,7 @@ export class WebGPUEngine {
 
       // Update uniforms
       this.uniformData[0] = layer.opacity;
-      this.uniformData[1] = BLEND_MODE_MAP[layer.blendMode];
+      this.uniformDataU32[1] = BLEND_MODE_MAP[layer.blendMode]; // blendMode is u32 in shader
       this.uniformData[2] = layer.position.x;
       this.uniformData[3] = layer.position.y;
       this.uniformData[4] = layer.scale.x;
