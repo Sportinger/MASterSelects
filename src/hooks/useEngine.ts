@@ -50,16 +50,11 @@ export function useEngine() {
 
     const renderFrame = () => {
       try {
-        // Check if we should use RAM Preview cached frame instead of live render
-        const { playheadPosition, ramPreviewRange, isPlaying: timelinePlaying } = useTimelineStore.getState();
-        if (ramPreviewRange &&
-            playheadPosition >= ramPreviewRange.start &&
-            playheadPosition <= ramPreviewRange.end) {
-          // Try to render from RAM Preview cache
-          if (engine.renderCachedFrame(playheadPosition)) {
-            // Successfully rendered cached frame, skip live render
-            return;
-          }
+        // Always try to use cached frame first (works even during RAM preview rendering)
+        const { playheadPosition, isPlaying: timelinePlaying } = useTimelineStore.getState();
+        if (engine.renderCachedFrame(playheadPosition)) {
+          // Successfully rendered cached frame, skip live render
+          return;
         }
 
         // IMPORTANT: Snapshot layers array at start of frame to ensure consistency
