@@ -170,7 +170,16 @@ export const useTimelineStore = create<TimelineStore>()(
         muted: false,
         visible: true,
       };
-      set({ tracks: [...tracks, newTrack] });
+
+      // Video tracks: insert at TOP (before all existing video tracks)
+      // Audio tracks: insert at BOTTOM (after all existing audio tracks)
+      if (type === 'video') {
+        // Insert at index 0 (top of timeline)
+        set({ tracks: [newTrack, ...tracks] });
+      } else {
+        // Audio: append at end (bottom of timeline)
+        set({ tracks: [...tracks, newTrack] });
+      }
     },
 
     removeTrack: (id) => {
