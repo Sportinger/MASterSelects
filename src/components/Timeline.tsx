@@ -516,7 +516,8 @@ export function Timeline() {
           const loadKey = `${mediaFile.id}_${frameIndex}`;
 
           // Try to get frame from proxyFrameCache (might be sync if already cached)
-          const cachedInService = proxyFrameCache.getCachedFrame(mediaFile.id, frameIndex);
+          // Pass fps to trigger preloading of upcoming frames
+          const cachedInService = proxyFrameCache.getCachedFrame(mediaFile.id, frameIndex, proxyFps);
 
           console.log('[Proxy] Frame lookup:', frameIndex, 'cachedInService:', !!cachedInService, 'cachedLocal:', !!cached, 'cachedLocalFrame:', cached?.frameIndex);
 

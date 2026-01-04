@@ -26,11 +26,14 @@ class ProxyFrameCache {
   }
 
   // Synchronously get a frame if it's already in memory cache
-  getCachedFrame(mediaFileId: string, frameIndex: number): HTMLImageElement | null {
+  // Also triggers preloading of upcoming frames
+  getCachedFrame(mediaFileId: string, frameIndex: number, fps: number = 30): HTMLImageElement | null {
     const key = this.getKey(mediaFileId, frameIndex);
     const cached = this.cache.get(key);
     if (cached) {
       cached.timestamp = Date.now(); // Update for LRU
+      // Always preload upcoming frames
+      this.schedulePreload(mediaFileId, frameIndex, fps);
       return cached.image;
     }
     return null;
