@@ -161,6 +161,13 @@ export function Timeline() {
   // Auto-start RAM Preview after 2 seconds of idle (like After Effects)
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Cancel RAM preview when user starts playing or scrubbing (keep cached frames)
+  useEffect(() => {
+    if ((isPlaying || isDraggingPlayhead) && isRamPreviewing) {
+      cancelRamPreview();
+    }
+  }, [isPlaying, isDraggingPlayhead, isRamPreviewing, cancelRamPreview]);
+
   // Check for idle state and auto-start RAM preview
   useEffect(() => {
     // Clear any existing timer
