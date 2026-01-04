@@ -594,7 +594,11 @@ export class WebGPUEngine {
 
   // Create GPU texture from HTMLImageElement
   createImageTexture(image: HTMLImageElement): GPUTexture | null {
-    if (!this.device || image.width === 0 || image.height === 0) return null;
+    // Use naturalWidth/naturalHeight for images not added to DOM (like proxy frames)
+    const width = image.naturalWidth || image.width;
+    const height = image.naturalHeight || image.height;
+
+    if (!this.device || width === 0 || height === 0) return null;
 
     // Check cache first
     const cached = this.imageTextures.get(image);
@@ -602,7 +606,7 @@ export class WebGPUEngine {
 
     try {
       const texture = this.device.createTexture({
-        size: [image.width, image.height],
+        size: [width, height],
         format: 'rgba8unorm',
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
       });
@@ -610,7 +614,7 @@ export class WebGPUEngine {
       this.device.queue.copyExternalImageToTexture(
         { source: image },
         { texture },
-        [image.width, image.height]
+        [width, height]
       );
 
       this.imageTextures.set(image, texture);
