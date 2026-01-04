@@ -783,6 +783,9 @@ export const useTimelineStore = create<TimelineStore>()(
       // Import engine dynamically to avoid circular dependency
       const { engine } = await import('../engine/WebGPUEngine');
 
+      // Tell engine to skip preview updates for efficiency
+      engine.setGeneratingRamPreview(true);
+
       set({
         isRamPreviewing: true,
         ramPreviewProgress: 0,
@@ -903,11 +906,14 @@ export const useTimelineStore = create<TimelineStore>()(
       } catch (error) {
         console.error('[RAM Preview] Error:', error);
       } finally {
+        engine.setGeneratingRamPreview(false);
         set({ isRamPreviewing: false });
       }
     },
 
-    cancelRamPreview: () => {
+    cancelRamPreview: async () => {
+      const { engine } = await import('../engine/WebGPUEngine');
+      engine.setGeneratingRamPreview(false);
       set({ isRamPreviewing: false, ramPreviewProgress: null });
     },
 

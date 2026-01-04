@@ -795,7 +795,7 @@ export function Timeline() {
   };
 
   // Handle external file drag enter on track
-  const handleTrackDragEnter = async (e: React.DragEvent, trackId: string) => {
+  const handleTrackDragEnter = (e: React.DragEvent, trackId: string) => {
     e.preventDefault();
     dragCounterRef.current++;
 
@@ -805,7 +805,7 @@ export function Timeline() {
       const x = e.clientX - rect.left + scrollX;
       const startTime = pixelToTime(x);
 
-      // Try to get file duration (works in some browsers during drag)
+      // Check cache first for duration
       let duration: number | undefined;
       const items = e.dataTransfer.items;
       if (items && items.length > 0) {
@@ -813,17 +813,19 @@ export function Timeline() {
         if (item.kind === 'file') {
           const file = item.getAsFile();
           if (file && file.type.startsWith('video/')) {
-            // Check cache first
             const cacheKey = `${file.name}_${file.size}`;
             if (dragDurationCacheRef.current?.url === cacheKey) {
+              // Use cached duration
               duration = dragDurationCacheRef.current.duration;
             } else {
-              // Load duration async
-              const dur = await getVideoDurationQuick(file);
-              if (dur) {
-                duration = dur;
-                dragDurationCacheRef.current = { url: cacheKey, duration: dur };
-              }
+              // Load duration in background, update state when ready
+              getVideoDurationQuick(file).then(dur => {
+                if (dur) {
+                  dragDurationCacheRef.current = { url: cacheKey, duration: dur };
+                  // Update the externalDrag state with the loaded duration
+                  setExternalDrag(prev => prev ? { ...prev, duration: dur } : null);
+                }
+              });
             }
           }
         }
@@ -848,8 +850,8 @@ export function Timeline() {
       const targetTrack = tracks.find(t => t.id === trackId);
       const isVideoTrack = targetTrack?.type === 'video';
 
-      // Use cached duration from dragEnter or fallback to 5 seconds
-      const previewDuration = externalDrag?.duration ?? 5;
+      // Use cached duration from state, ref cache, or fallback to 5 seconds
+      const previewDuration = externalDrag?.duration ?? dragDurationCacheRef.current?.duration ?? 5;
 
       // For video tracks, find an available audio track for the linked audio clip preview
       let audioTrackId: string | undefined;
@@ -882,7 +884,7 @@ export function Timeline() {
         y: e.clientY,
         audioTrackId,
         isVideo: isVideoTrack,
-        duration: prev?.duration  // Keep cached duration
+        duration: prev?.duration ?? dragDurationCacheRef.current?.duration  // Keep cached duration
       }));
     }
   };

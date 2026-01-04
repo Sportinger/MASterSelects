@@ -796,6 +796,15 @@ export class WebGPUEngine {
     const pixels = await this.readPixels();
     if (!pixels) return;
 
+    // Debug: check if pixels have data
+    if (this.compositeCache.size === 0) {
+      let nonZero = 0;
+      for (let i = 0; i < Math.min(1000, pixels.length); i++) {
+        if (pixels[i] !== 0) nonZero++;
+      }
+      console.log(`[RAM Preview] First frame: ${nonZero} non-zero pixels in first 1000, size: ${this.outputWidth}x${this.outputHeight}`);
+    }
+
     // Create ImageData for CPU-side storage
     const imageData = new ImageData(
       new Uint8ClampedArray(pixels),
@@ -852,11 +861,30 @@ export class WebGPUEngine {
     return { count, maxFrames: this.maxCompositeCacheFrames, memoryMB };
   }
 
+  // Flag to skip preview updates during RAM preview generation
+  private isGeneratingRamPreview = false;
+
+  setGeneratingRamPreview(generating: boolean): void {
+    this.isGeneratingRamPreview = generating;
+  }
+
   // Render cached frame to preview canvas if available
   // Returns true if cached frame was used, false if live render needed
   renderCachedFrame(time: number): boolean {
-    const imageData = this.getCachedCompositeFrame(time);
-    if (!imageData || !this.previewContext) return false;
+    const key = this.quantizeTime(time);
+    const imageData = this.compositeCache.get(key);
+
+    if (!imageData) {
+      console.log(`[RAM Playback] No cache for time ${time} (key ${key}), cache size: ${this.compositeCache.size}`);
+      return false;
+    }
+
+    if (!this.previewContext) {
+      console.log('[RAM Playback] No preview context');
+      return false;
+    }
+
+    console.log(`[RAM Playback] Using cached frame for time ${time}, size: ${imageData.width}x${imageData.height}`);
 
     // Create a temporary canvas to convert ImageData to texture
     const tempCanvas = document.createElement('canvas');
@@ -1192,15 +1220,17 @@ export class WebGPUEngine {
       }
     }
 
-    // Render to preview
-    if (this.previewContext) {
+    // Render to preview (skip during RAM preview generation for efficiency)
+    if (this.previewContext && !this.isGeneratingRamPreview) {
       this.renderToCanvasCached(commandEncoder, this.previewContext, outputBindGroup);
     }
 
-    // Render to output windows
-    for (const output of this.outputWindows.values()) {
-      if (output.context) {
-        this.renderToCanvasCached(commandEncoder, output.context, outputBindGroup);
+    // Render to output windows (also skip during RAM preview)
+    if (!this.isGeneratingRamPreview) {
+      for (const output of this.outputWindows.values()) {
+        if (output.context) {
+          this.renderToCanvasCached(commandEncoder, output.context, outputBindGroup);
+        }
       }
     }
 
