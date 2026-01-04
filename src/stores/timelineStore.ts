@@ -1372,10 +1372,15 @@ export const useTimelineStore = create<TimelineStore>()(
       const { tracks, clips, playheadPosition, duration, zoom, scrollX, inPoint, outPoint, loopPlayback } = get();
 
       // Convert clips to serializable format (without DOM elements)
+      const mediaStore = useMediaStore.getState();
       const serializableClips: SerializableClip[] = clips.map(clip => {
         // Find the mediaFile ID by matching the file name in mediaStore
-        const mediaStore = useMediaStore.getState();
-        const mediaFile = mediaStore.files.find(f => f.name === clip.name || f.url === clip.file?.name);
+        // For linked audio clips (name ends with "(Audio)"), strip the suffix to find the video file
+        let lookupName = clip.name;
+        if (clip.linkedClipId && clip.source?.type === 'audio' && lookupName.endsWith(' (Audio)')) {
+          lookupName = lookupName.replace(' (Audio)', '');
+        }
+        const mediaFile = mediaStore.files.find(f => f.name === lookupName);
 
         return {
           id: clip.id,
@@ -1486,9 +1491,11 @@ export const useTimelineStore = create<TimelineStore>()(
 
         // Load media element async
         const type = serializedClip.sourceType;
+        const fileUrl = URL.createObjectURL(mediaFile.file);
+
         if (type === 'video') {
           const video = document.createElement('video');
-          video.src = URL.createObjectURL(mediaFile.file);
+          video.src = fileUrl;
           video.muted = true;
           video.playsInline = true;
           video.preload = 'auto';
@@ -1511,8 +1518,9 @@ export const useTimelineStore = create<TimelineStore>()(
             }));
           }, { once: true });
         } else if (type === 'audio') {
+          // Audio clips - create audio element (works for both pure audio files and linked audio from video)
           const audio = document.createElement('audio');
-          audio.src = URL.createObjectURL(mediaFile.file);
+          audio.src = fileUrl;
           audio.preload = 'auto';
 
           audio.addEventListener('canplaythrough', () => {
@@ -1534,7 +1542,7 @@ export const useTimelineStore = create<TimelineStore>()(
           }, { once: true });
         } else if (type === 'image') {
           const img = new Image();
-          img.src = URL.createObjectURL(mediaFile.file);
+          img.src = fileUrl;
 
           img.addEventListener('load', () => {
             set(state => ({
