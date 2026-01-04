@@ -947,12 +947,20 @@ export function Timeline() {
     e.preventDefault();
     dragCounterRef.current++;
 
-    // Only show preview for files
-    if (e.dataTransfer.types.includes('Files')) {
-      const rect = e.currentTarget.getBoundingClientRect();
-      const x = e.clientX - rect.left + scrollX;
-      const startTime = pixelToTime(x);
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left + scrollX;
+    const startTime = pixelToTime(x);
 
+    // Check if dragging from MediaPanel
+    if (e.dataTransfer.types.includes('application/x-media-file-id')) {
+      // We can't access the data during dragenter, but we can show a preview
+      // The actual mediaFileId will be read on drop
+      setExternalDrag({ trackId, startTime, x: e.clientX, y: e.clientY, duration: 5, isVideo: true });
+      return;
+    }
+
+    // Show preview for external files
+    if (e.dataTransfer.types.includes('Files')) {
       // Check cache first for duration - find the file item (not always at index 0)
       let duration: number | undefined;
       const items = e.dataTransfer.items;
@@ -992,8 +1000,12 @@ export function Timeline() {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
 
+    // Check if dragging from MediaPanel or external files
+    const isMediaPanelDrag = e.dataTransfer.types.includes('application/x-media-file-id');
+    const isFileDrag = e.dataTransfer.types.includes('Files');
+
     // Update preview position
-    if (e.dataTransfer.types.includes('Files') && timelineRef.current) {
+    if ((isMediaPanelDrag || isFileDrag) && timelineRef.current) {
       const rect = timelineRef.current.getBoundingClientRect();
       const x = e.clientX - rect.left + scrollX;
       const startTime = pixelToTime(x);
@@ -1061,6 +1073,22 @@ export function Timeline() {
     dragCounterRef.current = 0;
     setExternalDrag(null);
 
+    // Check for media file from MediaPanel
+    const mediaFileId = e.dataTransfer.getData('application/x-media-file-id');
+    if (mediaFileId) {
+      // Look up file from media store
+      const mediaStore = useMediaStore.getState();
+      const mediaFile = mediaStore.files.find(f => f.id === mediaFileId);
+      if (mediaFile?.file) {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const x = e.clientX - rect.left + scrollX;
+        const startTime = pixelToTime(x);
+        addClip(trackId, mediaFile.file, Math.max(0, startTime), mediaFile.duration);
+        return;
+      }
+    }
+
+    // Check for external file drop (from file explorer)
     if (e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
       if (file.type.startsWith('video/') || file.type.startsWith('audio/') || file.type.startsWith('image/')) {

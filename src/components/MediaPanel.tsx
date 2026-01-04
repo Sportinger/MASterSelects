@@ -157,10 +157,14 @@ export function MediaPanel() {
       return;
     }
 
-    // Set the file in dataTransfer so Timeline can receive it
-    e.dataTransfer.setData('application/x-media-file', mediaFile.id);
-    e.dataTransfer.items.add(mediaFile.file);
+    // Set the media file ID so Timeline can look it up
+    e.dataTransfer.setData('application/x-media-file-id', mediaFile.id);
     e.dataTransfer.effectAllowed = 'copy';
+
+    // Set drag image
+    if (e.currentTarget instanceof HTMLElement) {
+      e.dataTransfer.setDragImage(e.currentTarget, 10, 10);
+    }
   }, []);
 
   // Render a single item
