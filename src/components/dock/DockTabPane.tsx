@@ -1,10 +1,12 @@
 // Tab group container with tab bar and panel content
 
-import { useCallback, useRef, useEffect } from 'react';
+import { useCallback, useRef, useEffect, useState } from 'react';
 import type { DockTabGroup, DockPanel, DropPosition } from '../../types/dock';
 import { useDockStore } from '../../stores/dockStore';
 import { DockPanelContent } from './DockPanelContent';
 import { calculateDropPosition } from '../../utils/dockLayout';
+
+const HOLD_DURATION = 500; // ms to hold before drag starts
 
 interface DockTabPaneProps {
   group: DockTabGroup;
@@ -13,12 +15,39 @@ interface DockTabPaneProps {
 export function DockTabPane({ group }: DockTabPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const tabBarRef = useRef<HTMLDivElement>(null);
+  const holdTimerRef = useRef<number | null>(null);
+  const holdStartRef = useRef<{ panel: DockPanel; offset: { x: number; y: number } } | null>(null);
+  const [holdingTabId, setHoldingTabId] = useState<string | null>(null);
+  const [holdProgress, setHoldProgress] = useState<'idle' | 'holding' | 'ready' | 'fading'>('idle');
+
   const { setActiveTab, startDrag, updateDrag, dragState, setPanelZoom, layout } = useDockStore();
 
   const activePanel = group.panels[group.activeIndex];
   const isDropTarget = dragState.dropTarget?.groupId === group.id;
   const dropPosition = dragState.dropTarget?.position;
   const panelZoom = activePanel ? (layout.panelZoom?.[activePanel.id] ?? 1.0) : 1.0;
+
+  // Cancel any ongoing hold
+  const cancelHold = useCallback(() => {
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+    holdStartRef.current = null;
+
+    // If we were holding, trigger fade out animation
+    if (holdProgress === 'holding') {
+      setHoldProgress('fading');
+      // After fade animation, reset to idle
+      setTimeout(() => {
+        setHoldProgress('idle');
+        setHoldingTabId(null);
+      }, HOLD_DURATION);
+    } else {
+      setHoldProgress('idle');
+      setHoldingTabId(null);
+    }
+  }, [holdProgress]);
 
   const handleTabClick = useCallback((index: number) => {
     setActiveTab(group.id, index);
@@ -30,13 +59,61 @@ export function DockTabPane({ group }: DockTabPaneProps) {
     // Set this tab as active
     setActiveTab(group.id, index);
 
-    // Start drag after small delay to distinguish from click
+    // Store offset for when drag actually starts
     const rect = (e.target as HTMLElement).getBoundingClientRect();
-    startDrag(panel, group.id, {
+    const offset = {
       x: e.clientX - rect.left,
       y: e.clientY - rect.top,
-    });
+    };
+
+    // Start hold animation
+    setHoldingTabId(panel.id);
+    setHoldProgress('holding');
+    holdStartRef.current = { panel, offset };
+
+    // After hold duration, start the actual drag
+    holdTimerRef.current = window.setTimeout(() => {
+      if (holdStartRef.current) {
+        setHoldProgress('ready');
+        startDrag(holdStartRef.current.panel, group.id, holdStartRef.current.offset);
+        // Reset hold state after drag starts
+        setTimeout(() => {
+          setHoldProgress('idle');
+          setHoldingTabId(null);
+        }, 100);
+      }
+    }, HOLD_DURATION);
   }, [group.id, setActiveTab, startDrag]);
+
+  const handleTabMouseUp = useCallback(() => {
+    cancelHold();
+  }, [cancelHold]);
+
+  const handleTabMouseLeaveForHold = useCallback(() => {
+    // If holding but not yet dragging, cancel
+    if (holdProgress === 'holding') {
+      cancelHold();
+    }
+  }, [holdProgress, cancelHold]);
+
+  // Clean up timer on unmount and handle global mouseup
+  useEffect(() => {
+    const handleGlobalMouseUp = () => {
+      if (holdProgress === 'holding') {
+        cancelHold();
+      }
+    };
+
+    // Add global listener to catch mouseup anywhere
+    window.addEventListener('mouseup', handleGlobalMouseUp);
+
+    return () => {
+      window.removeEventListener('mouseup', handleGlobalMouseUp);
+      if (holdTimerRef.current) {
+        clearTimeout(holdTimerRef.current);
+      }
+    };
+  }, [holdProgress, cancelHold]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (!dragState.isDragging || !containerRef.current) return;
@@ -87,19 +164,28 @@ export function DockTabPane({ group }: DockTabPaneProps) {
       onMouseLeave={handleMouseLeave}
     >
       {/* Tab bar - Ctrl+wheel here to zoom panel */}
-      <div ref={tabBarRef} className="dock-tab-bar" title="Ctrl+Scroll to zoom">
-        {group.panels.map((panel, index) => (
-          <div
-            key={panel.id}
-            className={`dock-tab ${index === group.activeIndex ? 'active' : ''} ${
-              dragState.isDragging && dragState.draggedPanel?.id === panel.id ? 'dragging' : ''
-            }`}
-            onClick={() => handleTabClick(index)}
-            onMouseDown={(e) => handleTabMouseDown(e, panel, index)}
-          >
-            <span className="dock-tab-title">{panel.title}</span>
-          </div>
-        ))}
+      <div ref={tabBarRef} className="dock-tab-bar" title="Ctrl+Scroll to zoom | Hold to drag">
+        {group.panels.map((panel, index) => {
+          const isHolding = holdingTabId === panel.id && holdProgress === 'holding';
+          const isReady = holdingTabId === panel.id && holdProgress === 'ready';
+          const isFading = holdingTabId === panel.id && holdProgress === 'fading';
+          const isDragging = dragState.isDragging && dragState.draggedPanel?.id === panel.id;
+
+          return (
+            <div
+              key={panel.id}
+              className={`dock-tab ${index === group.activeIndex ? 'active' : ''} ${
+                isDragging ? 'dragging' : ''
+              } ${isHolding ? 'hold-glow' : ''} ${isReady ? 'hold-ready' : ''} ${isFading ? 'hold-fade' : ''}`}
+              onClick={() => handleTabClick(index)}
+              onMouseDown={(e) => handleTabMouseDown(e, panel, index)}
+              onMouseUp={handleTabMouseUp}
+              onMouseLeave={handleTabMouseLeaveForHold}
+            >
+              <span className="dock-tab-title">{panel.title}</span>
+            </div>
+          );
+        })}
       </div>
 
       {/* Panel content with zoom */}
