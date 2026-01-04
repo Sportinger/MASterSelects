@@ -252,6 +252,13 @@ export function Timeline() {
       return;
     }
 
+    // During playback: SKIP ALMOST ALL WORK after initial setup
+    // Videos play independently, engine reads from them directly
+    if (isPlaying && activeClipIdsRef.current === '__playing__') {
+      // Already set up - do nothing! This is the fast path.
+      return;
+    }
+
     // Try to use cached RAM Preview frame first (instant playback)
     if (ramPreviewRange &&
         playheadPosition >= ramPreviewRange.start &&
@@ -263,19 +270,15 @@ export function Timeline() {
 
     const clipsAtTime = getClipsAtTime(playheadPosition);
 
-    // During playback: MINIMAL WORK - just ensure videos are playing
-    // Skip ALL heavy React/state work - engine reads directly from video elements
+    // Starting playback - minimal setup, then mark as playing
     if (isPlaying) {
       clipsAtTime.forEach(clip => {
         if (clip.source?.videoElement?.paused) {
           clip.source.videoElement.play().catch(() => {});
         }
       });
-      // Only update layers once at start of playback, not every frame
-      if (activeClipIdsRef.current === '__playing__') {
-        return;
-      }
       activeClipIdsRef.current = '__playing__';
+      // Still need to set up layers initially, so continue below
     } else {
       activeClipIdsRef.current = '';
     }
