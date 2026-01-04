@@ -17,6 +17,9 @@ export interface MediaItem {
   createdAt: number;
 }
 
+// Proxy status for video files
+export type ProxyStatus = 'none' | 'generating' | 'ready' | 'error';
+
 // Imported file
 export interface MediaFile extends MediaItem {
   type: 'video' | 'audio' | 'image';
@@ -26,6 +29,11 @@ export interface MediaFile extends MediaItem {
   width?: number; // For video/image
   height?: number; // For video/image
   thumbnailUrl?: string;
+  // Proxy support (for video files)
+  proxyStatus?: ProxyStatus;
+  proxyProgress?: number; // 0-100
+  proxyFrameCount?: number; // Total frames in proxy
+  proxyFps?: number; // Frame rate of proxy (e.g., 30)
 }
 
 // Composition (like After Effects comp)
@@ -107,6 +115,17 @@ interface MediaState {
   currentProjectId: string | null;
   currentProjectName: string;
   setProjectName: (name: string) => void;
+
+  // Proxy system
+  proxyEnabled: boolean;
+  setProxyEnabled: (enabled: boolean) => void;
+  generateProxy: (mediaFileId: string) => Promise<void>;
+  cancelProxyGeneration: (mediaFileId: string) => void;
+  updateProxyProgress: (mediaFileId: string, progress: number) => void;
+  setProxyStatus: (mediaFileId: string, status: ProxyStatus) => void;
+  getNextFileNeedingProxy: () => MediaFile | undefined;
+  proxyGenerationQueue: string[]; // Queue of media file IDs to generate proxies for
+  currentlyGeneratingProxyId: string | null;
   isLoading: boolean;
 }
 
@@ -198,6 +217,163 @@ async function getMediaInfo(file: File, type: 'video' | 'audio' | 'image'): Prom
   });
 }
 
+// Proxy generation settings
+const PROXY_FPS = 30; // Generate 30 frames per second
+const PROXY_QUALITY = 0.92; // WebP quality (0-1), high for color accuracy
+const PROXY_MAX_WIDTH = 1920; // Max width, keep aspect ratio
+
+// Track active proxy generation for cancellation
+const activeProxyGenerations = new Map<string, { cancelled: boolean }>();
+
+// Generate proxy frames from a video file
+async function generateProxyFrames(
+  mediaFile: MediaFile,
+  onProgress: (progress: number) => void,
+  checkCancelled: () => boolean
+): Promise<{ frameCount: number; fps: number } | null> {
+  if (!mediaFile.file || mediaFile.type !== 'video') {
+    return null;
+  }
+
+  const video = document.createElement('video');
+  video.src = URL.createObjectURL(mediaFile.file);
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = 'auto';
+
+  // Wait for video to be ready
+  await new Promise<void>((resolve, reject) => {
+    video.onloadedmetadata = () => resolve();
+    video.onerror = () => reject(new Error('Failed to load video'));
+    setTimeout(() => reject(new Error('Video load timeout')), 30000);
+  });
+
+  // Wait for video to be fully ready for seeking
+  await new Promise<void>((resolve) => {
+    if (video.readyState >= 3) {
+      resolve();
+    } else {
+      video.oncanplaythrough = () => resolve();
+      setTimeout(resolve, 5000); // Timeout fallback
+    }
+  });
+
+  const duration = video.duration;
+  const totalFrames = Math.ceil(duration * PROXY_FPS);
+
+  // Calculate dimensions (maintain aspect ratio, max 1920 width)
+  let width = video.videoWidth;
+  let height = video.videoHeight;
+  if (width > PROXY_MAX_WIDTH) {
+    height = Math.round((PROXY_MAX_WIDTH / width) * height);
+    width = PROXY_MAX_WIDTH;
+  }
+
+  // Create canvas for frame extraction
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d', { alpha: false });
+  if (!ctx) {
+    URL.revokeObjectURL(video.src);
+    return null;
+  }
+
+  console.log(`[Proxy] Generating ${totalFrames} frames at ${width}x${height} for ${mediaFile.name}`);
+
+  // Batch frames for efficient DB writes
+  const BATCH_SIZE = 10;
+  let batch: import('../services/projectDB').StoredProxyFrame[] = [];
+  let generatedCount = 0;
+
+  for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
+    if (checkCancelled()) {
+      console.log('[Proxy] Generation cancelled');
+      URL.revokeObjectURL(video.src);
+      return null;
+    }
+
+    const time = frameIndex / PROXY_FPS;
+
+    // Seek to frame time
+    await new Promise<void>((resolve) => {
+      const onSeeked = () => {
+        video.removeEventListener('seeked', onSeeked);
+        resolve();
+      };
+      video.addEventListener('seeked', onSeeked);
+      video.currentTime = time;
+      // Timeout fallback
+      setTimeout(() => {
+        video.removeEventListener('seeked', onSeeked);
+        resolve();
+      }, 1000);
+    });
+
+    // Wait for frame to be ready
+    await new Promise<void>((resolve) => {
+      if (video.readyState >= 2) {
+        resolve();
+      } else {
+        const checkReady = () => {
+          if (video.readyState >= 2) resolve();
+          else requestAnimationFrame(checkReady);
+        };
+        checkReady();
+        setTimeout(resolve, 500);
+      }
+    });
+
+    // Draw frame to canvas
+    ctx.drawImage(video, 0, 0, width, height);
+
+    // Convert to WebP blob
+    const blob = await new Promise<Blob>((resolve) => {
+      canvas.toBlob(
+        (b) => resolve(b || new Blob()),
+        'image/webp',
+        PROXY_QUALITY
+      );
+    });
+
+    // Add to batch
+    const frameId = `${mediaFile.id}_${frameIndex.toString().padStart(6, '0')}`;
+    batch.push({
+      id: frameId,
+      mediaFileId: mediaFile.id,
+      frameIndex,
+      blob,
+    });
+
+    generatedCount++;
+
+    // Save batch when full
+    if (batch.length >= BATCH_SIZE) {
+      await projectDB.saveProxyFramesBatch(batch);
+      batch = [];
+    }
+
+    // Update progress
+    const progress = Math.round((generatedCount / totalFrames) * 100);
+    onProgress(progress);
+
+    // Yield to UI every 5 frames
+    if (frameIndex % 5 === 0) {
+      await new Promise((r) => setTimeout(r, 0));
+    }
+  }
+
+  // Save remaining batch
+  if (batch.length > 0) {
+    await projectDB.saveProxyFramesBatch(batch);
+  }
+
+  URL.revokeObjectURL(video.src);
+  console.log(`[Proxy] Completed ${generatedCount} frames for ${mediaFile.name}`);
+
+  return { frameCount: generatedCount, fps: PROXY_FPS };
+}
+
 // Default composition created on first load
 const DEFAULT_COMPOSITION: Composition = {
   id: 'comp-1',
@@ -225,6 +401,10 @@ export const useMediaStore = create<MediaState>()(
         currentProjectId: null,
         currentProjectName: 'Untitled Project',
         isLoading: false,
+        // Proxy system state
+        proxyEnabled: true, // Use proxies for preview by default
+        proxyGenerationQueue: [],
+        currentlyGeneratingProxyId: null,
 
         importFile: async (file: File) => {
           const type = getMediaType(file);
@@ -507,7 +687,136 @@ export const useMediaStore = create<MediaState>()(
           set({ currentProjectName: name });
         },
 
-        // Initialize from IndexedDB - restore file blobs
+        // ============ Proxy System ============
+
+        setProxyEnabled: (enabled: boolean) => {
+          set({ proxyEnabled: enabled });
+        },
+
+        updateProxyProgress: (mediaFileId: string, progress: number) => {
+          const { files } = get();
+          set({
+            files: files.map((f) =>
+              f.id === mediaFileId ? { ...f, proxyProgress: progress } : f
+            ),
+          });
+        },
+
+        setProxyStatus: (mediaFileId: string, status: ProxyStatus) => {
+          const { files } = get();
+          set({
+            files: files.map((f) =>
+              f.id === mediaFileId ? { ...f, proxyStatus: status } : f
+            ),
+          });
+        },
+
+        getNextFileNeedingProxy: () => {
+          const { files, currentlyGeneratingProxyId } = get();
+          // Find video files that don't have proxies yet and aren't currently generating
+          return files.find(
+            (f) =>
+              f.type === 'video' &&
+              f.file &&
+              f.proxyStatus !== 'ready' &&
+              f.proxyStatus !== 'generating' &&
+              f.id !== currentlyGeneratingProxyId
+          );
+        },
+
+        generateProxy: async (mediaFileId: string) => {
+          const { files, currentlyGeneratingProxyId, updateProxyProgress, setProxyStatus } = get();
+
+          // Don't start if already generating something
+          if (currentlyGeneratingProxyId) {
+            console.log('[Proxy] Already generating, queuing:', mediaFileId);
+            return;
+          }
+
+          const mediaFile = files.find((f) => f.id === mediaFileId);
+          if (!mediaFile || mediaFile.type !== 'video' || !mediaFile.file) {
+            console.warn('[Proxy] Invalid media file:', mediaFileId);
+            return;
+          }
+
+          // Check if proxy already exists
+          const hasExisting = await projectDB.hasProxy(mediaFileId);
+          if (hasExisting) {
+            console.log('[Proxy] Proxy already exists for:', mediaFile.name);
+            set({
+              files: get().files.map((f) =>
+                f.id === mediaFileId
+                  ? { ...f, proxyStatus: 'ready' as ProxyStatus, proxyProgress: 100 }
+                  : f
+              ),
+            });
+            return;
+          }
+
+          // Set up cancellation tracking
+          const controller = { cancelled: false };
+          activeProxyGenerations.set(mediaFileId, controller);
+
+          set({ currentlyGeneratingProxyId: mediaFileId });
+          setProxyStatus(mediaFileId, 'generating');
+          updateProxyProgress(mediaFileId, 0);
+
+          try {
+            const result = await generateProxyFrames(
+              mediaFile,
+              (progress) => updateProxyProgress(mediaFileId, progress),
+              () => controller.cancelled
+            );
+
+            if (result) {
+              // Update media file with proxy info
+              set({
+                files: get().files.map((f) =>
+                  f.id === mediaFileId
+                    ? {
+                        ...f,
+                        proxyStatus: 'ready' as ProxyStatus,
+                        proxyProgress: 100,
+                        proxyFrameCount: result.frameCount,
+                        proxyFps: result.fps,
+                      }
+                    : f
+                ),
+              });
+              console.log('[Proxy] Completed for:', mediaFile.name);
+            } else if (!controller.cancelled) {
+              setProxyStatus(mediaFileId, 'error');
+            }
+          } catch (e) {
+            console.error('[Proxy] Generation failed:', e);
+            setProxyStatus(mediaFileId, 'error');
+          } finally {
+            activeProxyGenerations.delete(mediaFileId);
+            set({ currentlyGeneratingProxyId: null });
+          }
+        },
+
+        cancelProxyGeneration: (mediaFileId: string) => {
+          const controller = activeProxyGenerations.get(mediaFileId);
+          if (controller) {
+            controller.cancelled = true;
+            console.log('[Proxy] Cancelled generation for:', mediaFileId);
+          }
+          // Reset status
+          const { files, currentlyGeneratingProxyId } = get();
+          if (currentlyGeneratingProxyId === mediaFileId) {
+            set({
+              currentlyGeneratingProxyId: null,
+              files: files.map((f) =>
+                f.id === mediaFileId
+                  ? { ...f, proxyStatus: 'none' as ProxyStatus, proxyProgress: 0 }
+                  : f
+              ),
+            });
+          }
+        },
+
+        // Initialize from IndexedDB - restore file blobs and check proxy status
         initFromDB: async () => {
           set({ isLoading: true });
           try {
@@ -515,20 +824,43 @@ export const useMediaStore = create<MediaState>()(
             const { files } = get();
 
             // Match stored blobs with existing file metadata
-            const updatedFiles = files.map((mediaFile) => {
-              const stored = storedFiles.find((sf) => sf.id === mediaFile.id);
-              if (stored) {
-                // Restore file blob and URL
-                const file = new File([stored.blob], stored.name, { type: stored.blob.type });
-                const url = URL.createObjectURL(file);
-                let thumbnailUrl = mediaFile.thumbnailUrl;
-                if (stored.thumbnailBlob) {
-                  thumbnailUrl = URL.createObjectURL(stored.thumbnailBlob);
+            const updatedFiles = await Promise.all(
+              files.map(async (mediaFile) => {
+                const stored = storedFiles.find((sf) => sf.id === mediaFile.id);
+                if (stored) {
+                  // Restore file blob and URL
+                  const file = new File([stored.blob], stored.name, { type: stored.blob.type });
+                  const url = URL.createObjectURL(file);
+                  let thumbnailUrl = mediaFile.thumbnailUrl;
+                  if (stored.thumbnailBlob) {
+                    thumbnailUrl = URL.createObjectURL(stored.thumbnailBlob);
+                  }
+
+                  // Check if proxy exists for video files
+                  let proxyStatus: ProxyStatus = 'none';
+                  let proxyFrameCount: number | undefined;
+                  if (stored.type === 'video') {
+                    const frameCount = await projectDB.getProxyFrameCount(mediaFile.id);
+                    if (frameCount > 0) {
+                      proxyStatus = 'ready';
+                      proxyFrameCount = frameCount;
+                    }
+                  }
+
+                  return {
+                    ...mediaFile,
+                    file,
+                    url,
+                    thumbnailUrl,
+                    proxyStatus,
+                    proxyFrameCount,
+                    proxyFps: proxyFrameCount ? PROXY_FPS : undefined,
+                    proxyProgress: proxyFrameCount ? 100 : 0,
+                  };
                 }
-                return { ...mediaFile, file, url, thumbnailUrl };
-              }
-              return mediaFile;
-            });
+                return mediaFile;
+              })
+            );
 
             set({ files: updatedFiles, isLoading: false });
             console.log('[MediaStore] Restored', storedFiles.length, 'files from IndexedDB');

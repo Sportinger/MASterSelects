@@ -256,6 +256,17 @@ export function MediaPanel() {
               {item.width}×{item.height}
             </span>
           )}
+          {/* Proxy badge */}
+          {'proxyStatus' in item && item.proxyStatus === 'ready' && (
+            <span className="media-item-proxy-badge" title="Proxy generated">
+              P
+            </span>
+          )}
+          {'proxyStatus' in item && item.proxyStatus === 'generating' && (
+            <span className="media-item-proxy-generating" title={`Generating proxy: ${(item as MediaFile).proxyProgress || 0}%`}>
+              ⏳ {(item as MediaFile).proxyProgress || 0}%
+            </span>
+          )}
         </div>
 
         {/* Render children if folder is expanded */}

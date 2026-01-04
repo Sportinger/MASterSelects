@@ -226,6 +226,46 @@ export function Timeline() {
     };
   }, [ramPreviewEnabled, isPlaying, isRamPreviewing, isDraggingPlayhead, inPoint, outPoint, ramPreviewRange, clips, startRamPreview]);
 
+  // Auto-generate proxies after 3 seconds of idle
+  const proxyIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { proxyEnabled, getNextFileNeedingProxy, generateProxy, currentlyGeneratingProxyId } = useMediaStore();
+
+  useEffect(() => {
+    // Clear any existing timer
+    if (proxyIdleTimerRef.current) {
+      clearTimeout(proxyIdleTimerRef.current);
+      proxyIdleTimerRef.current = null;
+    }
+
+    // Don't auto-generate if:
+    // - Proxy is disabled
+    // - Currently playing
+    // - Currently generating a proxy
+    // - Scrubbing
+    if (!proxyEnabled || isPlaying || currentlyGeneratingProxyId || isDraggingPlayhead) {
+      return;
+    }
+
+    // Start timer to auto-generate after 3 seconds of idle
+    proxyIdleTimerRef.current = setTimeout(() => {
+      const mediaStore = useMediaStore.getState();
+      if (mediaStore.proxyEnabled && !mediaStore.currentlyGeneratingProxyId) {
+        const nextFile = mediaStore.getNextFileNeedingProxy();
+        if (nextFile) {
+          console.log('[Proxy] Auto-starting proxy generation for:', nextFile.name);
+          mediaStore.generateProxy(nextFile.id);
+        }
+      }
+    }, 3000);
+
+    return () => {
+      if (proxyIdleTimerRef.current) {
+        clearTimeout(proxyIdleTimerRef.current);
+        proxyIdleTimerRef.current = null;
+      }
+    };
+  }, [proxyEnabled, isPlaying, currentlyGeneratingProxyId, isDraggingPlayhead, clips, getNextFileNeedingProxy, generateProxy]);
+
   // Track last seek time to throttle during scrubbing
   const lastSeekRef = useRef<{ [clipId: string]: number }>({});
   const pendingSeekRef = useRef<{ [clipId: string]: number }>({});
@@ -1279,6 +1319,14 @@ export function Timeline() {
     const isTrimming = clipTrim?.clipId === clip.id;
     const thumbnails = clip.thumbnails || [];
 
+    // Get proxy status for this clip's media file
+    const mediaStore = useMediaStore.getState();
+    const mediaFile = mediaStore.files.find(f => f.name === clip.name || f.name === clip.name.replace(' (Audio)', ''));
+    const proxyProgress = mediaFile?.proxyProgress || 0;
+    const proxyStatus = mediaFile?.proxyStatus;
+    const isGeneratingProxy = proxyStatus === 'generating';
+    const hasProxy = proxyStatus === 'ready';
+
     // Check if this clip is linked to the dragging/trimming clip
     const draggedClip = clipDrag ? clips.find(c => c.id === clipDrag.clipId) : null;
     const trimmedClip = clipTrim ? clips.find(c => c.id === clipTrim.clipId) : null;
@@ -1382,7 +1430,9 @@ export function Timeline() {
       isTrimming ? 'trimming' : '',
       isLinkedToTrimming ? 'linked-trimming' : '',
       clip.source?.type || 'video',
-      clip.isLoading ? 'loading' : ''
+      clip.isLoading ? 'loading' : '',
+      hasProxy ? 'has-proxy' : '',
+      isGeneratingProxy ? 'generating-proxy' : ''
     ].filter(Boolean).join(' ');
 
     return (
@@ -1392,6 +1442,19 @@ export function Timeline() {
         style={{ left, width }}
         onMouseDown={(e) => handleClipMouseDown(e, clip.id)}
       >
+        {/* Proxy progress bar */}
+        {isGeneratingProxy && (
+          <div className="clip-proxy-progress">
+            <div
+              className="clip-proxy-progress-bar"
+              style={{ width: `${proxyProgress}%` }}
+            />
+          </div>
+        )}
+        {/* Proxy ready indicator */}
+        {hasProxy && mediaStore.proxyEnabled && (
+          <div className="clip-proxy-badge" title="Proxy ready">P</div>
+        )}
         {/* Audio waveform */}
         {clip.source?.type === 'audio' && clip.waveform && clip.waveform.length > 0 && (
           <div className="clip-waveform">

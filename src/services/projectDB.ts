@@ -2,12 +2,13 @@
 // Stores media file blobs and project data
 
 const DB_NAME = 'MASterSelectsDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // Upgraded for proxy frames store
 
 // Store names
 const STORES = {
   MEDIA_FILES: 'mediaFiles',
   PROJECTS: 'projects',
+  PROXY_FRAMES: 'proxyFrames', // New store for proxy frame sequences
 } as const;
 
 export interface StoredMediaFile {
@@ -19,6 +20,24 @@ export interface StoredMediaFile {
   duration?: number;
   width?: number;
   height?: number;
+  createdAt: number;
+}
+
+// Proxy frame data - stores frames for a media file
+export interface StoredProxyFrame {
+  id: string; // Format: mediaFileId_frameIndex (e.g., "abc123_0042")
+  mediaFileId: string;
+  frameIndex: number;
+  blob: Blob; // WebP image blob
+}
+
+// Proxy metadata stored with media file
+export interface ProxyMetadata {
+  mediaFileId: string;
+  frameCount: number;
+  fps: number;
+  width: number;
+  height: number;
   createdAt: number;
 }
 
@@ -76,6 +95,13 @@ class ProjectDatabase {
           const projectStore = db.createObjectStore(STORES.PROJECTS, { keyPath: 'id' });
           projectStore.createIndex('name', 'name', { unique: false });
           projectStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+        }
+
+        // Create proxy frames store (new in v2)
+        if (!db.objectStoreNames.contains(STORES.PROXY_FRAMES)) {
+          const proxyStore = db.createObjectStore(STORES.PROXY_FRAMES, { keyPath: 'id' });
+          proxyStore.createIndex('mediaFileId', 'mediaFileId', { unique: false });
+          proxyStore.createIndex('frameIndex', 'frameIndex', { unique: false });
         }
 
         console.log('[ProjectDB] Database schema created/upgraded');
@@ -213,24 +239,153 @@ class ProjectDatabase {
   }
 
   // Get database stats
-  async getStats(): Promise<{ mediaFiles: number; projects: number }> {
+  async getStats(): Promise<{ mediaFiles: number; projects: number; proxyFrames: number }> {
     const db = await this.init();
     return new Promise((resolve, reject) => {
-      const transaction = db.transaction([STORES.MEDIA_FILES, STORES.PROJECTS], 'readonly');
+      const transaction = db.transaction([STORES.MEDIA_FILES, STORES.PROJECTS, STORES.PROXY_FRAMES], 'readonly');
 
       const mediaRequest = transaction.objectStore(STORES.MEDIA_FILES).count();
       const projectRequest = transaction.objectStore(STORES.PROJECTS).count();
+      const proxyRequest = transaction.objectStore(STORES.PROXY_FRAMES).count();
 
       let mediaCount = 0;
       let projectCount = 0;
+      let proxyCount = 0;
 
       mediaRequest.onsuccess = () => { mediaCount = mediaRequest.result; };
       projectRequest.onsuccess = () => { projectCount = projectRequest.result; };
+      proxyRequest.onsuccess = () => { proxyCount = proxyRequest.result; };
 
       transaction.oncomplete = () => {
-        resolve({ mediaFiles: mediaCount, projects: projectCount });
+        resolve({ mediaFiles: mediaCount, projects: projectCount, proxyFrames: proxyCount });
       };
       transaction.onerror = () => reject(transaction.error);
+    });
+  }
+
+  // ============ Proxy Frames ============
+
+  // Save a single proxy frame
+  async saveProxyFrame(frame: StoredProxyFrame): Promise<void> {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORES.PROXY_FRAMES, 'readwrite');
+      const store = transaction.objectStore(STORES.PROXY_FRAMES);
+      const request = store.put(frame);
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // Save multiple proxy frames in a batch (more efficient)
+  async saveProxyFramesBatch(frames: StoredProxyFrame[]): Promise<void> {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORES.PROXY_FRAMES, 'readwrite');
+      const store = transaction.objectStore(STORES.PROXY_FRAMES);
+
+      for (const frame of frames) {
+        store.put(frame);
+      }
+
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
+  }
+
+  // Get a specific proxy frame
+  async getProxyFrame(mediaFileId: string, frameIndex: number): Promise<StoredProxyFrame | undefined> {
+    const db = await this.init();
+    const id = `${mediaFileId}_${frameIndex.toString().padStart(6, '0')}`;
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORES.PROXY_FRAMES, 'readonly');
+      const store = transaction.objectStore(STORES.PROXY_FRAMES);
+      const request = store.get(id);
+
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // Get all proxy frames for a media file
+  async getProxyFramesForMedia(mediaFileId: string): Promise<StoredProxyFrame[]> {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORES.PROXY_FRAMES, 'readonly');
+      const store = transaction.objectStore(STORES.PROXY_FRAMES);
+      const index = store.index('mediaFileId');
+      const request = index.getAll(mediaFileId);
+
+      request.onsuccess = () => {
+        // Sort by frame index
+        const frames = request.result.sort((a, b) => a.frameIndex - b.frameIndex);
+        resolve(frames);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // Check if proxy exists for a media file
+  async hasProxy(mediaFileId: string): Promise<boolean> {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORES.PROXY_FRAMES, 'readonly');
+      const store = transaction.objectStore(STORES.PROXY_FRAMES);
+      const index = store.index('mediaFileId');
+      const request = index.count(mediaFileId);
+
+      request.onsuccess = () => resolve(request.result > 0);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // Get proxy frame count for a media file
+  async getProxyFrameCount(mediaFileId: string): Promise<number> {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORES.PROXY_FRAMES, 'readonly');
+      const store = transaction.objectStore(STORES.PROXY_FRAMES);
+      const index = store.index('mediaFileId');
+      const request = index.count(mediaFileId);
+
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // Delete all proxy frames for a media file
+  async deleteProxyFrames(mediaFileId: string): Promise<void> {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORES.PROXY_FRAMES, 'readwrite');
+      const store = transaction.objectStore(STORES.PROXY_FRAMES);
+      const index = store.index('mediaFileId');
+      const request = index.openCursor(mediaFileId);
+
+      request.onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
+        if (cursor) {
+          cursor.delete();
+          cursor.continue();
+        }
+      };
+
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
+  }
+
+  // Clear all proxy frames (for all media)
+  async clearAllProxyFrames(): Promise<void> {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORES.PROXY_FRAMES, 'readwrite');
+      const store = transaction.objectStore(STORES.PROXY_FRAMES);
+      const request = store.clear();
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
     });
   }
 }

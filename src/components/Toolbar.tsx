@@ -19,7 +19,11 @@ export function Toolbar() {
     loadProject,
     getProjectList,
     deleteProject,
-    isLoading
+    isLoading,
+    proxyEnabled,
+    setProxyEnabled,
+    currentlyGeneratingProxyId,
+    files,
   } = useMediaStore();
   const { isSupported: midiSupported, isEnabled: midiEnabled, enableMIDI, disableMIDI, devices } = useMIDI();
 
@@ -181,6 +185,28 @@ export function Toolbar() {
       <div className="toolbar-section">
         <button className="btn" onClick={resetLayout} title="Reset panel layout to default">
           Reset Layout
+        </button>
+      </div>
+
+      {/* Proxy Toggle */}
+      <div className="toolbar-section">
+        <button
+          className={`btn ${proxyEnabled ? 'btn-active' : ''}`}
+          onClick={() => setProxyEnabled(!proxyEnabled)}
+          title={proxyEnabled ? 'Proxy enabled - using optimized frames' : 'Proxy disabled - using original video'}
+        >
+          {currentlyGeneratingProxyId ? (
+            <>⏳ Generating...</>
+          ) : (
+            <>
+              {proxyEnabled ? '🎬' : '🎥'} Proxy {proxyEnabled ? 'On' : 'Off'}
+              {files.filter(f => f.proxyStatus === 'ready').length > 0 && (
+                <span className="proxy-count">
+                  ({files.filter(f => f.proxyStatus === 'ready').length})
+                </span>
+              )}
+            </>
+          )}
         </button>
       </div>
 
