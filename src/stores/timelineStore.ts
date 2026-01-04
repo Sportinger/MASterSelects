@@ -128,6 +128,7 @@ interface TimelineStore {
   // Utils
   getClipsAtTime: (time: number) => TimelineClip[];
   updateDuration: () => void;
+  findAvailableAudioTrack: (startTime: number, duration: number) => string;
 }
 
 const DEFAULT_TRACKS: TimelineTrack[] = [
@@ -297,10 +298,10 @@ export const useTimelineStore = create<TimelineStore>()(
           naturalDuration,
         };
 
-        // Create linked audio clip if video has audio tracks
-        const { tracks } = get();
-        const audioTrack = tracks.find(t => t.type === 'audio');
-        if (audioTrack) {
+        // Create linked audio clip - find available audio track or create new one
+        const { findAvailableAudioTrack } = get();
+        const audioTrackId = findAvailableAudioTrack(startTime, naturalDuration);
+        if (audioTrackId) {
           // Create audio element from same video file
           const audioFromVideo = document.createElement('audio');
           audioFromVideo.src = URL.createObjectURL(file);
@@ -319,7 +320,7 @@ export const useTimelineStore = create<TimelineStore>()(
           const audioClipId = `clip-audio-${Date.now()}`;
           const audioClip: TimelineClip = {
             id: audioClipId,
-            trackId: audioTrack.id,
+            trackId: audioTrackId,
             name: `${file.name} (Audio)`,
             file,
             startTime,
@@ -550,6 +551,33 @@ export const useTimelineStore = create<TimelineStore>()(
       }
       const maxEnd = Math.max(...clips.map(c => c.startTime + c.duration));
       set({ duration: Math.max(60, maxEnd + 10) }); // Add 10 seconds padding
+    },
+
+    findAvailableAudioTrack: (startTime: number, duration: number) => {
+      const { tracks, clips, addTrack } = get();
+      const audioTracks = tracks.filter(t => t.type === 'audio');
+      const endTime = startTime + duration;
+
+      // Check each audio track for availability
+      for (const track of audioTracks) {
+        const trackClips = clips.filter(c => c.trackId === track.id);
+        const hasOverlap = trackClips.some(clip => {
+          const clipEnd = clip.startTime + clip.duration;
+          // Check if time ranges overlap
+          return !(endTime <= clip.startTime || startTime >= clipEnd);
+        });
+
+        if (!hasOverlap) {
+          return track.id; // This track is available
+        }
+      }
+
+      // No available audio track found, create a new one
+      addTrack('audio');
+      const { tracks: updatedTracks } = get();
+      const newTrack = updatedTracks[updatedTracks.length - 1];
+      console.log('[Timeline] Created new audio track:', newTrack.name);
+      return newTrack.id;
     },
   }))
 );

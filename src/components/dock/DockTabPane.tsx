@@ -1,6 +1,6 @@
 // Tab group container with tab bar and panel content
 
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useEffect } from 'react';
 import type { DockTabGroup, DockPanel, DropPosition } from '../../types/dock';
 import { useDockStore } from '../../stores/dockStore';
 import { DockPanelContent } from './DockPanelContent';
@@ -12,11 +12,13 @@ interface DockTabPaneProps {
 
 export function DockTabPane({ group }: DockTabPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const { setActiveTab, startDrag, updateDrag, dragState } = useDockStore();
+  const tabBarRef = useRef<HTMLDivElement>(null);
+  const { setActiveTab, startDrag, updateDrag, dragState, setPanelZoom, layout } = useDockStore();
 
   const activePanel = group.panels[group.activeIndex];
   const isDropTarget = dragState.dropTarget?.groupId === group.id;
   const dropPosition = dragState.dropTarget?.position;
+  const panelZoom = activePanel ? (layout.panelZoom?.[activePanel.id] ?? 1.0) : 1.0;
 
   const handleTabClick = useCallback((index: number) => {
     setActiveTab(group.id, index);
@@ -55,6 +57,28 @@ export function DockTabPane({ group }: DockTabPaneProps) {
     }
   }, [dragState, group.id, updateDrag]);
 
+  // Handle Ctrl+wheel for panel zoom (only on tab bar)
+  useEffect(() => {
+    const tabBar = tabBarRef.current;
+    if (!tabBar) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey || !activePanel) return;
+
+      // Prevent browser zoom
+      e.preventDefault();
+      e.stopPropagation();
+
+      // Calculate new zoom
+      const delta = e.deltaY > 0 ? -0.1 : 0.1;
+      const currentZoom = layout.panelZoom?.[activePanel.id] ?? 1.0;
+      setPanelZoom(activePanel.id, currentZoom + delta);
+    };
+
+    tabBar.addEventListener('wheel', handleWheel, { passive: false });
+    return () => tabBar.removeEventListener('wheel', handleWheel);
+  }, [activePanel, layout.panelZoom, setPanelZoom]);
+
   return (
     <div
       ref={containerRef}
@@ -62,8 +86,8 @@ export function DockTabPane({ group }: DockTabPaneProps) {
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
     >
-      {/* Tab bar */}
-      <div className="dock-tab-bar">
+      {/* Tab bar - Ctrl+wheel here to zoom panel */}
+      <div ref={tabBarRef} className="dock-tab-bar" title="Ctrl+Scroll to zoom">
         {group.panels.map((panel, index) => (
           <div
             key={panel.id}
@@ -78,9 +102,20 @@ export function DockTabPane({ group }: DockTabPaneProps) {
         ))}
       </div>
 
-      {/* Panel content */}
-      <div className="dock-panel-content">
-        {activePanel && <DockPanelContent type={activePanel.type} />}
+      {/* Panel content with zoom */}
+      <div
+        className="dock-panel-content"
+        style={{ '--panel-zoom': panelZoom } as React.CSSProperties}
+      >
+        <div className="dock-panel-content-inner">
+          {activePanel && <DockPanelContent type={activePanel.type} />}
+        </div>
+        {/* Zoom indicator */}
+        {panelZoom !== 1.0 && (
+          <div className="dock-zoom-indicator">
+            {Math.round(panelZoom * 100)}%
+          </div>
+        )}
       </div>
 
       {/* Drop zone overlay */}

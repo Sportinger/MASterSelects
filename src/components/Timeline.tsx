@@ -62,6 +62,8 @@ export function Timeline() {
     startTime: number;
     x: number;
     y: number;
+    audioTrackId?: string;  // Preview for linked audio clip
+    isVideo?: boolean;      // Is the dragged file a video?
   } | null>(null);
   const dragCounterRef = useRef(0); // Track drag enter/leave balance
 
@@ -581,7 +583,45 @@ export function Timeline() {
       const rect = timelineRef.current.getBoundingClientRect();
       const x = e.clientX - rect.left + scrollX;
       const startTime = pixelToTime(x);
-      setExternalDrag({ trackId, startTime, x: e.clientX, y: e.clientY });
+
+      // Check if dragging to a video track - if so, find available audio track for preview
+      const targetTrack = tracks.find(t => t.id === trackId);
+      const isVideoTrack = targetTrack?.type === 'video';
+
+      // For video tracks, find an available audio track for the linked audio clip preview
+      // Use 5 seconds as estimated duration for preview
+      let audioTrackId: string | undefined;
+      if (isVideoTrack) {
+        const estimatedDuration = 5;
+        const audioTracks = tracks.filter(t => t.type === 'audio');
+        const endTime = startTime + estimatedDuration;
+
+        // Find first available audio track
+        for (const aTrack of audioTracks) {
+          const trackClips = clips.filter(c => c.trackId === aTrack.id);
+          const hasOverlap = trackClips.some(clip => {
+            const clipEnd = clip.startTime + clip.duration;
+            return !(endTime <= clip.startTime || startTime >= clipEnd);
+          });
+          if (!hasOverlap) {
+            audioTrackId = aTrack.id;
+            break;
+          }
+        }
+        // If no available track, show on a "new track" area (we'll indicate this)
+        if (!audioTrackId) {
+          audioTrackId = '__new_audio_track__';
+        }
+      }
+
+      setExternalDrag({
+        trackId,
+        startTime,
+        x: e.clientX,
+        y: e.clientY,
+        audioTrackId,
+        isVideo: isVideoTrack
+      });
     }
   };
 
@@ -887,7 +927,7 @@ export function Timeline() {
           {tracks.map(track => (
             <div
               key={track.id}
-              className={`track-lane ${track.type} ${clipDrag?.currentTrackId === track.id ? 'drag-target' : ''} ${externalDrag?.trackId === track.id ? 'external-drag-target' : ''}`}
+              className={`track-lane ${track.type} ${clipDrag?.currentTrackId === track.id ? 'drag-target' : ''} ${externalDrag?.trackId === track.id || externalDrag?.audioTrackId === track.id ? 'external-drag-target' : ''}`}
               style={{ height: track.height }}
               onDrop={(e) => handleTrackDrop(e, track.id)}
               onDragOver={(e) => handleTrackDragOver(e, track.id)}
@@ -904,7 +944,7 @@ export function Timeline() {
                   .filter(c => c.id === clipDrag.clipId)
                   .map(clip => renderClip(clip, track.id))
               )}
-              {/* External file drag preview */}
+              {/* External file drag preview - video clip */}
               {externalDrag && externalDrag.trackId === track.id && (
                 <div
                   className="timeline-clip-preview"
@@ -918,8 +958,42 @@ export function Timeline() {
                   </div>
                 </div>
               )}
+              {/* External file drag preview - linked audio clip */}
+              {externalDrag && externalDrag.isVideo && externalDrag.audioTrackId === track.id && (
+                <div
+                  className="timeline-clip-preview audio"
+                  style={{
+                    left: timeToPixel(externalDrag.startTime),
+                    width: timeToPixel(5), // Default 5 seconds preview
+                  }}
+                >
+                  <div className="clip-content">
+                    <span className="clip-name">Audio</span>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
+
+          {/* Preview for new audio track that will be created */}
+          {externalDrag && externalDrag.isVideo && externalDrag.audioTrackId === '__new_audio_track__' && (
+            <div
+              className="track-lane audio new-track-preview"
+              style={{ height: 40 }}
+            >
+              <div
+                className="timeline-clip-preview audio"
+                style={{
+                  left: timeToPixel(externalDrag.startTime),
+                  width: timeToPixel(5),
+                }}
+              >
+                <div className="clip-content">
+                  <span className="clip-name">+ New Audio Track</span>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Playhead */}
           <div

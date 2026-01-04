@@ -43,6 +43,7 @@ export interface FloatingPanel {
 export interface DockLayout {
   root: DockNode;
   floatingPanels: FloatingPanel[];
+  panelZoom: Record<string, number>; // Panel ID -> zoom level (1.0 = 100%)
 }
 
 // Drop target for drag operations

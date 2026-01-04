@@ -62,6 +62,7 @@ const DEFAULT_LAYOUT: DockLayout = {
     ],
   },
   floatingPanels: [],
+  panelZoom: {},
 };
 
 const DEFAULT_DRAG_STATE: DockDragState = {
@@ -96,6 +97,10 @@ interface DockState {
   updateDrag: (pos: { x: number; y: number }, dropTarget: DropTarget | null) => void;
   endDrag: () => void;
   cancelDrag: () => void;
+
+  // Panel zoom
+  setPanelZoom: (panelId: string, zoom: number) => void;
+  getPanelZoom: (panelId: string) => number;
 
   // Layout management
   resetLayout: () => void;
@@ -278,6 +283,23 @@ export const useDockStore = create<DockState>()(
 
         cancelDrag: () => {
           set({ dragState: DEFAULT_DRAG_STATE });
+        },
+
+        setPanelZoom: (panelId, zoom) => {
+          const clampedZoom = Math.max(0.5, Math.min(2.0, zoom));
+          set((state) => ({
+            layout: {
+              ...state.layout,
+              panelZoom: {
+                ...state.layout.panelZoom,
+                [panelId]: clampedZoom,
+              },
+            },
+          }));
+        },
+
+        getPanelZoom: (panelId) => {
+          return get().layout.panelZoom[panelId] ?? 1.0;
         },
 
         resetLayout: () => {
