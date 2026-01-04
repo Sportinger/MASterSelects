@@ -3,6 +3,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { engine } from '../engine/WebGPUEngine';
 import { useMixerStore } from '../stores/mixerStore';
+import { useTimelineStore } from '../stores/timelineStore';
 
 export function useEngine() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -46,6 +47,18 @@ export function useEngine() {
 
     const renderFrame = () => {
       try {
+        // Check if we should use RAM Preview cached frame instead of live render
+        const { playheadPosition, ramPreviewRange } = useTimelineStore.getState();
+        if (ramPreviewRange &&
+            playheadPosition >= ramPreviewRange.start &&
+            playheadPosition <= ramPreviewRange.end) {
+          // Try to render from RAM Preview cache
+          if (engine.renderCachedFrame(playheadPosition)) {
+            // Successfully rendered cached frame, skip live render
+            return;
+          }
+        }
+
         // IMPORTANT: Snapshot layers array at start of frame to ensure consistency
         // This prevents flickering from reading partially updated state
         const layersSnapshot = useMixerStore.getState().layers;
