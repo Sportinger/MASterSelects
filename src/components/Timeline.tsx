@@ -240,6 +240,12 @@ export function Timeline() {
   // Sync timeline playback with Preview - update mixer layers based on clips at playhead
   // IMPORTANT: This uses batched updates to prevent flickering from race conditions
   useEffect(() => {
+    // CRITICAL: Skip video seeking during RAM Preview generation
+    // RAM Preview needs exclusive control of video element seeking to capture correct frames
+    if (isRamPreviewing) {
+      return;
+    }
+
     // Try to use cached RAM Preview frame first (instant playback)
     if (ramPreviewRange &&
         playheadPosition >= ramPreviewRange.start &&
@@ -441,7 +447,7 @@ export function Timeline() {
         }
       }
     });
-  }, [playheadPosition, clips, tracks, isPlaying, isDraggingPlayhead, ramPreviewRange]);
+  }, [playheadPosition, clips, tracks, isPlaying, isDraggingPlayhead, ramPreviewRange, isRamPreviewing]);
 
   // Get clips at time helper
   const getClipsAtTime = useCallback((time: number) => {
