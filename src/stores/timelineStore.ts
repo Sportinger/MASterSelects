@@ -828,8 +828,9 @@ export const useTimelineStore = create<TimelineStore>()(
     },
 
     startRamPreview: async () => {
-      const { inPoint, outPoint, duration, clips, tracks, isRamPreviewing, playheadPosition, addCachedFrame } = get();
-      if (isRamPreviewing) return;
+      const { inPoint, outPoint, duration, clips, tracks, isRamPreviewing, playheadPosition, addCachedFrame, ramPreviewEnabled } = get();
+      // Don't start if RAM Preview is disabled or already running
+      if (!ramPreviewEnabled || isRamPreviewing) return;
 
       // Determine range to preview (use In/Out or clips extent)
       const start = inPoint ?? 0;
