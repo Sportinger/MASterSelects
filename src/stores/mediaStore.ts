@@ -762,6 +762,13 @@ export const useMediaStore = create<MediaState>()(
           setProxyStatus(mediaFileId, 'generating');
           updateProxyProgress(mediaFileId, 0);
 
+          // Set proxyFps immediately so partial proxy can be used during generation
+          set({
+            files: get().files.map((f) =>
+              f.id === mediaFileId ? { ...f, proxyFps: PROXY_FPS } : f
+            ),
+          });
+
           try {
             const result = await generateProxyFrames(
               mediaFile,

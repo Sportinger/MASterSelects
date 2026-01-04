@@ -476,8 +476,16 @@ export function Timeline() {
         // Check if we should use proxy frames for this clip
         const mediaStore = useMediaStore.getState();
         const mediaFile = mediaStore.files.find(f => f.name === clip.name || clip.source?.mediaFileId === f.id);
-        const useProxy = mediaStore.proxyEnabled && mediaFile?.proxyStatus === 'ready' && mediaFile?.proxyFps;
+        // Use proxy if enabled AND (ready OR generating with some frames available)
+        const hasProxyFrames = mediaFile?.proxyStatus === 'ready' ||
+          (mediaFile?.proxyStatus === 'generating' && (mediaFile?.proxyProgress || 0) > 0);
+        const useProxy = mediaStore.proxyEnabled && hasProxyFrames && mediaFile?.proxyFps;
         const proxyFps = mediaFile?.proxyFps || 30;
+
+        // Debug logging
+        if (mediaStore.proxyEnabled && mediaFile) {
+          console.log('[Proxy] Clip:', clip.name, 'mediaFileId:', mediaFile.id, 'status:', mediaFile?.proxyStatus, 'fps:', mediaFile?.proxyFps, 'useProxy:', useProxy);
+        }
 
         if (useProxy && mediaFile) {
           // Use proxy frames instead of video decode - ALWAYS use proxy when available
