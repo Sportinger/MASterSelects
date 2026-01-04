@@ -891,20 +891,58 @@ export const useTimelineStore = create<TimelineStore>()(
               const video = clip.source.videoElement;
               const clipTime = time - clip.startTime + clip.inPoint;
 
-              // Seek and wait
-              if (Math.abs(video.currentTime - clipTime) > 0.01) {
-                await new Promise<void>((resolve) => {
-                  const onSeeked = () => {
-                    video.removeEventListener('seeked', onSeeked);
-                    requestAnimationFrame(() => resolve());
-                  };
-                  video.addEventListener('seeked', onSeeked);
-                  video.currentTime = clipTime;
-                  setTimeout(() => {
-                    video.removeEventListener('seeked', onSeeked);
-                    resolve();
-                  }, 500);
-                });
+              // Robust seek with verification and retry
+              const seekWithVerify = async (targetTime: number, maxRetries = 3): Promise<boolean> => {
+                for (let attempt = 0; attempt < maxRetries; attempt++) {
+                  // Check if cancelled
+                  if (checkCancelled()) return false;
+
+                  // Seek to target time
+                  await new Promise<void>((resolve) => {
+                    const timeout = setTimeout(() => {
+                      video.removeEventListener('seeked', onSeeked);
+                      resolve();
+                    }, 500);
+
+                    const onSeeked = () => {
+                      clearTimeout(timeout);
+                      video.removeEventListener('seeked', onSeeked);
+                      resolve();
+                    };
+
+                    video.addEventListener('seeked', onSeeked);
+                    video.currentTime = targetTime;
+                  });
+
+                  // Wait for video to be fully ready (not seeking, has data)
+                  await new Promise<void>((resolve) => {
+                    const checkReady = () => {
+                      if (!video.seeking && video.readyState >= 2) {
+                        resolve();
+                      } else {
+                        requestAnimationFrame(checkReady);
+                      }
+                    };
+                    checkReady();
+                    // Timeout fallback
+                    setTimeout(resolve, 200);
+                  });
+
+                  // Verify position is correct (within 1 frame tolerance at 30fps)
+                  if (Math.abs(video.currentTime - targetTime) < 0.04) {
+                    return true; // Success
+                  }
+
+                  // Position wrong (user scrubbed?), retry
+                  if (checkCancelled()) return false;
+                }
+                return false; // Failed after retries
+              };
+
+              // Perform seek with verification
+              const seekSuccess = await seekWithVerify(clipTime);
+              if (!seekSuccess || checkCancelled()) {
+                continue; // Skip this clip if seek failed or cancelled
               }
 
               // Add to layers
@@ -945,6 +983,25 @@ export const useTimelineStore = create<TimelineStore>()(
             const orderB = clipB ? (trackOrder.get(clipB.trackId) ?? 0) : 0;
             return orderA - orderB;
           });
+
+          // Final verification: ensure all videos are still at correct position before rendering
+          // This catches cases where user interaction changed position between seek and render
+          let allPositionsCorrect = true;
+          for (const clip of clipsAtTime) {
+            if (clip.source?.type === 'video' && clip.source.videoElement) {
+              const video = clip.source.videoElement;
+              const expectedTime = time - clip.startTime + clip.inPoint;
+              if (Math.abs(video.currentTime - expectedTime) > 0.04) {
+                allPositionsCorrect = false;
+                break;
+              }
+            }
+          }
+
+          // Skip this frame if positions are wrong (user scrubbed) or cancelled
+          if (!allPositionsCorrect || checkCancelled()) {
+            continue;
+          }
 
           // Render and cache this frame
           if (layers.length > 0) {
