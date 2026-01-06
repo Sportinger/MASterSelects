@@ -122,6 +122,7 @@
   white-space: nowrap;
   transition: background 0.15s, color 0.15s;
   user-select: none;
+  position: relative;
 }
 
 .dock-tab:hover {
@@ -209,6 +210,31 @@
 
 .dock-tab.active .dock-tab-close {
   opacity: 0.8;
+}
+
+/* Drag and drop for composition tabs */
+.dock-tab[draggable="true"] {
+  cursor: grab;
+}
+
+.dock-tab[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+.dock-tab.drop-target-tab {
+  border-left: 2px solid var(--accent);
+  margin-left: -2px;
+}
+
+.dock-tab.drop-target-tab::before {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  background: var(--accent);
+  border-radius: 1px;
 }
 
 /* Panel content */

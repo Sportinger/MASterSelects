@@ -30,8 +30,13 @@ export function DockTabPane({ group }: DockTabPaneProps) {
     getOpenCompositions,
     activeCompositionId,
     setActiveComposition,
-    closeCompositionTab
+    closeCompositionTab,
+    reorderCompositionTabs
   } = useMediaStore();
+
+  // State for dragging composition tabs
+  const [draggedCompIndex, setDraggedCompIndex] = useState<number | null>(null);
+  const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
 
   const activePanel = group.panels[group.activeIndex];
   const isDropTarget = dragState.dropTarget?.groupId === group.id;
@@ -41,6 +46,39 @@ export function DockTabPane({ group }: DockTabPaneProps) {
   // Check if this group contains a timeline panel
   const hasTimelinePanel = group.panels.some(p => p.type === 'timeline');
   const openCompositions = hasTimelinePanel ? getOpenCompositions() : [];
+
+  // Composition tab drag handlers
+  const handleCompDragStart = useCallback((e: React.DragEvent, index: number) => {
+    setDraggedCompIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(index));
+  }, []);
+
+  const handleCompDragOver = useCallback((e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (draggedCompIndex !== null && draggedCompIndex !== index) {
+      setDropTargetIndex(index);
+    }
+  }, [draggedCompIndex]);
+
+  const handleCompDragLeave = useCallback(() => {
+    setDropTargetIndex(null);
+  }, []);
+
+  const handleCompDrop = useCallback((e: React.DragEvent, toIndex: number) => {
+    e.preventDefault();
+    if (draggedCompIndex !== null && draggedCompIndex !== toIndex) {
+      reorderCompositionTabs(draggedCompIndex, toIndex);
+    }
+    setDraggedCompIndex(null);
+    setDropTargetIndex(null);
+  }, [draggedCompIndex, reorderCompositionTabs]);
+
+  const handleCompDragEnd = useCallback(() => {
+    setDraggedCompIndex(null);
+    setDropTargetIndex(null);
+  }, []);
 
   // Cancel any ongoing hold
   const cancelHold = useCallback(() => {
@@ -205,12 +243,20 @@ export function DockTabPane({ group }: DockTabPaneProps) {
         {/* For timeline panels, show composition tabs instead */}
         {hasTimelinePanel && openCompositions.length > 0 ? (
           <>
-            {openCompositions.map((comp) => (
+            {openCompositions.map((comp, index) => (
               <div
                 key={comp.id}
-                className={`dock-tab ${comp.id === activeCompositionId ? 'active' : ''}`}
+                className={`dock-tab ${comp.id === activeCompositionId ? 'active' : ''} ${
+                  draggedCompIndex === index ? 'dragging' : ''
+                } ${dropTargetIndex === index ? 'drop-target-tab' : ''}`}
                 onClick={() => setActiveComposition(comp.id)}
                 title={comp.name}
+                draggable
+                onDragStart={(e) => handleCompDragStart(e, index)}
+                onDragOver={(e) => handleCompDragOver(e, index)}
+                onDragLeave={handleCompDragLeave}
+                onDrop={(e) => handleCompDrop(e, index)}
+                onDragEnd={handleCompDragEnd}
               >
                 <span className="dock-tab-title">{comp.name}</span>
                 <button

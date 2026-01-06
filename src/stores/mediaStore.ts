@@ -114,6 +114,7 @@ interface MediaState {
   openCompositionTab: (id: string) => void;
   closeCompositionTab: (id: string) => void;
   getOpenCompositions: () => Composition[];
+  reorderCompositionTabs: (fromIndex: number, toIndex: number) => void;
 
   // Project persistence (IndexedDB)
   initFromDB: () => Promise<void>;
@@ -743,6 +744,18 @@ export const useMediaStore = create<MediaState>()(
           return openCompositionIds
             .map((id) => compositions.find((c) => c.id === id))
             .filter((c): c is Composition => c !== undefined);
+        },
+
+        reorderCompositionTabs: (fromIndex: number, toIndex: number) => {
+          const { openCompositionIds } = get();
+          if (fromIndex < 0 || fromIndex >= openCompositionIds.length) return;
+          if (toIndex < 0 || toIndex >= openCompositionIds.length) return;
+          if (fromIndex === toIndex) return;
+
+          const newOrder = [...openCompositionIds];
+          const [moved] = newOrder.splice(fromIndex, 1);
+          newOrder.splice(toIndex, 0, moved);
+          set({ openCompositionIds: newOrder });
         },
 
         setProjectName: (name: string) => {
