@@ -2652,6 +2652,7 @@ input[type="checkbox"] {
   align-items: center;
   height: 18px;
   padding: 0 8px;
+  margin: 0;
   box-sizing: border-box;
   cursor: pointer;
   background: var(--bg-tertiary);
@@ -2726,6 +2727,8 @@ input[type="checkbox"] {
   align-items: center;
   justify-content: space-between;
   padding: 0 8px;
+  margin: 0;
+  box-sizing: border-box;
 }
 
 .track-header-main {
@@ -2768,6 +2771,9 @@ input[type="checkbox"] {
   position: relative;
   width: 100%;
   flex-shrink: 0;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
 /* Property labels in track header (left column) */
