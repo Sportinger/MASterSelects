@@ -1785,10 +1785,12 @@ export function Timeline() {
   const renderTrackPropertyLabels = (trackId: string) => {
     return (
       <div className="track-property-labels">
-        {/* Opacity label - use same structure as groups for alignment */}
-        <div className="property-group-header" style={{ cursor: 'default' }}>
-          <span className="property-group-arrow" style={{ visibility: 'hidden' }}>▶</span>
-          <span>Opacity</span>
+        {/* Opacity - wrap in group like others for consistent borders */}
+        <div className="property-label-group">
+          <div className="property-group-header" style={{ cursor: 'default' }}>
+            <span className="property-group-arrow" style={{ visibility: 'hidden' }}>▶</span>
+            <span>Opacity</span>
+          </div>
         </div>
 
         {/* Position group */}
@@ -1860,11 +1862,13 @@ export function Timeline() {
   const renderTrackPropertyTracks = (trackId: string) => {
     return (
       <div className="track-property-tracks">
-        {/* Opacity track */}
-        <div className="keyframe-track-row">
-          <div className="keyframe-track">
-            <div className="keyframe-track-line" />
-            {renderTrackKeyframeDiamonds(trackId, 'opacity')}
+        {/* Opacity - wrap in group like others for consistent borders */}
+        <div className="keyframe-track-group">
+          <div className="keyframe-track-row group-header">
+            <div className="keyframe-track">
+              <div className="keyframe-track-line" />
+              {renderTrackKeyframeDiamonds(trackId, 'opacity')}
+            </div>
           </div>
         </div>
 
