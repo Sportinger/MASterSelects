@@ -3024,3 +3024,215 @@ input[type="checkbox"] {
 .context-menu-item.has-submenu:hover .context-submenu {
   display: block;
 }
+
+/* ========== MASK SECTION STYLES ========== */
+.masks-section .section-header-with-button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.masks-section .section-header-with-button h4 {
+  margin: 0;
+}
+
+.mask-add-menu-container {
+  position: relative;
+}
+
+.btn-add {
+  background: var(--accent);
+  color: #000;
+  border: none;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.btn-add:hover {
+  background: var(--accent-hover);
+}
+
+.mask-add-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  min-width: 120px;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.mask-add-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.mask-add-menu button:hover {
+  background: var(--bg-hover);
+}
+
+.mask-add-menu button:first-child {
+  border-radius: 6px 6px 0 0;
+}
+
+.mask-add-menu button:last-child {
+  border-radius: 0 0 6px 6px;
+}
+
+.mask-empty {
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 12px 0;
+  text-align: center;
+}
+
+.mask-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mask-item {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.mask-item.active {
+  border-color: var(--accent);
+}
+
+.mask-item-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  cursor: pointer;
+}
+
+.mask-item-header:hover {
+  background: var(--bg-hover);
+}
+
+.mask-expand-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 10px;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.mask-expand-btn:hover {
+  color: var(--text-primary);
+}
+
+.mask-name {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mask-name-input {
+  flex: 1;
+  font-size: 12px;
+  padding: 2px 6px;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.mask-mode-select {
+  font-size: 10px;
+  padding: 2px 4px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.mask-edit-btn,
+.mask-delete-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mask-edit-btn:hover {
+  background: var(--bg-hover);
+  color: var(--accent);
+}
+
+.mask-delete-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.mask-item-properties {
+  padding: 8px 12px 12px;
+  background: var(--bg-primary);
+  border-top: 1px solid var(--border-color);
+}
+
+.mask-item-properties .control-row {
+  margin-bottom: 6px;
+}
+
+.mask-item-properties .control-row:last-of-type {
+  margin-bottom: 8px;
+}
+
+.mask-item-properties label {
+  font-size: 11px;
+  min-width: 60px;
+}
+
+.mask-item-properties .value {
+  font-size: 10px;
+  min-width: 45px;
+}
+
+.mask-item-properties input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.mask-info {
+  font-size: 10px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}

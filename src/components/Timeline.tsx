@@ -514,8 +514,11 @@ export function Timeline() {
     // If dragging a clip, use its temporary position for preview
     if (clipDrag) {
       const draggedClipId = clipDrag.clipId;
+      // Calculate temp position: use snapped time if available, otherwise calculate from pixel position
+      const rawPixelX = clipDrag.currentX ?
+        clipDrag.currentX - (timelineRef.current?.getBoundingClientRect().left || 0) + scrollX - clipDrag.grabOffsetX : 0;
       const tempStartTime = clipDrag.snappedTime ?? (clipDrag.currentX ?
-        Math.max(0, pixelToTime(clipDrag.currentX - (timelineRef.current?.getBoundingClientRect().left || 0) + scrollX - clipDrag.grabOffsetX)) :
+        Math.max(0, rawPixelX / zoom) :
         null);
 
       if (tempStartTime !== null) {
@@ -1063,7 +1066,7 @@ export function Timeline() {
         }
       }
     });
-  }, [playheadPosition, clips, tracks, isPlaying, isDraggingPlayhead, ramPreviewRange, isRamPreviewing, clipKeyframes, clipDrag, pixelToTime, scrollX]);
+  }, [playheadPosition, clips, tracks, isPlaying, isDraggingPlayhead, ramPreviewRange, isRamPreviewing, clipKeyframes, clipDrag, zoom, scrollX]);
 
   // Get clips at time helper
   const getClipsAtTime = useCallback((time: number) => {

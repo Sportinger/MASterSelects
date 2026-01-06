@@ -2,7 +2,7 @@
 
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
-import type { TimelineClip, TimelineTrack, ClipTransform, CompositionTimelineData, SerializableClip, Keyframe, AnimatableProperty, EasingType } from '../types';
+import type { TimelineClip, TimelineTrack, ClipTransform, CompositionTimelineData, SerializableClip, Keyframe, AnimatableProperty, EasingType, ClipMask, MaskVertex, MaskMode } from '../types';
 import { useMediaStore } from './mediaStore';
 import { useMixerStore } from './mixerStore';
 import { WebCodecsPlayer } from '../engine/WebCodecsPlayer';
@@ -224,6 +224,32 @@ interface TimelineStore {
   deselectAllKeyframes: () => void;
   deleteSelectedKeyframes: () => void;
   trackHasKeyframes: (trackId: string) => boolean;
+
+  // Mask management
+  maskEditMode: 'none' | 'drawing' | 'editing';
+  activeMaskId: string | null;
+  selectedVertexIds: Set<string>;
+  setMaskEditMode: (mode: 'none' | 'drawing' | 'editing') => void;
+  setActiveMask: (clipId: string | null, maskId: string | null) => void;
+  selectVertex: (vertexId: string, addToSelection?: boolean) => void;
+  deselectAllVertices: () => void;
+
+  // Mask CRUD
+  addMask: (clipId: string, mask?: Partial<ClipMask>) => string;
+  removeMask: (clipId: string, maskId: string) => void;
+  updateMask: (clipId: string, maskId: string, updates: Partial<ClipMask>) => void;
+  reorderMasks: (clipId: string, fromIndex: number, toIndex: number) => void;
+  getClipMasks: (clipId: string) => ClipMask[];
+
+  // Vertex CRUD
+  addVertex: (clipId: string, maskId: string, vertex: Omit<MaskVertex, 'id'>, index?: number) => string;
+  removeVertex: (clipId: string, maskId: string, vertexId: string) => void;
+  updateVertex: (clipId: string, maskId: string, vertexId: string, updates: Partial<MaskVertex>) => void;
+  closeMask: (clipId: string, maskId: string) => void;
+
+  // Preset shapes
+  addRectangleMask: (clipId: string) => string;
+  addEllipseMask: (clipId: string) => string;
 }
 
 const DEFAULT_TRACKS: TimelineTrack[] = [
@@ -258,6 +284,11 @@ export const useTimelineStore = create<TimelineStore>()(
     expandedTracks: new Set<string>(),
     expandedTrackPropertyGroups: new Map<string, Set<string>>(),
     selectedKeyframeIds: new Set<string>(),
+
+    // Mask state
+    maskEditMode: 'none' as 'none' | 'drawing' | 'editing',
+    activeMaskId: null as string | null,
+    selectedVertexIds: new Set<string>(),
 
     // Track actions
     addTrack: (type) => {
@@ -1754,6 +1785,8 @@ export const useTimelineStore = create<TimelineStore>()(
           // Nested composition support
           isComposition: clip.isComposition,
           compositionId: clip.compositionId,
+          // Mask support
+          masks: clip.masks && clip.masks.length > 0 ? clip.masks : undefined,
         };
       });
 
@@ -1975,6 +2008,7 @@ export const useTimelineStore = create<TimelineStore>()(
           waveform: serializedClip.waveform,
           transform: serializedClip.transform,
           isLoading: true,
+          masks: serializedClip.masks,  // Restore masks
         };
 
         // Add clip to state
@@ -2398,6 +2432,315 @@ export const useTimelineStore = create<TimelineStore>()(
         selectedKeyframeIds: new Set(),
       });
       invalidateCache();
+    },
+
+    // === MASK MANAGEMENT ===
+    setMaskEditMode: (mode) => {
+      set({ maskEditMode: mode });
+      if (mode === 'none') {
+        set({ activeMaskId: null, selectedVertexIds: new Set() });
+      }
+    },
+
+    setActiveMask: (clipId, maskId) => {
+      set({ activeMaskId: maskId, selectedVertexIds: new Set() });
+      if (clipId && maskId) {
+        set({ maskEditMode: 'editing' });
+      }
+    },
+
+    selectVertex: (vertexId, addToSelection = false) => {
+      const { selectedVertexIds } = get();
+      if (addToSelection) {
+        const newSet = new Set(selectedVertexIds);
+        if (newSet.has(vertexId)) {
+          newSet.delete(vertexId);
+        } else {
+          newSet.add(vertexId);
+        }
+        set({ selectedVertexIds: newSet });
+      } else {
+        set({ selectedVertexIds: new Set([vertexId]) });
+      }
+    },
+
+    deselectAllVertices: () => {
+      set({ selectedVertexIds: new Set() });
+    },
+
+    // Mask CRUD
+    addMask: (clipId, maskData) => {
+      const { clips, invalidateCache } = get();
+      const maskId = `mask-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+
+      const existingMasks = clips.find(c => c.id === clipId)?.masks || [];
+      const maskCount = existingMasks.length + 1;
+
+      const newMask: ClipMask = {
+        id: maskId,
+        name: maskData?.name || `Mask ${maskCount}`,
+        vertices: maskData?.vertices || [],
+        closed: maskData?.closed ?? false,
+        opacity: maskData?.opacity ?? 1,
+        feather: maskData?.feather ?? 0,
+        inverted: maskData?.inverted ?? false,
+        mode: maskData?.mode ?? 'add',
+        expanded: maskData?.expanded ?? true,
+      };
+
+      set({
+        clips: clips.map(c =>
+          c.id === clipId
+            ? { ...c, masks: [...(c.masks || []), newMask] }
+            : c
+        ),
+      });
+
+      invalidateCache();
+      return maskId;
+    },
+
+    removeMask: (clipId, maskId) => {
+      const { clips, activeMaskId, invalidateCache } = get();
+
+      set({
+        clips: clips.map(c =>
+          c.id === clipId
+            ? { ...c, masks: (c.masks || []).filter(m => m.id !== maskId) }
+            : c
+        ),
+        activeMaskId: activeMaskId === maskId ? null : activeMaskId,
+      });
+
+      invalidateCache();
+    },
+
+    updateMask: (clipId, maskId, updates) => {
+      const { clips, invalidateCache } = get();
+
+      set({
+        clips: clips.map(c =>
+          c.id === clipId
+            ? {
+                ...c,
+                masks: (c.masks || []).map(m =>
+                  m.id === maskId ? { ...m, ...updates } : m
+                ),
+              }
+            : c
+        ),
+      });
+
+      invalidateCache();
+    },
+
+    reorderMasks: (clipId, fromIndex, toIndex) => {
+      const { clips, invalidateCache } = get();
+      const clip = clips.find(c => c.id === clipId);
+      if (!clip?.masks) return;
+
+      const masks = [...clip.masks];
+      const [removed] = masks.splice(fromIndex, 1);
+      masks.splice(toIndex, 0, removed);
+
+      set({
+        clips: clips.map(c =>
+          c.id === clipId ? { ...c, masks } : c
+        ),
+      });
+
+      invalidateCache();
+    },
+
+    getClipMasks: (clipId) => {
+      const { clips } = get();
+      return clips.find(c => c.id === clipId)?.masks || [];
+    },
+
+    // Vertex CRUD
+    addVertex: (clipId, maskId, vertexData, index) => {
+      const { clips, invalidateCache } = get();
+      const vertexId = `vertex-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+
+      const newVertex: MaskVertex = {
+        id: vertexId,
+        x: vertexData.x,
+        y: vertexData.y,
+        handleIn: vertexData.handleIn || { x: 0, y: 0 },
+        handleOut: vertexData.handleOut || { x: 0, y: 0 },
+      };
+
+      set({
+        clips: clips.map(c => {
+          if (c.id !== clipId) return c;
+          return {
+            ...c,
+            masks: (c.masks || []).map(m => {
+              if (m.id !== maskId) return m;
+              const vertices = [...m.vertices];
+              if (index !== undefined) {
+                vertices.splice(index, 0, newVertex);
+              } else {
+                vertices.push(newVertex);
+              }
+              return { ...m, vertices };
+            }),
+          };
+        }),
+      });
+
+      invalidateCache();
+      return vertexId;
+    },
+
+    removeVertex: (clipId, maskId, vertexId) => {
+      const { clips, selectedVertexIds, invalidateCache } = get();
+
+      set({
+        clips: clips.map(c => {
+          if (c.id !== clipId) return c;
+          return {
+            ...c,
+            masks: (c.masks || []).map(m => {
+              if (m.id !== maskId) return m;
+              return {
+                ...m,
+                vertices: m.vertices.filter(v => v.id !== vertexId),
+              };
+            }),
+          };
+        }),
+        selectedVertexIds: new Set(
+          Array.from(selectedVertexIds).filter(id => id !== vertexId)
+        ),
+      });
+
+      invalidateCache();
+    },
+
+    updateVertex: (clipId, maskId, vertexId, updates) => {
+      const { clips, invalidateCache } = get();
+
+      set({
+        clips: clips.map(c => {
+          if (c.id !== clipId) return c;
+          return {
+            ...c,
+            masks: (c.masks || []).map(m => {
+              if (m.id !== maskId) return m;
+              return {
+                ...m,
+                vertices: m.vertices.map(v =>
+                  v.id === vertexId ? { ...v, ...updates } : v
+                ),
+              };
+            }),
+          };
+        }),
+      });
+
+      invalidateCache();
+    },
+
+    closeMask: (clipId, maskId) => {
+      const { updateMask } = get();
+      updateMask(clipId, maskId, { closed: true });
+    },
+
+    // Preset shapes
+    addRectangleMask: (clipId) => {
+      const { addMask, invalidateCache } = get();
+      const maskId = addMask(clipId, { name: 'Rectangle Mask' });
+
+      // Add rectangle vertices (normalized 0-1 coordinates)
+      // Default rectangle covers 80% of the clip area, centered
+      const margin = 0.1;
+      const vertices: MaskVertex[] = [
+        { id: `v-${Date.now()}-1`, x: margin, y: margin, handleIn: { x: 0, y: 0 }, handleOut: { x: 0, y: 0 } },
+        { id: `v-${Date.now()}-2`, x: 1 - margin, y: margin, handleIn: { x: 0, y: 0 }, handleOut: { x: 0, y: 0 } },
+        { id: `v-${Date.now()}-3`, x: 1 - margin, y: 1 - margin, handleIn: { x: 0, y: 0 }, handleOut: { x: 0, y: 0 } },
+        { id: `v-${Date.now()}-4`, x: margin, y: 1 - margin, handleIn: { x: 0, y: 0 }, handleOut: { x: 0, y: 0 } },
+      ];
+
+      const { clips } = get();
+      set({
+        clips: clips.map(c => {
+          if (c.id !== clipId) return c;
+          return {
+            ...c,
+            masks: (c.masks || []).map(m =>
+              m.id === maskId ? { ...m, vertices, closed: true } : m
+            ),
+          };
+        }),
+      });
+
+      invalidateCache();
+      return maskId;
+    },
+
+    addEllipseMask: (clipId) => {
+      const { addMask, invalidateCache } = get();
+      const maskId = addMask(clipId, { name: 'Ellipse Mask' });
+
+      // Create ellipse using bezier curves (approximation)
+      // Control point offset for circular bezier (~0.5523)
+      const k = 0.5523;
+      const cx = 0.5;
+      const cy = 0.5;
+      const rx = 0.4;
+      const ry = 0.4;
+
+      const vertices: MaskVertex[] = [
+        // Top
+        {
+          id: `v-${Date.now()}-1`,
+          x: cx,
+          y: cy - ry,
+          handleIn: { x: -rx * k, y: 0 },
+          handleOut: { x: rx * k, y: 0 },
+        },
+        // Right
+        {
+          id: `v-${Date.now()}-2`,
+          x: cx + rx,
+          y: cy,
+          handleIn: { x: 0, y: -ry * k },
+          handleOut: { x: 0, y: ry * k },
+        },
+        // Bottom
+        {
+          id: `v-${Date.now()}-3`,
+          x: cx,
+          y: cy + ry,
+          handleIn: { x: rx * k, y: 0 },
+          handleOut: { x: -rx * k, y: 0 },
+        },
+        // Left
+        {
+          id: `v-${Date.now()}-4`,
+          x: cx - rx,
+          y: cy,
+          handleIn: { x: 0, y: ry * k },
+          handleOut: { x: 0, y: -ry * k },
+        },
+      ];
+
+      const { clips } = get();
+      set({
+        clips: clips.map(c => {
+          if (c.id !== clipId) return c;
+          return {
+            ...c,
+            masks: (c.masks || []).map(m =>
+              m.id === maskId ? { ...m, vertices, closed: true } : m
+            ),
+          };
+        }),
+      });
+
+      invalidateCache();
+      return maskId;
     },
   }))
 );

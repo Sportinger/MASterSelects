@@ -179,6 +179,8 @@ export interface TimelineClip {
   compositionId?: string;   // ID of the nested composition
   nestedClips?: TimelineClip[];  // Loaded clips from the nested composition
   nestedTracks?: TimelineTrack[];  // Tracks from the nested composition
+  // Mask support
+  masks?: ClipMask[];     // Array of masks applied to this clip
 }
 
 export interface TimelineTrack {
@@ -222,6 +224,8 @@ export interface SerializableClip {
   // Nested composition support
   isComposition?: boolean;
   compositionId?: string;
+  // Mask support
+  masks?: ClipMask[];        // Masks applied to this clip
 }
 
 // Serializable timeline data for composition storage
@@ -245,6 +249,29 @@ export type AnimatableProperty =
   | 'position.x' | 'position.y' | 'position.z'
   | 'scale.x' | 'scale.y'
   | 'rotation.x' | 'rotation.y' | 'rotation.z';
+
+// Mask types for After Effects-style clip masking
+export interface MaskVertex {
+  id: string;
+  x: number;              // Position relative to clip (0-1 normalized)
+  y: number;
+  handleIn: { x: number; y: number };   // Bezier control handle (relative to vertex)
+  handleOut: { x: number; y: number };  // Bezier control handle (relative to vertex)
+}
+
+export type MaskMode = 'add' | 'subtract' | 'intersect';
+
+export interface ClipMask {
+  id: string;
+  name: string;
+  vertices: MaskVertex[];
+  closed: boolean;        // Is the path closed
+  opacity: number;        // 0-1
+  feather: number;        // Blur amount in pixels
+  inverted: boolean;
+  mode: MaskMode;
+  expanded: boolean;      // UI state - expanded in properties panel
+}
 
 export interface Keyframe {
   id: string;

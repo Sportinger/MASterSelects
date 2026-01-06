@@ -1,8 +1,8 @@
 // Clip Properties Panel - Shows transform controls for selected timeline clip
 
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useState } from 'react';
 import { useTimelineStore } from '../stores/timelineStore';
-import type { BlendMode, AnimatableProperty } from '../types';
+import type { BlendMode, AnimatableProperty, MaskMode, ClipMask } from '../types';
 
 // Organized by category like After Effects
 const BLEND_MODE_GROUPS: { label: string; modes: BlendMode[] }[] = [
@@ -168,9 +168,175 @@ function PrecisionSlider({ min, max, step, value, onChange }: PrecisionSliderPro
   );
 }
 
+// Mask mode options
+const MASK_MODES: { value: MaskMode; label: string }[] = [
+  { value: 'add', label: 'Add' },
+  { value: 'subtract', label: 'Subtract' },
+  { value: 'intersect', label: 'Intersect' },
+];
+
+// Individual mask item component
+interface MaskItemProps {
+  clipId: string;
+  mask: ClipMask;
+  isActive: boolean;
+  onSelect: () => void;
+}
+
+function MaskItem({ clipId, mask, isActive, onSelect }: MaskItemProps) {
+  const { updateMask, removeMask, setActiveMask, setMaskEditMode } = useTimelineStore();
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(mask.name);
+
+  const handleNameDoubleClick = () => {
+    setIsEditing(true);
+    setEditName(mask.name);
+  };
+
+  const handleNameChange = () => {
+    if (editName.trim()) {
+      updateMask(clipId, mask.id, { name: editName.trim() });
+    }
+    setIsEditing(false);
+  };
+
+  const handleEditMask = () => {
+    onSelect();
+    setActiveMask(clipId, mask.id);
+    setMaskEditMode('editing');
+  };
+
+  return (
+    <div className={`mask-item ${isActive ? 'active' : ''} ${mask.expanded ? 'expanded' : ''}`}>
+      <div className="mask-item-header" onClick={onSelect}>
+        <button
+          className="mask-expand-btn"
+          onClick={(e) => {
+            e.stopPropagation();
+            updateMask(clipId, mask.id, { expanded: !mask.expanded });
+          }}
+        >
+          {mask.expanded ? '\u25BC' : '\u25B6'}
+        </button>
+
+        {isEditing ? (
+          <input
+            type="text"
+            className="mask-name-input"
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            onBlur={handleNameChange}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleNameChange();
+              if (e.key === 'Escape') setIsEditing(false);
+            }}
+            autoFocus
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <span className="mask-name" onDoubleClick={handleNameDoubleClick}>
+            {mask.name}
+          </span>
+        )}
+
+        <select
+          className="mask-mode-select"
+          value={mask.mode}
+          onChange={(e) => updateMask(clipId, mask.id, { mode: e.target.value as MaskMode })}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {MASK_MODES.map(m => (
+            <option key={m.value} value={m.value}>{m.label}</option>
+          ))}
+        </select>
+
+        <button
+          className="mask-edit-btn"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleEditMask();
+          }}
+          title="Edit mask path"
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+          </svg>
+        </button>
+
+        <button
+          className="mask-delete-btn"
+          onClick={(e) => {
+            e.stopPropagation();
+            removeMask(clipId, mask.id);
+          }}
+          title="Delete mask"
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+
+      {mask.expanded && (
+        <div className="mask-item-properties">
+          <div className="control-row">
+            <label>Opacity</label>
+            <PrecisionSlider
+              min={0}
+              max={1}
+              step={0.01}
+              value={mask.opacity}
+              onChange={(v) => updateMask(clipId, mask.id, { opacity: v })}
+            />
+            <span className="value">{(mask.opacity * 100).toFixed(0)}%</span>
+          </div>
+
+          <div className="control-row">
+            <label>Feather</label>
+            <PrecisionSlider
+              min={0}
+              max={100}
+              step={0.5}
+              value={mask.feather}
+              onChange={(v) => updateMask(clipId, mask.id, { feather: v })}
+            />
+            <span className="value">{mask.feather.toFixed(1)}px</span>
+          </div>
+
+          <div className="control-row">
+            <label>Inverted</label>
+            <input
+              type="checkbox"
+              checked={mask.inverted}
+              onChange={(e) => updateMask(clipId, mask.id, { inverted: e.target.checked })}
+            />
+          </div>
+
+          <div className="mask-info">
+            {mask.vertices.length} vertices | {mask.closed ? 'Closed' : 'Open'}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ClipPropertiesPanel() {
-  const { clips, selectedClipId, setPropertyValue, playheadPosition, getInterpolatedTransform } = useTimelineStore();
+  const {
+    clips,
+    selectedClipId,
+    setPropertyValue,
+    playheadPosition,
+    getInterpolatedTransform,
+    addRectangleMask,
+    addEllipseMask,
+    activeMaskId,
+    setActiveMask,
+  } = useTimelineStore();
   const selectedClip = clips.find(c => c.id === selectedClipId);
+  const [showMaskMenu, setShowMaskMenu] = useState(false);
 
   if (!selectedClip) {
     return (
@@ -368,6 +534,59 @@ export function ClipPropertiesPanel() {
             />
             <span className="value">{transform.rotation.z.toFixed(1)}°</span>
           </div>
+        </div>
+
+        {/* Masks */}
+        <div className="properties-section masks-section">
+          <div className="section-header-with-button">
+            <h4>Masks</h4>
+            <div className="mask-add-menu-container">
+              <button
+                className="btn btn-sm btn-add"
+                onClick={() => setShowMaskMenu(!showMaskMenu)}
+              >
+                + Add
+              </button>
+              {showMaskMenu && (
+                <div className="mask-add-menu">
+                  <button
+                    onClick={() => {
+                      addRectangleMask(selectedClip.id);
+                      setShowMaskMenu(false);
+                    }}
+                  >
+                    Rectangle
+                  </button>
+                  <button
+                    onClick={() => {
+                      addEllipseMask(selectedClip.id);
+                      setShowMaskMenu(false);
+                    }}
+                  >
+                    Ellipse
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {(!selectedClip.masks || selectedClip.masks.length === 0) ? (
+            <div className="mask-empty">
+              No masks. Click "+ Add" to create one.
+            </div>
+          ) : (
+            <div className="mask-list">
+              {selectedClip.masks.map((mask) => (
+                <MaskItem
+                  key={mask.id}
+                  clipId={selectedClip.id}
+                  mask={mask}
+                  isActive={activeMaskId === mask.id}
+                  onSelect={() => setActiveMask(selectedClip.id, mask.id)}
+                />
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Reset Button */}
