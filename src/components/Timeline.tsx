@@ -676,7 +676,11 @@ export function Timeline() {
         }
       } else if (clip?.source?.videoElement) {
         // Seek video to correct position within clip
-        const clipLocalTime = playheadPosition - clip.startTime; // Time relative to clip start (for keyframes)
+        const clipLocalTime = playheadPosition - clip.startTime; // Time relative to clip start
+        // For reversed clips, also reverse keyframe time so animations play backwards
+        const keyframeLocalTime = clip.reversed
+          ? clip.duration - clipLocalTime
+          : clipLocalTime;
         // For reversed clips, play backwards from outPoint
         const clipTime = clip.reversed
           ? clip.outPoint - clipLocalTime
@@ -742,7 +746,7 @@ export function Timeline() {
             // Frame is already in the service cache - use it immediately
             proxyFramesRef.current.set(cacheKey, { frameIndex, image: cachedInService });
 
-            const transform = getInterpolatedTransform(clip.id, clipLocalTime);
+            const transform = getInterpolatedTransform(clip.id, keyframeLocalTime);
             newLayers[layerIndex] = {
               id: `timeline_layer_${layerIndex}`,
               name: clip.name,
@@ -800,7 +804,7 @@ export function Timeline() {
 
             // Use previous frame while loading (if available)
             if (cached?.image) {
-              const transform = getInterpolatedTransform(clip.id, clipLocalTime);
+              const transform = getInterpolatedTransform(clip.id, keyframeLocalTime);
               newLayers[layerIndex] = {
                 id: `timeline_layer_${layerIndex}`,
                 name: clip.name,
@@ -820,7 +824,7 @@ export function Timeline() {
             }
           } else if (cached?.image) {
             // Same frame as before, just use it
-            const transform = getInterpolatedTransform(clip.id, clipLocalTime);
+            const transform = getInterpolatedTransform(clip.id, keyframeLocalTime);
             const needsUpdate = !layer ||
               layer.source?.imageElement !== cached.image ||
               layer.source?.type !== 'image';
@@ -858,38 +862,58 @@ export function Timeline() {
           }
 
           // Control HTMLVideoElement playback
-          if (isPlaying && video.paused) {
-            video.play().catch(() => {});
-          } else if (!isPlaying && !video.paused) {
-            video.pause();
-          }
-
-          // During playback: DON'T seek - let video play naturally, we sync FROM it
-          // Only seek when scrubbing or paused
-          if (!isPlaying) {
-            const seekThreshold = isDraggingPlayhead ? 0.1 : 0.05;
-
+          // For reversed clips, keep video paused and seek frame-by-frame
+          if (clip.reversed) {
+            // Always keep paused for reversed playback
+            if (!video.paused) {
+              video.pause();
+            }
+            // Always seek for reversed clips (during playback or scrubbing)
+            const seekThreshold = isDraggingPlayhead ? 0.1 : 0.03;
             if (timeDiff > seekThreshold) {
               const now = performance.now();
               const lastSeek = lastSeekRef.current[clip.id] || 0;
-
-              // Throttle seeks during scrubbing
-              if (isDraggingPlayhead && now - lastSeek < 80) {
-                pendingSeekRef.current[clip.id] = clipTime;
-              } else {
-                if (isDraggingPlayhead && 'fastSeek' in video) {
-                  video.fastSeek(clipTime);
-                } else {
-                  video.currentTime = clipTime;
-                }
+              // Throttle seeks to ~30fps for smooth reverse playback
+              if (now - lastSeek > 33) {
+                video.currentTime = clipTime;
                 lastSeekRef.current[clip.id] = now;
-                delete pendingSeekRef.current[clip.id];
+              }
+            }
+          } else {
+            // Normal forward playback
+            if (isPlaying && video.paused) {
+              video.play().catch(() => {});
+            } else if (!isPlaying && !video.paused) {
+              video.pause();
+            }
+
+            // During playback: DON'T seek - let video play naturally, we sync FROM it
+            // Only seek when scrubbing or paused
+            if (!isPlaying) {
+              const seekThreshold = isDraggingPlayhead ? 0.1 : 0.05;
+
+              if (timeDiff > seekThreshold) {
+                const now = performance.now();
+                const lastSeek = lastSeekRef.current[clip.id] || 0;
+
+                // Throttle seeks during scrubbing
+                if (isDraggingPlayhead && now - lastSeek < 80) {
+                  pendingSeekRef.current[clip.id] = clipTime;
+                } else {
+                  if (isDraggingPlayhead && 'fastSeek' in video) {
+                    video.fastSeek(clipTime);
+                  } else {
+                    video.currentTime = clipTime;
+                  }
+                  lastSeekRef.current[clip.id] = now;
+                  delete pendingSeekRef.current[clip.id];
+                }
               }
             }
           }
 
           // Check if layer needs update
-          const transform = getInterpolatedTransform(clip.id, clipLocalTime);
+          const transform = getInterpolatedTransform(clip.id, keyframeLocalTime);
           const needsUpdate = !layer ||
             layer.source?.videoElement !== video ||
             layer.source?.webCodecsPlayer !== webCodecsPlayer ||

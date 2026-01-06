@@ -2775,6 +2775,9 @@ input[type="checkbox"] {
   background: rgba(0, 0, 0, 0.4);
   border-top: 1px solid var(--border-color);
   width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
 .property-label-row {
@@ -2795,6 +2798,9 @@ input[type="checkbox"] {
 
 .property-label-group {
   border-bottom: 1px solid var(--border-color);
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
 .property-label-group:last-child {
@@ -2807,6 +2813,7 @@ input[type="checkbox"] {
   border-top: 1px solid var(--border-color);
   position: relative;
   width: 100%;
+  box-sizing: border-box;
   /* Ensure no offset from left edge */
   margin: 0;
   padding: 0;
@@ -2828,6 +2835,7 @@ input[type="checkbox"] {
 
 .keyframe-track-group {
   border-bottom: 1px solid var(--border-color);
+  box-sizing: border-box;
   /* Ensure no offset */
   margin: 0;
   padding: 0;
