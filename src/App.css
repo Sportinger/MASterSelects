@@ -1493,16 +1493,6 @@ input[type="checkbox"] {
   min-height: 36px;
 }
 
-.timeline-label {
-  font-weight: 600;
-  font-size: 12px;
-  color: var(--text-secondary);
-  padding-right: 8px;
-  border-right: 1px solid var(--border-color);
-  cursor: grab;
-  user-select: none;
-}
-
 /* Composition tabs - inline in toolbar */
 .timeline-tabs {
   display: flex;

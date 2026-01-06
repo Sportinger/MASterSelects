@@ -1738,21 +1738,17 @@ export function Timeline() {
     });
   };
 
-  // Render property rows for a track when expanded
-  const renderTrackPropertyRows = (trackId: string) => {
+  // Render property labels for track header (left column)
+  const renderTrackPropertyLabels = (trackId: string) => {
     return (
-      <div className="track-property-rows">
-        {/* Opacity property row */}
-        <div className="property-row">
+      <div className="track-property-labels">
+        {/* Opacity label */}
+        <div className="property-label-row">
           <span className="property-label">Opacity</span>
-          <div className="keyframe-track">
-            <div className="keyframe-track-line" />
-            {renderTrackKeyframeDiamonds(trackId, 'opacity')}
-          </div>
         </div>
 
         {/* Position group */}
-        <div className="property-group">
+        <div className="property-label-group">
           <div
             className="property-group-header"
             onClick={(e) => {
@@ -1765,33 +1761,15 @@ export function Timeline() {
           </div>
           {isTrackPropertyGroupExpanded(trackId, 'position') && (
             <>
-              <div className="property-row">
-                <span className="property-label">X</span>
-                <div className="keyframe-track">
-                  <div className="keyframe-track-line" />
-                  {renderTrackKeyframeDiamonds(trackId, 'position.x')}
-                </div>
-              </div>
-              <div className="property-row">
-                <span className="property-label">Y</span>
-                <div className="keyframe-track">
-                  <div className="keyframe-track-line" />
-                  {renderTrackKeyframeDiamonds(trackId, 'position.y')}
-                </div>
-              </div>
-              <div className="property-row">
-                <span className="property-label">Z</span>
-                <div className="keyframe-track">
-                  <div className="keyframe-track-line" />
-                  {renderTrackKeyframeDiamonds(trackId, 'position.z')}
-                </div>
-              </div>
+              <div className="property-label-row sub"><span className="property-label">X</span></div>
+              <div className="property-label-row sub"><span className="property-label">Y</span></div>
+              <div className="property-label-row sub"><span className="property-label">Z</span></div>
             </>
           )}
         </div>
 
         {/* Scale group */}
-        <div className="property-group">
+        <div className="property-label-group">
           <div
             className="property-group-header"
             onClick={(e) => {
@@ -1804,26 +1782,14 @@ export function Timeline() {
           </div>
           {isTrackPropertyGroupExpanded(trackId, 'scale') && (
             <>
-              <div className="property-row">
-                <span className="property-label">X</span>
-                <div className="keyframe-track">
-                  <div className="keyframe-track-line" />
-                  {renderTrackKeyframeDiamonds(trackId, 'scale.x')}
-                </div>
-              </div>
-              <div className="property-row">
-                <span className="property-label">Y</span>
-                <div className="keyframe-track">
-                  <div className="keyframe-track-line" />
-                  {renderTrackKeyframeDiamonds(trackId, 'scale.y')}
-                </div>
-              </div>
+              <div className="property-label-row sub"><span className="property-label">X</span></div>
+              <div className="property-label-row sub"><span className="property-label">Y</span></div>
             </>
           )}
         </div>
 
         {/* Rotation group */}
-        <div className="property-group">
+        <div className="property-label-group">
           <div
             className="property-group-header"
             onClick={(e) => {
@@ -1836,22 +1802,94 @@ export function Timeline() {
           </div>
           {isTrackPropertyGroupExpanded(trackId, 'rotation') && (
             <>
-              <div className="property-row">
-                <span className="property-label">X</span>
+              <div className="property-label-row sub"><span className="property-label">X</span></div>
+              <div className="property-label-row sub"><span className="property-label">Y</span></div>
+              <div className="property-label-row sub"><span className="property-label">Z</span></div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // Render keyframe tracks for timeline area (right column)
+  const renderTrackPropertyTracks = (trackId: string) => {
+    return (
+      <div className="track-property-tracks">
+        {/* Opacity track */}
+        <div className="keyframe-track-row">
+          <div className="keyframe-track">
+            <div className="keyframe-track-line" />
+            {renderTrackKeyframeDiamonds(trackId, 'opacity')}
+          </div>
+        </div>
+
+        {/* Position group tracks */}
+        <div className="keyframe-track-group">
+          <div className="keyframe-track-row group-header" />
+          {isTrackPropertyGroupExpanded(trackId, 'position') && (
+            <>
+              <div className="keyframe-track-row">
+                <div className="keyframe-track">
+                  <div className="keyframe-track-line" />
+                  {renderTrackKeyframeDiamonds(trackId, 'position.x')}
+                </div>
+              </div>
+              <div className="keyframe-track-row">
+                <div className="keyframe-track">
+                  <div className="keyframe-track-line" />
+                  {renderTrackKeyframeDiamonds(trackId, 'position.y')}
+                </div>
+              </div>
+              <div className="keyframe-track-row">
+                <div className="keyframe-track">
+                  <div className="keyframe-track-line" />
+                  {renderTrackKeyframeDiamonds(trackId, 'position.z')}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Scale group tracks */}
+        <div className="keyframe-track-group">
+          <div className="keyframe-track-row group-header" />
+          {isTrackPropertyGroupExpanded(trackId, 'scale') && (
+            <>
+              <div className="keyframe-track-row">
+                <div className="keyframe-track">
+                  <div className="keyframe-track-line" />
+                  {renderTrackKeyframeDiamonds(trackId, 'scale.x')}
+                </div>
+              </div>
+              <div className="keyframe-track-row">
+                <div className="keyframe-track">
+                  <div className="keyframe-track-line" />
+                  {renderTrackKeyframeDiamonds(trackId, 'scale.y')}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Rotation group tracks */}
+        <div className="keyframe-track-group">
+          <div className="keyframe-track-row group-header" />
+          {isTrackPropertyGroupExpanded(trackId, 'rotation') && (
+            <>
+              <div className="keyframe-track-row">
                 <div className="keyframe-track">
                   <div className="keyframe-track-line" />
                   {renderTrackKeyframeDiamonds(trackId, 'rotation.x')}
                 </div>
               </div>
-              <div className="property-row">
-                <span className="property-label">Y</span>
+              <div className="keyframe-track-row">
                 <div className="keyframe-track">
                   <div className="keyframe-track-line" />
                   {renderTrackKeyframeDiamonds(trackId, 'rotation.y')}
                 </div>
               </div>
-              <div className="property-row">
-                <span className="property-label">Z</span>
+              <div className="keyframe-track-row">
                 <div className="keyframe-track">
                   <div className="keyframe-track-line" />
                   {renderTrackKeyframeDiamonds(trackId, 'rotation.z')}
@@ -2071,9 +2109,8 @@ export function Timeline() {
 
   return (
     <div className={`timeline-container ${clipDrag || clipTrim ? 'is-dragging' : ''}`}>
-      {/* Timeline toolbar with tabs */}
+      {/* Timeline toolbar with composition tabs */}
       <div className="timeline-toolbar">
-        <div className="timeline-label">Timeline</div>
         <div className="timeline-tabs">
           {openCompositions.map((comp) => (
             <div
@@ -2202,23 +2239,24 @@ export function Timeline() {
                   style={{ height: dynamicHeight }}
                   onWheel={(e) => handleTrackHeaderWheel(e, track.id)}
                 >
-                  <div className="track-header-main">
-                    {/* Only video tracks get expand arrow */}
-                    {track.type === 'video' && (
-                      <span
-                        className={`track-expand-arrow ${isExpanded ? 'expanded' : ''} ${trackHasKeyframes(track.id) ? 'has-keyframes' : ''}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleTrackExpanded(track.id);
-                        }}
-                        title={isExpanded ? 'Collapse properties' : 'Expand properties'}
-                      >
-                        ▶
-                      </span>
-                    )}
-                    <span className="track-name">{track.name}</span>
-                  </div>
-                  <div className="track-controls">
+                  <div className="track-header-top" style={{ height: track.height }}>
+                    <div className="track-header-main">
+                      {/* Only video tracks get expand arrow */}
+                      {track.type === 'video' && (
+                        <span
+                          className={`track-expand-arrow ${isExpanded ? 'expanded' : ''} ${trackHasKeyframes(track.id) ? 'has-keyframes' : ''}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleTrackExpanded(track.id);
+                          }}
+                          title={isExpanded ? 'Collapse properties' : 'Expand properties'}
+                        >
+                          ▶
+                        </span>
+                      )}
+                      <span className="track-name">{track.name}</span>
+                    </div>
+                    <div className="track-controls">
                     <button
                       className={`btn-icon ${track.solo ? 'solo-active' : ''}`}
                       onClick={() => useTimelineStore.getState().setTrackSolo(track.id, !track.solo)}
@@ -2244,7 +2282,10 @@ export function Timeline() {
                         {track.visible ? '👁' : '👁‍🗨'}
                       </button>
                     )}
+                    </div>
                   </div>
+                  {/* Property labels - shown when track is expanded */}
+                  {track.type === 'video' && isExpanded && renderTrackPropertyLabels(track.id)}
                 </div>
               );
             });
@@ -2326,7 +2367,7 @@ export function Timeline() {
               )}
               </div>
               {/* Property rows - only shown when track is expanded */}
-              {track.type === 'video' && isExpanded && renderTrackPropertyRows(track.id)}
+              {track.type === 'video' && isExpanded && renderTrackPropertyTracks(track.id)}
             </div>
               );
             });
