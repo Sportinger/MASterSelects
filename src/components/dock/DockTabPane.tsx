@@ -1,8 +1,9 @@
 // Tab group container with tab bar and panel content
 
 import { useCallback, useRef, useEffect, useState } from 'react';
-import type { DockTabGroup, DockPanel, DropPosition } from '../../types/dock';
+import type { DockTabGroup, DockPanel } from '../../types/dock';
 import { useDockStore } from '../../stores/dockStore';
+import { useMediaStore } from '../../stores/mediaStore';
 import { DockPanelContent } from './DockPanelContent';
 import { calculateDropPosition } from '../../utils/dockLayout';
 
@@ -25,11 +26,21 @@ export function DockTabPane({ group }: DockTabPaneProps) {
   const [holdProgress, setHoldProgress] = useState<'idle' | 'holding' | 'ready' | 'fading'>('idle');
 
   const { setActiveTab, startDrag, updateDrag, dragState, setPanelZoom, layout } = useDockStore();
+  const {
+    getOpenCompositions,
+    activeCompositionId,
+    setActiveComposition,
+    closeCompositionTab
+  } = useMediaStore();
 
   const activePanel = group.panels[group.activeIndex];
   const isDropTarget = dragState.dropTarget?.groupId === group.id;
   const dropPosition = dragState.dropTarget?.position;
   const panelZoom = activePanel ? (layout.panelZoom?.[activePanel.id] ?? 1.0) : 1.0;
+
+  // Check if this group contains a timeline panel
+  const hasTimelinePanel = group.panels.some(p => p.type === 'timeline');
+  const openCompositions = hasTimelinePanel ? getOpenCompositions() : [];
 
   // Cancel any ongoing hold
   const cancelHold = useCallback(() => {
@@ -191,27 +202,54 @@ export function DockTabPane({ group }: DockTabPaneProps) {
     >
       {/* Tab bar - Ctrl+wheel here to zoom panel */}
       <div ref={tabBarRef} className="dock-tab-bar" title="Ctrl+Scroll to zoom | Hold to drag">
-        {group.panels.map((panel, index) => {
-          const isHolding = holdingTabId === panel.id && holdProgress === 'holding';
-          const isReady = holdingTabId === panel.id && holdProgress === 'ready';
-          const isFading = holdingTabId === panel.id && holdProgress === 'fading';
-          const isDragging = dragState.isDragging && dragState.draggedPanel?.id === panel.id;
+        {/* For timeline panels, show composition tabs instead */}
+        {hasTimelinePanel && openCompositions.length > 0 ? (
+          <>
+            {openCompositions.map((comp) => (
+              <div
+                key={comp.id}
+                className={`dock-tab ${comp.id === activeCompositionId ? 'active' : ''}`}
+                onClick={() => setActiveComposition(comp.id)}
+                title={comp.name}
+              >
+                <span className="dock-tab-title">{comp.name}</span>
+                <button
+                  className="dock-tab-close"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    closeCompositionTab(comp.id);
+                  }}
+                  title="Close"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </>
+        ) : (
+          /* Normal dock tabs for non-timeline panels */
+          group.panels.map((panel, index) => {
+            const isHolding = holdingTabId === panel.id && holdProgress === 'holding';
+            const isReady = holdingTabId === panel.id && holdProgress === 'ready';
+            const isFading = holdingTabId === panel.id && holdProgress === 'fading';
+            const isDragging = dragState.isDragging && dragState.draggedPanel?.id === panel.id;
 
-          return (
-            <div
-              key={panel.id}
-              className={`dock-tab ${index === group.activeIndex ? 'active' : ''} ${
-                isDragging ? 'dragging' : ''
-              } ${isHolding ? 'hold-glow' : ''} ${isReady ? 'hold-ready' : ''} ${isFading ? 'hold-fade' : ''}`}
-              onClick={() => handleTabClick(index)}
-              onMouseDown={(e) => handleTabMouseDown(e, panel, index)}
-              onMouseUp={handleTabMouseUp}
-              onMouseLeave={handleTabMouseLeave}
-            >
-              <span className="dock-tab-title">{panel.title}</span>
-            </div>
-          );
-        })}
+            return (
+              <div
+                key={panel.id}
+                className={`dock-tab ${index === group.activeIndex ? 'active' : ''} ${
+                  isDragging ? 'dragging' : ''
+                } ${isHolding ? 'hold-glow' : ''} ${isReady ? 'hold-ready' : ''} ${isFading ? 'hold-fade' : ''}`}
+                onClick={() => handleTabClick(index)}
+                onMouseDown={(e) => handleTabMouseDown(e, panel, index)}
+                onMouseUp={handleTabMouseUp}
+                onMouseLeave={handleTabMouseLeave}
+              >
+                <span className="dock-tab-title">{panel.title}</span>
+              </div>
+            );
+          })
+        )}
       </div>
 
       {/* Panel content with zoom */}

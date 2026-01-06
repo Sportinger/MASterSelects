@@ -182,6 +182,35 @@
   font-weight: 500;
 }
 
+.dock-tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 3px;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+  opacity: 0.6;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.dock-tab-close:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+}
+
+.dock-tab.active .dock-tab-close {
+  opacity: 0.8;
+}
+
 /* Panel content */
 .dock-panel-content {
   flex: 1;
