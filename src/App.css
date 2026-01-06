@@ -2821,7 +2821,7 @@ input[type="checkbox"] {
   width: 100%;
   box-sizing: border-box;
   /* Align with left column */
-  margin-top: -1px;
+  margin-top: -5px;
   padding: 0;
 }
 
