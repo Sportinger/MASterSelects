@@ -2767,6 +2767,7 @@ input[type="checkbox"] {
 .track-clip-row {
   position: relative;
   width: 100%;
+  flex-shrink: 0;
 }
 
 /* Property labels in track header (left column) */
@@ -2837,6 +2838,8 @@ input[type="checkbox"] {
 }
 
 .track-lane.expanded {
+  display: flex;
+  flex-direction: column;
   overflow: visible;
 }
 
