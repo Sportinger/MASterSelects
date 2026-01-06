@@ -2765,6 +2765,13 @@ input[type="checkbox"] {
 }
 
 /* ========== TRACK-BASED KEYFRAME EXPANSION ========== */
+.track-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+}
+
 .track-header-main {
   display: flex;
   align-items: center;
@@ -2792,8 +2799,13 @@ input[type="checkbox"] {
 }
 
 .track-header.expanded {
-  align-items: flex-start;
-  padding-top: 6px;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 0;
+}
+
+.track-header.expanded .track-header-top {
+  flex-shrink: 0;
 }
 
 .track-clip-row {
@@ -2801,11 +2813,60 @@ input[type="checkbox"] {
   width: 100%;
 }
 
-.track-property-rows {
-  background: rgba(0, 0, 0, 0.6);
+/* Property labels in track header (left column) */
+.track-property-labels {
+  background: rgba(0, 0, 0, 0.4);
+  border-top: 1px solid var(--border-color);
+  width: 100%;
+}
+
+.property-label-row {
+  height: 18px;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  font-size: 9px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.property-label-row.sub {
+  padding-left: 20px;
+}
+
+.property-label-group {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.property-label-group:last-child {
+  border-bottom: none;
+}
+
+/* Keyframe tracks in timeline area (right column) */
+.track-property-tracks {
+  background: rgba(0, 0, 0, 0.4);
   border-top: 1px solid var(--border-color);
   position: relative;
   width: 100%;
+}
+
+.keyframe-track-row {
+  height: 18px;
+  position: relative;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.keyframe-track-row.group-header {
+  background: var(--bg-tertiary);
+}
+
+.keyframe-track-group {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.keyframe-track-group:last-child {
+  border-bottom: none;
 }
 
 .track-lane.expanded {
