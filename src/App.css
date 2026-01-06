@@ -2628,12 +2628,15 @@ input[type="checkbox"] {
 .property-group-header {
   display: flex;
   align-items: center;
-  padding: 2px 8px;
+  height: 18px;
+  padding: 0 8px;
+  box-sizing: border-box;
   cursor: pointer;
   background: var(--bg-tertiary);
   font-size: 10px;
   color: var(--text-secondary);
   user-select: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .property-group-header:hover {

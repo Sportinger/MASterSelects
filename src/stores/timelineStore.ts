@@ -161,6 +161,7 @@ interface TimelineStore {
   splitClipAtPlayhead: () => void;
   selectClip: (id: string | null) => void;
   updateClipTransform: (id: string, transform: Partial<ClipTransform>) => void;
+  toggleClipReverse: (id: string) => void;
 
   // Playback actions
   setPlayheadPosition: (position: number) => void;
@@ -1083,6 +1084,25 @@ export const useTimelineStore = create<TimelineStore>()(
         }),
       });
       // Invalidate cache - transform affects rendered output
+      get().invalidateCache();
+    },
+
+    toggleClipReverse: (id) => {
+      const { clips } = get();
+      set({
+        clips: clips.map(c => {
+          if (c.id !== id) return c;
+          const newReversed = !c.reversed;
+          // Reverse the thumbnails array when toggling
+          const newThumbnails = c.thumbnails ? [...c.thumbnails].reverse() : c.thumbnails;
+          return {
+            ...c,
+            reversed: newReversed,
+            thumbnails: newThumbnails,
+          };
+        }),
+      });
+      // Invalidate cache - reversed playback affects rendered output
       get().invalidateCache();
     },
 

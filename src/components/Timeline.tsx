@@ -72,6 +72,7 @@ export function Timeline() {
     ramPreviewEnabled,
     toggleRamPreviewEnabled,
     splitClipAtPlayhead,
+    toggleClipReverse,
     updateClipTransform,
     getInterpolatedTransform,
     isTrackExpanded,

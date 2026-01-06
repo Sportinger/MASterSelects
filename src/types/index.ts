@@ -173,6 +173,7 @@ export interface TimelineClip {
   waveform?: number[];    // Array of normalized amplitude values (0-1) for audio waveform
   transform: ClipTransform;  // Visual transform properties
   isLoading?: boolean;    // True while media is being loaded
+  reversed?: boolean;     // True if clip plays in reverse
   // Nested composition support
   isComposition?: boolean;  // True if this clip is a nested composition
   compositionId?: string;   // ID of the nested composition
