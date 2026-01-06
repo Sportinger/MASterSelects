@@ -760,6 +760,23 @@ export const useMediaStore = create<MediaState>()(
             return;
           }
 
+          // If no proxy folder is set and File System Access API is supported, ask user to pick one
+          if (fileSystemService.isSupported() && !fileSystemService.hasProxyFolder()) {
+            const userWantsToPickFolder = window.confirm(
+              'No proxy folder selected.\n\n' +
+              'Would you like to choose a folder to save proxy files?\n\n' +
+              'Click OK to select a folder, or Cancel to store proxies in browser storage only.'
+            );
+
+            if (userWantsToPickFolder) {
+              const handle = await fileSystemService.pickProxyFolder();
+              if (handle) {
+                set({ proxyFolderName: handle.name });
+                console.log('[Proxy] Proxy folder set to:', handle.name);
+              }
+            }
+          }
+
           // Check if proxy already exists
           const hasExisting = await projectDB.hasProxy(mediaFileId);
           if (hasExisting) {
