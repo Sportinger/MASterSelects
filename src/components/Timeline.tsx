@@ -55,7 +55,16 @@ export function Timeline() {
     splitClipAtPlayhead,
   } = useTimelineStore();
 
-  const { activeCompositionId, getActiveComposition, proxyEnabled, setProxyEnabled, files: mediaFiles, currentlyGeneratingProxyId } = useMediaStore();
+  const {
+    getActiveComposition,
+    proxyEnabled,
+    setProxyEnabled,
+    files: mediaFiles,
+    currentlyGeneratingProxyId,
+    proxyFolderName,
+    pickProxyFolder,
+    showInExplorer,
+  } = useMediaStore();
   const activeComposition = getActiveComposition();
 
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -249,10 +258,13 @@ export function Timeline() {
       return;
     }
 
-    if (type === 'raw') {
-      // For raw files, we have the File object but not the path
-      // Create a download link as fallback
-      if (mediaFile.file) {
+    const result = await showInExplorer(type, mediaFile.id);
+
+    if (result.success) {
+      alert(result.message);
+    } else {
+      // Fallback: download the file for raw
+      if (type === 'raw' && mediaFile.file) {
         const url = URL.createObjectURL(mediaFile.file);
         const a = document.createElement('a');
         a.href = url;
@@ -263,18 +275,16 @@ export function Timeline() {
         URL.revokeObjectURL(url);
         console.log('[Timeline] Downloaded raw file:', mediaFile.name);
       } else {
-        console.log('[Timeline] Show in Explorer (Raw):', mediaFile.name, '- File not available');
-      }
-    } else {
-      // For proxy, frames are stored in IndexedDB
-      if (mediaFile.proxyStatus === 'ready') {
-        console.log('[Timeline] Proxy available for:', mediaFile.name, '- Stored in IndexedDB');
-        // Could potentially export proxy frames here
-      } else {
-        console.log('[Timeline] No proxy available for:', mediaFile.name);
+        alert(result.message);
       }
     }
 
+    setContextMenu(null);
+  };
+
+  // Handle Set Proxy Folder
+  const handleSetProxyFolder = async () => {
+    await pickProxyFolder();
     setContextMenu(null);
   };
 
@@ -2197,13 +2207,13 @@ export function Timeline() {
                     className="context-menu-item"
                     onClick={() => handleShowInExplorer('raw')}
                   >
-                    Raw (Download)
+                    Raw {mediaFile?.hasFileHandle && '(has path)'}
                   </div>
                   <div
                     className={`context-menu-item ${!hasProxy ? 'disabled' : ''}`}
                     onClick={() => hasProxy && handleShowInExplorer('proxy')}
                   >
-                    Proxy {!hasProxy && '(not available)'}
+                    Proxy {!hasProxy ? '(not available)' : proxyFolderName ? `(${proxyFolderName})` : '(IndexedDB)'}
                   </div>
                 </div>
               </div>
@@ -2232,6 +2242,14 @@ export function Timeline() {
                     Generate Proxy
                   </div>
                 )}
+
+                {/* Set Proxy Folder */}
+                <div
+                  className="context-menu-item"
+                  onClick={handleSetProxyFolder}
+                >
+                  Set Proxy Folder... {proxyFolderName && `(${proxyFolderName})`}
+                </div>
               </>
             )}
 

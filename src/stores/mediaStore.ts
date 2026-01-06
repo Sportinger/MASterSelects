@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { subscribeWithSelector, persist } from 'zustand/middleware';
 import { useTimelineStore } from './timelineStore';
 import { projectDB, type StoredMediaFile, type StoredProject } from '../services/projectDB';
+import { fileSystemService } from '../services/fileSystemService';
 
 // Media item types
 export type MediaType = 'video' | 'audio' | 'image' | 'composition';
@@ -34,6 +35,9 @@ export interface MediaFile extends MediaItem {
   proxyProgress?: number; // 0-100
   proxyFrameCount?: number; // Total frames in proxy
   proxyFps?: number; // Frame rate of proxy (e.g., 30)
+  // File System Access API support
+  hasFileHandle?: boolean; // True if imported via File System Access API
+  filePath?: string; // Display path (folder name / file name)
 }
 
 // Composition (like After Effects comp)
@@ -128,6 +132,13 @@ interface MediaState {
   proxyGenerationQueue: string[]; // Queue of media file IDs to generate proxies for
   currentlyGeneratingProxyId: string | null;
   isLoading: boolean;
+
+  // File System Access API
+  fileSystemSupported: boolean;
+  proxyFolderName: string | null;
+  importFilesWithPicker: () => Promise<MediaFile[]>;
+  pickProxyFolder: () => Promise<boolean>;
+  showInExplorer: (type: 'raw' | 'proxy', mediaFileId?: string) => Promise<{ success: boolean; message: string }>;
 }
 
 // Generate unique ID
@@ -346,6 +357,11 @@ async function generateProxyFrames(
       blob,
     });
 
+    // Also save to file system if folder is selected
+    if (fileSystemService.hasProxyFolder()) {
+      await fileSystemService.saveProxyFrame(mediaFile.id, frameIndex, blob);
+    }
+
     generatedCount++;
 
     // Save batch when full
@@ -406,6 +422,10 @@ export const useMediaStore = create<MediaState>()(
         proxyEnabled: true, // Use proxies for preview by default
         proxyGenerationQueue: [],
         currentlyGeneratingProxyId: null,
+
+        // File System Access API state
+        fileSystemSupported: fileSystemService.isSupported(),
+        proxyFolderName: fileSystemService.getProxyFolderName(),
 
         importFile: async (file: File) => {
           const type = getMediaType(file);
@@ -769,9 +789,15 @@ export const useMediaStore = create<MediaState>()(
             ),
           });
 
-          // Helper to save frames to IndexedDB
+          // Helper to save frames to IndexedDB and optionally to file system
           const saveFrame = async (frame: { id: string; mediaFileId: string; frameIndex: number; blob: Blob }) => {
+            // Always save to IndexedDB (for cache/fallback)
             await projectDB.saveProxyFrame(frame);
+
+            // Also save to file system if folder is selected
+            if (fileSystemService.hasProxyFolder()) {
+              await fileSystemService.saveProxyFrame(frame.mediaFileId, frame.frameIndex, frame.blob);
+            }
           };
 
           try {
@@ -855,6 +881,91 @@ export const useMediaStore = create<MediaState>()(
               ),
             });
           }
+        },
+
+        // ============ File System Access API ============
+
+        // Import files using the File System Access API (with file handles)
+        importFilesWithPicker: async () => {
+          const result = await fileSystemService.pickFiles();
+          if (!result || result.length === 0) {
+            return [];
+          }
+
+          const imported: MediaFile[] = [];
+          for (const { file, handle } of result) {
+            // Store the file handle for later access
+            const id = generateId();
+            fileSystemService.storeFileHandle(id, handle);
+
+            const type = getMediaType(file);
+            const url = URL.createObjectURL(file);
+            const [info, thumbnailUrl] = await Promise.all([
+              getMediaInfo(file, type),
+              createThumbnail(file, type as 'video' | 'image'),
+            ]);
+
+            const mediaFile: MediaFile = {
+              id,
+              name: file.name,
+              type,
+              parentId: null,
+              createdAt: Date.now(),
+              file,
+              url,
+              thumbnailUrl,
+              hasFileHandle: true,
+              filePath: handle.name,
+              ...info,
+            };
+
+            set((state) => ({
+              files: [...state.files, mediaFile],
+            }));
+
+            // Save file blob to IndexedDB for persistence
+            try {
+              const storedFile: StoredMediaFile = {
+                id: mediaFile.id,
+                name: file.name,
+                type,
+                blob: file,
+                duration: info.duration,
+                width: info.width,
+                height: info.height,
+                createdAt: mediaFile.createdAt,
+              };
+              if (thumbnailUrl && thumbnailUrl.startsWith('data:')) {
+                const response = await fetch(thumbnailUrl);
+                storedFile.thumbnailBlob = await response.blob();
+              }
+              await projectDB.saveMediaFile(storedFile);
+              console.log('[MediaStore] Saved file with handle:', file.name);
+            } catch (e) {
+              console.warn('[MediaStore] Failed to save file to IndexedDB:', e);
+            }
+
+            imported.push(mediaFile);
+          }
+
+          return imported;
+        },
+
+        // Pick a folder for proxy storage
+        pickProxyFolder: async () => {
+          const handle = await fileSystemService.pickProxyFolder();
+          if (handle) {
+            set({ proxyFolderName: handle.name });
+            console.log('[MediaStore] Proxy folder set to:', handle.name);
+            return true;
+          }
+          return false;
+        },
+
+        // Show file in explorer
+        showInExplorer: async (type, mediaFileId) => {
+          const result = await fileSystemService.showInExplorer(type, mediaFileId);
+          return result;
         },
 
         // Initialize from IndexedDB - restore file blobs and check proxy status
@@ -1096,7 +1207,17 @@ export const useMediaStore = create<MediaState>()(
 // Auto-initialize from IndexedDB on app load
 if (typeof window !== 'undefined') {
   // Delay init slightly to ensure store is ready
-  setTimeout(() => {
+  setTimeout(async () => {
+    // Initialize file system service (restore handles from IndexedDB)
+    await fileSystemService.init();
+
+    // Update store with proxy folder name if restored
+    const proxyFolderName = fileSystemService.getProxyFolderName();
+    if (proxyFolderName) {
+      useMediaStore.setState({ proxyFolderName });
+    }
+
+    // Initialize media from IndexedDB
     useMediaStore.getState().initFromDB();
   }, 100);
 }

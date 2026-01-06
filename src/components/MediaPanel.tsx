@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from 'react';
 import { useMediaStore } from '../stores/mediaStore';
-import type { MediaFile, Composition, MediaFolder, ProjectItem } from '../stores/mediaStore';
+import type { MediaFile, Composition, ProjectItem } from '../stores/mediaStore';
 
 export function MediaPanel() {
   const {
@@ -12,6 +12,7 @@ export function MediaPanel() {
     selectedIds,
     expandedFolderIds,
     importFiles,
+    importFilesWithPicker,
     createComposition,
     createFolder,
     removeFile,
@@ -22,11 +23,14 @@ export function MediaPanel() {
     toggleFolderExpanded,
     setSelection,
     addToSelection,
-    clearSelection,
     getItemsByFolder,
     setActiveComposition,
     generateProxy,
     cancelProxyGeneration,
+    fileSystemSupported,
+    proxyFolderName,
+    pickProxyFolder,
+    showInExplorer,
   } = useMediaStore();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -34,10 +38,16 @@ export function MediaPanel() {
   const [renameValue, setRenameValue] = useState('');
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; itemId?: string } | null>(null);
 
-  // Handle file import
-  const handleImport = useCallback(() => {
-    fileInputRef.current?.click();
-  }, []);
+  // Handle file import - prefer File System Access API for better file path access
+  const handleImport = useCallback(async () => {
+    if (fileSystemSupported) {
+      // Use File System Access API - gives us file handles with path info
+      await importFilesWithPicker();
+    } else {
+      // Fallback to traditional file input
+      fileInputRef.current?.click();
+    }
+  }, [fileSystemSupported, importFilesWithPicker]);
 
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -414,34 +424,54 @@ export function MediaPanel() {
                     <div className="context-submenu">
                       <div
                         className="context-menu-item"
-                        onClick={() => {
-                          if (mediaFile.file) {
-                            const url = URL.createObjectURL(mediaFile.file);
-                            const a = document.createElement('a');
-                            a.href = url;
-                            a.download = mediaFile.name;
-                            document.body.appendChild(a);
-                            a.click();
-                            document.body.removeChild(a);
-                            URL.revokeObjectURL(url);
+                        onClick={async () => {
+                          const result = await showInExplorer('raw', mediaFile.id);
+                          if (result.success) {
+                            alert(result.message);
+                          } else {
+                            // Fallback: download the file
+                            if (mediaFile.file) {
+                              const url = URL.createObjectURL(mediaFile.file);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = mediaFile.name;
+                              document.body.appendChild(a);
+                              a.click();
+                              document.body.removeChild(a);
+                              URL.revokeObjectURL(url);
+                            }
                           }
                           closeContextMenu();
                         }}
                       >
-                        Raw (Download)
+                        Raw {mediaFile.hasFileHandle && '(has path)'}
                       </div>
                       <div
                         className={`context-menu-item ${!hasProxy ? 'disabled' : ''}`}
-                        onClick={() => {
+                        onClick={async () => {
                           if (hasProxy) {
-                            console.log('[MediaPanel] Proxy stored in IndexedDB');
+                            const result = await showInExplorer('proxy', mediaFile.id);
+                            alert(result.message);
                           }
                           closeContextMenu();
                         }}
                       >
-                        Proxy {!hasProxy && '(not available)'}
+                        Proxy {!hasProxy ? '(not available)' : proxyFolderName ? `(${proxyFolderName})` : '(IndexedDB)'}
                       </div>
                     </div>
+                  </div>
+                )}
+
+                {/* Set Proxy Folder - for video files */}
+                {isVideoFile && (
+                  <div
+                    className="context-menu-item"
+                    onClick={async () => {
+                      await pickProxyFolder();
+                      closeContextMenu();
+                    }}
+                  >
+                    Set Proxy Folder... {proxyFolderName && `(${proxyFolderName})`}
                   </div>
                 )}
 

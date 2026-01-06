@@ -2,13 +2,14 @@
 // Stores media file blobs and project data
 
 const DB_NAME = 'MASterSelectsDB';
-const DB_VERSION = 2; // Upgraded for proxy frames store
+const DB_VERSION = 3; // Upgraded for file system handles store
 
 // Store names
 const STORES = {
   MEDIA_FILES: 'mediaFiles',
   PROJECTS: 'projects',
   PROXY_FRAMES: 'proxyFrames', // New store for proxy frame sequences
+  FS_HANDLES: 'fsHandles', // Store for FileSystemHandles (directories, files)
 } as const;
 
 export interface StoredMediaFile {
@@ -102,6 +103,11 @@ class ProjectDatabase {
           const proxyStore = db.createObjectStore(STORES.PROXY_FRAMES, { keyPath: 'id' });
           proxyStore.createIndex('mediaFileId', 'mediaFileId', { unique: false });
           proxyStore.createIndex('frameIndex', 'frameIndex', { unique: false });
+        }
+
+        // Create file system handles store (new in v3)
+        if (!db.objectStoreNames.contains(STORES.FS_HANDLES)) {
+          db.createObjectStore(STORES.FS_HANDLES, { keyPath: 'key' });
         }
 
         console.log('[ProjectDB] Database schema created/upgraded');
@@ -385,6 +391,66 @@ class ProjectDatabase {
       const request = store.clear();
 
       request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // ============ File System Handles ============
+
+  // Store a FileSystemHandle (directory or file)
+  async storeHandle(key: string, handle: FileSystemHandle): Promise<void> {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORES.FS_HANDLES, 'readwrite');
+      const store = transaction.objectStore(STORES.FS_HANDLES);
+      const request = store.put({ key, handle });
+
+      request.onsuccess = () => {
+        console.log('[ProjectDB] Stored handle:', key);
+        resolve();
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // Get a stored FileSystemHandle
+  async getStoredHandle(key: string): Promise<FileSystemHandle | null> {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORES.FS_HANDLES, 'readonly');
+      const store = transaction.objectStore(STORES.FS_HANDLES);
+      const request = store.get(key);
+
+      request.onsuccess = () => {
+        const result = request.result;
+        resolve(result?.handle ?? null);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // Delete a stored handle
+  async deleteHandle(key: string): Promise<void> {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORES.FS_HANDLES, 'readwrite');
+      const store = transaction.objectStore(STORES.FS_HANDLES);
+      const request = store.delete(key);
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // Get all stored handles
+  async getAllHandles(): Promise<Array<{ key: string; handle: FileSystemHandle }>> {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORES.FS_HANDLES, 'readonly');
+      const store = transaction.objectStore(STORES.FS_HANDLES);
+      const request = store.getAll();
+
+      request.onsuccess = () => resolve(request.result || []);
       request.onerror = () => reject(request.error);
     });
   }
