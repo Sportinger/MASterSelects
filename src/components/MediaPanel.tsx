@@ -24,7 +24,7 @@ export function MediaPanel() {
     setSelection,
     addToSelection,
     getItemsByFolder,
-    setActiveComposition,
+    openCompositionTab,
     generateProxy,
     cancelProxyGeneration,
     fileSystemSupported,
@@ -88,10 +88,10 @@ export function MediaPanel() {
       // It's a folder
       toggleFolderExpanded(item.id);
     } else if (item.type === 'composition') {
-      // Open composition in timeline
-      setActiveComposition(item.id);
+      // Open composition in timeline (as a tab)
+      openCompositionTab(item.id);
     }
-  }, [toggleFolderExpanded, setActiveComposition]);
+  }, [toggleFolderExpanded, openCompositionTab]);
 
   // Context menu
   const handleContextMenu = useCallback((e: React.MouseEvent, itemId?: string) => {
