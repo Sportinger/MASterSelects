@@ -2759,6 +2759,7 @@ input[type="checkbox"] {
   display: flex;
   align-items: center;
   padding: 0 8px;
+  box-sizing: border-box;
   font-size: 9px;
   color: var(--text-secondary);
   text-transform: uppercase;
@@ -2791,6 +2792,7 @@ input[type="checkbox"] {
 .keyframe-track-row {
   height: 18px;
   position: relative;
+  box-sizing: border-box;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   /* Ensure track row starts at left edge */
   margin: 0;

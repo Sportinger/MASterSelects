@@ -1308,7 +1308,11 @@ export const useTimelineStore = create<TimelineStore>()(
 
             if (clip.source?.type === 'video' && clip.source.videoElement) {
               const video = clip.source.videoElement;
-              const clipTime = time - clip.startTime + clip.inPoint;
+              const clipLocalTime = time - clip.startTime;
+              // Handle reversed clips
+              const clipTime = clip.reversed
+                ? clip.outPoint - clipLocalTime
+                : clipLocalTime + clip.inPoint;
 
               // Robust seek with verification and retry
               const seekWithVerify = async (targetTime: number, maxRetries = 3): Promise<boolean> => {
@@ -1409,7 +1413,10 @@ export const useTimelineStore = create<TimelineStore>()(
           for (const clip of clipsAtTime) {
             if (clip.source?.type === 'video' && clip.source.videoElement) {
               const video = clip.source.videoElement;
-              const expectedTime = time - clip.startTime + clip.inPoint;
+              const localTime = time - clip.startTime;
+              const expectedTime = clip.reversed
+                ? clip.outPoint - localTime
+                : localTime + clip.inPoint;
               if (Math.abs(video.currentTime - expectedTime) > 0.04) {
                 allPositionsCorrect = false;
                 break;

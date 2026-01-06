@@ -598,7 +598,11 @@ export function Timeline() {
           );
 
           if (nestedClip?.source?.videoElement) {
-            const nestedClipTime = nestedTime - nestedClip.startTime + nestedClip.inPoint;
+            const nestedLocalTime = nestedTime - nestedClip.startTime;
+            // Handle reversed nested clips
+            const nestedClipTime = nestedClip.reversed
+              ? nestedClip.outPoint - nestedLocalTime
+              : nestedLocalTime + nestedClip.inPoint;
             const video = nestedClip.source.videoElement;
 
             // Seek nested video
@@ -673,7 +677,10 @@ export function Timeline() {
       } else if (clip?.source?.videoElement) {
         // Seek video to correct position within clip
         const clipLocalTime = playheadPosition - clip.startTime; // Time relative to clip start (for keyframes)
-        const clipTime = clipLocalTime + clip.inPoint; // Time within source video (for seeking)
+        // For reversed clips, play backwards from outPoint
+        const clipTime = clip.reversed
+          ? clip.outPoint - clipLocalTime
+          : clipLocalTime + clip.inPoint; // Time within source video (for seeking)
         const video = clip.source.videoElement;
         const webCodecsPlayer = clip.source.webCodecsPlayer;
         const timeDiff = Math.abs(video.currentTime - clipTime);
@@ -1062,7 +1069,8 @@ export function Timeline() {
           newPosition = effectiveStart;
           const clip = getActiveVideoClip();
           if (clip?.source?.videoElement) {
-            clip.source.videoElement.currentTime = clip.inPoint;
+            // For reversed clips, seek to outPoint; otherwise inPoint
+            clip.source.videoElement.currentTime = clip.reversed ? clip.outPoint : clip.inPoint;
           }
         } else {
           newPosition = effectiveEnd;
@@ -2064,7 +2072,8 @@ export function Timeline() {
       clip.isLoading ? 'loading' : '',
       hasProxy ? 'has-proxy' : '',
       isGeneratingProxy ? 'generating-proxy' : '',
-      hasKeyframes(clip.id) ? 'has-keyframes' : ''
+      hasKeyframes(clip.id) ? 'has-keyframes' : '',
+      clip.reversed ? 'reversed' : ''
     ].filter(Boolean).join(' ');
 
     return (
@@ -2087,6 +2096,10 @@ export function Timeline() {
         {/* Proxy ready indicator */}
         {hasProxy && mediaStore.proxyEnabled && (
           <div className="clip-proxy-badge" title="Proxy ready">P</div>
+        )}
+        {/* Reversed indicator */}
+        {clip.reversed && (
+          <div className="clip-reversed-badge" title="Reversed playback">⟲</div>
         )}
         {/* Audio waveform */}
         {clip.source?.type === 'audio' && clip.waveform && clip.waveform.length > 0 && (
@@ -2593,6 +2606,21 @@ export function Timeline() {
             >
               Split at Playhead (C)
             </div>
+
+            {/* Reverse clip option - only for video clips */}
+            {isVideo && (
+              <div
+                className={`context-menu-item ${clip?.reversed ? 'checked' : ''}`}
+                onClick={() => {
+                  if (contextMenu.clipId) {
+                    toggleClipReverse(contextMenu.clipId);
+                  }
+                  setContextMenu(null);
+                }}
+              >
+                {clip?.reversed ? '✓ ' : ''}Reverse Playback
+              </div>
+            )}
 
             {/* Delete clip option */}
             <div

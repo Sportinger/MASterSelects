@@ -256,7 +256,11 @@ export class FrameExporter {
 
       if (clip.source?.type === 'video' && clip.source.videoElement) {
         const video = clip.source.videoElement;
-        const clipTime = time - clip.startTime + clip.inPoint;
+        const clipLocalTime = time - clip.startTime;
+        // Handle reversed clips
+        const clipTime = clip.reversed
+          ? clip.outPoint - clipLocalTime
+          : clipLocalTime + clip.inPoint;
         seekPromises.push(this.seekVideo(video, clipTime));
       }
     }
