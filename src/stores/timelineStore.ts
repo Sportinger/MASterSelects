@@ -2,10 +2,11 @@
 
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
-import type { TimelineClip, TimelineTrack, ClipTransform, CompositionTimelineData, SerializableClip } from '../types';
+import type { TimelineClip, TimelineTrack, ClipTransform, CompositionTimelineData, SerializableClip, Keyframe, AnimatableProperty, EasingType } from '../types';
 import { useMediaStore } from './mediaStore';
 import { useMixerStore } from './mixerStore';
 import { WebCodecsPlayer } from '../engine/WebCodecsPlayer';
+import { getInterpolatedClipTransform, getKeyframeAtTime, hasKeyframesForProperty } from '../utils/keyframeInterpolation';
 
 // Default transform for new clips
 const DEFAULT_TRANSFORM: ClipTransform = {
@@ -190,6 +191,36 @@ interface TimelineStore {
   getSerializableState: () => CompositionTimelineData;
   loadState: (data: CompositionTimelineData | undefined) => Promise<void>;
   clearTimeline: () => void;
+
+  // Keyframe animation state
+  clipKeyframes: Map<string, Keyframe[]>;     // clipId -> keyframes
+  keyframeRecordingEnabled: Set<string>;      // "clipId:property" keys for recording mode
+  expandedClips: Set<string>;                 // Clips with expanded property rows
+  expandedPropertyGroups: Map<string, Set<string>>; // clipId -> expanded group names
+  selectedKeyframeIds: Set<string>;           // Currently selected keyframe IDs
+
+  // Keyframe actions
+  addKeyframe: (clipId: string, property: AnimatableProperty, value: number, time?: number, easing?: EasingType) => void;
+  removeKeyframe: (keyframeId: string) => void;
+  updateKeyframe: (keyframeId: string, updates: Partial<Omit<Keyframe, 'id' | 'clipId'>>) => void;
+  moveKeyframe: (keyframeId: string, newTime: number) => void;
+  getClipKeyframes: (clipId: string) => Keyframe[];
+  getInterpolatedTransform: (clipId: string, clipLocalTime: number) => ClipTransform;
+  hasKeyframes: (clipId: string, property?: AnimatableProperty) => boolean;
+
+  // Keyframe recording mode
+  toggleKeyframeRecording: (clipId: string, property: AnimatableProperty) => void;
+  isRecording: (clipId: string, property: AnimatableProperty) => boolean;
+  setPropertyValue: (clipId: string, property: AnimatableProperty, value: number) => void;
+
+  // Keyframe UI state
+  toggleClipExpanded: (clipId: string) => void;
+  isClipExpanded: (clipId: string) => boolean;
+  togglePropertyGroupExpanded: (clipId: string, groupName: string) => void;
+  isPropertyGroupExpanded: (clipId: string, groupName: string) => boolean;
+  selectKeyframe: (keyframeId: string, addToSelection?: boolean) => void;
+  deselectAllKeyframes: () => void;
+  deleteSelectedKeyframes: () => void;
 }
 
 const DEFAULT_TRACKS: TimelineTrack[] = [
@@ -217,6 +248,13 @@ export const useTimelineStore = create<TimelineStore>()(
     ramPreviewRange: null,
     isRamPreviewing: false,
     cachedFrameTimes: new Set<number>(),
+
+    // Keyframe animation state
+    clipKeyframes: new Map<string, Keyframe[]>(),
+    keyframeRecordingEnabled: new Set<string>(),
+    expandedClips: new Set<string>(),
+    expandedPropertyGroups: new Map<string, Set<string>>(),
+    selectedKeyframeIds: new Set<string>(),
 
     // Track actions
     addTrack: (type) => {
@@ -1652,7 +1690,7 @@ export const useTimelineStore = create<TimelineStore>()(
 
     // Get serializable timeline state for saving to composition
     getSerializableState: (): CompositionTimelineData => {
-      const { tracks, clips, playheadPosition, duration, zoom, scrollX, inPoint, outPoint, loopPlayback } = get();
+      const { tracks, clips, playheadPosition, duration, zoom, scrollX, inPoint, outPoint, loopPlayback, clipKeyframes } = get();
 
       // Convert clips to serializable format (without DOM elements)
       const mediaStore = useMediaStore.getState();
@@ -1664,6 +1702,9 @@ export const useTimelineStore = create<TimelineStore>()(
           lookupName = lookupName.replace(' (Audio)', '');
         }
         const mediaFile = mediaStore.files.find(f => f.name === lookupName);
+
+        // Get keyframes for this clip
+        const keyframes = clipKeyframes.get(clip.id) || [];
 
         return {
           id: clip.id,
@@ -1680,6 +1721,7 @@ export const useTimelineStore = create<TimelineStore>()(
           linkedClipId: clip.linkedClipId,
           waveform: clip.waveform,
           transform: clip.transform,
+          keyframes: keyframes.length > 0 ? keyframes : undefined,
           // Nested composition support
           isComposition: clip.isComposition,
           compositionId: clip.compositionId,
@@ -1738,7 +1780,24 @@ export const useTimelineStore = create<TimelineStore>()(
         outPoint: data.outPoint,
         loopPlayback: data.loopPlayback,
         selectedClipId: null,
+        // Clear keyframe state
+        clipKeyframes: new Map<string, Keyframe[]>(),
+        keyframeRecordingEnabled: new Set<string>(),
+        expandedClips: new Set<string>(),
+        expandedPropertyGroups: new Map<string, Set<string>>(),
+        selectedKeyframeIds: new Set<string>(),
       });
+
+      // Restore keyframes from serialized clips
+      const keyframeMap = new Map<string, Keyframe[]>();
+      for (const serializedClip of data.clips) {
+        if (serializedClip.keyframes && serializedClip.keyframes.length > 0) {
+          keyframeMap.set(serializedClip.id, serializedClip.keyframes);
+        }
+      }
+      if (keyframeMap.size > 0) {
+        set({ clipKeyframes: keyframeMap });
+      }
 
       // Restore clips - need to recreate media elements from file references
       const mediaStore = useMediaStore.getState();
@@ -1998,7 +2057,271 @@ export const useTimelineStore = create<TimelineStore>()(
         ramPreviewProgress: null,
         ramPreviewRange: null,
         isRamPreviewing: false,
+        // Clear keyframe state
+        clipKeyframes: new Map<string, Keyframe[]>(),
+        keyframeRecordingEnabled: new Set<string>(),
+        expandedClips: new Set<string>(),
+        expandedPropertyGroups: new Map<string, Set<string>>(),
+        selectedKeyframeIds: new Set<string>(),
       });
+    },
+
+    // Keyframe actions
+    addKeyframe: (clipId, property, value, time, easing = 'linear') => {
+      const { clips, playheadPosition, clipKeyframes, invalidateCache } = get();
+      const clip = clips.find(c => c.id === clipId);
+      if (!clip) return;
+
+      // Calculate time relative to clip start
+      const clipLocalTime = time ?? (playheadPosition - clip.startTime);
+
+      // Clamp to clip duration
+      const clampedTime = Math.max(0, Math.min(clipLocalTime, clip.duration));
+
+      // Get existing keyframes for this clip
+      const existingKeyframes = clipKeyframes.get(clipId) || [];
+
+      // Check if keyframe already exists at this time for this property
+      const existingAtTime = getKeyframeAtTime(existingKeyframes, property, clampedTime);
+
+      let newKeyframes: Keyframe[];
+
+      if (existingAtTime) {
+        // Update existing keyframe
+        newKeyframes = existingKeyframes.map(k =>
+          k.id === existingAtTime.id ? { ...k, value, easing } : k
+        );
+      } else {
+        // Create new keyframe
+        const newKeyframe: Keyframe = {
+          id: `kf_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+          clipId,
+          time: clampedTime,
+          property,
+          value,
+          easing,
+        };
+        newKeyframes = [...existingKeyframes, newKeyframe].sort((a, b) => a.time - b.time);
+      }
+
+      // Update state
+      const newMap = new Map(clipKeyframes);
+      newMap.set(clipId, newKeyframes);
+      set({ clipKeyframes: newMap });
+
+      // Invalidate cache since animation changed
+      invalidateCache();
+    },
+
+    removeKeyframe: (keyframeId) => {
+      const { clipKeyframes, invalidateCache, selectedKeyframeIds } = get();
+      const newMap = new Map<string, Keyframe[]>();
+
+      clipKeyframes.forEach((keyframes, clipId) => {
+        const filtered = keyframes.filter(k => k.id !== keyframeId);
+        if (filtered.length > 0) {
+          newMap.set(clipId, filtered);
+        }
+      });
+
+      // Remove from selection
+      const newSelection = new Set(selectedKeyframeIds);
+      newSelection.delete(keyframeId);
+
+      set({ clipKeyframes: newMap, selectedKeyframeIds: newSelection });
+      invalidateCache();
+    },
+
+    updateKeyframe: (keyframeId, updates) => {
+      const { clipKeyframes, invalidateCache } = get();
+      const newMap = new Map<string, Keyframe[]>();
+
+      clipKeyframes.forEach((keyframes, clipId) => {
+        newMap.set(clipId, keyframes.map(k =>
+          k.id === keyframeId ? { ...k, ...updates } : k
+        ));
+      });
+
+      set({ clipKeyframes: newMap });
+      invalidateCache();
+    },
+
+    moveKeyframe: (keyframeId, newTime) => {
+      const { clipKeyframes, clips, invalidateCache } = get();
+      const newMap = new Map<string, Keyframe[]>();
+
+      clipKeyframes.forEach((keyframes, clipId) => {
+        const clip = clips.find(c => c.id === clipId);
+        const maxTime = clip?.duration ?? 999;
+
+        newMap.set(clipId, keyframes.map(k => {
+          if (k.id !== keyframeId) return k;
+          return { ...k, time: Math.max(0, Math.min(newTime, maxTime)) };
+        }).sort((a, b) => a.time - b.time));
+      });
+
+      set({ clipKeyframes: newMap });
+      invalidateCache();
+    },
+
+    getClipKeyframes: (clipId) => {
+      const { clipKeyframes } = get();
+      return clipKeyframes.get(clipId) || [];
+    },
+
+    getInterpolatedTransform: (clipId, clipLocalTime) => {
+      const { clips, clipKeyframes } = get();
+      const clip = clips.find(c => c.id === clipId);
+      if (!clip) {
+        return { ...DEFAULT_TRANSFORM };
+      }
+
+      const keyframes = clipKeyframes.get(clipId) || [];
+      if (keyframes.length === 0) {
+        return clip.transform;
+      }
+
+      return getInterpolatedClipTransform(keyframes, clipLocalTime, clip.transform);
+    },
+
+    hasKeyframes: (clipId, property) => {
+      const { clipKeyframes } = get();
+      const keyframes = clipKeyframes.get(clipId) || [];
+      if (keyframes.length === 0) return false;
+      if (!property) return true;
+      return hasKeyframesForProperty(keyframes, property);
+    },
+
+    // Keyframe recording mode
+    toggleKeyframeRecording: (clipId, property) => {
+      const { keyframeRecordingEnabled } = get();
+      const key = `${clipId}:${property}`;
+      const newSet = new Set(keyframeRecordingEnabled);
+
+      if (newSet.has(key)) {
+        newSet.delete(key);
+      } else {
+        newSet.add(key);
+      }
+
+      set({ keyframeRecordingEnabled: newSet });
+    },
+
+    isRecording: (clipId, property) => {
+      const { keyframeRecordingEnabled } = get();
+      return keyframeRecordingEnabled.has(`${clipId}:${property}`);
+    },
+
+    setPropertyValue: (clipId, property, value) => {
+      const { isRecording, addKeyframe, updateClipTransform, clips } = get();
+
+      if (isRecording(clipId, property)) {
+        // Recording mode - create/update keyframe
+        addKeyframe(clipId, property, value);
+      } else {
+        // Not recording - update static transform
+        const clip = clips.find(c => c.id === clipId);
+        if (!clip) return;
+
+        // Build partial transform update from property path
+        const transformUpdate: Partial<ClipTransform> = {};
+
+        if (property === 'opacity') {
+          transformUpdate.opacity = value;
+        } else if (property.startsWith('position.')) {
+          const axis = property.split('.')[1] as 'x' | 'y' | 'z';
+          transformUpdate.position = { ...clip.transform.position, [axis]: value };
+        } else if (property.startsWith('scale.')) {
+          const axis = property.split('.')[1] as 'x' | 'y';
+          transformUpdate.scale = { ...clip.transform.scale, [axis]: value };
+        } else if (property.startsWith('rotation.')) {
+          const axis = property.split('.')[1] as 'x' | 'y' | 'z';
+          transformUpdate.rotation = { ...clip.transform.rotation, [axis]: value };
+        }
+
+        updateClipTransform(clipId, transformUpdate);
+      }
+    },
+
+    // Keyframe UI state
+    toggleClipExpanded: (clipId) => {
+      const { expandedClips } = get();
+      const newSet = new Set(expandedClips);
+
+      if (newSet.has(clipId)) {
+        newSet.delete(clipId);
+      } else {
+        newSet.add(clipId);
+      }
+
+      set({ expandedClips: newSet });
+    },
+
+    isClipExpanded: (clipId) => {
+      const { expandedClips } = get();
+      return expandedClips.has(clipId);
+    },
+
+    togglePropertyGroupExpanded: (clipId, groupName) => {
+      const { expandedPropertyGroups } = get();
+      const newMap = new Map(expandedPropertyGroups);
+      const clipGroups = newMap.get(clipId) || new Set<string>();
+      const newClipGroups = new Set(clipGroups);
+
+      if (newClipGroups.has(groupName)) {
+        newClipGroups.delete(groupName);
+      } else {
+        newClipGroups.add(groupName);
+      }
+
+      newMap.set(clipId, newClipGroups);
+      set({ expandedPropertyGroups: newMap });
+    },
+
+    isPropertyGroupExpanded: (clipId, groupName) => {
+      const { expandedPropertyGroups } = get();
+      const clipGroups = expandedPropertyGroups.get(clipId);
+      return clipGroups?.has(groupName) ?? false;
+    },
+
+    selectKeyframe: (keyframeId, addToSelection = false) => {
+      const { selectedKeyframeIds } = get();
+
+      if (addToSelection) {
+        const newSet = new Set(selectedKeyframeIds);
+        if (newSet.has(keyframeId)) {
+          newSet.delete(keyframeId);
+        } else {
+          newSet.add(keyframeId);
+        }
+        set({ selectedKeyframeIds: newSet });
+      } else {
+        set({ selectedKeyframeIds: new Set([keyframeId]) });
+      }
+    },
+
+    deselectAllKeyframes: () => {
+      set({ selectedKeyframeIds: new Set() });
+    },
+
+    deleteSelectedKeyframes: () => {
+      const { selectedKeyframeIds, clipKeyframes, invalidateCache } = get();
+      if (selectedKeyframeIds.size === 0) return;
+
+      const newMap = new Map<string, Keyframe[]>();
+
+      clipKeyframes.forEach((keyframes, clipId) => {
+        const filtered = keyframes.filter(k => !selectedKeyframeIds.has(k.id));
+        if (filtered.length > 0) {
+          newMap.set(clipId, filtered);
+        }
+      });
+
+      set({
+        clipKeyframes: newMap,
+        selectedKeyframeIds: new Set(),
+      });
+      invalidateCache();
     },
   }))
 );

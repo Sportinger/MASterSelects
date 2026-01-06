@@ -2,6 +2,7 @@
 
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { useTimelineStore } from '../stores/timelineStore';
+import type { AnimatableProperty } from '../types';
 import { useMixerStore } from '../stores/mixerStore';
 import { useMediaStore } from '../stores/mediaStore';
 import { engine } from '../engine/WebGPUEngine';
@@ -53,6 +54,15 @@ export function Timeline() {
     ramPreviewEnabled,
     toggleRamPreviewEnabled,
     splitClipAtPlayhead,
+    getInterpolatedTransform,
+    isClipExpanded,
+    toggleClipExpanded,
+    isPropertyGroupExpanded,
+    togglePropertyGroupExpanded,
+    getClipKeyframes,
+    selectKeyframe,
+    selectedKeyframeIds,
+    hasKeyframes,
   } = useTimelineStore();
 
   const {
@@ -524,7 +534,11 @@ export function Timeline() {
     let layersChanged = false;
 
     // Helper to get video element from a clip (handles nested compositions)
+    // Returns interpolated transform for keyframe animation support
     const getVideoFromClip = (clip: typeof clips[0], clipTime: number): { video: HTMLVideoElement | null; transform: typeof clip.transform } => {
+      // Get interpolated transform for this clip at the current time
+      const interpolatedTransform = getInterpolatedTransform(clip.id, clipTime);
+
       // Handle nested composition clips
       if (clip.isComposition && clip.nestedClips && clip.nestedClips.length > 0) {
         // Find active clip in nested composition at the current nested time
@@ -557,14 +571,14 @@ export function Timeline() {
               video.pause();
             }
 
-            return { video, transform: clip.transform };
+            return { video, transform: interpolatedTransform };
           }
         }
-        return { video: null, transform: clip.transform };
+        return { video: null, transform: interpolatedTransform };
       }
 
       // Regular video clip
-      return { video: clip.source?.videoElement || null, transform: clip.transform };
+      return { video: clip.source?.videoElement || null, transform: interpolatedTransform };
     };
 
     // Process each video layer and collect updates
@@ -615,7 +629,8 @@ export function Timeline() {
         }
       } else if (clip?.source?.videoElement) {
         // Seek video to correct position within clip
-        const clipTime = playheadPosition - clip.startTime + clip.inPoint;
+        const clipLocalTime = playheadPosition - clip.startTime; // Time relative to clip start (for keyframes)
+        const clipTime = clipLocalTime + clip.inPoint; // Time within source video (for seeking)
         const video = clip.source.videoElement;
         const webCodecsPlayer = clip.source.webCodecsPlayer;
         const timeDiff = Math.abs(video.currentTime - clipTime);
@@ -677,7 +692,7 @@ export function Timeline() {
             // Frame is already in the service cache - use it immediately
             proxyFramesRef.current.set(cacheKey, { frameIndex, image: cachedInService });
 
-            const transform = clip.transform;
+            const transform = getInterpolatedTransform(clip.id, clipLocalTime);
             newLayers[layerIndex] = {
               id: `timeline_layer_${layerIndex}`,
               name: clip.name,
@@ -735,7 +750,7 @@ export function Timeline() {
 
             // Use previous frame while loading (if available)
             if (cached?.image) {
-              const transform = clip.transform;
+              const transform = getInterpolatedTransform(clip.id, clipLocalTime);
               newLayers[layerIndex] = {
                 id: `timeline_layer_${layerIndex}`,
                 name: clip.name,
@@ -755,7 +770,7 @@ export function Timeline() {
             }
           } else if (cached?.image) {
             // Same frame as before, just use it
-            const transform = clip.transform;
+            const transform = getInterpolatedTransform(clip.id, clipLocalTime);
             const needsUpdate = !layer ||
               layer.source?.imageElement !== cached.image ||
               layer.source?.type !== 'image';
@@ -824,7 +839,7 @@ export function Timeline() {
           }
 
           // Check if layer needs update
-          const transform = clip.transform;
+          const transform = getInterpolatedTransform(clip.id, clipLocalTime);
           const needsUpdate = !layer ||
             layer.source?.videoElement !== video ||
             layer.source?.webCodecsPlayer !== webCodecsPlayer ||
@@ -859,7 +874,8 @@ export function Timeline() {
       } else if (clip?.source?.imageElement) {
         // Handle image clips
         const img = clip.source.imageElement;
-        const transform = clip.transform;
+        const imageClipLocalTime = playheadPosition - clip.startTime;
+        const transform = getInterpolatedTransform(clip.id, imageClipLocalTime);
         const needsUpdate = !layer ||
           layer.source?.imageElement !== img ||
           layer.opacity !== transform.opacity ||
@@ -1640,6 +1656,29 @@ export function Timeline() {
   };
 
   // Render a clip - now with Premiere-style direct dragging and trimming
+  // Render keyframe diamonds for a property track
+  const renderKeyframeDiamonds = (clipId: string, property: AnimatableProperty, clipDuration: number, trackWidth: number) => {
+    const keyframes = getClipKeyframes(clipId).filter(k => k.property === property);
+
+    return keyframes.map(kf => {
+      const xPos = (kf.time / clipDuration) * trackWidth;
+      const isSelected = selectedKeyframeIds.has(kf.id);
+
+      return (
+        <div
+          key={kf.id}
+          className={`keyframe-diamond ${isSelected ? 'selected' : ''}`}
+          style={{ left: `${xPos}px` }}
+          onClick={(e) => {
+            e.stopPropagation();
+            selectKeyframe(kf.id, e.shiftKey);
+          }}
+          title={`${property}: ${kf.value.toFixed(3)} @ ${kf.time.toFixed(2)}s (${kf.easing})`}
+        />
+      );
+    });
+  };
+
   const renderClip = (clip: typeof clips[0], trackId: string) => {
     const isSelected = selectedClipId === clip.id;
     const isDragging = clipDrag?.clipId === clip.id;
@@ -1764,7 +1803,9 @@ export function Timeline() {
       clip.source?.type || 'video',
       clip.isLoading ? 'loading' : '',
       hasProxy ? 'has-proxy' : '',
-      isGeneratingProxy ? 'generating-proxy' : ''
+      isGeneratingProxy ? 'generating-proxy' : '',
+      isClipExpanded(clip.id) ? 'expanded' : '',
+      hasKeyframes(clip.id) ? 'has-keyframes' : ''
     ].filter(Boolean).join(' ');
 
     return (
@@ -1814,6 +1855,19 @@ export function Timeline() {
         )}
         <div className="clip-content">
           {clip.isLoading && <div className="clip-loading-spinner" />}
+          {/* Expand arrow for keyframe properties - only for video/image clips */}
+          {clip.source?.type !== 'audio' && (
+            <span
+              className={`clip-expand-arrow ${isClipExpanded(clip.id) ? 'expanded' : ''} ${hasKeyframes(clip.id) ? 'has-keyframes' : ''}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleClipExpanded(clip.id);
+              }}
+              title={isClipExpanded(clip.id) ? 'Collapse properties' : 'Expand properties'}
+            >
+              ▶
+            </span>
+          )}
           <span className="clip-name">{clip.name}</span>
           <span className="clip-duration">{formatTime(displayDuration)}</span>
         </div>
@@ -1826,6 +1880,130 @@ export function Timeline() {
           className="trim-handle right"
           onMouseDown={(e) => handleTrimStart(e, clip.id, 'right')}
         />
+
+        {/* Keyframe property rows - only for video/image clips */}
+        {clip.source?.type !== 'audio' && isClipExpanded(clip.id) && (
+          <div className="clip-property-rows">
+            {/* Opacity property row */}
+            <div className="property-row">
+              <span className="property-label">Opacity</span>
+              <div className="keyframe-track">
+                <div className="keyframe-track-line" />
+                {renderKeyframeDiamonds(clip.id, 'opacity', displayDuration, width)}
+              </div>
+            </div>
+
+            {/* Position group */}
+            <div className="property-group">
+              <div
+                className="property-group-header"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  togglePropertyGroupExpanded(clip.id, 'position');
+                }}
+              >
+                <span className={`property-group-arrow ${isPropertyGroupExpanded(clip.id, 'position') ? 'expanded' : ''}`}>▶</span>
+                <span>Position</span>
+              </div>
+              {isPropertyGroupExpanded(clip.id, 'position') && (
+                <>
+                  <div className="property-row">
+                    <span className="property-label">X</span>
+                    <div className="keyframe-track">
+                      <div className="keyframe-track-line" />
+                      {renderKeyframeDiamonds(clip.id, 'position.x', displayDuration, width)}
+                    </div>
+                  </div>
+                  <div className="property-row">
+                    <span className="property-label">Y</span>
+                    <div className="keyframe-track">
+                      <div className="keyframe-track-line" />
+                      {renderKeyframeDiamonds(clip.id, 'position.y', displayDuration, width)}
+                    </div>
+                  </div>
+                  <div className="property-row">
+                    <span className="property-label">Z</span>
+                    <div className="keyframe-track">
+                      <div className="keyframe-track-line" />
+                      {renderKeyframeDiamonds(clip.id, 'position.z', displayDuration, width)}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Scale group */}
+            <div className="property-group">
+              <div
+                className="property-group-header"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  togglePropertyGroupExpanded(clip.id, 'scale');
+                }}
+              >
+                <span className={`property-group-arrow ${isPropertyGroupExpanded(clip.id, 'scale') ? 'expanded' : ''}`}>▶</span>
+                <span>Scale</span>
+              </div>
+              {isPropertyGroupExpanded(clip.id, 'scale') && (
+                <>
+                  <div className="property-row">
+                    <span className="property-label">X</span>
+                    <div className="keyframe-track">
+                      <div className="keyframe-track-line" />
+                      {renderKeyframeDiamonds(clip.id, 'scale.x', displayDuration, width)}
+                    </div>
+                  </div>
+                  <div className="property-row">
+                    <span className="property-label">Y</span>
+                    <div className="keyframe-track">
+                      <div className="keyframe-track-line" />
+                      {renderKeyframeDiamonds(clip.id, 'scale.y', displayDuration, width)}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Rotation group */}
+            <div className="property-group">
+              <div
+                className="property-group-header"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  togglePropertyGroupExpanded(clip.id, 'rotation');
+                }}
+              >
+                <span className={`property-group-arrow ${isPropertyGroupExpanded(clip.id, 'rotation') ? 'expanded' : ''}`}>▶</span>
+                <span>Rotation</span>
+              </div>
+              {isPropertyGroupExpanded(clip.id, 'rotation') && (
+                <>
+                  <div className="property-row">
+                    <span className="property-label">X</span>
+                    <div className="keyframe-track">
+                      <div className="keyframe-track-line" />
+                      {renderKeyframeDiamonds(clip.id, 'rotation.x', displayDuration, width)}
+                    </div>
+                  </div>
+                  <div className="property-row">
+                    <span className="property-label">Y</span>
+                    <div className="keyframe-track">
+                      <div className="keyframe-track-line" />
+                      {renderKeyframeDiamonds(clip.id, 'rotation.y', displayDuration, width)}
+                    </div>
+                  </div>
+                  <div className="property-row">
+                    <span className="property-label">Z</span>
+                    <div className="keyframe-track">
+                      <div className="keyframe-track-line" />
+                      {renderKeyframeDiamonds(clip.id, 'rotation.z', displayDuration, width)}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     );
   };

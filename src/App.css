@@ -2490,6 +2490,198 @@ input[type="checkbox"] {
   box-shadow: 0 0 0 4px rgba(0, 212, 255, 0.4);
 }
 
+/* ========== KEYFRAME TOGGLE ========== */
+.keyframe-toggle {
+  width: 18px;
+  height: 18px;
+  padding: 2px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.keyframe-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.keyframe-toggle.has-keyframes {
+  color: #f59e0b;
+  border-color: #f59e0b;
+}
+
+.keyframe-toggle.has-keyframes:hover {
+  color: #fbbf24;
+  border-color: #fbbf24;
+}
+
+.keyframe-toggle.recording {
+  background: #f59e0b;
+  color: #000;
+  border-color: #f59e0b;
+  animation: keyframe-recording-pulse 1s ease-in-out infinite;
+}
+
+.keyframe-toggle.recording:hover {
+  background: #fbbf24;
+  border-color: #fbbf24;
+}
+
+@keyframes keyframe-recording-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.keyframe-toggle-placeholder {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+/* ========== KEYFRAME DIAMONDS (Timeline) ========== */
+.keyframe-diamond {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: #f59e0b;
+  transform: rotate(45deg) translateY(-50%);
+  top: 50%;
+  cursor: pointer;
+  z-index: 5;
+  transition: all 0.1s ease;
+}
+
+.keyframe-diamond:hover {
+  background: #fbbf24;
+  box-shadow: 0 0 6px #f59e0b;
+  transform: rotate(45deg) translateY(-50%) scale(1.2);
+}
+
+.keyframe-diamond.selected {
+  background: #ef4444;
+  box-shadow: 0 0 8px #ef4444;
+}
+
+/* ========== EXPANDABLE CLIP PROPERTIES (Timeline) ========== */
+.clip-expand-arrow {
+  cursor: pointer;
+  transition: transform 0.2s ease;
+  color: var(--text-secondary);
+  font-size: 10px;
+  margin-right: 4px;
+}
+
+.clip-expand-arrow:hover {
+  color: var(--text-primary);
+}
+
+.clip-expand-arrow.expanded {
+  transform: rotate(90deg);
+}
+
+.clip-expand-arrow.has-keyframes {
+  color: #f59e0b;
+}
+
+.timeline-clip.has-keyframes .clip-content {
+  border-left: 2px solid #f59e0b;
+}
+
+.timeline-clip.expanded {
+  overflow: visible;
+  z-index: 10;
+}
+
+.clip-property-rows {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  background: rgba(0, 0, 0, 0.85);
+  border: 1px solid var(--border-color);
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  z-index: 3;
+  overflow: hidden;
+}
+
+.property-group {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.property-group:last-child {
+  border-bottom: none;
+}
+
+.property-group-header {
+  display: flex;
+  align-items: center;
+  padding: 2px 8px;
+  cursor: pointer;
+  background: var(--bg-tertiary);
+  font-size: 10px;
+  color: var(--text-secondary);
+  user-select: none;
+}
+
+.property-group-header:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.property-group-arrow {
+  margin-right: 4px;
+  transition: transform 0.15s ease;
+}
+
+.property-group-arrow.expanded {
+  transform: rotate(90deg);
+}
+
+.property-row {
+  display: flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 8px 0 20px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.property-row:last-child {
+  border-bottom: none;
+}
+
+.property-label {
+  width: 50px;
+  font-size: 9px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.keyframe-track {
+  flex: 1;
+  height: 100%;
+  position: relative;
+  margin-left: 4px;
+}
+
+.keyframe-track-line {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
 /* ========== PREVIEW EDIT MODE ========== */
 .preview-container {
   position: relative;
