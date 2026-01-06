@@ -74,18 +74,24 @@ export function Timeline() {
     splitClipAtPlayhead,
     updateClipTransform,
     getInterpolatedTransform,
-    isClipExpanded,
-    toggleClipExpanded,
-    isPropertyGroupExpanded,
-    togglePropertyGroupExpanded,
+    isTrackExpanded,
+    toggleTrackExpanded,
+    isTrackPropertyGroupExpanded,
+    toggleTrackPropertyGroupExpanded,
+    getExpandedTrackHeight,
     getClipKeyframes,
     selectKeyframe,
     selectedKeyframeIds,
     hasKeyframes,
+    trackHasKeyframes,
   } = useTimelineStore();
 
   const {
     getActiveComposition,
+    getOpenCompositions,
+    setActiveComposition,
+    closeCompositionTab,
+    activeCompositionId,
     proxyEnabled,
     setProxyEnabled,
     files: mediaFiles,
@@ -95,6 +101,7 @@ export function Timeline() {
     showInExplorer,
   } = useMediaStore();
   const activeComposition = getActiveComposition();
+  const openCompositions = getOpenCompositions();
 
   const timelineRef = useRef<HTMLDivElement>(null);
   const trackLanesRef = useRef<HTMLDivElement>(null);
@@ -1692,13 +1699,28 @@ export function Timeline() {
     );
   };
 
-  // Render a clip - now with Premiere-style direct dragging and trimming
-  // Render keyframe diamonds for a property track
-  const renderKeyframeDiamonds = (clipId: string, property: AnimatableProperty, clipDuration: number, trackWidth: number) => {
-    const keyframes = getClipKeyframes(clipId).filter(k => k.property === property);
+  // Render keyframe diamonds for a property in track-level timeline
+  // Position is based on absolute timeline position (clip.startTime + keyframe.time)
+  const renderTrackKeyframeDiamonds = (trackId: string, property: AnimatableProperty) => {
+    // Get all clips on this track
+    const trackClips = clips.filter(c => c.trackId === trackId);
 
-    return keyframes.map(kf => {
-      const xPos = (kf.time / clipDuration) * trackWidth;
+    // Collect all keyframes from all clips with their absolute positions
+    const allKeyframes: Array<{kf: ReturnType<typeof getClipKeyframes>[0], clip: typeof clips[0], absTime: number}> = [];
+
+    trackClips.forEach(clip => {
+      const clipKeyframes = getClipKeyframes(clip.id).filter(k => k.property === property);
+      clipKeyframes.forEach(kf => {
+        allKeyframes.push({
+          kf,
+          clip,
+          absTime: clip.startTime + kf.time
+        });
+      });
+    });
+
+    return allKeyframes.map(({ kf, absTime }) => {
+      const xPos = timeToPixel(absTime);
       const isSelected = selectedKeyframeIds.has(kf.id);
 
       return (
@@ -1710,12 +1732,139 @@ export function Timeline() {
             e.stopPropagation();
             selectKeyframe(kf.id, e.shiftKey);
           }}
-          title={`${property}: ${kf.value.toFixed(3)} @ ${kf.time.toFixed(2)}s (${kf.easing})`}
+          title={`${property}: ${kf.value.toFixed(3)} @ ${absTime.toFixed(2)}s (${kf.easing})`}
         />
       );
     });
   };
 
+  // Render property rows for a track when expanded
+  const renderTrackPropertyRows = (trackId: string) => {
+    return (
+      <div className="track-property-rows">
+        {/* Opacity property row */}
+        <div className="property-row">
+          <span className="property-label">Opacity</span>
+          <div className="keyframe-track">
+            <div className="keyframe-track-line" />
+            {renderTrackKeyframeDiamonds(trackId, 'opacity')}
+          </div>
+        </div>
+
+        {/* Position group */}
+        <div className="property-group">
+          <div
+            className="property-group-header"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleTrackPropertyGroupExpanded(trackId, 'position');
+            }}
+          >
+            <span className={`property-group-arrow ${isTrackPropertyGroupExpanded(trackId, 'position') ? 'expanded' : ''}`}>▶</span>
+            <span>Position</span>
+          </div>
+          {isTrackPropertyGroupExpanded(trackId, 'position') && (
+            <>
+              <div className="property-row">
+                <span className="property-label">X</span>
+                <div className="keyframe-track">
+                  <div className="keyframe-track-line" />
+                  {renderTrackKeyframeDiamonds(trackId, 'position.x')}
+                </div>
+              </div>
+              <div className="property-row">
+                <span className="property-label">Y</span>
+                <div className="keyframe-track">
+                  <div className="keyframe-track-line" />
+                  {renderTrackKeyframeDiamonds(trackId, 'position.y')}
+                </div>
+              </div>
+              <div className="property-row">
+                <span className="property-label">Z</span>
+                <div className="keyframe-track">
+                  <div className="keyframe-track-line" />
+                  {renderTrackKeyframeDiamonds(trackId, 'position.z')}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Scale group */}
+        <div className="property-group">
+          <div
+            className="property-group-header"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleTrackPropertyGroupExpanded(trackId, 'scale');
+            }}
+          >
+            <span className={`property-group-arrow ${isTrackPropertyGroupExpanded(trackId, 'scale') ? 'expanded' : ''}`}>▶</span>
+            <span>Scale</span>
+          </div>
+          {isTrackPropertyGroupExpanded(trackId, 'scale') && (
+            <>
+              <div className="property-row">
+                <span className="property-label">X</span>
+                <div className="keyframe-track">
+                  <div className="keyframe-track-line" />
+                  {renderTrackKeyframeDiamonds(trackId, 'scale.x')}
+                </div>
+              </div>
+              <div className="property-row">
+                <span className="property-label">Y</span>
+                <div className="keyframe-track">
+                  <div className="keyframe-track-line" />
+                  {renderTrackKeyframeDiamonds(trackId, 'scale.y')}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Rotation group */}
+        <div className="property-group">
+          <div
+            className="property-group-header"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleTrackPropertyGroupExpanded(trackId, 'rotation');
+            }}
+          >
+            <span className={`property-group-arrow ${isTrackPropertyGroupExpanded(trackId, 'rotation') ? 'expanded' : ''}`}>▶</span>
+            <span>Rotation</span>
+          </div>
+          {isTrackPropertyGroupExpanded(trackId, 'rotation') && (
+            <>
+              <div className="property-row">
+                <span className="property-label">X</span>
+                <div className="keyframe-track">
+                  <div className="keyframe-track-line" />
+                  {renderTrackKeyframeDiamonds(trackId, 'rotation.x')}
+                </div>
+              </div>
+              <div className="property-row">
+                <span className="property-label">Y</span>
+                <div className="keyframe-track">
+                  <div className="keyframe-track-line" />
+                  {renderTrackKeyframeDiamonds(trackId, 'rotation.y')}
+                </div>
+              </div>
+              <div className="property-row">
+                <span className="property-label">Z</span>
+                <div className="keyframe-track">
+                  <div className="keyframe-track-line" />
+                  {renderTrackKeyframeDiamonds(trackId, 'rotation.z')}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // Render a clip - now with Premiere-style direct dragging and trimming
   const renderClip = (clip: typeof clips[0], trackId: string) => {
     const isSelected = selectedClipId === clip.id;
     const isDragging = clipDrag?.clipId === clip.id;
@@ -1841,7 +1990,6 @@ export function Timeline() {
       clip.isLoading ? 'loading' : '',
       hasProxy ? 'has-proxy' : '',
       isGeneratingProxy ? 'generating-proxy' : '',
-      isClipExpanded(clip.id) ? 'expanded' : '',
       hasKeyframes(clip.id) ? 'has-keyframes' : ''
     ].filter(Boolean).join(' ');
 
@@ -1909,7 +2057,8 @@ export function Timeline() {
   };
 
   // No active composition - show empty state
-  if (!activeComposition) {
+  // Show empty state only if no tabs are open
+  if (openCompositions.length === 0) {
     return (
       <div className="timeline-container timeline-empty">
         <div className="timeline-empty-message">
@@ -1922,11 +2071,32 @@ export function Timeline() {
 
   return (
     <div className={`timeline-container ${clipDrag || clipTrim ? 'is-dragging' : ''}`}>
+      {/* Composition tabs */}
+      <div className="timeline-tabs">
+        {openCompositions.map((comp) => (
+          <div
+            key={comp.id}
+            className={`timeline-tab ${comp.id === activeCompositionId ? 'active' : ''}`}
+            onClick={() => setActiveComposition(comp.id)}
+            title={comp.name}
+          >
+            <span className="timeline-tab-name">{comp.name}</span>
+            <button
+              className="timeline-tab-close"
+              onClick={(e) => {
+                e.stopPropagation();
+                closeCompositionTab(comp.id);
+              }}
+              title="Close tab"
+            >
+              ×
+            </button>
+          </div>
+        ))}
+      </div>
+
       {/* Timeline toolbar */}
       <div className="timeline-toolbar">
-        <div className="timeline-title" title={activeComposition.name}>
-          {activeComposition.name}
-        </div>
         <div className="timeline-controls">
           <button className="btn btn-sm" onClick={stop} title="Stop">⏹</button>
           <button className={`btn btn-sm ${isPlaying ? 'btn-active' : ''}`} onClick={isPlaying ? pause : play}>
@@ -2023,14 +2193,31 @@ export function Timeline() {
               const isDimmed = (track.type === 'video' && anyVideoSolo && !track.solo) ||
                                (track.type === 'audio' && anyAudioSolo && !track.solo);
 
+              const isExpanded = isTrackExpanded(track.id);
+              const dynamicHeight = getExpandedTrackHeight(track.id, track.height);
               return (
                 <div
                   key={track.id}
-                  className={`track-header ${track.type} ${isDimmed ? 'dimmed' : ''}`}
-                  style={{ height: track.height }}
+                  className={`track-header ${track.type} ${isDimmed ? 'dimmed' : ''} ${isExpanded ? 'expanded' : ''}`}
+                  style={{ height: dynamicHeight }}
                   onWheel={(e) => handleTrackHeaderWheel(e, track.id)}
                 >
-                  <span className="track-name">{track.name}</span>
+                  <div className="track-header-main">
+                    {/* Only video tracks get expand arrow */}
+                    {track.type === 'video' && (
+                      <span
+                        className={`track-expand-arrow ${isExpanded ? 'expanded' : ''} ${trackHasKeyframes(track.id) ? 'has-keyframes' : ''}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleTrackExpanded(track.id);
+                        }}
+                        title={isExpanded ? 'Collapse properties' : 'Expand properties'}
+                      >
+                        ▶
+                      </span>
+                    )}
+                    <span className="track-name">{track.name}</span>
+                  </div>
                   <div className="track-controls">
                     <button
                       className={`btn-icon ${track.solo ? 'solo-active' : ''}`}
@@ -2085,20 +2272,24 @@ export function Timeline() {
             return tracks.map(track => {
               const isDimmed = (track.type === 'video' && anyVideoSolo && !track.solo) ||
                                (track.type === 'audio' && anyAudioSolo && !track.solo);
+              const isExpanded = isTrackExpanded(track.id);
+              const dynamicHeight = getExpandedTrackHeight(track.id, track.height);
               return (
             <div
               key={track.id}
-              className={`track-lane ${track.type} ${isDimmed ? 'dimmed' : ''} ${clipDrag?.currentTrackId === track.id ? 'drag-target' : ''} ${externalDrag?.trackId === track.id || externalDrag?.audioTrackId === track.id ? 'external-drag-target' : ''}`}
-              style={{ height: track.height }}
+              className={`track-lane ${track.type} ${isDimmed ? 'dimmed' : ''} ${isExpanded ? 'expanded' : ''} ${clipDrag?.currentTrackId === track.id ? 'drag-target' : ''} ${externalDrag?.trackId === track.id || externalDrag?.audioTrackId === track.id ? 'external-drag-target' : ''}`}
+              style={{ height: dynamicHeight }}
               onDrop={(e) => handleTrackDrop(e, track.id)}
               onDragOver={(e) => handleTrackDragOver(e, track.id)}
               onDragEnter={(e) => handleTrackDragEnter(e, track.id)}
               onDragLeave={handleTrackDragLeave}
             >
-              {/* Render clips belonging to this track */}
-              {clips
-                .filter(c => c.trackId === track.id)
-                .map(clip => renderClip(clip, track.id))}
+              {/* Clip row - the normal clip area */}
+              <div className="track-clip-row" style={{ height: track.height }}>
+                {/* Render clips belonging to this track */}
+                {clips
+                  .filter(c => c.trackId === track.id)
+                  .map(clip => renderClip(clip, track.id))}
               {/* Render clip being dragged TO this track */}
               {clipDrag && clipDrag.currentTrackId === track.id && clipDrag.originalTrackId !== track.id && (
                 clips
@@ -2133,6 +2324,9 @@ export function Timeline() {
                   </div>
                 </div>
               )}
+              </div>
+              {/* Property rows - only shown when track is expanded */}
+              {track.type === 'video' && isExpanded && renderTrackPropertyRows(track.id)}
             </div>
               );
             });

@@ -195,8 +195,8 @@ interface TimelineStore {
   // Keyframe animation state
   clipKeyframes: Map<string, Keyframe[]>;     // clipId -> keyframes
   keyframeRecordingEnabled: Set<string>;      // "clipId:property" keys for recording mode
-  expandedClips: Set<string>;                 // Clips with expanded property rows
-  expandedPropertyGroups: Map<string, Set<string>>; // clipId -> expanded group names
+  expandedTracks: Set<string>;                // Tracks with expanded property rows
+  expandedTrackPropertyGroups: Map<string, Set<string>>; // trackId -> expanded group names
   selectedKeyframeIds: Set<string>;           // Currently selected keyframe IDs
 
   // Keyframe actions
@@ -214,13 +214,15 @@ interface TimelineStore {
   setPropertyValue: (clipId: string, property: AnimatableProperty, value: number) => void;
 
   // Keyframe UI state
-  toggleClipExpanded: (clipId: string) => void;
-  isClipExpanded: (clipId: string) => boolean;
-  togglePropertyGroupExpanded: (clipId: string, groupName: string) => void;
-  isPropertyGroupExpanded: (clipId: string, groupName: string) => boolean;
+  toggleTrackExpanded: (trackId: string) => void;
+  isTrackExpanded: (trackId: string) => boolean;
+  toggleTrackPropertyGroupExpanded: (trackId: string, groupName: string) => void;
+  isTrackPropertyGroupExpanded: (trackId: string, groupName: string) => boolean;
+  getExpandedTrackHeight: (trackId: string, baseHeight: number) => number;
   selectKeyframe: (keyframeId: string, addToSelection?: boolean) => void;
   deselectAllKeyframes: () => void;
   deleteSelectedKeyframes: () => void;
+  trackHasKeyframes: (trackId: string) => boolean;
 }
 
 const DEFAULT_TRACKS: TimelineTrack[] = [
@@ -252,8 +254,8 @@ export const useTimelineStore = create<TimelineStore>()(
     // Keyframe animation state
     clipKeyframes: new Map<string, Keyframe[]>(),
     keyframeRecordingEnabled: new Set<string>(),
-    expandedClips: new Set<string>(),
-    expandedPropertyGroups: new Map<string, Set<string>>(),
+    expandedTracks: new Set<string>(),
+    expandedTrackPropertyGroups: new Map<string, Set<string>>(),
     selectedKeyframeIds: new Set<string>(),
 
     // Track actions
@@ -1783,8 +1785,8 @@ export const useTimelineStore = create<TimelineStore>()(
         // Clear keyframe state
         clipKeyframes: new Map<string, Keyframe[]>(),
         keyframeRecordingEnabled: new Set<string>(),
-        expandedClips: new Set<string>(),
-        expandedPropertyGroups: new Map<string, Set<string>>(),
+        expandedTracks: new Set<string>(),
+        expandedTrackPropertyGroups: new Map<string, Set<string>>(),
         selectedKeyframeIds: new Set<string>(),
       });
 
@@ -2060,8 +2062,8 @@ export const useTimelineStore = create<TimelineStore>()(
         // Clear keyframe state
         clipKeyframes: new Map<string, Keyframe[]>(),
         keyframeRecordingEnabled: new Set<string>(),
-        expandedClips: new Set<string>(),
-        expandedPropertyGroups: new Map<string, Set<string>>(),
+        expandedTracks: new Set<string>(),
+        expandedTrackPropertyGroups: new Map<string, Set<string>>(),
         selectedKeyframeIds: new Set<string>(),
       });
     },
@@ -2243,45 +2245,92 @@ export const useTimelineStore = create<TimelineStore>()(
       }
     },
 
-    // Keyframe UI state
-    toggleClipExpanded: (clipId) => {
-      const { expandedClips } = get();
-      const newSet = new Set(expandedClips);
+    // Keyframe UI state - Track-based expansion
+    toggleTrackExpanded: (trackId) => {
+      const { expandedTracks } = get();
+      const newSet = new Set(expandedTracks);
 
-      if (newSet.has(clipId)) {
-        newSet.delete(clipId);
+      if (newSet.has(trackId)) {
+        newSet.delete(trackId);
       } else {
-        newSet.add(clipId);
+        newSet.add(trackId);
       }
 
-      set({ expandedClips: newSet });
+      set({ expandedTracks: newSet });
     },
 
-    isClipExpanded: (clipId) => {
-      const { expandedClips } = get();
-      return expandedClips.has(clipId);
+    isTrackExpanded: (trackId) => {
+      const { expandedTracks } = get();
+      return expandedTracks.has(trackId);
     },
 
-    togglePropertyGroupExpanded: (clipId, groupName) => {
-      const { expandedPropertyGroups } = get();
-      const newMap = new Map(expandedPropertyGroups);
-      const clipGroups = newMap.get(clipId) || new Set<string>();
-      const newClipGroups = new Set(clipGroups);
+    toggleTrackPropertyGroupExpanded: (trackId, groupName) => {
+      const { expandedTrackPropertyGroups } = get();
+      const newMap = new Map(expandedTrackPropertyGroups);
+      const trackGroups = newMap.get(trackId) || new Set<string>();
+      const newTrackGroups = new Set(trackGroups);
 
-      if (newClipGroups.has(groupName)) {
-        newClipGroups.delete(groupName);
+      if (newTrackGroups.has(groupName)) {
+        newTrackGroups.delete(groupName);
       } else {
-        newClipGroups.add(groupName);
+        newTrackGroups.add(groupName);
       }
 
-      newMap.set(clipId, newClipGroups);
-      set({ expandedPropertyGroups: newMap });
+      newMap.set(trackId, newTrackGroups);
+      set({ expandedTrackPropertyGroups: newMap });
     },
 
-    isPropertyGroupExpanded: (clipId, groupName) => {
-      const { expandedPropertyGroups } = get();
-      const clipGroups = expandedPropertyGroups.get(clipId);
-      return clipGroups?.has(groupName) ?? false;
+    isTrackPropertyGroupExpanded: (trackId, groupName) => {
+      const { expandedTrackPropertyGroups } = get();
+      const trackGroups = expandedTrackPropertyGroups.get(trackId);
+      return trackGroups?.has(groupName) ?? false;
+    },
+
+    // Calculate expanded track height based on visible property rows
+    getExpandedTrackHeight: (trackId, baseHeight) => {
+      const { expandedTracks, expandedTrackPropertyGroups } = get();
+
+      if (!expandedTracks.has(trackId)) {
+        return baseHeight;
+      }
+
+      const PROPERTY_ROW_HEIGHT = 18;
+      const GROUP_HEADER_HEIGHT = 20;
+      let extraHeight = 0;
+
+      // Opacity row (always visible when expanded)
+      extraHeight += PROPERTY_ROW_HEIGHT;
+
+      // Position group
+      extraHeight += GROUP_HEADER_HEIGHT;
+      const trackGroups = expandedTrackPropertyGroups.get(trackId);
+      if (trackGroups?.has('position')) {
+        extraHeight += PROPERTY_ROW_HEIGHT * 3; // X, Y, Z
+      }
+
+      // Scale group
+      extraHeight += GROUP_HEADER_HEIGHT;
+      if (trackGroups?.has('scale')) {
+        extraHeight += PROPERTY_ROW_HEIGHT * 2; // X, Y
+      }
+
+      // Rotation group
+      extraHeight += GROUP_HEADER_HEIGHT;
+      if (trackGroups?.has('rotation')) {
+        extraHeight += PROPERTY_ROW_HEIGHT * 3; // X, Y, Z
+      }
+
+      return baseHeight + extraHeight;
+    },
+
+    // Check if any clip on a track has keyframes
+    trackHasKeyframes: (trackId) => {
+      const { clips, clipKeyframes } = get();
+      const trackClips = clips.filter(c => c.trackId === trackId);
+      return trackClips.some(clip => {
+        const kfs = clipKeyframes.get(clip.id);
+        return kfs && kfs.length > 0;
+      });
     },
 
     selectKeyframe: (keyframeId, addToSelection = false) => {

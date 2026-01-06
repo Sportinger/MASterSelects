@@ -1492,16 +1492,86 @@ input[type="checkbox"] {
   flex-shrink: 0;
 }
 
-.timeline-title {
-  font-weight: 600;
-  font-size: 13px;
+/* Composition tabs - like After Effects */
+.timeline-tabs {
+  display: flex;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-color);
+  padding: 0 4px;
+  gap: 2px;
+  flex-shrink: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.timeline-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.timeline-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 6px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-secondary);
+  min-width: 80px;
+  max-width: 180px;
+  margin-top: 4px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.timeline-tab:hover {
+  background: var(--bg-secondary);
   color: var(--text-primary);
-  max-width: 150px;
+}
+
+.timeline-tab.active {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--bg-tertiary);
+  margin-bottom: -1px;
+  font-weight: 500;
+}
+
+.timeline-tab-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding-right: 12px;
-  border-right: 1px solid var(--border-color);
+  flex: 1;
+}
+
+.timeline-tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 3px;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+  opacity: 0.6;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.timeline-tab-close:hover {
+  opacity: 1;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.timeline-tab.active .timeline-tab-close {
+  opacity: 0.8;
 }
 
 .timeline-controls {
@@ -2692,6 +2762,54 @@ input[type="checkbox"] {
   right: 0;
   height: 1px;
   background: rgba(255, 255, 255, 0.1);
+}
+
+/* ========== TRACK-BASED KEYFRAME EXPANSION ========== */
+.track-header-main {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.track-expand-arrow {
+  cursor: pointer;
+  transition: transform 0.2s ease;
+  color: var(--text-secondary);
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.track-expand-arrow:hover {
+  color: var(--text-primary);
+}
+
+.track-expand-arrow.expanded {
+  transform: rotate(90deg);
+}
+
+.track-expand-arrow.has-keyframes {
+  color: #f59e0b;
+}
+
+.track-header.expanded {
+  align-items: flex-start;
+  padding-top: 6px;
+}
+
+.track-clip-row {
+  position: relative;
+  width: 100%;
+}
+
+.track-property-rows {
+  background: rgba(0, 0, 0, 0.6);
+  border-top: 1px solid var(--border-color);
+  position: relative;
+  width: 100%;
+}
+
+.track-lane.expanded {
+  overflow: visible;
 }
 
 /* ========== PREVIEW EDIT MODE ========== */

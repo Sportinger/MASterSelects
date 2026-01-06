@@ -71,6 +71,8 @@ interface MediaState {
 
   // Active composition (the one being edited in timeline)
   activeCompositionId: string | null;
+  // Open composition tabs (like browser tabs)
+  openCompositionIds: string[];
 
   // Selection
   selectedIds: string[];
@@ -109,6 +111,9 @@ interface MediaState {
   // Composition management
   setActiveComposition: (id: string | null) => void;
   getActiveComposition: () => Composition | undefined;
+  openCompositionTab: (id: string) => void;
+  closeCompositionTab: (id: string) => void;
+  getOpenCompositions: () => Composition[];
 
   // Project persistence (IndexedDB)
   initFromDB: () => Promise<void>;
@@ -413,6 +418,7 @@ export const useMediaStore = create<MediaState>()(
         compositions: [DEFAULT_COMPOSITION],
         folders: [],
         activeCompositionId: 'comp-1',
+        openCompositionIds: ['comp-1'],
         selectedIds: [],
         expandedFolderIds: [],
         currentProjectId: null,
@@ -552,6 +558,8 @@ export const useMediaStore = create<MediaState>()(
             selectedIds: state.selectedIds.filter((sid) => sid !== id),
             // Clear active composition if we're deleting it
             activeCompositionId: state.activeCompositionId === id ? null : state.activeCompositionId,
+            // Remove from open tabs
+            openCompositionIds: state.openCompositionIds.filter((cid) => cid !== id),
           }));
         },
 
@@ -702,6 +710,39 @@ export const useMediaStore = create<MediaState>()(
         getActiveComposition: () => {
           const { compositions, activeCompositionId } = get();
           return compositions.find((c) => c.id === activeCompositionId);
+        },
+
+        openCompositionTab: (id: string) => {
+          const { openCompositionIds, setActiveComposition } = get();
+          // Add to open tabs if not already open
+          if (!openCompositionIds.includes(id)) {
+            set({ openCompositionIds: [...openCompositionIds, id] });
+          }
+          // Switch to the composition
+          setActiveComposition(id);
+        },
+
+        closeCompositionTab: (id: string) => {
+          const { openCompositionIds, activeCompositionId, setActiveComposition } = get();
+          const newOpenIds = openCompositionIds.filter((cid) => cid !== id);
+          set({ openCompositionIds: newOpenIds });
+
+          // If we closed the active tab, switch to another one
+          if (activeCompositionId === id && newOpenIds.length > 0) {
+            // Switch to the previous tab or the first available
+            const closedIndex = openCompositionIds.indexOf(id);
+            const newActiveIndex = Math.min(closedIndex, newOpenIds.length - 1);
+            setActiveComposition(newOpenIds[newActiveIndex]);
+          } else if (newOpenIds.length === 0) {
+            setActiveComposition(null);
+          }
+        },
+
+        getOpenCompositions: () => {
+          const { compositions, openCompositionIds } = get();
+          return openCompositionIds
+            .map((id) => compositions.find((c) => c.id === id))
+            .filter((c): c is Composition => c !== undefined);
         },
 
         setProjectName: (name: string) => {
@@ -1062,6 +1103,7 @@ export const useMediaStore = create<MediaState>()(
               compositions: get().compositions,
               folders: state.folders,
               activeCompositionId: state.activeCompositionId,
+              openCompositionIds: state.openCompositionIds,
               expandedFolderIds: state.expandedFolderIds,
               mediaFileIds: state.files.map((f) => f.id),
             },
@@ -1123,6 +1165,7 @@ export const useMediaStore = create<MediaState>()(
               compositions: project.data.compositions as Composition[],
               folders: project.data.folders as MediaFolder[],
               activeCompositionId: null, // Will be set below
+              openCompositionIds: (project.data.openCompositionIds as string[]) || [],
               expandedFolderIds: project.data.expandedFolderIds,
               currentProjectId: projectId,
               currentProjectName: project.name,
@@ -1136,7 +1179,13 @@ export const useMediaStore = create<MediaState>()(
               );
               if (comp) {
                 await timelineStore.loadState(comp.timelineData);
-                set({ activeCompositionId: project.data.activeCompositionId });
+                set({
+                  activeCompositionId: project.data.activeCompositionId,
+                  // Ensure the active composition is in the open tabs
+                  openCompositionIds: get().openCompositionIds.includes(project.data.activeCompositionId as string)
+                    ? get().openCompositionIds
+                    : [...get().openCompositionIds, project.data.activeCompositionId as string]
+                });
               }
             }
 
@@ -1175,6 +1224,7 @@ export const useMediaStore = create<MediaState>()(
             compositions: [newComposition],
             folders: [],
             activeCompositionId: newCompId,
+            openCompositionIds: [newCompId],
             selectedIds: [],
             expandedFolderIds: [],
             currentProjectId: null,
