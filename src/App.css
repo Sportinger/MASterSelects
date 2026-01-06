@@ -2803,9 +2803,14 @@ input[type="checkbox"] {
 }
 
 .property-label-group {
+  border-bottom: 1px solid var(--border-color);
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+}
+
+.property-label-group:last-child {
+  border-bottom: none;
 }
 
 /* Keyframe tracks in timeline area (right column) */
@@ -2835,14 +2840,20 @@ input[type="checkbox"] {
 }
 
 .keyframe-track-group {
+  border-bottom: 1px solid var(--border-color);
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
+.keyframe-track-group:last-child {
+  border-bottom: none;
+}
+
 .track-lane.expanded {
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   overflow: visible;
 }
 
