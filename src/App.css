@@ -2752,7 +2752,15 @@ input[type="checkbox"] {
   flex: 1;
   height: 100%;
   position: relative;
-  margin-left: 4px;
+}
+
+/* In track-level keyframe rows, keyframe-track should fill the full width */
+.keyframe-track-row .keyframe-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
 }
 
 .keyframe-track-line {
@@ -2849,12 +2857,18 @@ input[type="checkbox"] {
   border-top: 1px solid var(--border-color);
   position: relative;
   width: 100%;
+  /* Ensure no offset from left edge */
+  margin: 0;
+  padding: 0;
 }
 
 .keyframe-track-row {
   height: 18px;
   position: relative;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  /* Ensure track row starts at left edge */
+  margin: 0;
+  padding: 0;
 }
 
 .keyframe-track-row.group-header {
@@ -2863,6 +2877,9 @@ input[type="checkbox"] {
 
 .keyframe-track-group {
   border-bottom: 1px solid var(--border-color);
+  /* Ensure no offset */
+  margin: 0;
+  padding: 0;
 }
 
 .keyframe-track-group:last-child {
