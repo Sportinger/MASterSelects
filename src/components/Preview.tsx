@@ -482,10 +482,10 @@ export function Preview() {
     const dy = e.clientY - dragStart.current.y;
 
     // Convert pixel movement to normalized position change
-    // In shader: uv = uv + 0.5 - vec2f(posX, posY)
-    // When posX increases: final uv = ... - posX → uv decreases → samples from LEFT → image moves LEFT
-    // For natural drag (mouse right = image right), we NEGATE: posX should DECREASE
-    // Same for Y: posY increases → image moves DOWN (in UV = up on screen), so NEGATE
+    // Box formula: posX = centerX - (layer.position.x * canvasW / 2)
+    // For box to move right: need layer.position.x < 0
+    // For mouse right (dx > 0): need normalizedDx < 0 → NEGATE
+    // Y: same logic
     const normalizedDx = -(dx / viewZoom) / (canvasSize.width / 2);
     const normalizedDy = -(dy / viewZoom) / (canvasSize.height / 2);
 
