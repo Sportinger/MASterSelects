@@ -120,7 +120,7 @@ export function EffectsPanel() {
     useMixerStore();
 
   // Timeline store (for timeline clips)
-  const { clips, selectedClipId, addClipEffect, removeClipEffect, updateClipEffect, updateClipTransform, setPropertyValue, hasKeyframes } = useTimelineStore();
+  const { clips, selectedClipId, addClipEffect, removeClipEffect, updateClipEffect, updateClipTransform, setPropertyValue, hasKeyframes, getInterpolatedEffects, playheadPosition } = useTimelineStore();
 
   // Check if a timeline clip is selected first
   const selectedClip = clips.find((c) => c.id === selectedClipId);
@@ -188,37 +188,50 @@ export function EffectsPanel() {
 
         {selectedClip.effects && selectedClip.effects.length > 0 ? (
           <div className="effects-list">
-            {selectedClip.effects.map((effect) => (
-              <div key={effect.id} className="effect-item">
-                <div className="effect-header">
-                  <span className="effect-name">{effect.name}</span>
-                  <button
-                    className="btn btn-sm btn-danger"
-                    onClick={() => removeClipEffect(selectedClip.id, effect.id)}
-                  >
-                    ×
-                  </button>
-                </div>
+            {(() => {
+              // Get interpolated effects to show current keyframe values in sliders
+              const clipLocalTime = playheadPosition - selectedClip.startTime;
+              const interpolatedEffects = getInterpolatedEffects(selectedClip.id, clipLocalTime);
 
-                <div className="effect-params">
-                  {renderEffectParams(effect, (params) => {
-                    // For each parameter, check if it's numeric and use setPropertyValue
-                    // This ensures keyframes work correctly
-                    Object.entries(params).forEach(([paramName, value]) => {
-                      if (typeof value === 'number') {
-                        const property = `effect.${effect.id}.${paramName}` as any;
-                        setPropertyValue(selectedClip.id, property, value);
-                      } else {
-                        // Non-numeric params (like booleans) - update directly
-                        updateClipEffect(selectedClip.id, effect.id, { [paramName]: value });
-                      }
-                    });
-                  },
-                    selectedClip.id
-                  )}
-                </div>
-              </div>
-            ))}
+              return selectedClip.effects.map((effect) => {
+                // Find the interpolated version of this effect
+                const interpolatedEffect = interpolatedEffects.find(e => e.id === effect.id) || effect;
+
+                return (
+                  <div key={effect.id} className="effect-item">
+                    <div className="effect-header">
+                      <span className="effect-name">{effect.name}</span>
+                      <button
+                        className="btn btn-sm btn-danger"
+                        onClick={() => removeClipEffect(selectedClip.id, effect.id)}
+                      >
+                        ×
+                      </button>
+                    </div>
+
+                    <div className="effect-params">
+                      {renderEffectParams(
+                        { ...effect, params: interpolatedEffect.params },
+                        (params) => {
+                          // For each parameter, check if it's numeric and use setPropertyValue
+                          // This ensures keyframes work correctly
+                          Object.entries(params).forEach(([paramName, value]) => {
+                            if (typeof value === 'number') {
+                              const property = `effect.${effect.id}.${paramName}` as any;
+                              setPropertyValue(selectedClip.id, property, value);
+                            } else {
+                              // Non-numeric params (like booleans) - update directly
+                              updateClipEffect(selectedClip.id, effect.id, { [paramName]: value });
+                            }
+                          });
+                        },
+                        selectedClip.id
+                      )}
+                    </div>
+                  </div>
+                );
+              });
+            })()}
           </div>
         ) : (
           <div className="panel-empty">
