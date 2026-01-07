@@ -49,8 +49,10 @@ export function useEngine() {
     const unsubscribe = useTimelineStore.subscribe(
       (state) => ({ clips: state.clips, playheadPosition: state.playheadPosition, tracks: state.tracks }),
       ({ clips, playheadPosition, tracks }) => {
-        const { outputResolution } = useMixerStore.getState();
         const layers = useMixerStore.getState().layers;
+
+        // Get engine output dimensions (the actual render resolution)
+        const engineDimensions = engine.getOutputDimensions();
 
         // Find clips at current playhead position
         const videoTracks = tracks.filter(t => t.type === 'video');
@@ -69,20 +71,20 @@ export function useEngine() {
           const clip = clipsAtTime.find(c => c.trackId === track.id);
 
           if (clip?.masks && clip.masks.length > 0) {
-            // Create a version string based on mask data
-            const maskVersion = JSON.stringify(clip.masks);
+            // Create a version string based on mask data AND resolution
+            const maskVersion = `${JSON.stringify(clip.masks)}_${engineDimensions.width}x${engineDimensions.height}`;
             const cacheKey = `${clip.id}_${layer.id}`;
             const prevVersion = maskVersionRef.current.get(cacheKey);
 
-            // Only regenerate if masks changed
+            // Only regenerate if masks changed or resolution changed
             if (maskVersion !== prevVersion) {
               maskVersionRef.current.set(cacheKey, maskVersion);
 
-              // Generate mask texture
+              // Generate mask texture at engine render resolution
               const maskImageData = generateMaskTexture(
                 clip.masks,
-                outputResolution.width,
-                outputResolution.height
+                engineDimensions.width,
+                engineDimensions.height
               );
 
               // Update engine with new mask texture
