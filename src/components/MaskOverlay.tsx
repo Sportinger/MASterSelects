@@ -494,7 +494,7 @@ export function MaskOverlay({ canvasWidth, canvasHeight }: MaskOverlayProps) {
       )}
 
       {/* Mask path fill (semi-transparent) */}
-      {activeMask?.closed && pathData && (
+      {activeMask?.closed && activeMask.visible && pathData && (
         <path
           d={pathData}
           fill={activeMask.inverted ? 'rgba(0, 212, 255, 0.1)' : 'rgba(0, 212, 255, 0.15)'}
@@ -504,7 +504,7 @@ export function MaskOverlay({ canvasWidth, canvasHeight }: MaskOverlayProps) {
       )}
 
       {/* Mask path stroke */}
-      {activeMask && pathData && (
+      {activeMask && activeMask.visible && pathData && (
         <path
           d={pathData}
           fill="none"

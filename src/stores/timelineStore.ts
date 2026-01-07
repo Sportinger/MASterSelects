@@ -2552,6 +2552,8 @@ export const useTimelineStore = create<TimelineStore>()(
         inverted: maskData?.inverted ?? false,
         mode: maskData?.mode ?? 'add',
         expanded: maskData?.expanded ?? true,
+        position: maskData?.position ?? { x: 0, y: 0 },
+        visible: maskData?.visible ?? true,
       };
 
       set({

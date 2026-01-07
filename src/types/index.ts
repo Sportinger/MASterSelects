@@ -274,6 +274,8 @@ export interface ClipMask {
   inverted: boolean;
   mode: MaskMode;
   expanded: boolean;      // UI state - expanded in properties panel
+  position: { x: number; y: number };  // Offset in normalized coords (0-1)
+  visible: boolean;       // Toggle outline visibility
 }
 
 export interface Keyframe {

@@ -24,7 +24,9 @@ function drawMaskPath(
   vertices: MaskVertex[],
   closed: boolean,
   width: number,
-  height: number
+  height: number,
+  offsetX: number = 0,
+  offsetY: number = 0
 ): void {
   if (vertices.length < 2) return;
 
@@ -32,15 +34,15 @@ function drawMaskPath(
 
   for (let i = 0; i < vertices.length; i++) {
     const v = vertices[i];
-    const x = v.x * width;
-    const y = v.y * height;
+    const x = (v.x + offsetX) * width;
+    const y = (v.y + offsetY) * height;
 
     if (i === 0) {
       ctx.moveTo(x, y);
     } else {
       const prev = vertices[i - 1];
-      const prevX = prev.x * width;
-      const prevY = prev.y * height;
+      const prevX = (prev.x + offsetX) * width;
+      const prevY = (prev.y + offsetY) * height;
 
       // Control points for cubic bezier
       const cp1x = prevX + prev.handleOut.x * width;
@@ -66,10 +68,10 @@ function drawMaskPath(
     const last = vertices[vertices.length - 1];
     const first = vertices[0];
 
-    const lastX = last.x * width;
-    const lastY = last.y * height;
-    const firstX = first.x * width;
-    const firstY = first.y * height;
+    const lastX = (last.x + offsetX) * width;
+    const lastY = (last.y + offsetY) * height;
+    const firstX = (first.x + offsetX) * width;
+    const firstY = (first.y + offsetY) * height;
 
     const cp1x = lastX + last.handleOut.x * width;
     const cp1y = lastY + last.handleOut.y * height;
@@ -99,9 +101,8 @@ export function generateMaskTexture(
 
   const ctx = ensureMaskCanvas(width, height);
 
-  // Start with white (fully visible) or black depending on first mask mode
-  const firstMaskIsAdd = masks[0]?.mode === 'add';
-  ctx.fillStyle = firstMaskIsAdd ? '#000000' : '#ffffff';
+  // Start with black (no visibility)
+  ctx.fillStyle = '#000000';
   ctx.fillRect(0, 0, width, height);
 
   // Process each mask
@@ -113,21 +114,24 @@ export function generateMaskTexture(
     // Set composite operation based on mask mode
     switch (mask.mode) {
       case 'add':
-        ctx.globalCompositeOperation = 'lighter'; // Add to existing
+        // Add to existing visibility
+        ctx.globalCompositeOperation = 'lighter';
         ctx.fillStyle = `rgba(255, 255, 255, ${mask.opacity})`;
         break;
       case 'subtract':
+        // Remove from existing visibility (use destination-out with white alpha)
         ctx.globalCompositeOperation = 'destination-out';
-        ctx.fillStyle = `rgba(0, 0, 0, ${mask.opacity})`;
+        ctx.fillStyle = `rgba(255, 255, 255, ${mask.opacity})`;
         break;
       case 'intersect':
+        // Keep only intersecting areas
         ctx.globalCompositeOperation = 'destination-in';
         ctx.fillStyle = `rgba(255, 255, 255, ${mask.opacity})`;
         break;
     }
 
-    // Draw the mask path
-    drawMaskPath(ctx, mask.vertices, mask.closed, width, height);
+    // Draw the mask path with position offset
+    drawMaskPath(ctx, mask.vertices, mask.closed, width, height, mask.position.x, mask.position.y);
     ctx.fill();
 
     ctx.restore();

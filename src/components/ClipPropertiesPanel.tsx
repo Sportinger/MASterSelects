@@ -251,6 +251,30 @@ function MaskItem({ clipId, mask, isActive, onSelect }: MaskItemProps) {
         </select>
 
         <button
+          className="mask-visible-btn"
+          onClick={(e) => {
+            e.stopPropagation();
+            updateMask(clipId, mask.id, { visible: !mask.visible });
+          }}
+          title={mask.visible ? "Hide mask outline" : "Show mask outline"}
+          style={{ opacity: mask.visible ? 1 : 0.5 }}
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+            {mask.visible ? (
+              <>
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                <circle cx="12" cy="12" r="3" />
+              </>
+            ) : (
+              <>
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                <line x1="1" y1="1" x2="23" y2="23" />
+              </>
+            )}
+          </svg>
+        </button>
+
+        <button
           className="mask-edit-btn"
           onClick={(e) => {
             e.stopPropagation();
@@ -303,6 +327,30 @@ function MaskItem({ clipId, mask, isActive, onSelect }: MaskItemProps) {
               onChange={(v) => updateMask(clipId, mask.id, { feather: v })}
             />
             <span className="value">{mask.feather.toFixed(1)}px</span>
+          </div>
+
+          <div className="control-row">
+            <label>Position X</label>
+            <PrecisionSlider
+              min={-1}
+              max={1}
+              step={0.01}
+              value={mask.position.x}
+              onChange={(v) => updateMask(clipId, mask.id, { position: { ...mask.position, x: v } })}
+            />
+            <span className="value">{mask.position.x.toFixed(2)}</span>
+          </div>
+
+          <div className="control-row">
+            <label>Position Y</label>
+            <PrecisionSlider
+              min={-1}
+              max={1}
+              step={0.01}
+              value={mask.position.y}
+              onChange={(v) => updateMask(clipId, mask.id, { position: { ...mask.position, y: v } })}
+            />
+            <span className="value">{mask.position.y.toFixed(2)}</span>
           </div>
 
           <div className="control-row">
