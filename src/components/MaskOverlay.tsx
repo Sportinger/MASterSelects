@@ -247,18 +247,22 @@ export function MaskOverlay({ canvasWidth, canvasHeight }: MaskOverlayProps) {
 
       if (dragState.current.handleType === 'vertex') {
         if (isShiftPressed) {
-          // Shift pressed: move both bezier handles together (parallel)
-          // Vertex stays at its original position
+          // Shift pressed: scale both bezier handles along their original direction
+          // This makes the curve smoother (longer handles) or sharper (shorter handles)
+          // Use horizontal mouse movement as scale factor
+          const scaleFactor = 1 + normalizedDx * 3; // Multiply by 3 for more sensitivity
+
+          // Scale both handles - they stay on their original line but get longer/shorter
           updateVertex(selectedClip.id, activeMask.id, dragState.current.vertexId, {
             x: dragState.current.startVertexX, // Keep vertex at original position
             y: dragState.current.startVertexY,
             handleIn: {
-              x: dragState.current.startHandleInX + normalizedDx,
-              y: dragState.current.startHandleInY + normalizedDy,
+              x: dragState.current.startHandleInX * scaleFactor,
+              y: dragState.current.startHandleInY * scaleFactor,
             },
             handleOut: {
-              x: dragState.current.startHandleOutX + normalizedDx,
-              y: dragState.current.startHandleOutY + normalizedDy,
+              x: dragState.current.startHandleOutX * scaleFactor,
+              y: dragState.current.startHandleOutY * scaleFactor,
             },
           });
         } else {
