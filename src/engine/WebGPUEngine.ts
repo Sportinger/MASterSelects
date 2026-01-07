@@ -285,41 +285,41 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
   var uv = input.uv;
   uv = uv - vec2f(0.5);
 
-  // Convert to square coordinate system for rotation
-  uv.x = uv.x * layer.outputAspect;
+  // Apply user scale first
   uv = uv / vec2f(layer.scaleX, layer.scaleY);
 
-  // 3D rotation with perspective (in square coordinate space)
-  var p = vec3f(uv.x, uv.y, 0.0);
+  // For 3D rotation, work in world coordinates where the panel has its actual aspect ratio
+  var p = vec3f(uv.x, uv.y / layer.outputAspect, 0.0);
 
-  // X rotation
+  // X rotation (tilt forward/back)
   if (abs(layer.rotationX) > 0.0001) {
-    let cosX = cos(layer.rotationX);
-    let sinX = sin(layer.rotationX);
+    let cosX = cos(-layer.rotationX);
+    let sinX = sin(-layer.rotationX);
     p = vec3f(p.x, p.y * cosX - p.z * sinX, p.y * sinX + p.z * cosX);
   }
 
-  // Y rotation
+  // Y rotation (turn left/right)
   if (abs(layer.rotationY) > 0.0001) {
-    let cosY = cos(layer.rotationY);
-    let sinY = sin(layer.rotationY);
+    let cosY = cos(-layer.rotationY);
+    let sinY = sin(-layer.rotationY);
     p = vec3f(p.x * cosY + p.z * sinY, p.y, -p.x * sinY + p.z * cosY);
   }
 
-  // Z rotation
+  // Z rotation (spin)
   if (abs(layer.rotationZ) > 0.0001) {
     let cosZ = cos(layer.rotationZ);
     let sinZ = sin(layer.rotationZ);
     p = vec3f(p.x * cosZ - p.y * sinZ, p.x * sinZ + p.y * cosZ, p.z);
   }
 
-  // Perspective projection
-  let perspectiveDist = max(layer.perspective, 1.0);
-  let perspectiveScale = perspectiveDist / (perspectiveDist - p.z);
-  uv = vec2f(p.x * perspectiveScale, p.y * perspectiveScale);
+  // Perspective projection using homogeneous coordinates
+  let perspectiveDist = max(layer.perspective, 0.5);
+  let w = 1.0 - p.z / perspectiveDist;
+  let projectedX = p.x / w;
+  let projectedY = p.y / w;
 
-  // Convert back from square coordinates
-  uv.x = uv.x / layer.outputAspect;
+  // Convert back from world coordinates to UV coordinates
+  uv = vec2f(projectedX, projectedY * layer.outputAspect);
 
   // Apply source aspect ratio correction
   let aspectRatio = layer.sourceAspect / layer.outputAspect;
@@ -1740,7 +1740,7 @@ export class WebGPUEngine {
       this.uniformDataU32[11] = 0; // maskInvert (handled in mask texture generation)
       this.uniformData[12] = rotX;        // rotationX
       this.uniformData[13] = rotY;        // rotationY
-      this.uniformData[14] = 1.5;         // perspective distance (lower = stronger 3D effect)
+      this.uniformData[14] = 2.0;         // perspective distance (lower = stronger 3D effect)
       this.uniformData[15] = 0;           // padding
       this.device.queue.writeBuffer(uniformBuffer, 0, this.uniformData);
 

@@ -424,20 +424,20 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
   // Center the UV coordinates
   uv = uv - vec2f(0.5);
 
-  // Convert to square coordinate system for rotation (compensate for output aspect)
-  // This ensures rotation happens without distortion
-  uv.x = uv.x * layer.outputAspect;
-
-  // Apply user scale
+  // Apply user scale first
   uv = uv / vec2f(layer.scaleX, layer.scaleY);
 
-  // 3D rotation with perspective (in square coordinate space)
-  var p = vec3f(uv.x, uv.y, 0.0);
+  // For 3D rotation, we need to work in world coordinates where the panel
+  // has its actual aspect ratio. The panel spans -0.5 to 0.5 in both U and V,
+  // but in world space, a 16:9 panel is wider than tall.
+  // We model this by scaling the Y coordinate to match the panel's real proportions.
+  var p = vec3f(uv.x, uv.y / layer.outputAspect, 0.0);
 
-  // Apply X rotation (tilt forward/back)
+  // Apply X rotation (tilt forward/back) - rotates around X axis
+  // Positive angle tilts top away from viewer
   if (abs(layer.rotationX) > 0.0001) {
-    let cosX = cos(layer.rotationX);
-    let sinX = sin(layer.rotationX);
+    let cosX = cos(-layer.rotationX);  // Negate for intuitive direction
+    let sinX = sin(-layer.rotationX);
     p = vec3f(
       p.x,
       p.y * cosX - p.z * sinX,
@@ -445,10 +445,11 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
     );
   }
 
-  // Apply Y rotation (turn left/right)
+  // Apply Y rotation (turn left/right) - rotates around Y axis
+  // Positive angle turns right side away from viewer
   if (abs(layer.rotationY) > 0.0001) {
-    let cosY = cos(layer.rotationY);
-    let sinY = sin(layer.rotationY);
+    let cosY = cos(-layer.rotationY);  // Negate for intuitive direction
+    let sinY = sin(-layer.rotationY);
     p = vec3f(
       p.x * cosY + p.z * sinY,
       p.y,
@@ -456,7 +457,7 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
     );
   }
 
-  // Apply Z rotation (spin)
+  // Apply Z rotation (spin) - rotates around Z axis (2D rotation in screen plane)
   if (abs(layer.rotationZ) > 0.0001) {
     let cosZ = cos(layer.rotationZ);
     let sinZ = sin(layer.rotationZ);
@@ -468,12 +469,17 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
   }
 
   // Apply perspective projection
-  let perspectiveDist = max(layer.perspective, 1.0);
-  let perspectiveScale = perspectiveDist / (perspectiveDist - p.z);
-  uv = vec2f(p.x * perspectiveScale, p.y * perspectiveScale);
+  // perspectiveDist is the distance from camera to the panel plane
+  // Higher values = weaker perspective (more orthographic)
+  // Lower values = stronger perspective (more dramatic 3D effect)
+  let perspectiveDist = max(layer.perspective, 0.5);
+  let w = 1.0 - p.z / perspectiveDist;  // Homogeneous coordinate
+  let projectedX = p.x / w;
+  let projectedY = p.y / w;
 
-  // Convert back from square coordinates
-  uv.x = uv.x / layer.outputAspect;
+  // Convert back from world coordinates to UV coordinates
+  // Scale Y back up to UV range
+  uv = vec2f(projectedX, projectedY * layer.outputAspect);
 
   // Apply source aspect ratio correction (fit source into output)
   let aspectRatio = layer.sourceAspect / layer.outputAspect;

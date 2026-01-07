@@ -206,9 +206,10 @@ export function Preview() {
 
     // Position mapping: match the shader's visual output
     // Shader does: uv = uv + 0.5 - pos
-    // When pos.x > 0: samples right side of texture → image moves LEFT → box.x decreases
-    // When pos.y > 0: samples bottom of texture → image moves UP → box.y decreases
-    const posX = centerX - (layer.position.x * canvasW / 2);
+    // When pos.x > 0: uv decreases → samples from left side → image appears moved RIGHT
+    // When pos.y > 0: uv decreases → samples from top → image appears moved DOWN (in UV space = UP on screen)
+    // So box should move in SAME direction as position value
+    const posX = centerX + (layer.position.x * canvasW / 2);
     const posY = centerY - (layer.position.y * canvasH / 2);
 
     return {
@@ -483,6 +484,8 @@ export function Preview() {
 
     const newPosX = dragStart.current.layerPosX + normalizedDx;
     const newPosY = dragStart.current.layerPosY + normalizedDy;
+
+    console.log(`[Drag] dx=${dx.toFixed(0)}, normalizedDx=${normalizedDx.toFixed(3)}, newPosX=${newPosX.toFixed(3)}`);
 
     // Find the corresponding clip and update its transform
     const layer = layers.find(l => l?.id === dragLayerId);
