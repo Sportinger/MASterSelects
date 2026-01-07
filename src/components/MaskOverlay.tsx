@@ -128,8 +128,11 @@ export function MaskOverlay({ canvasWidth, canvasHeight }: MaskOverlayProps) {
     startVertexY: number;
     startHandleX: number;
     startHandleY: number;
-    // For Shift+drag to move both handles
-    shiftDrag: boolean;
+    // For Shift+drag to scale handles
+    lastShiftState: boolean;
+    shiftStartX: number; // Mouse X when shift was pressed
+    shiftStartVertexX: number; // Vertex X when shift was pressed
+    shiftStartVertexY: number; // Vertex Y when shift was pressed
     startHandleInX: number;
     startHandleInY: number;
     startHandleOutX: number;
@@ -143,7 +146,10 @@ export function MaskOverlay({ canvasWidth, canvasHeight }: MaskOverlayProps) {
     startVertexY: 0,
     startHandleX: 0,
     startHandleY: 0,
-    shiftDrag: false,
+    lastShiftState: false,
+    shiftStartX: 0,
+    shiftStartVertexX: 0,
+    shiftStartVertexY: 0,
     startHandleInX: 0,
     startHandleInY: 0,
     startHandleOutX: 0,
@@ -217,7 +223,10 @@ export function MaskOverlay({ canvasWidth, canvasHeight }: MaskOverlayProps) {
       startVertexY: vertex.y,
       startHandleX: handleType === 'handleIn' ? vertex.handleIn.x : vertex.handleOut.x,
       startHandleY: handleType === 'handleIn' ? vertex.handleIn.y : vertex.handleOut.y,
-      shiftDrag: false, // Will be checked dynamically in mousemove
+      lastShiftState: false,
+      shiftStartX: e.clientX,
+      shiftStartVertexX: vertex.x,
+      shiftStartVertexY: vertex.y,
       startHandleInX: vertex.handleIn.x,
       startHandleInY: vertex.handleIn.y,
       startHandleOutX: vertex.handleOut.x,
@@ -235,32 +244,34 @@ export function MaskOverlay({ canvasWidth, canvasHeight }: MaskOverlayProps) {
       const scaleX = canvasWidth / rect.width;
       const scaleY = canvasHeight / rect.height;
 
-      const dx = (moveEvent.clientX - dragState.current.startX) * scaleX;
-      const dy = (moveEvent.clientY - dragState.current.startY) * scaleY;
-
-      // Convert delta to normalized coordinates
-      const normalizedDx = dx / canvasWidth;
-      const normalizedDy = dy / canvasHeight;
-
       // Check shift key dynamically during drag
       const isShiftPressed = moveEvent.shiftKey;
 
-      if (dragState.current.handleType === 'vertex') {
-        // Calculate current vertex position based on drag
-        const currentVertexX = Math.max(0, Math.min(1, dragState.current.startVertexX + normalizedDx));
-        const currentVertexY = Math.max(0, Math.min(1, dragState.current.startVertexY + normalizedDy));
+      // Detect shift state change - capture current position as new reference
+      if (isShiftPressed && !dragState.current.lastShiftState) {
+        // Shift just pressed - save current mouse position and vertex position
+        dragState.current.shiftStartX = moveEvent.clientX;
+        // Get current vertex position from store
+        const currentVertex = activeMask.vertices.find(v => v.id === dragState.current.vertexId);
+        if (currentVertex) {
+          dragState.current.shiftStartVertexX = currentVertex.x;
+          dragState.current.shiftStartVertexY = currentVertex.y;
+        }
+      }
+      dragState.current.lastShiftState = isShiftPressed;
 
+      if (dragState.current.handleType === 'vertex') {
         if (isShiftPressed) {
           // Shift pressed: scale both bezier handles along their original direction
-          // This makes the curve smoother (longer handles) or sharper (shorter handles)
-          // Use horizontal mouse movement as scale factor
-          const scaleFactor = 1 + normalizedDx * 3; // Multiply by 3 for more sensitivity
+          // Calculate scale factor based on mouse movement SINCE shift was pressed
+          const shiftDx = (moveEvent.clientX - dragState.current.shiftStartX) * scaleX;
+          const normalizedShiftDx = shiftDx / canvasWidth;
+          const scaleFactor = 1 + normalizedShiftDx * 5; // Multiply by 5 for sensitivity
 
-          // Scale both handles - they stay on their original line but get longer/shorter
-          // Keep the vertex at its current dragged position
+          // Scale both handles - keep vertex at position when shift was pressed
           updateVertex(selectedClip.id, activeMask.id, dragState.current.vertexId, {
-            x: currentVertexX,
-            y: currentVertexY,
+            x: dragState.current.shiftStartVertexX,
+            y: dragState.current.shiftStartVertexY,
             handleIn: {
               x: dragState.current.startHandleInX * scaleFactor,
               y: dragState.current.startHandleInY * scaleFactor,
@@ -271,22 +282,26 @@ export function MaskOverlay({ canvasWidth, canvasHeight }: MaskOverlayProps) {
             },
           });
         } else {
-          // Normal drag: move vertex position, keep handles at original
+          // Normal drag: move vertex position
+          const dx = (moveEvent.clientX - dragState.current.startX) * scaleX;
+          const dy = (moveEvent.clientY - dragState.current.startY) * scaleY;
+          const normalizedDx = dx / canvasWidth;
+          const normalizedDy = dy / canvasHeight;
+
+          const newX = Math.max(0, Math.min(1, dragState.current.startVertexX + normalizedDx));
+          const newY = Math.max(0, Math.min(1, dragState.current.startVertexY + normalizedDy));
           updateVertex(selectedClip.id, activeMask.id, dragState.current.vertexId, {
-            x: currentVertexX,
-            y: currentVertexY,
-            handleIn: {
-              x: dragState.current.startHandleInX,
-              y: dragState.current.startHandleInY,
-            },
-            handleOut: {
-              x: dragState.current.startHandleOutX,
-              y: dragState.current.startHandleOutY,
-            },
+            x: newX,
+            y: newY,
           });
         }
       } else {
         // Move bezier handle
+        const dx = (moveEvent.clientX - dragState.current.startX) * scaleX;
+        const dy = (moveEvent.clientY - dragState.current.startY) * scaleY;
+        const normalizedDx = dx / canvasWidth;
+        const normalizedDy = dy / canvasHeight;
+
         const handleKey = dragState.current.handleType;
         updateVertex(selectedClip.id, activeMask.id, dragState.current.vertexId, {
           [handleKey]: {
@@ -307,7 +322,10 @@ export function MaskOverlay({ canvasWidth, canvasHeight }: MaskOverlayProps) {
         startVertexY: 0,
         startHandleX: 0,
         startHandleY: 0,
-        shiftDrag: false,
+        lastShiftState: false,
+        shiftStartX: 0,
+        shiftStartVertexX: 0,
+        shiftStartVertexY: 0,
         startHandleInX: 0,
         startHandleInY: 0,
         startHandleOutX: 0,
