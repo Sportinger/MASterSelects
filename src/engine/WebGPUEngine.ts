@@ -387,6 +387,7 @@ export class WebGPUEngine {
   // Mask textures per layer
   private maskTextures: Map<string, GPUTexture> = new Map();
   private maskTextureViews: Map<string, GPUTextureView> = new Map();
+  private lastMaskDebugLog: number | null = null;
 
   // Cached texture views
   private pingView: GPUTextureView | null = null;
@@ -820,7 +821,10 @@ export class WebGPUEngine {
     }
 
     // If no imageData, layer will use white fallback (no masking)
-    if (!imageData) return;
+    if (!imageData) {
+      console.log(`[Engine] No mask data for layer ${layerId}, using white fallback`);
+      return;
+    }
 
     // Create new mask texture
     const maskTexture = this.device.createTexture({
@@ -843,6 +847,8 @@ export class WebGPUEngine {
     // Cache texture and view
     this.maskTextures.set(layerId, maskTexture);
     this.maskTextureViews.set(layerId, maskTexture.createView());
+
+    console.log(`[Engine] Uploaded mask texture for layer ${layerId}: ${imageData.width}x${imageData.height}`);
   }
 
   // Remove mask texture for a layer
@@ -1666,6 +1672,12 @@ export class WebGPUEngine {
       // Get mask texture view for this layer (if any)
       const maskTextureView = this.maskTextureViews.get(layer.id) || this.whiteMaskView!;
       const hasMask = this.maskTextureViews.has(layer.id) ? 1 : 0;
+
+      // Debug logging for mask state (throttled to avoid spam)
+      if (hasMask === 1 && (!this.lastMaskDebugLog || Date.now() - this.lastMaskDebugLog > 1000)) {
+        console.log(`[Engine] Rendering layer ${layer.id} WITH mask (hasMask=${hasMask})`);
+        this.lastMaskDebugLog = Date.now();
+      }
 
       // Update uniforms
       this.uniformData[0] = layer.opacity;

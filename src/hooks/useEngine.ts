@@ -81,45 +81,38 @@ export function useEngine() {
               sourceHeight = layer.source.imageElement.naturalHeight || 1080;
             }
 
-            const sourceAspect = sourceWidth / sourceHeight;
-            const outputAspect = engineDimensions.width / engineDimensions.height;
-            const aspectRatio = sourceAspect / outputAspect;
-
-            // Create a version string based on mask data, resolution AND aspect ratio
-            const maskVersion = `${JSON.stringify(clip.masks)}_${engineDimensions.width}x${engineDimensions.height}_${aspectRatio.toFixed(4)}`;
+            // Create a version string based on mask data and resolution
+            const maskVersion = `${JSON.stringify(clip.masks)}_${engineDimensions.width}x${engineDimensions.height}`;
             const cacheKey = `${clip.id}_${layer.id}`;
             const prevVersion = maskVersionRef.current.get(cacheKey);
 
-            // Only regenerate if masks changed or resolution or aspect ratio changed
+            // Only regenerate if masks changed or resolution changed
             if (maskVersion !== prevVersion) {
               maskVersionRef.current.set(cacheKey, maskVersion);
 
-              // Transform mask vertices to account for aspect ratio fitting
-              const transformedMasks = clip.masks.map(mask => ({
-                ...mask,
-                vertices: mask.vertices.map(v => {
-                  let x = v.x, y = v.y;
-                  // Apply inverse of video aspect ratio fitting
-                  if (aspectRatio > 1.0) {
-                    // Video is letterboxed - compress Y coordinates
-                    y = (y - 0.5) / aspectRatio + 0.5;
-                  } else {
-                    // Video is pillarboxed - compress X coordinates
-                    x = (x - 0.5) * aspectRatio + 0.5;
-                  }
-                  return { ...v, x, y };
-                })
-              }));
-
-              // Generate mask texture at engine render resolution with transformed vertices
+              // Generate mask texture at engine render resolution
+              // Keep masks in their original coordinates - shader will handle aspect ratio
               const maskImageData = generateMaskTexture(
-                transformedMasks,
+                clip.masks,
                 engineDimensions.width,
                 engineDimensions.height
               );
 
-              // Update engine with new mask texture
-              engine.updateMaskTexture(layer.id, maskImageData);
+              if (maskImageData) {
+                // Sample center pixel to verify mask content
+                const centerX = Math.floor(engineDimensions.width / 2);
+                const centerY = Math.floor(engineDimensions.height / 2);
+                const centerIdx = (centerY * engineDimensions.width + centerX) * 4;
+                const centerR = maskImageData.data[centerIdx];
+                const centerG = maskImageData.data[centerIdx + 1];
+                const centerB = maskImageData.data[centerIdx + 2];
+
+                console.log(`[Mask] Generated mask texture for layer ${layer.id}: ${engineDimensions.width}x${engineDimensions.height}, aspectRatio: ${aspectRatio.toFixed(2)}, masks: ${transformedMasks.length}, center pixel RGB: ${centerR},${centerG},${centerB}`);
+                // Update engine with new mask texture
+                engine.updateMaskTexture(layer.id, maskImageData);
+              } else {
+                console.warn(`[Mask] Failed to generate mask texture for layer ${layer.id}`);
+              }
             }
           } else {
             // No masks or no clip, clear the mask texture for this layer

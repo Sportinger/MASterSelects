@@ -522,8 +522,9 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
   }
 
   // Apply mask if present
+  // Sample mask in output frame space (input.uv), not layer space
   if (layer.hasMask == 1u) {
-    let maskSample = textureSample(maskTexture, texSampler, clampedUV);
+    let maskSample = textureSample(maskTexture, texSampler, input.uv);
     var maskValue = maskSample.r;  // Use red channel as grayscale mask
     if (layer.maskInvert == 1u) {
       maskValue = 1.0 - maskValue;
