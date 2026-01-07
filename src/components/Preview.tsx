@@ -482,20 +482,21 @@ export function Preview() {
     const dy = e.clientY - dragStart.current.y;
 
     // Convert pixel movement to normalized position change
-    // Box formula: posX = centerX - (layer.position.x * canvasW / 2)
-    // For box to move right: need layer.position.x < 0
-    // For mouse right (dx > 0): need normalizedDx < 0 → NEGATE
-    // Y: same logic
-    const normalizedDx = -(dx / viewZoom) / (canvasSize.width / 2);
-    const normalizedDy = -(dy / viewZoom) / (canvasSize.height / 2);
+    const normalizedDx = (dx / viewZoom) / (canvasSize.width / 2);
+    const normalizedDy = (dy / viewZoom) / (canvasSize.height / 2);
 
-    const newPosX = dragStart.current.layerPosX + normalizedDx;
-    const newPosY = dragStart.current.layerPosY + normalizedDy;
+    // Box uses negated values (box formula: posX = center - layer.position.x)
+    const boxPosX = dragStart.current.layerPosX - normalizedDx;
+    const boxPosY = dragStart.current.layerPosY - normalizedDy;
 
-    // Update current drag position for immediate visual feedback
-    currentDragPos.current = { x: newPosX, y: newPosY };
+    // Image uses direct values (shader formula: uv = uv + 0.5 - position)
+    const imagePosX = dragStart.current.layerPosX + normalizedDx;
+    const imagePosY = dragStart.current.layerPosY + normalizedDy;
 
-    console.log(`[Drag] mouse dx=${dx.toFixed(0)}, normalized=${normalizedDx.toFixed(4)}, old=${dragStart.current.layerPosX.toFixed(4)}, new=${newPosX.toFixed(4)}`);
+    // Update current drag position for box visual feedback
+    currentDragPos.current = { x: boxPosX, y: boxPosY };
+
+    console.log(`[Drag] mouse dx=${dx.toFixed(0)}, box=${boxPosX.toFixed(4)}, image=${imagePosX.toFixed(4)}`);
 
     // Find the corresponding clip and update its transform
     const layer = layers.find(l => l?.id === dragLayerId);
@@ -503,7 +504,7 @@ export function Preview() {
       const clip = clips.find(c => c.name === layer.name);
       if (clip) {
         updateClipTransform(clip.id, {
-          position: { x: newPosX, y: newPosY, z: 0 },
+          position: { x: imagePosX, y: imagePosY, z: 0 },
         });
       }
     }
