@@ -1727,6 +1727,80 @@ export class WebGPUEngine {
       compositePass.draw(6);
       compositePass.end();
 
+      // Apply effects to the layer if any
+      if (layer.effects && layer.effects.length > 0) {
+        const enabledEffects = layer.effects.filter(e => e.enabled);
+        if (enabledEffects.length > 0) {
+          // writeView contains the composited result
+          // We'll ping-pong between writeView and readView for each effect
+          let effectInput = writeView;
+          let effectOutput = readView;
+
+          for (const effect of enabledEffects) {
+            const pipeline = this.effectPipelines.get(effect.type);
+            const bindGroupLayout = this.effectBindGroupLayouts.get(effect.type);
+
+            if (!pipeline || !bindGroupLayout) continue;
+
+            // Create uniform buffer for effect parameters
+            const effectParams = this.createEffectUniformData(effect);
+            const effectUniformBuffer = effectParams ? this.device.createBuffer({
+              size: effectParams.byteLength,
+              usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            }) : null;
+
+            if (effectUniformBuffer && effectParams) {
+              this.device.queue.writeBuffer(effectUniformBuffer, 0, effectParams);
+            }
+
+            // Create bind group
+            const entries: GPUBindGroupEntry[] = [
+              { binding: 0, resource: this.sampler! },
+              { binding: 1, resource: effectInput },
+            ];
+
+            if (effectUniformBuffer) {
+              entries.push({ binding: 2, resource: { buffer: effectUniformBuffer } });
+            }
+
+            const effectBindGroup = this.device.createBindGroup({
+              layout: bindGroupLayout,
+              entries,
+            });
+
+            // Render effect
+            const effectPass = commandEncoder.beginRenderPass({
+              colorAttachments: [{
+                view: effectOutput,
+                loadOp: 'clear',
+                storeOp: 'store',
+              }],
+            });
+            effectPass.setPipeline(pipeline);
+            effectPass.setBindGroup(0, effectBindGroup);
+            effectPass.draw(6);
+            effectPass.end();
+
+            // Swap for next effect
+            const tempView = effectInput;
+            effectInput = effectOutput;
+            effectOutput = tempView;
+          }
+
+          // After all effects, effectInput contains the final result
+          // Make sure it's in writeView for the buffer swap below
+          if (effectInput !== writeView) {
+            // Need to copy back to writeView
+            // The result is in readView, and we want it in writeView
+            // So we swap them conceptually by adjusting which is which
+            const tempView = readView;
+            readView = writeView;
+            writeView = tempView;
+            usePing = !usePing;
+          }
+        }
+      }
+
       // Swap buffers
       const temp = readView;
       readView = writeView;
@@ -1819,6 +1893,78 @@ export class WebGPUEngine {
     }
 
     this.updateStats();
+  }
+
+  private createEffectUniformData(effect: Effect): Float32Array | null {
+    const params = effect.params;
+
+    switch (effect.type) {
+      case 'hue-shift':
+        return new Float32Array([
+          params.shift as number || 0,
+          0, 0, 0, // padding
+        ]);
+
+      case 'brightness':
+      case 'contrast':
+      case 'saturation': {
+        // ColorAdjust shader uses: brightness, contrast, saturation
+        const brightness = effect.type === 'brightness' ? (params.amount as number || 0) : 0;
+        const contrast = effect.type === 'contrast' ? (params.amount as number || 1) : 1;
+        const saturation = effect.type === 'saturation' ? (params.amount as number || 1) : 1;
+        return new Float32Array([
+          brightness,
+          contrast,
+          saturation,
+          0, // padding
+        ]);
+      }
+
+      case 'pixelate':
+        return new Float32Array([
+          params.size as number || 8,
+          this.outputWidth,
+          this.outputHeight,
+          0, // padding
+        ]);
+
+      case 'kaleidoscope':
+        return new Float32Array([
+          params.segments as number || 6,
+          params.rotation as number || 0,
+          0, 0, // padding
+        ]);
+
+      case 'mirror':
+        return new Float32Array([
+          params.horizontal ? 1 : 0,
+          params.vertical ? 1 : 0,
+          0, 0, // padding
+        ]);
+
+      case 'rgb-split':
+        return new Float32Array([
+          params.amount as number || 0.01,
+          params.angle as number || 0,
+          0, 0, // padding
+        ]);
+
+      case 'levels':
+        return new Float32Array([
+          params.inputBlack as number || 0,
+          params.inputWhite as number || 1,
+          params.gamma as number || 1,
+          params.outputBlack as number || 0,
+          params.outputWhite as number || 1,
+          0, 0, 0, // padding
+        ]);
+
+      case 'invert':
+        return null; // No uniforms needed
+
+      default:
+        return null;
+    }
   }
 
   private renderToCanvasCached(
