@@ -117,6 +117,10 @@ export function Timeline() {
     isSnapping: boolean;         // Whether currently snapping
   } | null>(null);
 
+  // Ref to track clipDrag state for event handlers (avoids dependency issues)
+  const clipDragRef = useRef(clipDrag);
+  clipDragRef.current = clipDrag;
+
   // Clip trimming state
   const [clipTrim, setClipTrim] = useState<{
     clipId: string;
@@ -129,6 +133,10 @@ export function Timeline() {
     currentX: number;
     altKey: boolean;  // If true, don't trim linked clip
   } | null>(null);
+
+  // Ref to track clipTrim state for event handlers (avoids dependency issues)
+  const clipTrimRef = useRef(clipTrim);
+  clipTrimRef.current = clipTrim;
 
   // In/Out marker drag state
   const [markerDrag, setMarkerDrag] = useState<{
@@ -1369,12 +1377,13 @@ export function Timeline() {
     });
   };
 
-  // Handle clip dragging
+  // Handle clip dragging - use refs to avoid dependency issues
   useEffect(() => {
     if (!clipDrag) return;
 
     const handleMouseMove = (e: MouseEvent) => {
-      if (!trackLanesRef.current || !timelineRef.current) return;
+      const drag = clipDragRef.current;
+      if (!drag || !trackLanesRef.current || !timelineRef.current) return;
 
       // Find which track the mouse is over
       const lanesRect = trackLanesRef.current.getBoundingClientRect();
@@ -1382,7 +1391,7 @@ export function Timeline() {
 
       // Calculate cumulative track positions
       let currentY = 24; // Time ruler height
-      let newTrackId = clipDrag.currentTrackId;
+      let newTrackId = drag.currentTrackId;
 
       for (const track of tracks) {
         if (mouseY >= currentY && mouseY < currentY + track.height) {
@@ -1394,11 +1403,11 @@ export function Timeline() {
 
       // Calculate current drag position in time
       const rect = timelineRef.current.getBoundingClientRect();
-      const x = e.clientX - rect.left + scrollX - clipDrag.grabOffsetX;
+      const x = e.clientX - rect.left + scrollX - drag.grabOffsetX;
       const rawTime = Math.max(0, pixelToTime(x));
 
       // Check for snapping
-      const { startTime: snappedTime, snapped } = getSnappedPosition(clipDrag.clipId, rawTime, newTrackId);
+      const { startTime: snappedTime, snapped } = getSnappedPosition(drag.clipId, rawTime, newTrackId);
 
       setClipDrag(prev => prev ? {
         ...prev,
@@ -1410,14 +1419,15 @@ export function Timeline() {
     };
 
     const handleMouseUp = (e: MouseEvent) => {
-      if (!clipDrag || !timelineRef.current) return;
+      const drag = clipDragRef.current;
+      if (!drag || !timelineRef.current) return;
 
       const rect = timelineRef.current.getBoundingClientRect();
-      const x = e.clientX - rect.left + scrollX - clipDrag.grabOffsetX;
+      const x = e.clientX - rect.left + scrollX - drag.grabOffsetX;
       const newStartTime = Math.max(0, pixelToTime(x));
 
       // Move clip to new position and track (store handles snapping and collision)
-      moveClip(clipDrag.clipId, newStartTime, clipDrag.currentTrackId);
+      moveClip(drag.clipId, newStartTime, drag.currentTrackId);
       setClipDrag(null);
     };
 
@@ -1427,7 +1437,9 @@ export function Timeline() {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [clipDrag, tracks, scrollX, moveClip, pixelToTime, getSnappedPosition]);
+    // Only re-run when clipDrag becomes truthy/falsy, not on every update
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!clipDrag, tracks, scrollX, moveClip, pixelToTime, getSnappedPosition]);
 
   // Handle trim start (mousedown on trim handle)
   const handleTrimStart = (e: React.MouseEvent, clipId: string, edge: 'left' | 'right') => {
@@ -1451,7 +1463,7 @@ export function Timeline() {
     });
   };
 
-  // Handle trim dragging
+  // Handle trim dragging - use refs to avoid dependency issues
   useEffect(() => {
     if (!clipTrim) return;
 
@@ -1459,57 +1471,58 @@ export function Timeline() {
       setClipTrim(prev => prev ? { ...prev, currentX: e.clientX, altKey: e.altKey } : null);
     };
 
-    const handleMouseUp = (e: MouseEvent) => {
-      if (!clipTrim) return;
+    const handleMouseUp = () => {
+      const trim = clipTrimRef.current;
+      if (!trim) return;
 
-      const clip = clips.find(c => c.id === clipTrim.clipId);
+      const clip = clips.find(c => c.id === trim.clipId);
       if (!clip) {
         setClipTrim(null);
         return;
       }
 
       // Calculate the delta in time
-      const deltaX = clipTrim.currentX - clipTrim.startX;
+      const deltaX = trim.currentX - trim.startX;
       const deltaTime = pixelToTime(deltaX);
 
       // Get source duration limit
       const maxDuration = clip.source?.naturalDuration || clip.duration;
 
-      let newStartTime = clipTrim.originalStartTime;
-      let newInPoint = clipTrim.originalInPoint;
-      let newOutPoint = clipTrim.originalOutPoint;
+      let newStartTime = trim.originalStartTime;
+      let newInPoint = trim.originalInPoint;
+      let newOutPoint = trim.originalOutPoint;
 
-      if (clipTrim.edge === 'left') {
+      if (trim.edge === 'left') {
         // Trimming left edge - changes startTime and inPoint
-        const maxTrim = clipTrim.originalDuration - 0.1; // Keep at least 0.1s
-        const minTrim = -clipTrim.originalInPoint; // Can't go before source start
+        const maxTrim = trim.originalDuration - 0.1; // Keep at least 0.1s
+        const minTrim = -trim.originalInPoint; // Can't go before source start
         const clampedDelta = Math.max(minTrim, Math.min(maxTrim, deltaTime));
 
-        newStartTime = clipTrim.originalStartTime + clampedDelta;
-        newInPoint = clipTrim.originalInPoint + clampedDelta;
+        newStartTime = trim.originalStartTime + clampedDelta;
+        newInPoint = trim.originalInPoint + clampedDelta;
       } else {
         // Trimming right edge - changes outPoint only
-        const maxExtend = maxDuration - clipTrim.originalOutPoint; // Can't go past source end
-        const minTrim = -(clipTrim.originalDuration - 0.1); // Keep at least 0.1s
+        const maxExtend = maxDuration - trim.originalOutPoint; // Can't go past source end
+        const minTrim = -(trim.originalDuration - 0.1); // Keep at least 0.1s
         const clampedDelta = Math.max(minTrim, Math.min(maxExtend, deltaTime));
 
-        newOutPoint = clipTrim.originalOutPoint + clampedDelta;
+        newOutPoint = trim.originalOutPoint + clampedDelta;
       }
 
       // Apply trim to this clip
       trimClip(clip.id, newInPoint, newOutPoint);
-      if (clipTrim.edge === 'left') {
+      if (trim.edge === 'left') {
         // When Alt is held, skip moving linked clips
-        moveClip(clip.id, Math.max(0, newStartTime), clip.trackId, clipTrim.altKey);
+        moveClip(clip.id, Math.max(0, newStartTime), clip.trackId, trim.altKey);
       }
 
       // Also trim linked clip unless Alt was held
-      if (!clipTrim.altKey && clip.linkedClipId) {
+      if (!trim.altKey && clip.linkedClipId) {
         const linkedClip = clips.find(c => c.id === clip.linkedClipId);
         if (linkedClip) {
           const linkedMaxDuration = linkedClip.source?.naturalDuration || linkedClip.duration;
 
-          if (clipTrim.edge === 'left') {
+          if (trim.edge === 'left') {
             const linkedNewInPoint = Math.max(0, Math.min(linkedMaxDuration - 0.1, newInPoint));
             trimClip(linkedClip.id, linkedNewInPoint, linkedClip.outPoint);
             // skipLinked=true since we're manually handling the linked clip
@@ -1530,7 +1543,9 @@ export function Timeline() {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [clipTrim, clips, pixelToTime, trimClip, moveClip]);
+    // Only re-run when clipTrim becomes truthy/falsy, not on every update
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!clipTrim, clips, pixelToTime, trimClip, moveClip]);
 
   // Quick duration check for dragged video files
   const getVideoDurationQuick = async (file: File): Promise<number | null> => {
