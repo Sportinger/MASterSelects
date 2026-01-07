@@ -584,8 +584,8 @@ export function Preview() {
             )}
             {maskEditMode !== 'none' && (
               <MaskOverlay
-                canvasWidth={canvasSize.width}
-                canvasHeight={canvasSize.height}
+                canvasWidth={outputResolution.width}
+                canvasHeight={outputResolution.height}
               />
             )}
           </>

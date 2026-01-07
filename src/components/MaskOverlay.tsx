@@ -755,6 +755,18 @@ export function MaskOverlay({ canvasWidth, canvasHeight }: MaskOverlayProps) {
         {maskEditMode === 'drawing' && 'Click to add points. Click first point to close. ESC to cancel.'}
         {maskEditMode === 'editing' && 'Drag vertices to move. Del to delete. ESC to exit.'}
       </text>
+
+      {/* Debug info */}
+      <text
+        x="10"
+        y="40"
+        fill="#ff0"
+        fontSize="10"
+        fontFamily="monospace"
+        pointerEvents="none"
+      >
+        Canvas: {canvasWidth}x{canvasHeight} (AR: {(canvasWidth/canvasHeight).toFixed(2)})
+      </text>
     </svg>
   );
 }
