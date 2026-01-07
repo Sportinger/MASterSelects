@@ -57,6 +57,21 @@ const AVAILABLE_EFFECTS: { type: EffectType; name: string }[] = [
   { type: 'invert', name: 'Invert' },
 ];
 
+// Default values for effect parameters (for right-click reset)
+const EFFECT_DEFAULTS: Record<string, Record<string, number | boolean | string>> = {
+  'hue-shift': { shift: 0 },
+  'saturation': { amount: 1 },
+  'brightness': { amount: 0 },
+  'contrast': { amount: 1 },
+  'blur': { radius: 0 },
+  'pixelate': { size: 8 },
+  'kaleidoscope': { segments: 6, rotation: 0 },
+  'mirror': { horizontal: true, vertical: false },
+  'invert': {},
+  'rgb-split': { amount: 0.01, angle: 0 },
+  'levels': { inputBlack: 0, inputWhite: 1, gamma: 1, outputBlack: 0, outputWhite: 1 },
+};
+
 export function EffectsPanel() {
   // Mixer store (for live mixing layers)
   const { layers, selectedLayerId, addEffect: addLayerEffect, removeEffect: removeLayerEffect, updateEffect: updateLayerEffect, setLayerOpacity, setLayerBlendMode } =
@@ -328,10 +343,29 @@ export function EffectsPanel() {
   );
 }
 
+// Helper to reset a single parameter to default
+function resetToDefault(
+  effectType: string,
+  paramName: string,
+  currentParams: Record<string, number | boolean | string>,
+  onChange: (params: Record<string, number | boolean | string>) => void
+) {
+  const defaults = EFFECT_DEFAULTS[effectType] || {};
+  const defaultValue = defaults[paramName];
+  if (defaultValue !== undefined) {
+    onChange({ ...currentParams, [paramName]: defaultValue });
+  }
+}
+
 function renderEffectParams(
   effect: { type: string; params: Record<string, number | boolean | string> },
   onChange: (params: Record<string, number | boolean | string>) => void
 ) {
+  const handleContextMenu = (paramName: string) => (e: React.MouseEvent) => {
+    e.preventDefault();
+    resetToDefault(effect.type, paramName, effect.params, onChange);
+  };
+
   switch (effect.type) {
     case 'hue-shift':
       return (
@@ -344,6 +378,8 @@ function renderEffectParams(
             step="0.01"
             value={effect.params.shift as number}
             onChange={(e) => onChange({ shift: parseFloat(e.target.value) })}
+            onContextMenu={handleContextMenu('shift')}
+            title="Right-click to reset"
           />
         </div>
       );
@@ -359,6 +395,8 @@ function renderEffectParams(
             step="0.01"
             value={effect.params.amount as number}
             onChange={(e) => onChange({ amount: parseFloat(e.target.value) })}
+            onContextMenu={handleContextMenu('amount')}
+            title="Right-click to reset"
           />
         </div>
       );
@@ -374,6 +412,8 @@ function renderEffectParams(
             step="0.01"
             value={effect.params.amount as number}
             onChange={(e) => onChange({ amount: parseFloat(e.target.value) })}
+            onContextMenu={handleContextMenu('amount')}
+            title="Right-click to reset"
           />
         </div>
       );
@@ -389,6 +429,8 @@ function renderEffectParams(
             step="0.01"
             value={effect.params.amount as number}
             onChange={(e) => onChange({ amount: parseFloat(e.target.value) })}
+            onContextMenu={handleContextMenu('amount')}
+            title="Right-click to reset"
           />
         </div>
       );
@@ -404,6 +446,8 @@ function renderEffectParams(
             step="1"
             value={effect.params.size as number}
             onChange={(e) => onChange({ size: parseInt(e.target.value, 10) })}
+            onContextMenu={handleContextMenu('size')}
+            title="Right-click to reset"
           />
         </div>
       );
@@ -419,7 +463,9 @@ function renderEffectParams(
               max="16"
               step="1"
               value={effect.params.segments as number}
-              onChange={(e) => onChange({ segments: parseInt(e.target.value, 10) })}
+              onChange={(e) => onChange({ ...effect.params, segments: parseInt(e.target.value, 10) })}
+              onContextMenu={handleContextMenu('segments')}
+              title="Right-click to reset"
             />
           </div>
           <div className="control-row">
@@ -430,7 +476,9 @@ function renderEffectParams(
               max={Math.PI * 2}
               step="0.01"
               value={effect.params.rotation as number}
-              onChange={(e) => onChange({ rotation: parseFloat(e.target.value) })}
+              onChange={(e) => onChange({ ...effect.params, rotation: parseFloat(e.target.value) })}
+              onContextMenu={handleContextMenu('rotation')}
+              title="Right-click to reset"
             />
           </div>
         </>
@@ -444,7 +492,7 @@ function renderEffectParams(
               <input
                 type="checkbox"
                 checked={effect.params.horizontal as boolean}
-                onChange={(e) => onChange({ horizontal: e.target.checked })}
+                onChange={(e) => onChange({ ...effect.params, horizontal: e.target.checked })}
               />
               Horizontal
             </label>
@@ -454,7 +502,7 @@ function renderEffectParams(
               <input
                 type="checkbox"
                 checked={effect.params.vertical as boolean}
-                onChange={(e) => onChange({ vertical: e.target.checked })}
+                onChange={(e) => onChange({ ...effect.params, vertical: e.target.checked })}
               />
               Vertical
             </label>
@@ -473,7 +521,9 @@ function renderEffectParams(
               max="0.1"
               step="0.001"
               value={effect.params.amount as number}
-              onChange={(e) => onChange({ amount: parseFloat(e.target.value) })}
+              onChange={(e) => onChange({ ...effect.params, amount: parseFloat(e.target.value) })}
+              onContextMenu={handleContextMenu('amount')}
+              title="Right-click to reset"
             />
           </div>
           <div className="control-row">
@@ -484,7 +534,9 @@ function renderEffectParams(
               max={Math.PI * 2}
               step="0.01"
               value={effect.params.angle as number}
-              onChange={(e) => onChange({ angle: parseFloat(e.target.value) })}
+              onChange={(e) => onChange({ ...effect.params, angle: parseFloat(e.target.value) })}
+              onContextMenu={handleContextMenu('angle')}
+              title="Right-click to reset"
             />
           </div>
         </>
@@ -502,6 +554,8 @@ function renderEffectParams(
               step="0.01"
               value={effect.params.inputBlack as number}
               onChange={(e) => onChange({ ...effect.params, inputBlack: parseFloat(e.target.value) })}
+              onContextMenu={handleContextMenu('inputBlack')}
+              title="Right-click to reset"
             />
             <span className="value">{(effect.params.inputBlack as number).toFixed(2)}</span>
           </div>
@@ -514,6 +568,8 @@ function renderEffectParams(
               step="0.01"
               value={effect.params.inputWhite as number}
               onChange={(e) => onChange({ ...effect.params, inputWhite: parseFloat(e.target.value) })}
+              onContextMenu={handleContextMenu('inputWhite')}
+              title="Right-click to reset"
             />
             <span className="value">{(effect.params.inputWhite as number).toFixed(2)}</span>
           </div>
@@ -526,6 +582,8 @@ function renderEffectParams(
               step="0.1"
               value={effect.params.gamma as number}
               onChange={(e) => onChange({ ...effect.params, gamma: parseFloat(e.target.value) })}
+              onContextMenu={handleContextMenu('gamma')}
+              title="Right-click to reset"
             />
             <span className="value">{(effect.params.gamma as number).toFixed(2)}</span>
           </div>
@@ -538,6 +596,8 @@ function renderEffectParams(
               step="0.01"
               value={effect.params.outputBlack as number}
               onChange={(e) => onChange({ ...effect.params, outputBlack: parseFloat(e.target.value) })}
+              onContextMenu={handleContextMenu('outputBlack')}
+              title="Right-click to reset"
             />
             <span className="value">{(effect.params.outputBlack as number).toFixed(2)}</span>
           </div>
@@ -550,6 +610,8 @@ function renderEffectParams(
               step="0.01"
               value={effect.params.outputWhite as number}
               onChange={(e) => onChange({ ...effect.params, outputWhite: parseFloat(e.target.value) })}
+              onContextMenu={handleContextMenu('outputWhite')}
+              title="Right-click to reset"
             />
             <span className="value">{(effect.params.outputWhite as number).toFixed(2)}</span>
           </div>
