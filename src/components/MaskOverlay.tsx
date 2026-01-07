@@ -624,17 +624,19 @@ export function MaskOverlay({ canvasWidth, canvasHeight }: MaskOverlayProps) {
         </>
       )}
 
-      {/* Mask path fill (semi-transparent) */}
+      {/* Mask path fill (semi-transparent) - clickable for dragging when visible */}
       {activeMask?.closed && activeMask.visible && pathData && (
         <path
           d={pathData}
           fill={activeMask.inverted ? 'rgba(0, 212, 255, 0.1)' : 'rgba(0, 212, 255, 0.15)'}
           stroke="none"
-          pointerEvents="none"
+          pointerEvents="all"
+          cursor="move"
+          onMouseDown={handleMaskDragStart}
         />
       )}
 
-      {/* Mask path stroke */}
+      {/* Mask path stroke - only when visible */}
       {activeMask && activeMask.visible && pathData && (
         <path
           d={pathData}
@@ -646,8 +648,8 @@ export function MaskOverlay({ canvasWidth, canvasHeight }: MaskOverlayProps) {
         />
       )}
 
-      {/* Bezier control handles (only show for selected vertices) */}
-      {canvasVertices.map((vertex) => {
+      {/* Bezier control handles (only show for selected vertices when visible) */}
+      {activeMask?.visible && canvasVertices.map((vertex) => {
         const isSelected = selectedVertexIds.has(vertex.id);
         if (!isSelected) return null;
 
@@ -698,8 +700,8 @@ export function MaskOverlay({ canvasWidth, canvasHeight }: MaskOverlayProps) {
         );
       })}
 
-      {/* Vertex points */}
-      {canvasVertices.map((vertex, index) => {
+      {/* Vertex points (only show when visible) */}
+      {activeMask?.visible && canvasVertices.map((vertex, index) => {
         const isSelected = selectedVertexIds.has(vertex.id);
         const isFirst = index === 0;
 
