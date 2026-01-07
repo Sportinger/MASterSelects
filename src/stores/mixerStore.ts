@@ -58,6 +58,7 @@ interface MixerState {
     layerId: string,
     transform: { position?: { x: number; y: number }; scale?: { x: number; y: number }; rotation?: number }
   ) => void;
+  updateLayerMaskProps: (layerId: string, feather: number, invert: boolean) => void;
 
   addEffect: (layerId: string, effectType: string) => void;
   removeEffect: (layerId: string, effectId: string) => void;
@@ -421,6 +422,23 @@ export const useMixerStore = create<MixerState>()(
 
       set({
         layers: layers.map((l) => (l?.id === layerId ? { ...l, ...updates } : l)),
+      });
+    },
+
+    // Update mask properties for GPU processing (feather blur, inversion)
+    // These are cheap uniform updates - no texture regeneration needed
+    updateLayerMaskProps: (layerId: string, feather: number, invert: boolean) => {
+      const { layers } = get();
+      const layer = layers.find((l) => l?.id === layerId);
+      if (!layer) return;
+
+      // Only update if values changed to avoid unnecessary re-renders
+      if (layer.maskFeather === feather && layer.maskInvert === invert) return;
+
+      set({
+        layers: layers.map((l) =>
+          l?.id === layerId ? { ...l, maskFeather: feather, maskInvert: invert } : l
+        ),
       });
     },
 

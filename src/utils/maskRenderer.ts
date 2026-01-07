@@ -143,43 +143,9 @@ export function generateMaskTexture(
     ctx.restore();
   }
 
-  // Apply feather (blur) if any mask has feather > 0
-  const maxFeather = Math.max(...masks.map(m => m.feather));
-  if (maxFeather > 0) {
-    // Get current content
-    const imageData = ctx.getImageData(0, 0, width, height);
-
-    // Apply gaussian blur approximation using box blur
-    const blurRadius = Math.min(maxFeather, 50); // Cap at 50px for performance
-    if (blurRadius > 0) {
-      ctx.filter = `blur(${blurRadius}px)`;
-      ctx.clearRect(0, 0, width, height);
-
-      // Create temporary canvas for blur
-      const tempCanvas = new OffscreenCanvas(width, height);
-      const tempCtx = tempCanvas.getContext('2d')!;
-      tempCtx.putImageData(imageData, 0, 0);
-
-      ctx.drawImage(tempCanvas, 0, 0);
-      ctx.filter = 'none';
-    }
-  }
-
-  // Handle inversion for any inverted masks
-  const hasInverted = masks.some(m => m.inverted);
-  if (hasInverted) {
-    const imageData = ctx.getImageData(0, 0, width, height);
-    const data = imageData.data;
-
-    for (let i = 0; i < data.length; i += 4) {
-      // Invert RGB (keep alpha at 255)
-      data[i] = 255 - data[i];
-      data[i + 1] = 255 - data[i + 1];
-      data[i + 2] = 255 - data[i + 2];
-    }
-
-    ctx.putImageData(imageData, 0, 0);
-  }
+  // NOTE: Feather (blur) and inversion are now handled in GPU shader for performance
+  // This generates the raw mask shape only - the shader applies blur via texture sampling
+  // and inversion via uniform flag
 
   return ctx.getImageData(0, 0, width, height);
 }
@@ -203,35 +169,7 @@ export function generateSingleMaskTexture(
   drawMaskPath(ctx, mask.vertices, mask.closed, width, height);
   ctx.fill();
 
-  // Apply feather
-  if (mask.feather > 0) {
-    const imageData = ctx.getImageData(0, 0, width, height);
-    const blurRadius = Math.min(mask.feather, 50);
-
-    ctx.filter = `blur(${blurRadius}px)`;
-    ctx.clearRect(0, 0, width, height);
-
-    const tempCanvas = new OffscreenCanvas(width, height);
-    const tempCtx = tempCanvas.getContext('2d')!;
-    tempCtx.putImageData(imageData, 0, 0);
-
-    ctx.drawImage(tempCanvas, 0, 0);
-    ctx.filter = 'none';
-  }
-
-  // Handle inversion
-  if (mask.inverted) {
-    const imageData = ctx.getImageData(0, 0, width, height);
-    const data = imageData.data;
-
-    for (let i = 0; i < data.length; i += 4) {
-      data[i] = 255 - data[i];
-      data[i + 1] = 255 - data[i + 1];
-      data[i + 2] = 255 - data[i + 2];
-    }
-
-    ctx.putImageData(imageData, 0, 0);
-  }
+  // NOTE: Feather (blur) and inversion are now handled in GPU shader for performance
 
   return ctx.getImageData(0, 0, width, height);
 }

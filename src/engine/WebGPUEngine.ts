@@ -75,7 +75,7 @@ struct LayerUniforms {
   rotationX: f32,
   rotationY: f32,
   perspective: f32,
-  _pad: f32,
+  maskFeather: f32,
 };
 
 @vertex
@@ -385,8 +385,31 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
   // Apply mask if present
   // Mask is in output frame coordinates, sample with input.uv
   if (layer.hasMask == 1u) {
-    let maskSample = textureSample(maskTexture, texSampler, input.uv);
-    var maskValue = maskSample.r;
+    var maskValue: f32;
+
+    // GPU blur for feather effect - 9-tap Gaussian approximation
+    if (layer.maskFeather > 0.5) {
+      let maskDim = vec2f(textureDimensions(maskTexture));
+      let texelSize = 1.0 / maskDim;
+      let radius = layer.maskFeather * texelSize;
+
+      // 9-tap blur with Gaussian weights
+      var blurredMask: f32 = 0.0;
+      blurredMask += textureSample(maskTexture, texSampler, input.uv).r * 0.25;
+      blurredMask += textureSample(maskTexture, texSampler, input.uv + vec2f(radius.x, 0.0)).r * 0.125;
+      blurredMask += textureSample(maskTexture, texSampler, input.uv - vec2f(radius.x, 0.0)).r * 0.125;
+      blurredMask += textureSample(maskTexture, texSampler, input.uv + vec2f(0.0, radius.y)).r * 0.125;
+      blurredMask += textureSample(maskTexture, texSampler, input.uv - vec2f(0.0, radius.y)).r * 0.125;
+      blurredMask += textureSample(maskTexture, texSampler, input.uv + vec2f(radius.x, radius.y)).r * 0.0625;
+      blurredMask += textureSample(maskTexture, texSampler, input.uv - vec2f(radius.x, radius.y)).r * 0.0625;
+      blurredMask += textureSample(maskTexture, texSampler, input.uv + vec2f(radius.x, -radius.y)).r * 0.0625;
+      blurredMask += textureSample(maskTexture, texSampler, input.uv + vec2f(-radius.x, radius.y)).r * 0.0625;
+      maskValue = blurredMask;
+    } else {
+      maskValue = textureSample(maskTexture, texSampler, input.uv).r;
+    }
+
+    // Apply inversion in shader (not CPU)
     if (layer.maskInvert == 1u) {
       maskValue = 1.0 - maskValue;
     }
@@ -1737,11 +1760,11 @@ export class WebGPUEngine {
       this.uniformData[8] = outputAspect;
       this.uniformData[9] = 0;  // time (for dissolve effects)
       this.uniformDataU32[10] = hasMask;  // hasMask
-      this.uniformDataU32[11] = 0; // maskInvert (handled in mask texture generation)
+      this.uniformDataU32[11] = layer.maskInvert ? 1 : 0; // maskInvert (now handled in shader)
       this.uniformData[12] = rotX;        // rotationX
       this.uniformData[13] = rotY;        // rotationY
       this.uniformData[14] = 2.0;         // perspective distance (lower = stronger 3D effect)
-      this.uniformData[15] = 0;           // padding
+      this.uniformData[15] = layer.maskFeather || 0;      // maskFeather (blur radius in pixels)
       this.device.queue.writeBuffer(uniformBuffer, 0, this.uniformData);
 
       let pipeline: GPURenderPipeline;

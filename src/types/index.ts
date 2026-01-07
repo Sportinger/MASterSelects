@@ -11,6 +11,9 @@ export interface Layer {
   position: { x: number; y: number };
   scale: { x: number; y: number };
   rotation: number | { x: number; y: number; z: number };  // Single value (z only) or full 3D rotation
+  // Mask properties (passed from timeline clip masks for GPU processing)
+  maskFeather?: number;  // Blur radius in pixels (0-50), handled in GPU shader
+  maskInvert?: boolean;  // Whether to invert the mask, handled in GPU shader
 }
 
 export type BlendMode =

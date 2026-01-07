@@ -71,27 +71,31 @@ export function useEngine() {
           const clip = clipsAtTime.find(c => c.trackId === track.id);
 
           if (clip?.masks && clip.masks.length > 0 && layer.source) {
-            // Get source dimensions for aspect ratio calculation
-            let sourceWidth = 1920, sourceHeight = 1080;
-            if (layer.source.type === 'video' && layer.source.videoElement) {
-              sourceWidth = layer.source.videoElement.videoWidth || 1920;
-              sourceHeight = layer.source.videoElement.videoHeight || 1080;
-            } else if (layer.source.type === 'image' && layer.source.imageElement) {
-              sourceWidth = layer.source.imageElement.naturalWidth || 1920;
-              sourceHeight = layer.source.imageElement.naturalHeight || 1080;
-            }
+            // Extract mask properties for GPU processing (feather/invert handled in shader)
+            const maxFeather = Math.max(...clip.masks.map(m => m.feather));
+            const hasInverted = clip.masks.some(m => m.inverted);
 
-            // Create a version string based on mask data and resolution
-            const maskVersion = `${JSON.stringify(clip.masks)}_${engineDimensions.width}x${engineDimensions.height}`;
+            // Update layer with mask GPU properties (these are cheap uniform updates)
+            useMixerStore.getState().updateLayerMaskProps(layer.id, maxFeather, hasInverted);
+
+            // Create version string EXCLUDING feather/invert (they're GPU uniforms now)
+            // Only include shape-affecting properties: vertices, position, opacity, mode, closed
+            const shapeVersion = clip.masks.map(m => ({
+              vertices: m.vertices,
+              position: m.position,
+              opacity: m.opacity,
+              mode: m.mode,
+              closed: m.closed
+            }));
+            const maskVersion = `${JSON.stringify(shapeVersion)}_${engineDimensions.width}x${engineDimensions.height}`;
             const cacheKey = `${clip.id}_${layer.id}`;
             const prevVersion = maskVersionRef.current.get(cacheKey);
 
-            // Only regenerate if masks changed or resolution changed
+            // Only regenerate texture if mask SHAPE changed (not feather/invert)
             if (maskVersion !== prevVersion) {
               maskVersionRef.current.set(cacheKey, maskVersion);
 
-              // Generate mask texture at engine render resolution
-              // Keep masks in their original coordinates - shader will handle aspect ratio
+              // Generate mask texture at engine render resolution (no blur/invert - done in GPU)
               const maskImageData = generateMaskTexture(
                 clip.masks,
                 engineDimensions.width,
@@ -99,16 +103,7 @@ export function useEngine() {
               );
 
               if (maskImageData) {
-                // Sample center pixel to verify mask content
-                const centerX = Math.floor(engineDimensions.width / 2);
-                const centerY = Math.floor(engineDimensions.height / 2);
-                const centerIdx = (centerY * engineDimensions.width + centerX) * 4;
-                const centerR = maskImageData.data[centerIdx];
-                const centerG = maskImageData.data[centerIdx + 1];
-                const centerB = maskImageData.data[centerIdx + 2];
-
-                console.log(`[Mask] Generated mask texture for layer ${layer.id}: ${engineDimensions.width}x${engineDimensions.height}, masks: ${clip.masks.length}, center pixel RGB: ${centerR},${centerG},${centerB}`);
-                // Update engine with new mask texture
+                console.log(`[Mask] Generated mask texture for layer ${layer.id}: ${engineDimensions.width}x${engineDimensions.height}, masks: ${clip.masks.length}`);
                 engine.updateMaskTexture(layer.id, maskImageData);
               } else {
                 console.warn(`[Mask] Failed to generate mask texture for layer ${layer.id}`);

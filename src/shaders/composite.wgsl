@@ -48,7 +48,7 @@ struct LayerUniforms {
   rotationX: f32,     // X rotation in radians (tilt forward/back)
   rotationY: f32,     // Y rotation in radians (turn left/right)
   perspective: f32,   // Perspective distance (higher = less perspective)
-  _pad: f32,          // Padding for alignment
+  maskFeather: f32,   // Mask blur radius in pixels (0-50)
 };
 
 @group(0) @binding(0) var texSampler: sampler;
@@ -572,8 +572,32 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
   // Apply mask if present
   // Sample mask in output frame space (input.uv), not layer space
   if (layer.hasMask == 1u) {
-    let maskSample = textureSample(maskTexture, texSampler, input.uv);
-    var maskValue = maskSample.r;  // Use red channel as grayscale mask
+    var maskValue: f32;
+
+    // GPU blur for feather effect - 9-tap Gaussian approximation
+    if (layer.maskFeather > 0.5) {
+      let maskDim = vec2f(textureDimensions(maskTexture));
+      let texelSize = 1.0 / maskDim;
+      let radius = layer.maskFeather * texelSize;
+
+      // 9-tap blur with Gaussian weights (sigma ~= radius/2)
+      // Weights: center=0.25, adjacent=0.125, diagonal=0.0625
+      var blurredMask: f32 = 0.0;
+      blurredMask += textureSample(maskTexture, texSampler, input.uv).r * 0.25;
+      blurredMask += textureSample(maskTexture, texSampler, input.uv + vec2f(radius.x, 0.0)).r * 0.125;
+      blurredMask += textureSample(maskTexture, texSampler, input.uv - vec2f(radius.x, 0.0)).r * 0.125;
+      blurredMask += textureSample(maskTexture, texSampler, input.uv + vec2f(0.0, radius.y)).r * 0.125;
+      blurredMask += textureSample(maskTexture, texSampler, input.uv - vec2f(0.0, radius.y)).r * 0.125;
+      blurredMask += textureSample(maskTexture, texSampler, input.uv + vec2f(radius.x, radius.y)).r * 0.0625;
+      blurredMask += textureSample(maskTexture, texSampler, input.uv - vec2f(radius.x, radius.y)).r * 0.0625;
+      blurredMask += textureSample(maskTexture, texSampler, input.uv + vec2f(radius.x, -radius.y)).r * 0.0625;
+      blurredMask += textureSample(maskTexture, texSampler, input.uv + vec2f(-radius.x, radius.y)).r * 0.0625;
+      maskValue = blurredMask;
+    } else {
+      maskValue = textureSample(maskTexture, texSampler, input.uv).r;
+    }
+
+    // Apply inversion in shader (not CPU)
     if (layer.maskInvert == 1u) {
       maskValue = 1.0 - maskValue;
     }
