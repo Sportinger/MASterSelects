@@ -85,20 +85,23 @@ function KeyframeToggle({ clipId, property, value }: KeyframeToggleProps) {
 
 // Precision slider with modifier key support
 // Shift = half speed, Ctrl = super slow (10x slower)
+// Right-click to reset to default value
 interface PrecisionSliderProps {
   min: number;
   max: number;
   step: number;
   value: number;
   onChange: (value: number) => void;
+  defaultValue?: number;
 }
 
-function PrecisionSlider({ min, max, step, value, onChange }: PrecisionSliderProps) {
+function PrecisionSlider({ min, max, step, value, onChange, defaultValue }: PrecisionSliderProps) {
   const sliderRef = useRef<HTMLDivElement>(null);
   const accumulatedDelta = useRef(0);
   const startValue = useRef(0);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return; // Only handle left click
     e.preventDefault();
     accumulatedDelta.current = 0;
     startValue.current = value;
@@ -145,6 +148,14 @@ function PrecisionSlider({ min, max, step, value, onChange }: PrecisionSliderPro
     window.addEventListener('mouseup', handleMouseUp);
   }, [value, min, max, step, onChange]);
 
+  // Handle right-click to reset to default
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    if (defaultValue !== undefined) {
+      onChange(defaultValue);
+    }
+  }, [defaultValue, onChange]);
+
   // Calculate fill percentage
   const fillPercent = ((value - min) / (max - min)) * 100;
 
@@ -153,6 +164,8 @@ function PrecisionSlider({ min, max, step, value, onChange }: PrecisionSliderPro
       ref={sliderRef}
       className="precision-slider"
       onMouseDown={handleMouseDown}
+      onContextMenu={handleContextMenu}
+      title={defaultValue !== undefined ? "Right-click to reset to default" : undefined}
     >
       <div className="precision-slider-track">
         <div
@@ -313,6 +326,7 @@ function MaskItem({ clipId, mask, isActive, onSelect }: MaskItemProps) {
               step={0.01}
               value={mask.opacity}
               onChange={(v) => updateMask(clipId, mask.id, { opacity: v })}
+              defaultValue={1}
             />
             <span className="value">{(mask.opacity * 100).toFixed(0)}%</span>
           </div>
@@ -325,6 +339,7 @@ function MaskItem({ clipId, mask, isActive, onSelect }: MaskItemProps) {
               step={0.5}
               value={mask.feather}
               onChange={(v) => updateMask(clipId, mask.id, { feather: v })}
+              defaultValue={0}
             />
             <span className="value">{mask.feather.toFixed(1)}px</span>
           </div>
@@ -337,6 +352,7 @@ function MaskItem({ clipId, mask, isActive, onSelect }: MaskItemProps) {
               step={0.01}
               value={mask.position.x}
               onChange={(v) => updateMask(clipId, mask.id, { position: { ...mask.position, x: v } })}
+              defaultValue={0}
             />
             <span className="value">{mask.position.x.toFixed(2)}</span>
           </div>
@@ -349,6 +365,7 @@ function MaskItem({ clipId, mask, isActive, onSelect }: MaskItemProps) {
               step={0.01}
               value={mask.position.y}
               onChange={(v) => updateMask(clipId, mask.id, { position: { ...mask.position, y: v } })}
+              defaultValue={0}
             />
             <span className="value">{mask.position.y.toFixed(2)}</span>
           </div>
@@ -465,6 +482,7 @@ export function ClipPropertiesPanel() {
               step={0.0001}
               value={transform.opacity}
               onChange={(v) => handlePropertyChange('opacity', v)}
+              defaultValue={1}
             />
             <span className="value">{(transform.opacity * 100).toFixed(1)}%</span>
           </div>
@@ -482,6 +500,7 @@ export function ClipPropertiesPanel() {
               step={0.0001}
               value={uniformScale}
               onChange={handleUniformScaleChange}
+              defaultValue={1}
             />
             <span className="value">{uniformScale.toFixed(3)}</span>
           </div>
@@ -494,6 +513,7 @@ export function ClipPropertiesPanel() {
               step={0.0001}
               value={transform.scale.x}
               onChange={(v) => handlePropertyChange('scale.x', v)}
+              defaultValue={1}
             />
             <span className="value">{transform.scale.x.toFixed(3)}</span>
           </div>
@@ -506,6 +526,7 @@ export function ClipPropertiesPanel() {
               step={0.0001}
               value={transform.scale.y}
               onChange={(v) => handlePropertyChange('scale.y', v)}
+              defaultValue={1}
             />
             <span className="value">{transform.scale.y.toFixed(3)}</span>
           </div>
@@ -523,6 +544,7 @@ export function ClipPropertiesPanel() {
               step={0.0001}
               value={transform.position.x}
               onChange={(v) => handlePropertyChange('position.x', v)}
+              defaultValue={0}
             />
             <span className="value">{transform.position.x.toFixed(3)}</span>
           </div>
@@ -535,6 +557,7 @@ export function ClipPropertiesPanel() {
               step={0.0001}
               value={transform.position.y}
               onChange={(v) => handlePropertyChange('position.y', v)}
+              defaultValue={0}
             />
             <span className="value">{transform.position.y.toFixed(3)}</span>
           </div>
@@ -547,6 +570,7 @@ export function ClipPropertiesPanel() {
               step={0.0001}
               value={transform.position.z}
               onChange={(v) => handlePropertyChange('position.z', v)}
+              defaultValue={0}
             />
             <span className="value">{transform.position.z.toFixed(3)}</span>
           </div>
@@ -564,6 +588,7 @@ export function ClipPropertiesPanel() {
               step={0.01}
               value={transform.rotation.x}
               onChange={(v) => handlePropertyChange('rotation.x', v)}
+              defaultValue={0}
             />
             <span className="value">{transform.rotation.x.toFixed(1)}°</span>
           </div>
@@ -576,6 +601,7 @@ export function ClipPropertiesPanel() {
               step={0.01}
               value={transform.rotation.y}
               onChange={(v) => handlePropertyChange('rotation.y', v)}
+              defaultValue={0}
             />
             <span className="value">{transform.rotation.y.toFixed(1)}°</span>
           </div>
@@ -588,6 +614,7 @@ export function ClipPropertiesPanel() {
               step={0.01}
               value={transform.rotation.z}
               onChange={(v) => handlePropertyChange('rotation.z', v)}
+              defaultValue={0}
             />
             <span className="value">{transform.rotation.z.toFixed(1)}°</span>
           </div>
