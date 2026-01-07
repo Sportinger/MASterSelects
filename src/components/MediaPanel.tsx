@@ -25,6 +25,7 @@ export function MediaPanel() {
     addToSelection,
     getItemsByFolder,
     openCompositionTab,
+    updateComposition,
     generateProxy,
     cancelProxyGeneration,
     fileSystemSupported,
@@ -37,6 +38,7 @@ export function MediaPanel() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; itemId?: string } | null>(null);
+  const [settingsDialog, setSettingsDialog] = useState<{ compositionId: string; width: number; height: number; frameRate: number } | null>(null);
 
   // Handle file import - prefer File System Access API for better file path access
   const handleImport = useCallback(async () => {
@@ -152,6 +154,27 @@ export function MediaPanel() {
     createFolder(`New Folder`);
     closeContextMenu();
   }, [createFolder, closeContextMenu]);
+
+  // Composition settings
+  const openCompositionSettings = useCallback((comp: Composition) => {
+    setSettingsDialog({
+      compositionId: comp.id,
+      width: comp.width,
+      height: comp.height,
+      frameRate: comp.frameRate,
+    });
+    closeContextMenu();
+  }, [closeContextMenu]);
+
+  const saveCompositionSettings = useCallback(() => {
+    if (!settingsDialog) return;
+    updateComposition(settingsDialog.compositionId, {
+      width: settingsDialog.width,
+      height: settingsDialog.height,
+      frameRate: settingsDialog.frameRate,
+    });
+    setSettingsDialog(null);
+  }, [settingsDialog, updateComposition]);
 
   // Handle drag start for media files and compositions (to drag to Timeline)
   const handleDragStart = useCallback((e: React.DragEvent, item: ProjectItem) => {
@@ -351,7 +374,9 @@ export function MediaPanel() {
             folders.find(f => f.id === contextMenu.itemId)
           : null;
         const isVideoFile = selectedItem && 'type' in selectedItem && selectedItem.type === 'video';
+        const isComposition = selectedItem && 'type' in selectedItem && selectedItem.type === 'composition';
         const mediaFile = isVideoFile ? (selectedItem as MediaFile) : null;
+        const composition = isComposition ? (selectedItem as Composition) : null;
         const isGenerating = mediaFile?.proxyStatus === 'generating';
         const hasProxy = mediaFile?.proxyStatus === 'ready';
 
@@ -383,6 +408,13 @@ export function MediaPanel() {
                 }}>
                   Rename
                 </div>
+
+                {/* Composition Settings - only for compositions */}
+                {isComposition && composition && (
+                  <div className="context-menu-item" onClick={() => openCompositionSettings(composition)}>
+                    Composition Settings...
+                  </div>
+                )}
 
                 {/* Proxy Generation - only for video files */}
                 {isVideoFile && mediaFile && (
@@ -484,6 +516,115 @@ export function MediaPanel() {
           </div>
         );
       })()}
+
+      {/* Composition Settings Dialog */}
+      {settingsDialog && (
+        <div
+          className="modal-overlay"
+          onClick={() => setSettingsDialog(null)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.7)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10001,
+          }}
+        >
+          <div
+            className="composition-settings-dialog"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#2a2a2a',
+              border: '1px solid #444',
+              borderRadius: '8px',
+              padding: '24px',
+              minWidth: '320px',
+              maxWidth: '400px',
+            }}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: '20px' }}>Composition Settings</h3>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {/* Width */}
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px' }}>Width</label>
+                <input
+                  type="number"
+                  value={settingsDialog.width}
+                  onChange={(e) => setSettingsDialog({
+                    ...settingsDialog,
+                    width: Math.max(1, parseInt(e.target.value) || 1920),
+                  })}
+                  min="1"
+                  max="7680"
+                  style={{ width: '100%', padding: '6px 8px' }}
+                />
+              </div>
+
+              {/* Height */}
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px' }}>Height</label>
+                <input
+                  type="number"
+                  value={settingsDialog.height}
+                  onChange={(e) => setSettingsDialog({
+                    ...settingsDialog,
+                    height: Math.max(1, parseInt(e.target.value) || 1080),
+                  })}
+                  min="1"
+                  max="4320"
+                  style={{ width: '100%', padding: '6px 8px' }}
+                />
+              </div>
+
+              {/* Frame Rate */}
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px' }}>Frame Rate</label>
+                <select
+                  value={settingsDialog.frameRate}
+                  onChange={(e) => setSettingsDialog({
+                    ...settingsDialog,
+                    frameRate: Number(e.target.value),
+                  })}
+                  style={{ width: '100%', padding: '6px 8px' }}
+                >
+                  <option value={23.976}>23.976 fps</option>
+                  <option value={24}>24 fps</option>
+                  <option value={25}>25 fps (PAL)</option>
+                  <option value={29.97}>29.97 fps (NTSC)</option>
+                  <option value={30}>30 fps</option>
+                  <option value={50}>50 fps</option>
+                  <option value={59.94}>59.94 fps</option>
+                  <option value={60}>60 fps</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Buttons */}
+            <div style={{ display: 'flex', gap: '8px', marginTop: '24px', justifyContent: 'flex-end' }}>
+              <button
+                className="btn"
+                onClick={() => setSettingsDialog(null)}
+                style={{ flex: 1 }}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn"
+                onClick={saveCompositionSettings}
+                style={{ flex: 1, background: '#4a90e2' }}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
