@@ -476,16 +476,16 @@ export function Preview() {
 
     // Convert pixel movement to normalized position change
     // In shader: uv = uv + 0.5 - vec2f(posX, posY)
-    // So posX > 0 moves image LEFT (subtracts from uv), posY > 0 moves image UP
-    // For natural drag (right = move right), we negate BOTH axes
-    // Account for view zoom
-    const normalizedDx = -(dx / viewZoom) / (canvasSize.width / 2);
+    // When posX increases: uv decreases → samples from left → image moves RIGHT
+    // For natural drag (right = move right), NO negation on X
+    // Y is still inverted (screen Y down = UV Y up)
+    const normalizedDx = (dx / viewZoom) / (canvasSize.width / 2);
     const normalizedDy = -(dy / viewZoom) / (canvasSize.height / 2);
 
     const newPosX = dragStart.current.layerPosX + normalizedDx;
     const newPosY = dragStart.current.layerPosY + normalizedDy;
 
-    console.log(`[Drag] dx=${dx.toFixed(0)}, normalizedDx=${normalizedDx.toFixed(3)}, newPosX=${newPosX.toFixed(3)}`);
+    console.log(`[Drag] dx=${dx.toFixed(0)}, normalizedDx=${normalizedDx.toFixed(3)}, oldPosX=${dragStart.current.layerPosX.toFixed(3)}, newPosX=${newPosX.toFixed(3)}`);
 
     // Find the corresponding clip and update its transform
     const layer = layers.find(l => l?.id === dragLayerId);
