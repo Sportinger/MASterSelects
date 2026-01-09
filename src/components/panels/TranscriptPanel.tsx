@@ -270,6 +270,13 @@ export function TranscriptPanel() {
     cancelTranscription();
   }, []);
 
+  // Handle delete transcript
+  const handleDelete = useCallback(async () => {
+    if (!selectedClipId) return;
+    const { clearClipTranscript } = await import('../../services/clipTranscriber');
+    clearClipTranscript(selectedClipId);
+  }, [selectedClipId]);
+
   // Render empty state
   if (!selectedClip) {
     return (
@@ -377,12 +384,21 @@ export function TranscriptPanel() {
           </button>
         )}
         {transcriptStatus === 'ready' && (
-          <button
-            className="btn-transcribe btn-secondary"
-            onClick={handleTranscribe}
-          >
-            Re-transcribe
-          </button>
+          <div className="transcript-btn-row">
+            <button
+              className="btn-transcribe btn-secondary"
+              onClick={handleTranscribe}
+            >
+              Re-transcribe
+            </button>
+            <button
+              className="btn-transcribe btn-danger"
+              onClick={handleDelete}
+              title="Delete transcript"
+            >
+              Delete
+            </button>
+          </div>
         )}
       </div>
 

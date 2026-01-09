@@ -169,14 +169,25 @@
   background: var(--bg-hover, #333);
 }
 
-.btn-transcribe.btn-cancel {
+.btn-transcribe.btn-cancel,
+.btn-transcribe.btn-danger {
   background: rgba(255, 107, 107, 0.2);
   border: 1px solid rgba(255, 107, 107, 0.4);
   color: var(--accent-danger, #ff6b6b);
 }
 
-.btn-transcribe.btn-cancel:hover {
+.btn-transcribe.btn-cancel:hover,
+.btn-transcribe.btn-danger:hover {
   background: rgba(255, 107, 107, 0.3);
+}
+
+.transcript-btn-row {
+  display: flex;
+  gap: 8px;
+}
+
+.transcript-btn-row .btn-transcribe {
+  flex: 1;
 }
 
 /* Language selector */
