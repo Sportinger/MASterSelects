@@ -29,7 +29,7 @@ struct LayerUniforms {
   perspective: f32,
   maskFeather: f32,
   maskFeatherQuality: u32,
-  _pad1: f32,
+  posZ: f32,
   _pad2: f32,
   _pad3: f32,
 };
@@ -245,7 +245,8 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
   uv = uv / vec2f(layer.scaleX, layer.scaleY);
 
   // For 3D rotation, work in world coordinates where the panel has its actual aspect ratio
-  var p = vec3f(uv.x, uv.y / layer.outputAspect, 0.0);
+  // posZ sets the initial depth: positive = closer (larger), negative = further (smaller)
+  var p = vec3f(uv.x, uv.y / layer.outputAspect, layer.posZ);
 
   // X rotation (tilt forward/back)
   if (abs(layer.rotationX) > 0.0001) {
@@ -645,7 +646,7 @@ export class CompositorPipeline {
     this.uniformData[14] = 2.0;         // perspective distance (lower = stronger 3D effect)
     this.uniformData[15] = layer.maskFeather || 0;      // maskFeather (blur radius in pixels)
     this.uniformDataU32[16] = layer.maskFeatherQuality || 0; // maskFeatherQuality (0=low, 1=med, 2=high)
-    this.uniformData[17] = 0;           // _pad1
+    this.uniformData[17] = layer.position.z || 0;       // posZ (depth position)
     this.uniformData[18] = 0;           // _pad2
     this.uniformData[19] = 0;           // _pad3
     this.device.queue.writeBuffer(uniformBuffer, 0, this.uniformData);

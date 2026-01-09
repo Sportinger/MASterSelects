@@ -351,7 +351,7 @@ export function EffectsPanel() {
             value={selectedLayer.position.x}
             onChange={(e) =>
               setLayerTransform(selectedLayer.id, {
-                position: { x: parseFloat(e.target.value), y: selectedLayer.position.y },
+                position: { x: parseFloat(e.target.value), y: selectedLayer.position.y, z: selectedLayer.position.z },
               })
             }
           />
@@ -367,7 +367,7 @@ export function EffectsPanel() {
             value={selectedLayer.position.y}
             onChange={(e) =>
               setLayerTransform(selectedLayer.id, {
-                position: { x: selectedLayer.position.x, y: parseFloat(e.target.value) },
+                position: { x: selectedLayer.position.x, y: parseFloat(e.target.value), z: selectedLayer.position.z },
               })
             }
           />

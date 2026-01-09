@@ -50,7 +50,7 @@ struct LayerUniforms {
   perspective: f32,   // Perspective distance (higher = less perspective)
   maskFeather: f32,   // Mask blur radius in pixels (0-50)
   maskFeatherQuality: u32, // 0=low (9 samples), 1=medium (17), 2=high (25)
-  _pad1: f32,
+  posZ: f32,          // Z position (depth) - affects scale based on perspective
   _pad2: f32,
   _pad3: f32,
 };
@@ -435,7 +435,8 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
   // has its actual aspect ratio. The panel spans -0.5 to 0.5 in both U and V,
   // but in world space, a 16:9 panel is wider than tall.
   // We model this by scaling the Y coordinate to match the panel's real proportions.
-  var p = vec3f(uv.x, uv.y / layer.outputAspect, 0.0);
+  // posZ sets the initial depth: positive = closer (larger), negative = further (smaller)
+  var p = vec3f(uv.x, uv.y / layer.outputAspect, layer.posZ);
 
   // Apply X rotation (tilt forward/back) - rotates around X axis
   // Positive angle tilts top away from viewer

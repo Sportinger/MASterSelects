@@ -8,7 +8,7 @@ export interface Layer {
   blendMode: BlendMode;
   source: LayerSource | null;
   effects: Effect[];
-  position: { x: number; y: number };
+  position: { x: number; y: number; z: number };
   scale: { x: number; y: number };
   rotation: number | { x: number; y: number; z: number };  // Single value (z only) or full 3D rotation
   // Mask properties (passed from timeline clip masks for GPU processing)

@@ -56,7 +56,7 @@ interface MixerState {
   setLayerVisibility: (layerId: string, visible: boolean) => void;
   setLayerTransform: (
     layerId: string,
-    transform: { position?: { x: number; y: number }; scale?: { x: number; y: number }; rotation?: number }
+    transform: { position?: { x: number; y: number; z: number }; scale?: { x: number; y: number }; rotation?: number }
   ) => void;
   updateLayerMaskProps: (layerId: string, feather: number, quality: number, invert: boolean) => void;
 
@@ -101,7 +101,7 @@ const createDefaultLayer = (index: number): Layer => ({
   blendMode: 'normal',
   source: null,
   effects: [],
-  position: { x: 0, y: 0 },
+  position: { x: 0, y: 0, z: 0 },
   scale: { x: 1, y: 1 },
   rotation: 0,
 });
@@ -357,7 +357,7 @@ export const useMixerStore = create<MixerState>()(
         blendMode: 'normal',
         source: null,
         effects: [],
-        position: { x: 0, y: 0 },
+        position: { x: 0, y: 0, z: 0 },
         scale: { x: 1, y: 1 },
         rotation: 0,
       };

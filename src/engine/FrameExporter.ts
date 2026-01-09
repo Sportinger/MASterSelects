@@ -341,7 +341,7 @@ export class FrameExporter {
         blendMode: clip.transform.blendMode,
         source: null,
         effects: [],
-        position: { x: clip.transform.position.x, y: clip.transform.position.y },
+        position: { x: clip.transform.position.x, y: clip.transform.position.y, z: clip.transform.position.z },
         scale: { x: clip.transform.scale.x, y: clip.transform.scale.y },
         rotation: { x: clip.transform.rotation.x * (Math.PI / 180), y: clip.transform.rotation.y * (Math.PI / 180), z: clip.transform.rotation.z * (Math.PI / 180) },
       };

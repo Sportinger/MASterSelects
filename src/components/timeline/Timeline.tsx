@@ -849,7 +849,7 @@ export function Timeline() {
                 videoElement: video,
               },
               effects: effects,
-              position: { x: transform.position.x, y: transform.position.y },
+              position: { x: transform.position.x, y: transform.position.y, z: transform.position.z },
               scale: { x: transform.scale.x, y: transform.scale.y },
               rotation: {
                 x: (transform.rotation.x * Math.PI) / 180,
@@ -952,7 +952,7 @@ export function Timeline() {
                 imageElement: cachedInService,
               },
               effects: interpolatedEffectsForProxy,
-              position: { x: transform.position.x, y: transform.position.y },
+              position: { x: transform.position.x, y: transform.position.y, z: transform.position.z },
               scale: { x: transform.scale.x, y: transform.scale.y },
               rotation: {
                 x: (transform.rotation.x * Math.PI) / 180,
@@ -997,6 +997,7 @@ export function Timeline() {
                       position: {
                         x: capturedTransform.position.x,
                         y: capturedTransform.position.y,
+                        z: capturedTransform.position.z,
                       },
                       scale: {
                         x: capturedTransform.scale.x,
@@ -1026,7 +1027,7 @@ export function Timeline() {
                   imageElement: cached.image,
                 },
                 effects: interpolatedEffectsForProxy,
-                position: { x: transform.position.x, y: transform.position.y },
+                position: { x: transform.position.x, y: transform.position.y, z: transform.position.z },
                 scale: { x: transform.scale.x, y: transform.scale.y },
                 rotation: {
                   x: (transform.rotation.x * Math.PI) / 180,
@@ -1058,7 +1059,7 @@ export function Timeline() {
                   imageElement: cached.image,
                 },
                 effects: interpolatedEffectsForProxy,
-                position: { x: transform.position.x, y: transform.position.y },
+                position: { x: transform.position.x, y: transform.position.y, z: transform.position.z },
                 scale: { x: transform.scale.x, y: transform.scale.y },
                 rotation: {
                   x: (transform.rotation.x * Math.PI) / 180,
@@ -1157,7 +1158,7 @@ export function Timeline() {
                 webCodecsPlayer: webCodecsPlayer,
               },
               effects: videoInterpolatedEffects,
-              position: { x: transform.position.x, y: transform.position.y },
+              position: { x: transform.position.x, y: transform.position.y, z: transform.position.z },
               scale: { x: transform.scale.x, y: transform.scale.y },
               rotation: {
                 x: (transform.rotation.x * Math.PI) / 180,
@@ -1207,7 +1208,7 @@ export function Timeline() {
               imageElement: img,
             },
             effects: imageInterpolatedEffects,
-            position: { x: transform.position.x, y: transform.position.y },
+            position: { x: transform.position.x, y: transform.position.y, z: transform.position.z },
             scale: { x: transform.scale.x, y: transform.scale.y },
             rotation: {
               x: (transform.rotation.x * Math.PI) / 180,
