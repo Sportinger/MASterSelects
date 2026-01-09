@@ -480,9 +480,9 @@ export function DockTabPane({ group }: DockTabPaneProps) {
             const isFading = holdingTabId === panel.id && holdProgress === 'fading';
             const isDragging = dragState.isDragging && dragState.draggedPanel?.id === panel.id;
 
-            // Dynamic tab title for clip-properties and audio panels
+            // Dynamic tab title for clip-properties panel
             let tabTitle = panel.title;
-            if ((panel.type === 'clip-properties' || panel.type === 'audio') && selectedClipName) {
+            if (panel.type === 'clip-properties' && selectedClipName) {
               tabTitle = truncateText(selectedClipName, 18);
             }
 
@@ -496,7 +496,7 @@ export function DockTabPane({ group }: DockTabPaneProps) {
                 onMouseDown={(e) => handleTabMouseDown(e, panel, index)}
                 onMouseUp={handleTabMouseUp}
                 onMouseLeave={handleTabMouseLeave}
-                title={panel.type === 'clip-properties' || panel.type === 'audio' ? selectedClipName || panel.title : panel.title}
+                title={panel.type === 'clip-properties' ? selectedClipName || panel.title : panel.title}
               >
                 <span className="dock-tab-title">{tabTitle}</span>
               </div>

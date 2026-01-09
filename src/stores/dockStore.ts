@@ -66,13 +66,10 @@ const DEFAULT_LAYOUT: DockLayout = {
                 id: 'right-group',
                 panels: [
                   { id: 'multicam', type: 'multicam', title: 'Multi-Cam' },
-                  { id: 'transcript', type: 'transcript', title: 'Transcript' },
-                  { id: 'analysis', type: 'analysis', title: 'Analysis' },
-                  { id: 'audio', type: 'audio', title: 'Audio' },
                   { id: 'effects', type: 'effects', title: 'Effects' },
                   { id: 'export', type: 'export', title: 'Export' },
                 ],
-                activeIndex: 1, // Transcript active
+                activeIndex: 0,
               },
             ],
           },

@@ -1,6 +1,5 @@
-// Hook to auto-switch panels based on selected clip type
-// - Audio clip selected -> Audio panel activated
-// - Video clip selected -> Properties panel activated
+// Hook to auto-switch panels based on selected clip
+// Activates Properties panel when any clip is selected
 
 import { useEffect, useRef } from 'react';
 import { useTimelineStore } from '../stores/timeline';
@@ -8,7 +7,6 @@ import { useDockStore } from '../stores/dockStore';
 
 export function useClipPanelSync() {
   const clips = useTimelineStore(state => state.clips);
-  const tracks = useTimelineStore(state => state.tracks);
   const selectedClipIds = useTimelineStore(state => state.selectedClipIds);
   const activatePanelType = useDockStore(state => state.activatePanelType);
 
@@ -27,18 +25,11 @@ export function useClipPanelSync() {
 
     prevSelectedId.current = selectedId;
 
-    // Find the selected clip and its track
+    // Find the selected clip
     const selectedClip = clips.find(c => c.id === selectedId);
     if (!selectedClip) return;
 
-    const track = tracks.find(t => t.id === selectedClip.trackId);
-    if (!track) return;
-
-    // Activate the appropriate panel based on track type
-    if (track.type === 'audio') {
-      activatePanelType('audio');
-    } else if (track.type === 'video') {
-      activatePanelType('clip-properties');
-    }
-  }, [selectedClipIds, clips, tracks, activatePanelType]);
+    // Activate Properties panel (handles both audio and video clips with appropriate tabs)
+    activatePanelType('clip-properties');
+  }, [selectedClipIds, clips, activatePanelType]);
 }

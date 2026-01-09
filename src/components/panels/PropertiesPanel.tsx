@@ -1,4 +1,4 @@
-// Unified Properties Panel - Transform, Effects, Masks in one panel with sub-tabs
+// Unified Properties Panel - Transform, Effects, Masks, Transcript, Analysis in one panel with sub-tabs
 // Also handles Audio clips with Volume and EQ
 
 import { useRef, useCallback, useState, useEffect } from 'react';
@@ -6,6 +6,8 @@ import { useTimelineStore } from '../../stores/timeline';
 import type { BlendMode, AnimatableProperty, MaskMode, ClipMask, EffectType } from '../../types';
 import { createEffectProperty } from '../../types';
 import { EQ_FREQUENCIES } from '../../services/audioManager';
+import { TranscriptPanel } from './TranscriptPanel';
+import { AnalysisPanel } from './AnalysisPanel';
 
 // EQ band parameter names
 const EQ_BAND_PARAMS = ['band31', 'band62', 'band125', 'band250', 'band500', 'band1k', 'band2k', 'band4k', 'band8k', 'band16k'];
@@ -205,7 +207,7 @@ function DraggableNumber({ value, onChange, defaultValue, sensitivity = 2, decim
 // ============================================
 // TAB TYPE
 // ============================================
-type PropertiesTab = 'transform' | 'effects' | 'masks' | 'volume';
+type PropertiesTab = 'transform' | 'effects' | 'masks' | 'volume' | 'transcript' | 'analysis';
 
 // ============================================
 // TRANSFORM TAB
@@ -824,6 +826,7 @@ export function PropertiesPanel() {
             <button className={`tab-btn ${activeTab === 'effects' ? 'active' : ''}`} onClick={() => setActiveTab('effects')}>
               Effects {visualEffects.length > 0 && <span className="badge">{visualEffects.length}</span>}
             </button>
+            <button className={`tab-btn ${activeTab === 'transcript' ? 'active' : ''}`} onClick={() => setActiveTab('transcript')}>Transcript</button>
           </>
         ) : (
           <>
@@ -834,6 +837,8 @@ export function PropertiesPanel() {
             <button className={`tab-btn ${activeTab === 'masks' ? 'active' : ''}`} onClick={() => setActiveTab('masks')}>
               Masks {selectedClip.masks && selectedClip.masks.length > 0 && <span className="badge">{selectedClip.masks.length}</span>}
             </button>
+            <button className={`tab-btn ${activeTab === 'transcript' ? 'active' : ''}`} onClick={() => setActiveTab('transcript')}>Transcript</button>
+            <button className={`tab-btn ${activeTab === 'analysis' ? 'active' : ''}`} onClick={() => setActiveTab('analysis')}>Analysis</button>
           </>
         )}
       </div>
@@ -843,6 +848,8 @@ export function PropertiesPanel() {
         {activeTab === 'volume' && isAudioClip && <VolumeTab clipId={selectedClip.id} effects={selectedClip.effects || []} />}
         {activeTab === 'effects' && <EffectsTab clipId={selectedClip.id} effects={selectedClip.effects || []} />}
         {activeTab === 'masks' && !isAudioClip && <MasksTab clipId={selectedClip.id} masks={selectedClip.masks} />}
+        {activeTab === 'transcript' && <TranscriptPanel />}
+        {activeTab === 'analysis' && !isAudioClip && <AnalysisPanel />}
       </div>
     </div>
   );

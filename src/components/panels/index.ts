@@ -7,5 +7,4 @@ export { PropertiesPanel } from './PropertiesPanel';
 export { MultiCamPanel } from './MultiCamPanel';
 export { TranscriptPanel } from './TranscriptPanel';
 export { AnalysisPanel } from './AnalysisPanel';
-export { AudioPanel } from './AudioPanel';
 export { AIChatPanel } from './AIChatPanel';
