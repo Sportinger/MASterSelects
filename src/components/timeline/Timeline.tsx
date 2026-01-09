@@ -2529,6 +2529,8 @@ export function Timeline() {
           selectedKeyframeIds={selectedKeyframeIds}
           clipKeyframes={clipKeyframes}
           clipDrag={clipDrag}
+          scrollX={scrollX}
+          timelineRef={timelineRef}
           onSelectKeyframe={selectKeyframe}
           onMoveKeyframe={moveKeyframe}
           onUpdateKeyframe={updateKeyframe}
@@ -2537,7 +2539,7 @@ export function Timeline() {
         />
       );
     },
-    [clips, selectedKeyframeIds, clipKeyframes, clipDrag, selectKeyframe, moveKeyframe, updateKeyframe, timeToPixel, pixelToTime]
+    [clips, selectedKeyframeIds, clipKeyframes, clipDrag, scrollX, selectKeyframe, moveKeyframe, updateKeyframe, timeToPixel, pixelToTime]
   );
 
   // Render a clip

@@ -224,6 +224,8 @@ export interface TimelineKeyframesProps {
     easing: string;
   }>>;
   clipDrag: ClipDragState | null;
+  scrollX: number;
+  timelineRef: React.RefObject<HTMLDivElement | null>;
   onSelectKeyframe: (keyframeId: string, addToSelection: boolean) => void;
   onMoveKeyframe: (keyframeId: string, newTime: number) => void;
   onUpdateKeyframe: (keyframeId: string, updates: { easing?: string }) => void;

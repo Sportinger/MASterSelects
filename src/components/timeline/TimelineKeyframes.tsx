@@ -35,6 +35,8 @@ function TimelineKeyframesComponent({
   selectedKeyframeIds,
   clipKeyframes,
   clipDrag,
+  scrollX,
+  timelineRef,
   onSelectKeyframe,
   onMoveKeyframe,
   onUpdateKeyframe,
@@ -75,13 +77,15 @@ function TimelineKeyframesComponent({
 
       // Calculate effective start time - use drag preview position if this clip is being dragged
       let effectiveStartTime = clip.startTime;
-      if (clipDrag && clipDrag.clipId === clip.id) {
-        // Use snapped time if snapping, otherwise calculate from current drag position
+      if (clipDrag && clipDrag.clipId === clip.id && timelineRef.current) {
+        // Use snapped time if snapping, otherwise calculate using the same formula as TimelineClip
         if (clipDrag.snappedTime !== null) {
           effectiveStartTime = clipDrag.snappedTime;
         } else {
-          // Calculate from mouse position: currentX is mouse pos, grabOffsetX is where we grabbed the clip
-          effectiveStartTime = Math.max(0, pixelToTime(clipDrag.currentX - clipDrag.grabOffsetX));
+          // Same calculation as TimelineClip for consistency
+          const rect = timelineRef.current.getBoundingClientRect();
+          const x = clipDrag.currentX - rect.left + scrollX - clipDrag.grabOffsetX;
+          effectiveStartTime = pixelToTime(Math.max(0, x));
         }
       }
 
@@ -97,7 +101,7 @@ function TimelineKeyframesComponent({
     });
 
     return result;
-  }, [trackClips, property, clipKeyframes, clipDrag]);
+  }, [trackClips, property, clipKeyframes, clipDrag, scrollX, timelineRef, pixelToTime]);
 
   // Handle keyframe drag
   const handleMouseDown = useCallback((
