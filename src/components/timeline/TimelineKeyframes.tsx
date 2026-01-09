@@ -1,6 +1,7 @@
 // TimelineKeyframes component - Keyframe diamonds/handles with drag support
 
 import { memo, useMemo, useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import type { TimelineKeyframesProps } from './types';
 import type { EasingType, AnimatableProperty } from '../../types';
 
@@ -197,8 +198,8 @@ function TimelineKeyframesComponent({
         );
       })}
 
-      {/* Context Menu for easing selection */}
-      {contextMenu && (
+      {/* Context Menu for easing selection - rendered via portal to avoid transform issues */}
+      {contextMenu && createPortal(
         <div
           className="keyframe-context-menu"
           style={{
@@ -220,7 +221,8 @@ function TimelineKeyframesComponent({
               {contextMenu.currentEasing === option.value && <span className="checkmark">✓</span>}
             </div>
           ))}
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );
