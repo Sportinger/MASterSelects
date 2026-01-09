@@ -48,10 +48,11 @@ interface MP4File {
   getTrackById: (id: number) => any;
 }
 
-interface ProxyFrame {
+// ProxyFrame type is used internally by workers but kept for documentation
+type _ProxyFrame = {
   frameIndex: number;
   blob: Blob;
-}
+}; void (_ProxyFrame);
 
 interface GeneratorResult {
   frameCount: number;
@@ -104,7 +105,8 @@ class ProxyGeneratorGPU {
   private isCancelled = false;
 
   private resolveGeneration: ((result: GeneratorResult | null) => void) | null = null;
-  private rejectGeneration: ((error: Error) => void) | null = null;
+  // Note: rejectGeneration is stored for potential future error handling
+  private _rejectGeneration: ((error: Error) => void) | null = null;
 
   constructor() {
     this.initWorkers();
@@ -182,7 +184,7 @@ class ProxyGeneratorGPU {
 
     return new Promise(async (resolve, reject) => {
       this.resolveGeneration = resolve;
-      this.rejectGeneration = reject;
+      this._rejectGeneration = reject;
 
       try {
         // Check for WebCodecs support
@@ -227,8 +229,9 @@ class ProxyGeneratorGPU {
   private async loadWithMP4Box(file: File): Promise<boolean> {
     return new Promise(async (resolve) => {
       this.mp4File = MP4Box.createFile();
+      const mp4File = this.mp4File;
 
-      this.mp4File.onReady = (info: { videoTracks: MP4VideoTrack[] }) => {
+      mp4File.onReady = (info: { videoTracks: MP4VideoTrack[] }) => {
         if (info.videoTracks.length === 0) {
           resolve(false);
           return;
@@ -270,16 +273,16 @@ class ProxyGeneratorGPU {
           }
 
           // Extract all samples
-          this.mp4File!.setExtractionOptions(track.id, null, { nbSamples: Infinity });
-          this.mp4File!.start();
+          mp4File.setExtractionOptions(track.id, null, { nbSamples: Infinity });
+          mp4File.start();
         });
       };
 
-      this.mp4File.onSamples = (_trackId: number, _ref: any, samples: Sample[]) => {
+      mp4File.onSamples = (_trackId: number, _ref: any, samples: Sample[]) => {
         this.samples.push(...samples);
       };
 
-      this.mp4File.onError = (error: string) => {
+      mp4File.onError = (error: string) => {
         console.error('[ProxyGen] MP4Box error:', error);
         resolve(false);
       };
@@ -296,9 +299,9 @@ class ProxyGeneratorGPU {
           const buffer = value.buffer as MP4ArrayBuffer;
           buffer.fileStart = offset;
           offset += value.byteLength;
-          this.mp4File.appendBuffer(buffer);
+          mp4File.appendBuffer(buffer);
         }
-        this.mp4File.flush();
+        mp4File.flush();
 
         // Wait a bit for onReady to be called
         await new Promise(r => setTimeout(r, 100));

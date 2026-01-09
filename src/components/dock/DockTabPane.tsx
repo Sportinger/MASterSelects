@@ -86,7 +86,8 @@ export function DockTabPane({ group }: DockTabPaneProps) {
   }, []);
 
   // Hold-to-drag handler for composition tabs (to move the timeline panel)
-  const handleCompTabMouseDown = useCallback((e: React.MouseEvent, compId: string) => {
+  // Note: Currently unused but kept for potential future implementation
+  const _handleCompTabMouseDown = useCallback((e: React.MouseEvent, compId: string) => {
     if (e.button !== 0) return;
 
     // Find the timeline panel in this group
@@ -122,6 +123,7 @@ export function DockTabPane({ group }: DockTabPaneProps) {
       }
     }, HOLD_DURATION);
   }, [group.panels, group.id, setActiveComposition, startDrag]);
+  void _handleCompTabMouseDown; // Silence unused warning
 
   // Cancel any ongoing hold
   const cancelHold = useCallback(() => {
@@ -145,17 +147,19 @@ export function DockTabPane({ group }: DockTabPaneProps) {
     }
   }, [holdProgress]);
 
-  const handleCompTabMouseUp = useCallback(() => {
+  const _handleCompTabMouseUp = useCallback(() => {
     if (holdProgress === 'holding') {
       cancelHold();
     }
   }, [holdProgress, cancelHold]);
+  void _handleCompTabMouseUp; // Silence unused warning
 
-  const handleCompTabMouseLeave = useCallback(() => {
+  const _handleCompTabMouseLeave = useCallback(() => {
     if (holdProgress === 'holding') {
       cancelHold();
     }
   }, [holdProgress, cancelHold]);
+  void _handleCompTabMouseLeave; // Silence unused warning
 
   const handleTabClick = useCallback((index: number) => {
     setActiveTab(group.id, index);

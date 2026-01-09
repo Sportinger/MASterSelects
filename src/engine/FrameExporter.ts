@@ -380,7 +380,7 @@ export class FrameExporter {
     ];
   }
 
-  static getRecommendedBitrate(width: number, height: number, fps: number): number {
+  static getRecommendedBitrate(width: number, _height: number, _fps: number): number {
     if (width >= 3840) return 35_000_000;
     if (width >= 1920) return 15_000_000;
     if (width >= 1280) return 8_000_000;

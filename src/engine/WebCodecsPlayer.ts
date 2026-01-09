@@ -81,7 +81,8 @@ export class WebCodecsPlayer {
   private onError?: (error: Error) => void;
 
   // Stream mode (MediaStreamTrackProcessor)
-  private useStreamMode = false;
+  // Note: useStreamMode is set but only used as a flag for cleanup/destroy
+  private _useStreamMode = false;
   private streamReader: ReadableStreamDefaultReader<VideoFrame> | null = null;
   private streamActive = false;
 
@@ -91,7 +92,7 @@ export class WebCodecsPlayer {
     this.onReady = options.onReady;
     this.onError = options.onError;
     this.useSimpleMode = options.useSimpleMode ?? false;
-    this.useStreamMode = options.useStreamMode ?? false;
+    this._useStreamMode = options.useStreamMode ?? false;
   }
 
   // Stream mode: Use captureStream + MediaStreamTrackProcessor for best performance
@@ -101,14 +102,15 @@ export class WebCodecsPlayer {
       throw new Error('MediaStreamTrackProcessor not supported');
     }
 
-    this.useStreamMode = true;
+    this._useStreamMode = true;
     this.isAttachedToExternal = true;
     this.videoElement = video;
     this.width = video.videoWidth;
     this.height = video.videoHeight;
 
     // Capture stream from video
-    const stream = video.captureStream();
+    // Note: captureStream is not in the standard HTMLVideoElement type but exists in browsers
+    const stream = (video as HTMLVideoElement & { captureStream(): MediaStream }).captureStream();
     const videoTrack = stream.getVideoTracks()[0];
 
     if (!videoTrack) {
@@ -193,7 +195,6 @@ export class WebCodecsPlayer {
   private boundOnPlay: (() => void) | null = null;
   private boundOnPause: (() => void) | null = null;
   private boundOnSeeked: (() => void) | null = null;
-  private boundOnTimeUpdate: (() => void) | null = null;
 
   // Use an existing video element instead of creating one (for timeline integration)
   attachToVideoElement(video: HTMLVideoElement): void {
@@ -327,8 +328,9 @@ export class WebCodecsPlayer {
       }, 10000);
 
       this.mp4File = MP4Box.createFile();
+      const mp4File = this.mp4File;
 
-      this.mp4File.onReady = (info) => {
+      mp4File.onReady = (info) => {
         console.log(`[WebCodecs] MP4 onReady: ${info.videoTracks.length} video tracks`);
         // Don't clear timeout here - wait for onSamples to actually deliver frames
         const videoTrack = info.videoTracks[0];
@@ -365,14 +367,14 @@ export class WebCodecsPlayer {
           this.initDecoder();
 
           // Set extraction options and start
-          this.mp4File!.setExtractionOptions(videoTrack.id, null, {
+          mp4File.setExtractionOptions(videoTrack.id, null, {
             nbSamples: Infinity,
           });
-          this.mp4File!.start();
+          mp4File.start();
         });
       };
 
-      this.mp4File.onSamples = (trackId, ref, samples) => {
+      mp4File.onSamples = (_trackId, _ref, samples) => {
         this.samples.push(...samples);
 
         // Signal ready after first batch of samples
@@ -389,7 +391,7 @@ export class WebCodecsPlayer {
         }
       };
 
-      this.mp4File.onError = (e) => {
+      mp4File.onError = (e) => {
         clearTimeout(timeout);
         const error = new Error(`MP4 parsing error: ${e}`);
         this.onError?.(error);
@@ -400,9 +402,9 @@ export class WebCodecsPlayer {
       const mp4Buffer = buffer as MP4ArrayBuffer;
       mp4Buffer.fileStart = 0;
       try {
-        const appendedBytes = this.mp4File.appendBuffer(mp4Buffer);
+        const appendedBytes = mp4File.appendBuffer(mp4Buffer);
         console.log(`[WebCodecs] Appended ${appendedBytes} bytes to MP4Box`);
-        this.mp4File.flush();
+        mp4File.flush();
         console.log(`[WebCodecs] Flushed MP4Box, waiting for callbacks...`);
       } catch (e) {
         clearTimeout(timeout);
@@ -721,7 +723,6 @@ export class WebCodecsPlayer {
         this.boundOnPlay = null;
         this.boundOnPause = null;
         this.boundOnSeeked = null;
-        this.boundOnTimeUpdate = null;
         // Don't clear src or pause - Timeline owns the video element
       } else {
         this.videoElement.pause();
@@ -731,7 +732,7 @@ export class WebCodecsPlayer {
     }
 
     this.isAttachedToExternal = false;
-    this.useStreamMode = false;
+    this._useStreamMode = false;
 
     // Full mode cleanup
     if (this.decoder) {

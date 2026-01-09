@@ -136,7 +136,7 @@ class ProxyFrameCache {
   }
 
   // Schedule preloading of upcoming frames
-  private schedulePreload(mediaFileId: string, currentFrameIndex: number, fps: number) {
+  private schedulePreload(mediaFileId: string, currentFrameIndex: number, _fps: number) {
     // Add upcoming frames to preload queue
     for (let i = 1; i <= PRELOAD_AHEAD_FRAMES; i++) {
       const frameIndex = currentFrameIndex + i;

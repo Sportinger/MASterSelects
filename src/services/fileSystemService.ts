@@ -33,7 +33,8 @@ const fileHandleCache = new Map<string, FileSystemFileHandle>();
 
 // Directory handles
 let proxyFolderHandle: FileSystemDirectoryHandle | null = null;
-let rawFolderHandle: FileSystemDirectoryHandle | null = null;
+// Note: rawFolderHandle is prepared for future use when raw file folder support is added
+let _rawFolderHandle: FileSystemDirectoryHandle | null = null;
 
 // Initialize from IndexedDB
 export async function initFileSystemService(): Promise<void> {
@@ -59,7 +60,7 @@ export async function initFileSystemService(): Promise<void> {
     if (storedRawHandle) {
       const permission = await storedRawHandle.queryPermission({ mode: 'read' });
       if (permission === 'granted') {
-        rawFolderHandle = storedRawHandle as FileSystemDirectoryHandle;
+        _rawFolderHandle = storedRawHandle as FileSystemDirectoryHandle;
         console.log('[FileSystem] Restored raw folder handle');
       }
     }

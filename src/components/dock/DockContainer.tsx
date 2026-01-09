@@ -1,6 +1,6 @@
 // Root dock container - wraps docked panels and renders floating panels
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { useDockStore } from '../../stores/dockStore';
 import { DockNode } from './DockNode';
 import { FloatingPanel } from './FloatingPanel';

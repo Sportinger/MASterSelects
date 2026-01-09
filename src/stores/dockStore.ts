@@ -9,16 +9,11 @@ import type {
   DockDragState,
   DropTarget,
   FloatingPanel,
-  DockTabGroup,
-  DockSplit,
 } from '../types/dock';
 import {
-  findNodeById,
-  findParentOfNode,
   removePanel,
   insertPanelAtTarget,
   collapseSingleChildSplits,
-  generateId,
 } from '../utils/dockLayout';
 
 // Default layout configuration
