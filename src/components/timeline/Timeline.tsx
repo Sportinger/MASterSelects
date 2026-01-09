@@ -795,8 +795,10 @@ export function Timeline() {
         const { video, transform, effects } = getVideoFromClip(clip, clipTime);
 
         if (video) {
+          const trackVisible = isVideoTrackVisible(track);
           const needsUpdate =
             !layer ||
+            layer.visible !== trackVisible ||
             layer.source?.videoElement !== video ||
             layer.opacity !== transform.opacity ||
             layer.blendMode !== transform.blendMode ||
@@ -816,7 +818,7 @@ export function Timeline() {
             newLayers[layerIndex] = {
               id: `timeline_layer_${layerIndex}`,
               name: clip.name,
-              visible: isVideoTrackVisible(track),
+              visible: trackVisible,
               opacity: transform.opacity,
               blendMode: transform.blendMode,
               source: {
@@ -1013,8 +1015,10 @@ export function Timeline() {
             }
           } else if (cached?.image) {
             const transform = getInterpolatedTransform(clip.id, keyframeLocalTime);
+            const trackVisible = isVideoTrackVisible(track);
             const needsUpdate =
               !layer ||
+              layer.visible !== trackVisible ||
               layer.source?.imageElement !== cached.image ||
               layer.source?.type !== 'image' ||
               effectsChanged(layer.effects, interpolatedEffectsForProxy);
@@ -1023,7 +1027,7 @@ export function Timeline() {
               newLayers[layerIndex] = {
                 id: `timeline_layer_${layerIndex}`,
                 name: clip.name,
-                visible: isVideoTrackVisible(track),
+                visible: trackVisible,
                 opacity: transform.opacity,
                 blendMode: transform.blendMode,
                 source: {
@@ -1097,8 +1101,10 @@ export function Timeline() {
             clip.id,
             keyframeLocalTime
           );
+          const trackVisible = isVideoTrackVisible(track);
           const needsUpdate =
             !layer ||
+            layer.visible !== trackVisible ||
             layer.source?.videoElement !== video ||
             layer.source?.webCodecsPlayer !== webCodecsPlayer ||
             layer.opacity !== transform.opacity ||
@@ -1119,7 +1125,7 @@ export function Timeline() {
             newLayers[layerIndex] = {
               id: `timeline_layer_${layerIndex}`,
               name: clip.name,
-              visible: isVideoTrackVisible(track),
+              visible: trackVisible,
               opacity: transform.opacity,
               blendMode: transform.blendMode,
               source: {
@@ -1147,8 +1153,10 @@ export function Timeline() {
           clip.id,
           imageClipLocalTime
         );
+        const trackVisible = isVideoTrackVisible(track);
         const needsUpdate =
           !layer ||
+          layer.visible !== trackVisible ||
           layer.source?.imageElement !== img ||
           layer.opacity !== transform.opacity ||
           layer.blendMode !== transform.blendMode ||
@@ -1168,7 +1176,7 @@ export function Timeline() {
           newLayers[layerIndex] = {
             id: `timeline_layer_${layerIndex}`,
             name: clip.name,
-            visible: isVideoTrackVisible(track),
+            visible: trackVisible,
             opacity: transform.opacity,
             blendMode: transform.blendMode,
             source: {
