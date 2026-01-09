@@ -166,8 +166,10 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
   const displayedCompId = compositionId ?? activeCompositionId;
   const displayedComp = compositions.find(c => c.id === displayedCompId);
 
-  // Is this showing a non-active composition? (needs independent rendering)
-  const isIndependentComp = compositionId !== null && compositionId !== activeCompositionId;
+  // Is this an independent preview? (user explicitly selected a composition, not "Active")
+  // If compositionId is null, it means "Active" is selected -> use main render loop
+  // If compositionId is set to ANY value, use independent render loop with that composition's data
+  const isIndependentComp = compositionId !== null;
 
   // Register canvas with engine when ready (only for active comp previews)
   useEffect(() => {
@@ -183,6 +185,8 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
 
   // For independent composition: prepare and render it
   useEffect(() => {
+    console.log(`[Preview ${panelId}] Independent effect - isIndependentComp: ${isIndependentComp}, compositionId: ${compositionId}, isEngineReady: ${isEngineReady}`);
+
     if (!isIndependentComp || !compositionId || !isEngineReady || !canvasRef.current) {
       setCompReady(false);
       return;
@@ -190,13 +194,12 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
 
     // Register canvas for INDEPENDENT rendering (NOT rendered by main loop)
     registerIndependentPreviewCanvas(panelId, canvasRef.current);
+    console.log(`[Preview ${panelId}] Registered independent canvas, preparing composition...`);
 
     // Prepare the composition
     compositionRenderer.prepareComposition(compositionId).then((ready) => {
+      console.log(`[Preview ${panelId}] Composition ${compositionId} prepare result: ${ready}`);
       setCompReady(ready);
-      if (ready) {
-        console.log(`[Preview ${panelId}] Composition ${compositionId} ready for rendering`);
-      }
     });
 
     return () => {
@@ -206,42 +209,21 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
   }, [isIndependentComp, compositionId, isEngineReady, panelId, registerIndependentPreviewCanvas, unregisterIndependentPreviewCanvas]);
 
   // Render loop for independent compositions
+  // Uses the composition's OWN timeline data, completely decoupled from active timeline
   useEffect(() => {
     if (!isIndependentComp || !compReady || !compositionId) {
       return;
     }
 
+    console.log(`[Preview ${panelId}] Starting independent render loop for composition: ${compositionId}`);
+
     const renderFrame = () => {
-      const mainPlayhead = useTimelineStore.getState().playheadPosition;
-      const mainClips = useTimelineStore.getState().clips;
+      // Use the main playhead position to sync playback
+      // But evaluate THIS composition's timeline at that time
+      const playheadTime = useTimelineStore.getState().playheadPosition;
 
-      // Check if this composition is nested inside the active timeline
-      // If so, calculate the internal time based on where the clip is placed
-      let internalTime = mainPlayhead;
-
-      const nestedClip = mainClips.find(c =>
-        c.isComposition && c.compositionId === compositionId
-      );
-
-      if (nestedClip) {
-        // This composition is nested in the active timeline
-        const clipStart = nestedClip.startTime;
-        const clipEnd = clipStart + nestedClip.duration;
-        const clipInPoint = nestedClip.inPoint || 0;
-
-        if (mainPlayhead >= clipStart && mainPlayhead < clipEnd) {
-          // Playhead is within this clip - calculate internal time
-          internalTime = (mainPlayhead - clipStart) + clipInPoint;
-        } else if (mainPlayhead < clipStart) {
-          // Before the clip starts - show beginning
-          internalTime = clipInPoint;
-        } else {
-          // After the clip ends - show end frame
-          internalTime = clipInPoint + nestedClip.duration;
-        }
-      }
-
-      const evalLayers = compositionRenderer.evaluateAtTime(compositionId, internalTime);
+      // Evaluate this composition's own timeline data at the current time
+      const evalLayers = compositionRenderer.evaluateAtTime(compositionId, playheadTime);
 
       if (evalLayers.length > 0) {
         renderToPreviewCanvas(panelId, evalLayers as Layer[]);
@@ -255,6 +237,7 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
     return () => {
       if (animFrameRef.current) {
         cancelAnimationFrame(animFrameRef.current);
+        console.log(`[Preview ${panelId}] Stopped independent render loop`);
       }
     };
   }, [isIndependentComp, compReady, compositionId, panelId, renderToPreviewCanvas]);
