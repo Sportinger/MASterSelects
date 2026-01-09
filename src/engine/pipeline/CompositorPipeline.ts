@@ -646,9 +646,14 @@ export class CompositorPipeline {
     this.uniformData[14] = 2.0;         // perspective distance (lower = stronger 3D effect)
     this.uniformData[15] = layer.maskFeather || 0;      // maskFeather (blur radius in pixels)
     this.uniformDataU32[16] = layer.maskFeatherQuality || 0; // maskFeatherQuality (0=low, 1=med, 2=high)
-    this.uniformData[17] = layer.position.z || 0;       // posZ (depth position)
+    const posZ = layer.position.z ?? 0;
+    this.uniformData[17] = posZ;       // posZ (depth position)
     this.uniformData[18] = 0;           // _pad2
     this.uniformData[19] = 0;           // _pad3
+
+    // Debug: Always log uniforms for first few frames
+    console.log(`[GPU] Layer ${layer.id}: posZ=${posZ}, position=`, layer.position, `uniformData[17]=${this.uniformData[17]}`);
+
     this.device.queue.writeBuffer(uniformBuffer, 0, this.uniformData);
   }
 
