@@ -66,42 +66,40 @@ function TimelineKeyframesComponent({
     [clips, trackId]
   );
 
-  // Get all keyframes once and group by clip/property
-  // Now depends on clipKeyframes Map directly for proper reactivity
-  // Also depends on clipDrag to move keyframes in realtime when clip is dragged
+  // Get all keyframes once and group by clip/property (without position calculation)
   const allKeyframes = useMemo(() => {
     const result: KeyframeDisplay[] = [];
 
     trackClips.forEach((clip) => {
       const kfs = clipKeyframes.get(clip.id) || [];
-
-      // Calculate effective start time - use drag preview position if this clip is being dragged
-      let effectiveStartTime = clip.startTime;
-      if (clipDrag && clipDrag.clipId === clip.id && timelineRef.current) {
-        // Use snapped time if snapping, otherwise calculate using the same formula as TimelineClip
-        if (clipDrag.snappedTime !== null) {
-          effectiveStartTime = clipDrag.snappedTime;
-        } else {
-          // Same calculation as TimelineClip for consistency
-          const rect = timelineRef.current.getBoundingClientRect();
-          const x = clipDrag.currentX - rect.left + scrollX - clipDrag.grabOffsetX;
-          effectiveStartTime = pixelToTime(Math.max(0, x));
-        }
-      }
-
       kfs
         .filter((k) => k.property === property)
         .forEach((kf) => {
           result.push({
             kf,
             clip,
-            absTime: effectiveStartTime + kf.time,
+            absTime: clip.startTime + kf.time, // Base time, will be adjusted in render if dragging
           });
         });
     });
 
     return result;
-  }, [trackClips, property, clipKeyframes, clipDrag, scrollX, timelineRef, pixelToTime]);
+  }, [trackClips, property, clipKeyframes]);
+
+  // Calculate effective start time for a clip (handles drag preview)
+  // This is called during render to always use latest clipDrag state
+  const getEffectiveClipStartTime = (clip: KeyframeDisplay['clip']): number => {
+    if (clipDrag && clipDrag.clipId === clip.id && timelineRef.current) {
+      if (clipDrag.snappedTime !== null) {
+        return clipDrag.snappedTime;
+      } else {
+        const rect = timelineRef.current.getBoundingClientRect();
+        const x = clipDrag.currentX - rect.left + scrollX - clipDrag.grabOffsetX;
+        return pixelToTime(Math.max(0, x));
+      }
+    }
+    return clip.startTime;
+  };
 
   // Handle keyframe drag
   const handleMouseDown = useCallback((
@@ -200,7 +198,10 @@ function TimelineKeyframesComponent({
 
   return (
     <>
-      {allKeyframes.map(({ kf, clip, absTime }) => {
+      {allKeyframes.map(({ kf, clip }) => {
+        // Calculate position directly in render to use latest clipDrag state
+        const effectiveStartTime = getEffectiveClipStartTime(clip);
+        const absTime = effectiveStartTime + kf.time;
         const xPos = timeToPixel(absTime);
         const isSelected = selectedKeyframeIds.has(kf.id);
         const isDragging = dragState?.keyframeId === kf.id;
