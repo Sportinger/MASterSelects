@@ -152,9 +152,57 @@ export function useEngine() {
         // This prevents flickering from reading partially updated state
         const layersSnapshot = useMixerStore.getState().layers;
 
-        // Create a stable copy for this frame (shallow copy is sufficient
-        // since we only read from it, never modify)
-        const frameLayers = layersSnapshot.slice();
+        // Get clips and tracks to extract mask properties at render time
+        // This ensures mask properties are ALWAYS in sync with the current frame
+        const { clips, tracks, playheadPosition: currentPlayhead } = useTimelineStore.getState();
+        const videoTracks = tracks.filter(t => t.type === 'video');
+        const clipsAtTime = clips.filter(c =>
+          currentPlayhead >= c.startTime && currentPlayhead < c.startTime + c.duration
+        );
+
+        // Get engine output dimensions for mask generation
+        const engineDimensions = engine.getOutputDimensions();
+
+        // Create frame layers with FRESH mask properties from clips (not stale store state)
+        const frameLayers = layersSnapshot.map((layer, layerIndex) => {
+          if (!layer) return layer;
+
+          const track = videoTracks[layerIndex];
+          if (!track) return layer;
+
+          const clip = clipsAtTime.find(c => c.trackId === track.id);
+
+          // Extract mask properties directly from clip at render time
+          if (clip?.masks && clip.masks.length > 0) {
+            // CRITICAL: Ensure mask texture exists BEFORE rendering this frame
+            // This prevents the race condition where first frame renders without mask
+            if (!engine.hasMaskTexture(layer.id)) {
+              // Generate mask texture synchronously before rendering
+              const maskImageData = generateMaskTexture(
+                clip.masks,
+                engineDimensions.width,
+                engineDimensions.height
+              );
+              if (maskImageData) {
+                engine.updateMaskTexture(layer.id, maskImageData);
+              }
+            }
+
+            const maxFeather = Math.max(...clip.masks.map(m => m.feather));
+            const maxQuality = Math.max(...clip.masks.map(m => m.featherQuality ?? 50));
+            const hasInverted = clip.masks.some(m => m.inverted);
+
+            // Return layer with fresh mask properties
+            return {
+              ...layer,
+              maskFeather: maxFeather,
+              maskFeatherQuality: maxQuality,
+              maskInvert: hasInverted
+            };
+          }
+
+          return layer;
+        });
 
         // Render with snapshotted layers (engine handles empty layers by clearing to black)
         engine.render(frameLayers);

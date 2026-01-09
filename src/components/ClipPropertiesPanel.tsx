@@ -181,6 +181,84 @@ function PrecisionSlider({ min, max, step, value, onChange, defaultValue }: Prec
   );
 }
 
+// Draggable number input - no caps, supports negative values
+// Drag left/right to change value, right-click to reset
+interface DraggableNumberProps {
+  value: number;
+  onChange: (value: number) => void;
+  defaultValue?: number;
+  sensitivity?: number; // How many pixels per unit (default: 2)
+  decimals?: number; // Number of decimal places to display (default: 2)
+  suffix?: string; // Optional suffix like "px" or "%"
+}
+
+function DraggableNumber({ value, onChange, defaultValue, sensitivity = 2, decimals = 2, suffix = '' }: DraggableNumberProps) {
+  const inputRef = useRef<HTMLSpanElement>(null);
+  const accumulatedDelta = useRef(0);
+  const startValue = useRef(0);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return; // Only handle left click
+    e.preventDefault();
+    accumulatedDelta.current = 0;
+    startValue.current = value;
+
+    // Request pointer lock for infinite dragging
+    const element = inputRef.current;
+    if (element) {
+      element.requestPointerLock();
+    }
+
+    const handleMouseMove = (e: MouseEvent) => {
+      // Calculate speed multiplier based on modifier keys
+      let speedMultiplier = 1;
+      if (e.ctrlKey) {
+        speedMultiplier = 0.01; // Ultra fine (1%)
+      } else if (e.shiftKey) {
+        speedMultiplier = 0.1; // Slow (10%)
+      }
+
+      // Use movementX for pointer lock (raw delta, not position)
+      accumulatedDelta.current += e.movementX * speedMultiplier;
+      const deltaValue = accumulatedDelta.current / sensitivity;
+      const newValue = startValue.current + deltaValue;
+
+      // Round to avoid float errors
+      const preciseValue = Math.round(newValue * Math.pow(10, decimals + 2)) / Math.pow(10, decimals + 2);
+      onChange(preciseValue);
+    };
+
+    const handleMouseUp = () => {
+      document.exitPointerLock();
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  }, [value, sensitivity, decimals, onChange]);
+
+  // Handle right-click to reset to default
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    if (defaultValue !== undefined) {
+      onChange(defaultValue);
+    }
+  }, [defaultValue, onChange]);
+
+  return (
+    <span
+      ref={inputRef}
+      className="draggable-number"
+      onMouseDown={handleMouseDown}
+      onContextMenu={handleContextMenu}
+      title={defaultValue !== undefined ? "Drag to change, right-click to reset" : "Drag to change"}
+    >
+      {value.toFixed(decimals)}{suffix}
+    </span>
+  );
+}
+
 // Mask mode options
 const MASK_MODES: { value: MaskMode; label: string }[] = [
   { value: 'add', label: 'Add' },
@@ -320,67 +398,59 @@ function MaskItem({ clipId, mask, isActive, onSelect }: MaskItemProps) {
         <div className="mask-item-properties">
           <div className="control-row">
             <label>Opacity</label>
-            <PrecisionSlider
-              min={0}
-              max={1}
-              step={0.01}
-              value={mask.opacity}
-              onChange={(v) => updateMask(clipId, mask.id, { opacity: v })}
-              defaultValue={1}
+            <DraggableNumber
+              value={mask.opacity * 100}
+              onChange={(v) => updateMask(clipId, mask.id, { opacity: v / 100 })}
+              defaultValue={100}
+              sensitivity={1}
+              decimals={0}
+              suffix="%"
             />
-            <span className="value">{(mask.opacity * 100).toFixed(0)}%</span>
           </div>
 
           <div className="control-row">
             <label>Feather</label>
-            <PrecisionSlider
-              min={0}
-              max={100}
-              step={0.5}
+            <DraggableNumber
               value={mask.feather}
               onChange={(v) => updateMask(clipId, mask.id, { feather: v })}
               defaultValue={0}
+              sensitivity={1}
+              decimals={1}
+              suffix="px"
             />
-            <span className="value">{mask.feather.toFixed(1)}px</span>
           </div>
 
           <div className="control-row">
             <label>Quality</label>
-            <PrecisionSlider
-              min={1}
-              max={100}
-              step={1}
+            <DraggableNumber
               value={mask.featherQuality ?? 50}
-              onChange={(v) => updateMask(clipId, mask.id, { featherQuality: v })}
+              onChange={(v) => updateMask(clipId, mask.id, { featherQuality: Math.max(1, Math.round(v)) })}
               defaultValue={50}
+              sensitivity={1}
+              decimals={0}
             />
-            <span className="value">{mask.featherQuality ?? 50}</span>
           </div>
 
           <div className="control-row">
             <label>Position X</label>
-            <PrecisionSlider
-              min={-1}
-              max={1}
-              step={0.01}
+            <DraggableNumber
               value={mask.position.x}
               onChange={(v) => updateMask(clipId, mask.id, { position: { ...mask.position, x: v } })}
               defaultValue={0}
+              sensitivity={100}
+              decimals={3}
             />
-            <span className="value">{mask.position.x.toFixed(2)}</span>
           </div>
 
           <div className="control-row">
             <label>Position Y</label>
-            <PrecisionSlider
-              min={-1}
-              max={1}
-              step={0.01}
+            <DraggableNumber
               value={mask.position.y}
               onChange={(v) => updateMask(clipId, mask.id, { position: { ...mask.position, y: v } })}
               defaultValue={0}
+              sensitivity={100}
+              decimals={3}
             />
-            <span className="value">{mask.position.y.toFixed(2)}</span>
           </div>
 
           <div className="control-row">

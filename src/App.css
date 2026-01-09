@@ -2516,6 +2516,34 @@ input[type="checkbox"] {
   box-shadow: 0 0 0 4px rgba(0, 212, 255, 0.4);
 }
 
+/* ========== DRAGGABLE NUMBER ========== */
+.draggable-number {
+  display: inline-block;
+  padding: 2px 6px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  color: var(--accent);
+  font-family: monospace;
+  font-size: 11px;
+  cursor: ew-resize;
+  user-select: none;
+  min-width: 50px;
+  text-align: right;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.draggable-number:hover {
+  border-color: var(--accent);
+  background: var(--bg-secondary);
+}
+
+.draggable-number:active {
+  background: var(--accent);
+  color: var(--bg-primary);
+  cursor: grabbing;
+}
+
 /* ========== KEYFRAME TOGGLE ========== */
 .keyframe-toggle {
   width: 18px;
