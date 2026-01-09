@@ -185,7 +185,15 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
       }
 
       // Generate thumbnails in background (non-blocking) - only if enabled
-      if (get().thumbnailsEnabled) {
+      // Skip for very large files (>500MB) to avoid performance issues
+      const LARGE_FILE_THRESHOLD = 500 * 1024 * 1024; // 500MB
+      const isLargeFile = file.size > LARGE_FILE_THRESHOLD;
+
+      if (isLargeFile) {
+        console.log(`[Thumbnails] Skipping for large file (${(file.size / 1024 / 1024).toFixed(0)}MB): ${file.name}`);
+      }
+
+      if (get().thumbnailsEnabled && !isLargeFile) {
         (async () => {
           try {
             // Wait for video to be ready for thumbnails

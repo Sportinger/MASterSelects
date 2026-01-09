@@ -19,6 +19,7 @@ const Waveform = memo(function Waveform({
 
   useEffect(() => {
     const canvas = canvasRef.current;
+    console.log(`[Waveform] Render: width=${width}, height=${height}, samples=${waveform?.length || 0}, canvas=${!!canvas}`);
     if (!canvas || !waveform || waveform.length === 0 || width <= 0) return;
 
     const ctx = canvas.getContext('2d');
