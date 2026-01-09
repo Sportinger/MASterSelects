@@ -274,6 +274,15 @@ export function useEngine() {
     engine.unregisterPreviewCanvas(id);
   }, []);
 
+  // Independent canvas registration - NOT rendered by main loop
+  const registerIndependentPreviewCanvas = useCallback((id: string, canvas: HTMLCanvasElement) => {
+    engine.registerIndependentPreviewCanvas(id, canvas);
+  }, []);
+
+  const unregisterIndependentPreviewCanvas = useCallback((id: string) => {
+    engine.unregisterIndependentPreviewCanvas(id);
+  }, []);
+
   const renderToPreviewCanvas = useCallback((canvasId: string, layers: import('../types').Layer[]) => {
     engine.renderToPreviewCanvas(canvasId, layers);
   }, []);
@@ -286,6 +295,8 @@ export function useEngine() {
     closeOutputWindow,
     registerPreviewCanvas,
     unregisterPreviewCanvas,
+    registerIndependentPreviewCanvas,
+    unregisterIndependentPreviewCanvas,
     renderToPreviewCanvas,
   };
 }

@@ -147,7 +147,7 @@ function StatsOverlay({ stats, resolution, expanded, onToggle }: {
 }
 
 export function Preview({ panelId, compositionId }: PreviewProps) {
-  const { isEngineReady, registerPreviewCanvas, unregisterPreviewCanvas, renderToPreviewCanvas } = useEngine();
+  const { isEngineReady, registerPreviewCanvas, unregisterPreviewCanvas, registerIndependentPreviewCanvas, unregisterIndependentPreviewCanvas, renderToPreviewCanvas } = useEngine();
   const { engineStats, outputResolution, layers, selectedLayerId, selectLayer } = useMixerStore();
   const { clips, selectedClipIds, selectClip, updateClipTransform, maskEditMode } = useTimelineStore();
   const { compositions, activeCompositionId } = useMediaStore();
@@ -188,8 +188,8 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
       return;
     }
 
-    // Register canvas for independent rendering
-    registerPreviewCanvas(panelId, canvasRef.current);
+    // Register canvas for INDEPENDENT rendering (NOT rendered by main loop)
+    registerIndependentPreviewCanvas(panelId, canvasRef.current);
 
     // Prepare the composition
     compositionRenderer.prepareComposition(compositionId).then((ready) => {
@@ -200,10 +200,10 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
     });
 
     return () => {
-      unregisterPreviewCanvas(panelId);
+      unregisterIndependentPreviewCanvas(panelId);
       // Note: Don't dispose composition here - it might be used by other previews
     };
-  }, [isIndependentComp, compositionId, isEngineReady, panelId, registerPreviewCanvas, unregisterPreviewCanvas]);
+  }, [isIndependentComp, compositionId, isEngineReady, panelId, registerIndependentPreviewCanvas, unregisterIndependentPreviewCanvas]);
 
   // Render loop for independent compositions
   useEffect(() => {

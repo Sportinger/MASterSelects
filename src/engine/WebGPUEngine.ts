@@ -30,7 +30,12 @@ export class WebGPUEngine {
   private previewContext: GPUCanvasContext | null = null;
 
   // Multiple preview canvases (inline previews in dock panels)
+  // These are rendered by the MAIN render loop (active composition)
   private previewCanvases: Map<string, GPUCanvasContext> = new Map();
+
+  // Independent preview canvases - NOT rendered by main loop
+  // These have their own render loop for different compositions
+  private independentPreviewCanvases: Map<string, GPUCanvasContext> = new Map();
 
   // Render targets - ping pong buffers (main render loop)
   private pingTexture: GPUTexture | null = null;
@@ -237,6 +242,20 @@ export class WebGPUEngine {
   unregisterPreviewCanvas(id: string): void {
     this.previewCanvases.delete(id);
     console.log(`[Engine] Unregistered preview canvas: ${id}`);
+  }
+
+  // Register canvas for independent composition rendering (NOT rendered by main loop)
+  registerIndependentPreviewCanvas(id: string, canvas: HTMLCanvasElement): void {
+    const context = this.context.configureCanvas(canvas);
+    if (context) {
+      this.independentPreviewCanvases.set(id, context);
+      console.log(`[Engine] Registered INDEPENDENT preview canvas: ${id}`);
+    }
+  }
+
+  unregisterIndependentPreviewCanvas(id: string): void {
+    this.independentPreviewCanvases.delete(id);
+    console.log(`[Engine] Unregistered INDEPENDENT preview canvas: ${id}`);
   }
 
   // === MASK TEXTURE MANAGEMENT ===
@@ -925,7 +944,8 @@ export class WebGPUEngine {
    */
   renderToPreviewCanvas(canvasId: string, layers: Layer[]): void {
     const device = this.context.getDevice();
-    const canvasContext = this.previewCanvases.get(canvasId);
+    // Look in INDEPENDENT canvases map (not rendered by main loop)
+    const canvasContext = this.independentPreviewCanvases.get(canvasId);
 
     if (!device || !canvasContext || !this.compositorPipeline || !this.outputPipeline || !this.sampler) {
       return;
