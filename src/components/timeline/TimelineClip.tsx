@@ -335,13 +335,17 @@ function TimelineClipComponent({
         </div>
       )}
       {/* Audio waveform */}
-      {isAudioClip && clip.waveform && clip.waveform.length > 0 && (
+      {isAudioClip && clip.waveform && clip.waveform.length > 0 ? (
         <div className="clip-waveform">
           <Waveform
             waveform={clip.waveform}
             width={width}
             height={Math.max(20, track.height - 12)}
           />
+        </div>
+      ) : isAudioClip && (
+        <div style={{ position: 'absolute', top: 4, left: 4, color: '#fff', fontSize: 9, opacity: 0.7 }}>
+          {clip.waveformGenerating ? 'Gen...' : (clip.waveform ? `w:${clip.waveform.length}` : 'no-wf')}
         </div>
       )}
       {/* Thumbnail filmstrip - only for non-audio clips */}

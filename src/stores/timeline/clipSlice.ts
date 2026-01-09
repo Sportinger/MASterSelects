@@ -5,6 +5,7 @@ import type { ClipActions, SliceCreator, Composition } from './types';
 import { useMediaStore } from '../mediaStore';
 import { DEFAULT_TRANSFORM } from './constants';
 import { generateWaveform, generateThumbnails, getDefaultEffectParams } from './utils';
+import { WebCodecsPlayer } from '../../engine/WebCodecsPlayer';
 
 export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
   addClip: async (trackId, file, startTime, providedDuration, mediaFileId) => {
@@ -105,7 +106,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
       // Always create HTMLVideoElement for thumbnails and fallback
       const video = document.createElement('video');
       video.src = URL.createObjectURL(file);
-      video.preload = 'auto';
+      video.preload = 'metadata'; // Only load metadata, not entire file (perf win for large files)
       video.muted = true;
       video.crossOrigin = 'anonymous';
 
@@ -140,6 +141,45 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
         },
         isLoading: false,
       });
+
+      // Try to initialize WebCodecsPlayer for hardware-accelerated decoding
+      const hasWebCodecs = 'VideoDecoder' in window && 'VideoFrame' in window;
+
+      if (hasWebCodecs) {
+        try {
+          console.log(`[Timeline] Initializing WebCodecsPlayer for ${file.name}...`);
+
+          const webCodecsPlayer = new WebCodecsPlayer({
+            loop: false,
+            useSimpleMode: true, // Use VideoFrame from HTMLVideoElement (more compatible)
+            onError: (error) => {
+              console.warn('[Timeline] WebCodecs error:', error.message);
+            },
+          });
+
+          // Attach to existing video element (Timeline controls playback, WebCodecs captures frames)
+          webCodecsPlayer.attachToVideoElement(video);
+          console.log(`[Timeline] WebCodecsPlayer ready for ${file.name}`);
+
+          // Update clip source with webCodecsPlayer
+          const currentClips = get().clips;
+          set({
+            clips: currentClips.map(c => {
+              if (c.id !== clipId) return c;
+              return {
+                ...c,
+                source: {
+                  ...c.source,
+                  webCodecsPlayer,
+                },
+              };
+            }),
+          });
+        } catch (err) {
+          console.warn('[Timeline] WebCodecsPlayer init failed, using HTMLVideoElement:', err);
+          // Fallback to HTMLVideoElement (already set up)
+        }
+      }
 
       // Generate thumbnails in background (non-blocking) - only if enabled
       if (get().thumbnailsEnabled) {
