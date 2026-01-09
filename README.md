@@ -1,31 +1,62 @@
-# WebVJ Mixer
+# MASterSelects
 
-A real-time GPU-accelerated video mixing application built with WebGPU. Designed for VJ performances, live visuals, and multi-layer video compositing at 60fps.
+A professional browser-based video compositor and timeline editor built with WebGPU. Designed for video editing, compositing, and multicam workflows with AI-powered tools.
 
 ## Features
 
-- **WebGPU Rendering** - Hardware-accelerated compositing via modern GPU APIs
-- **Zero-Copy Video Textures** - Direct `VideoFrame` → `GPUExternalTexture` pipeline
-- **WebCodecs Decoding** - Hardware H.264/HEVC/VP9/AV1 decoding bypassing browser limitations
-- **Multi-Layer Compositing** - Stack unlimited video/image layers with blend modes
-- **Real-time Effects** - GPU-powered effects via WGSL fragment shaders
-- **MIDI Control** - Map hardware controllers to mixer parameters
-- **Flexible Grid** - Configurable slot grid (default 5x5) with grouping support
+| Feature | Description | Docs |
+|---------|-------------|------|
+| **Multi-track Timeline** | Video and audio tracks with nested compositions | [Timeline](docs/Features/Timeline.md) |
+| **Keyframe Animation** | Bezier curve editor with 5 easing modes | [Keyframes](docs/Features/Keyframes.md) |
+| **37 Blend Modes** | All After Effects blend modes | [Effects](docs/Features/Effects.md) |
+| **9 GPU Effects** | Hue, contrast, pixelate, kaleidoscope, etc. | [Effects](docs/Features/Effects.md) |
+| **Vector Masks** | Rectangle, ellipse, pen tool with GPU feathering | [Masks](docs/Features/Masks.md) |
+| **AI Integration** | 50+ editing tools via GPT-4 | [AI Integration](docs/Features/AI-Integration.md) |
+| **10-Band EQ** | Parametric equalizer with keyframe support | [Audio](docs/Features/Audio.md) |
+| **Multicam Sync** | Audio-based cross-correlation synchronization | [Audio](docs/Features/Audio.md) |
+| **4 Transcription Providers** | Local Whisper, OpenAI, AssemblyAI, Deepgram | [AI Integration](docs/Features/AI-Integration.md) |
+| **RAM Preview** | Cached playback at 30fps | [Preview](docs/Features/Preview.md) |
+| **Video Export** | H.264/VP9 via WebCodecs | [Export](docs/Features/Export.md) |
+| **Auto-Save** | IndexedDB persistence | [Project Persistence](docs/Features/Project-Persistence.md) |
+
+**[Full Documentation](docs/Features/README.md)** | **[Keyboard Shortcuts](docs/Features/Keyboard-Shortcuts.md)**
 
 ---
 
 ## Tech Stack
 
-| Technology | Version | Purpose |
-|------------|---------|---------|
-| React | 19.2.0 | UI framework |
-| TypeScript | 5.9.3 | Type safety |
-| Vite | 7.2.4 | Build tooling & HMR |
-| Zustand | 5.0.9 | State management |
-| WebGPU | - | GPU rendering API |
-| WGSL | - | GPU shader language |
-| WebCodecs | - | Hardware video decoding |
-| mp4box.js | 2.3.0 | MP4 demuxing |
+| Technology | Purpose |
+|------------|---------|
+| React 18 + TypeScript | UI framework |
+| Vite | Build tooling & HMR |
+| Zustand | State management |
+| WebGPU + WGSL | GPU rendering (1,352 lines of shaders) |
+| WebCodecs | Hardware video decoding |
+| Web Audio API | 10-band EQ, audio sync |
+| IndexedDB | Project persistence |
+| OpenAI API | AI editing tools |
+
+---
+
+## Quick Start
+
+```bash
+npm install
+npm run dev     # http://localhost:5173
+```
+
+### Requirements
+
+- **Browser**: Chrome 113+ or Edge 113+ (WebGPU required)
+- **GPU**: Dedicated GPU recommended
+- **RAM**: 8GB minimum, 16GB recommended
+
+### Linux Users
+
+Enable Vulkan for 60fps performance:
+```
+chrome://flags/#enable-vulkan → Enabled
+```
 
 ---
 
@@ -33,335 +64,108 @@ A real-time GPU-accelerated video mixing application built with WebGPU. Designed
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                         React UI                                 │
-│  ┌──────────┐  ┌───────────┐  ┌─────────────┐  ┌──────────┐    │
-│  │ Toolbar  │  │ LayerPanel│  │EffectsPanel │  │ Preview  │    │
-│  └──────────┘  └───────────┘  └─────────────┘  └──────────┘    │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    Zustand Store (mixerStore)                    │
-│  • Layers[] with source/effects/transform                       │
-│  • Grid configuration (columns × rows)                          │
-│  • MIDI mappings                                                │
-│  • Engine state & stats                                         │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                      useEngine Hook                              │
-│  • Initializes WebGPU device                                    │
-│  • Manages render loop (requestAnimationFrame)                  │
-│  • Syncs store state to engine                                  │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                     WebGPUEngine (Singleton)                     │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐ │
-│  │ Ping-Pong       │  │ Composite       │  │ Output          │ │
-│  │ Buffers         │  │ Pipeline        │  │ Pipeline        │ │
-│  │ (rgba8unorm)    │  │ (WGSL shaders)  │  │ (to canvas)     │ │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                     WebCodecsPlayer                              │
-│  • MP4 demuxing via mp4box.js                                   │
-│  • VideoDecoder for hardware decoding                           │
-│  • Frame-accurate playback with seek                            │
-│  • Fallback to HTMLVideoElement when unsupported                │
+│                         UI Layer (React)                         │
+│  Timeline │ Preview │ Media │ Properties │ AI Chat │ Export     │
+├─────────────────────────────────────────────────────────────────┤
+│                      State Layer (Zustand)                       │
+│  timelineStore │ mediaStore │ multicamStore │ settingsStore     │
+├─────────────────────────────────────────────────────────────────┤
+│                     Engine Layer (WebGPU)                        │
+│  Compositor │ Effects │ Masks │ Textures │ Scrubbing Cache      │
+├─────────────────────────────────────────────────────────────────┤
+│                      Services Layer                              │
+│  Audio │ AI Tools │ Whisper │ Project DB │ Proxy Generator      │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Rendering Pipeline
+## Documentation
 
-### 1. Video Source Handling
+### Core Features
+- [Timeline](docs/Features/Timeline.md) - Multi-track editing, clips, snapping, compositions
+- [Keyframes](docs/Features/Keyframes.md) - Animation system with curve editor
+- [Effects](docs/Features/Effects.md) - GPU effects and 37 blend modes
+- [Masks](docs/Features/Masks.md) - Shape masks with GPU feathering
 
-```
-MP4 File
-    │
-    ├─► WebCodecs Path (preferred)
-    │   └─► mp4box.js demux → VideoDecoder → VideoFrame → GPUExternalTexture
-    │
-    └─► HTMLVideoElement Path (fallback)
-        └─► <video> element → GPUExternalTexture
-```
+### Media & Audio
+- [Media Panel](docs/Features/Media-Panel.md) - Import, folders, proxy generation
+- [Audio](docs/Features/Audio.md) - 10-band EQ, waveforms, multicam sync
+- [Preview](docs/Features/Preview.md) - RAM Preview, scrubbing, multiple outputs
 
-**Zero-copy optimization**: `GPUExternalTexture` imports video frames directly from the decoder without CPU-side copies.
+### AI & Export
+- [AI Integration](docs/Features/AI-Integration.md) - 50+ tools, transcription
+- [Export](docs/Features/Export.md) - H.264/VP9 encoding
 
-### 2. Layer Compositing (Ping-Pong)
-
-Each visible layer is composited onto the previous result:
-
-```
-[Black] ──► Composite(Layer N) ──► Ping
-                                    │
-Ping ──────► Composite(Layer N-1) ─► Pong
-                                     │
-Pong ──────► Composite(Layer N-2) ─► Ping
-                                     │
-                    ...              │
-                                     ▼
-                              Final Composite
-```
-
-### 3. Blend Modes
-
-Implemented in WGSL (`composite.wgsl`):
-
-| Mode | Formula |
-|------|---------|
-| Normal | `blend` |
-| Add | `min(base + blend, 1.0)` |
-| Multiply | `base * blend` |
-| Screen | `1 - (1 - base) * (1 - blend)` |
-| Overlay | Conditional multiply/screen |
-| Difference | `abs(base - blend)` |
-
-### 4. Effects Pipeline
-
-WGSL fragment shaders in `effects.wgsl`:
-
-- **Hue Shift** - RGB↔HSV conversion with hue rotation
-- **Color Adjust** - Brightness, contrast, saturation
-- **Pixelate** - UV quantization
-- **Kaleidoscope** - Polar coordinate segment mirroring
-- **RGB Split** - Chromatic aberration effect
-- **Mirror** - Horizontal/vertical reflection
-- **Invert** - Color negation
+### System
+- [UI & Panels](docs/Features/UI-Panels.md) - Dockable panels, layouts
+- [GPU Engine](docs/Features/GPU-Engine.md) - WebGPU rendering details
+- [Project Persistence](docs/Features/Project-Persistence.md) - Auto-save, IndexedDB
+- [Keyboard Shortcuts](docs/Features/Keyboard-Shortcuts.md) - Complete reference
 
 ---
 
-## File Structure
+## Panel System
+
+8 dockable panels with drag-and-drop arrangement:
+
+| Panel | Purpose |
+|-------|---------|
+| **Preview** | Composition output canvas |
+| **Timeline** | Multi-track editor |
+| **Media** | Media browser and folders |
+| **Properties** | Transform, Effects, Masks, Volume (unified) |
+| **Export** | Render settings and progress |
+| **Multicam** | Camera sync and EDL |
+| **AI Chat** | GPT-powered editing assistant |
+| **Slots** | Layer slot management |
+
+---
+
+## Key Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `Space` | Play/Pause |
+| `C` | Split clip at playhead |
+| `Delete` | Delete selected |
+| `I` / `O` | Set In/Out points |
+| `Ctrl+Z` | Undo |
+| `Ctrl+S` | Save project |
+
+[Full shortcut reference](docs/Features/Keyboard-Shortcuts.md)
+
+---
+
+## Development
+
+```bash
+npm run dev      # Development server
+npm run build    # Production build
+npm run lint     # ESLint check
+npm run preview  # Preview production build
+```
+
+### Project Structure
 
 ```
 src/
-├── components/
-│   ├── timeline/            # Timeline editor (modular)
-│   │   ├── Timeline.tsx     # Main orchestrator
-│   │   ├── TimelineRuler.tsx
-│   │   ├── TimelineTrack.tsx
-│   │   ├── TimelineClip.tsx
-│   │   ├── TimelineKeyframes.tsx
-│   │   ├── TimelineControls.tsx
-│   │   └── TimelineHeader.tsx
-│   ├── panels/              # Dock panel contents
-│   │   ├── MediaPanel.tsx   # Media browser
-│   │   ├── LayerPanel.tsx   # Slot grid UI
-│   │   ├── EffectsPanel.tsx # Effect controls
-│   │   └── ClipPropertiesPanel.tsx
-│   ├── preview/
-│   │   ├── Preview.tsx      # WebGPU canvas
-│   │   └── MaskOverlay.tsx  # Mask editing
-│   ├── export/
-│   │   ├── ExportDialog.tsx
-│   │   └── ExportPanel.tsx
-│   ├── common/
-│   │   └── Toolbar.tsx
-│   └── dock/                # Dockable panel system
-│
-├── engine/
-│   ├── core/                # GPU initialization
-│   │   ├── WebGPUContext.ts
-│   │   └── types.ts
-│   ├── pipeline/            # Render pipelines
-│   │   ├── CompositorPipeline.ts
-│   │   ├── EffectsPipeline.ts
-│   │   └── OutputPipeline.ts
-│   ├── texture/             # Texture management
-│   │   ├── TextureManager.ts
-│   │   ├── MaskTextureManager.ts
-│   │   └── ScrubbingCache.ts
-│   ├── video/
-│   │   ├── VideoFrameManager.ts
-│   │   └── WebCodecsPlayer.ts
-│   ├── export/
-│   │   └── FrameExporter.ts
-│   └── WebGPUEngine.ts      # Facade orchestrating modules
-│
-├── stores/
-│   ├── timeline/            # Timeline state (Zustand slices)
-│   │   ├── index.ts         # Combined store
-│   │   ├── types.ts
-│   │   ├── constants.ts
-│   │   ├── trackSlice.ts
-│   │   ├── clipSlice.ts
-│   │   ├── playbackSlice.ts
-│   │   └── keyframeSlice.ts
-│   ├── mixerStore.ts        # Layer, effect, grid state
-│   ├── mediaStore.ts        # Media browser state
-│   ├── dockStore.ts         # UI layout state
-│   └── historyStore.ts      # Undo/redo
-│
-├── shaders/
-│   ├── composite.wgsl       # Layer blending shader
-│   ├── effects.wgsl         # Effect processing shaders
-│   └── output.wgsl          # Final canvas output
-│
-├── hooks/
-│   ├── useEngine.ts         # WebGPU lifecycle
-│   ├── useGlobalHistory.ts  # Global undo/redo
-│   └── useMIDI.ts           # MIDI input handling
-│
-├── services/
-│   ├── proxyGenerator.ts    # Low-res proxy generation
-│   ├── projectDB.ts         # IndexedDB operations
-│   ├── fileSystemService.ts # File System Access API
-│   └── proxyFrameCache.ts   # Frame caching
-│
-└── types/
-    ├── index.ts             # Core type definitions
-    └── mp4box.d.ts          # MP4Box type declarations
+├── components/     # React components
+│   ├── timeline/   # Timeline editor
+│   ├── panels/     # Dock panels (Properties, Media, etc.)
+│   ├── preview/    # Preview canvas
+│   └── dock/       # Panel system
+├── stores/         # Zustand state management
+├── engine/         # WebGPU rendering
+├── shaders/        # WGSL shaders
+├── services/       # Audio, AI, persistence
+└── hooks/          # React hooks
 ```
 
----
-
-## Getting Started
-
-### Requirements
-
-- Node.js 18+
-- Browser with WebGPU support:
-  - Chrome 113+ / Edge 113+
-  - Firefox 131+ (with flags)
-- GPU with WebGPU-compatible drivers
-
-### Installation
-
-```bash
-npm install
-```
-
-### Development
-
-```bash
-npm run dev
-```
-
-Opens at `http://localhost:5173`
-
-### Production Build
-
-```bash
-npm run build
-npm run preview
-```
-
----
-
-## Browser Configuration
-
-### Chrome/Edge (Recommended)
-
-WebGPU enabled by default. Verify at `chrome://gpu`:
-- "WebGPU: Hardware accelerated"
-
-### Linux with Vulkan
-
-For optimal performance on Linux:
-
-1. Enable Vulkan: `chrome://flags/#enable-vulkan`
-2. Restart browser
-3. Verify: `chrome://gpu` shows "Vulkan: Enabled"
-
-**Without Vulkan**: Falls back to ANGLE→OpenGL, causing:
-- 60fps → 15fps drops
-- Higher CPU usage
-- vsync issues
-
-### Firefox
-
-Enable in `about:config`:
-- `dom.webgpu.enabled` = `true`
-- `gfx.webgpu.force-enabled` = `true`
-
----
-
-## Performance Characteristics
-
-| Metric | Target | Notes |
-|--------|--------|-------|
-| Frame Rate | 60fps | Hardware-accelerated path |
-| Render Time | <5ms | Per-frame GPU work |
-| Video Decode | Hardware | WebCodecs when available |
-| Memory | Minimal | Zero-copy textures |
-
-### Bottleneck Indicators
-
-| Symptom | Cause |
-|---------|-------|
-| 15fps instead of 60 | Vulkan disabled (Linux) |
-| High CPU, low GPU | Software video decoding |
-| "Device mismatch" errors | Multiple GPU instances |
-| Black preview | Texture format mismatch |
-
----
-
-## Codec Support
-
-| Codec | WebCodecs | HTMLVideo Fallback |
-|-------|-----------|-------------------|
-| H.264 (AVC) | Yes | Yes |
-| H.265 (HEVC) | Platform-dependent | Yes |
-| VP9 | Yes | Yes |
-| AV1 | Yes | Platform-dependent |
-
-**Note**: WebCodecs H.264 may not work on Linux due to VA-API issues. The app automatically falls back to HTMLVideoElement.
-
----
-
-## API Overview
-
-### Layer Structure
-
-```typescript
-interface Layer {
-  id: string;
-  name: string;
-  visible: boolean;
-  opacity: number;           // 0-1
-  blendMode: BlendMode;      // 'normal' | 'add' | 'multiply' | ...
-  source: {
-    type: 'video' | 'image';
-    videoElement?: HTMLVideoElement;
-    webCodecsPlayer?: WebCodecsPlayer;
-    imageElement?: HTMLImageElement;
-  } | null;
-  effects: Effect[];
-  position: { x: number; y: number };
-  scale: { x: number; y: number };
-  rotation: number;          // radians
-}
-```
-
-### Store Actions
-
-```typescript
-// Layer management
-addLayer(): void
-removeLayer(id: string): void
-setLayerSource(layerId: string, file: File): void
-setLayerOpacity(layerId: string, opacity: number): void
-setLayerBlendMode(layerId: string, mode: BlendMode): void
-
-// Grid operations
-triggerSlot(index: number): void    // Restart video
-triggerColumn(index: number): void  // Activate column
-triggerRow(index: number): void     // Activate row
-swapSlots(from: number, to: number): void
-
-// Effects
-addEffect(layerId: string, type: string): void
-updateEffect(layerId: string, effectId: string, params: object): void
-```
+See [CLAUDE.md](CLAUDE.md) for detailed structure and patterns.
 
 ---
 
 ## License
 
-MIT
+Proprietary
