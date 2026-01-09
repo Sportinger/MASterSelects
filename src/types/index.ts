@@ -250,6 +250,11 @@ export interface SerializableClip {
   compositionId?: string;
   // Mask support
   masks?: ClipMask[];        // Masks applied to this clip
+  // Transcript data
+  transcript?: TranscriptWord[];
+  transcriptStatus?: TranscriptStatus;
+  // Playback
+  reversed?: boolean;
 }
 
 // Serializable timeline data for composition storage

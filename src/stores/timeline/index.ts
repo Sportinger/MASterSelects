@@ -253,6 +253,11 @@ export const useTimelineStore = create<TimelineStore>()(
             compositionId: clip.compositionId,
             // Mask support
             masks: clip.masks && clip.masks.length > 0 ? clip.masks : undefined,
+            // Transcript data
+            transcript: clip.transcript && clip.transcript.length > 0 ? clip.transcript : undefined,
+            transcriptStatus: clip.transcriptStatus !== 'none' ? clip.transcriptStatus : undefined,
+            // Playback
+            reversed: clip.reversed || undefined,
           };
         });
 
@@ -476,6 +481,11 @@ export const useTimelineStore = create<TimelineStore>()(
             effects: serializedClip.effects || [],
             isLoading: true,
             masks: serializedClip.masks,  // Restore masks
+            // Restore transcript data
+            transcript: serializedClip.transcript,
+            transcriptStatus: serializedClip.transcriptStatus || 'none',
+            // Restore playback settings
+            reversed: serializedClip.reversed,
           };
 
           // Add clip to state
