@@ -178,7 +178,7 @@ function TimelineClipComponent({
 
   // Debug: log detection
   if (fileExt === 'wav' || clip.name?.includes('.wav')) {
-    console.log(`[TimelineClip] WAV detection: name="${clip.name}", source.type="${clip.source?.type}", fileExt="${fileExt}", isAudio=${isAudioClip}`);
+    console.log(`[TimelineClip] WAV: isAudio=${isAudioClip}, waveform=${clip.waveform?.length || 0}, thumbs=${thumbnails.length}, loading=${clip.isLoading}`);
   }
 
 
