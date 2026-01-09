@@ -214,14 +214,14 @@ export interface TimelineKeyframesProps {
   property: AnimatableProperty;
   clips: TimelineClip[];
   selectedKeyframeIds: Set<string>;
-  getClipKeyframes: (clipId: string) => Array<{
+  clipKeyframes: Map<string, Array<{
     id: string;
     clipId: string;
     time: number;
     property: AnimatableProperty;
     value: number;
     easing: string;
-  }>;
+  }>>;
   onSelectKeyframe: (keyframeId: string, addToSelection: boolean) => void;
   onMoveKeyframe: (keyframeId: string, newTime: number) => void;
   onUpdateKeyframe: (keyframeId: string, updates: { easing?: string }) => void;

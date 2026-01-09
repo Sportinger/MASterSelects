@@ -1,11 +1,20 @@
 // TimelineKeyframes component - Keyframe diamonds/handles with drag support
 
-import { memo, useMemo, useState, useRef, useEffect, useCallback } from 'react';
+import { memo, useMemo, useState, useEffect, useCallback } from 'react';
 import type { TimelineKeyframesProps } from './types';
-import type { EasingType } from '../../types';
+import type { EasingType, AnimatableProperty } from '../../types';
+
+interface KeyframeData {
+  id: string;
+  clipId: string;
+  time: number;
+  property: AnimatableProperty;
+  value: number;
+  easing: string;
+}
 
 interface KeyframeDisplay {
-  kf: ReturnType<TimelineKeyframesProps['getClipKeyframes']>[0];
+  kf: KeyframeData;
   clip: TimelineKeyframesProps['clips'][0];
   absTime: number;
 }
@@ -23,7 +32,7 @@ function TimelineKeyframesComponent({
   property,
   clips,
   selectedKeyframeIds,
-  getClipKeyframes,
+  clipKeyframes,
   onSelectKeyframe,
   onMoveKeyframe,
   onUpdateKeyframe,
@@ -53,21 +62,14 @@ function TimelineKeyframesComponent({
     [clips, trackId]
   );
 
-  // Get all keyframes once and group by clip/property - O(n) instead of O(n^2)
+  // Get all keyframes once and group by clip/property
+  // Now depends on clipKeyframes Map directly for proper reactivity
   const allKeyframes = useMemo(() => {
     const result: KeyframeDisplay[] = [];
-    const keyframesByClip = new Map<string, ReturnType<typeof getClipKeyframes>>();
 
-    // Pre-group keyframes by clip ID for O(1) lookups
     trackClips.forEach((clip) => {
-      const kfs = getClipKeyframes(clip.id);
-      keyframesByClip.set(clip.id, kfs);
-    });
-
-    // Now iterate with O(1) lookups
-    trackClips.forEach((clip) => {
-      const clipKeyframes = keyframesByClip.get(clip.id) || [];
-      clipKeyframes
+      const kfs = clipKeyframes.get(clip.id) || [];
+      kfs
         .filter((k) => k.property === property)
         .forEach((kf) => {
           result.push({
@@ -79,7 +81,7 @@ function TimelineKeyframesComponent({
     });
 
     return result;
-  }, [trackClips, property, getClipKeyframes]);
+  }, [trackClips, property, clipKeyframes]);
 
   // Handle keyframe drag
   const handleMouseDown = useCallback((
