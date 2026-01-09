@@ -15,6 +15,7 @@ import { TimelineHeader } from './TimelineHeader';
 import { TimelineTrack } from './TimelineTrack';
 import { TimelineClip } from './TimelineClip';
 import { TimelineKeyframes } from './TimelineKeyframes';
+import { MulticamDialog } from './MulticamDialog';
 import {
   ALL_BLEND_MODES,
   RAM_PREVIEW_IDLE_DELAY,
@@ -48,10 +49,6 @@ export function Timeline() {
     trimClip,
     removeClip,
     selectClip,
-    addClipToSelection,
-    removeClipFromSelection,
-    clearClipSelection,
-    createLinkedGroup,
     unlinkGroup,
     setPlayheadPosition,
     setZoom,
@@ -2400,6 +2397,32 @@ export function Timeline() {
                 Split at Playhead (C)
               </div>
 
+              {/* Multicam options */}
+              {selectedClipIds.size > 1 && (
+                <div
+                  className="context-menu-item"
+                  onClick={() => {
+                    setMulticamDialogOpen(true);
+                    setContextMenu(null);
+                  }}
+                >
+                  Combine Multicam ({selectedClipIds.size} clips)
+                </div>
+              )}
+              {clip?.linkedGroupId && (
+                <div
+                  className="context-menu-item"
+                  onClick={() => {
+                    if (contextMenu.clipId) {
+                      unlinkGroup(contextMenu.clipId);
+                    }
+                    setContextMenu(null);
+                  }}
+                >
+                  Unlink from Multicam
+                </div>
+              )}
+
               {isVideo && (
                 <div
                   className={`context-menu-item ${clip?.reversed ? 'checked' : ''}`}
@@ -2451,6 +2474,13 @@ export function Timeline() {
             </div>
           );
         })()}
+
+      {/* Multicam Dialog */}
+      <MulticamDialog
+        open={multicamDialogOpen}
+        onClose={() => setMulticamDialogOpen(false)}
+        selectedClipIds={selectedClipIds}
+      />
     </div>
   );
 }

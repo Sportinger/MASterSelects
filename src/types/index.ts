@@ -205,6 +205,8 @@ export interface TimelineClip {
   linkedClipId?: string;  // ID of linked clip (e.g., audio linked to video)
   linkedGroupId?: string; // ID of multicam group (clips synced together)
   waveform?: number[];    // Array of normalized amplitude values (0-1) for audio waveform
+  waveformGenerating?: boolean;  // True while waveform is being generated
+  waveformProgress?: number;     // 0-100 progress of waveform generation
   transform: ClipTransform;  // Visual transform properties
   effects: Effect[];      // Effects applied to this clip
   isLoading?: boolean;    // True while media is being loaded

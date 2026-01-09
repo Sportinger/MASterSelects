@@ -181,21 +181,37 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
         });
 
         // Generate waveform in background (non-blocking) - only if enabled
-        if (get().waveformsEnabled) {
+        if (get().waveformsEnabled && audioClipId) {
+          // Mark waveform generation starting
+          const clipsBefore = get().clips;
+          set({
+            clips: clipsBefore.map(c => c.id === audioClipId ? { ...c, waveformGenerating: true, waveformProgress: 0 } : c)
+          });
+
           (async () => {
             try {
               // Check again before expensive operation
-              if (!get().waveformsEnabled) return;
+              if (!get().waveformsEnabled) {
+                const clipsNow = get().clips;
+                set({
+                  clips: clipsNow.map(c => c.id === audioClipId ? { ...c, waveformGenerating: false } : c)
+                });
+                return;
+              }
 
               console.log(`[Waveform] Starting generation for ${file.name}...`);
               const audioWaveform = await generateWaveform(file);
               console.log(`[Waveform] Complete: ${audioWaveform.length} samples for ${file.name}`);
               const currentClips = get().clips;
               set({
-                clips: currentClips.map(c => c.id === audioClipId ? { ...c, waveform: audioWaveform } : c)
+                clips: currentClips.map(c => c.id === audioClipId ? { ...c, waveform: audioWaveform, waveformGenerating: false, waveformProgress: 100 } : c)
               });
             } catch (e) {
               console.warn('Failed to generate waveform:', e);
+              const clipsErr = get().clips;
+              set({
+                clips: clipsErr.map(c => c.id === audioClipId ? { ...c, waveformGenerating: false } : c)
+              });
             }
           })();
         }
@@ -246,25 +262,36 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
 
       const naturalDuration = audio.duration || estimatedDuration;
 
-      // Generate waveform - only if enabled
-      let waveform: number[] = [];
-      if (get().waveformsEnabled) {
-        try {
-          console.log(`[Waveform] Starting generation for ${file.name}...`);
-          waveform = await generateWaveform(file);
-          console.log(`[Waveform] Complete: ${waveform.length} samples for ${file.name}`);
-        } catch (e) {
-          console.warn('[Waveform] Failed:', e);
-        }
-      }
-
+      // Mark clip as ready first (waveform will load in background)
       updateClip(clipId, {
         duration: naturalDuration,
         outPoint: naturalDuration,
         source: { type: 'audio', audioElement: audio, naturalDuration },
-        waveform,
         isLoading: false,
+        waveformGenerating: get().waveformsEnabled,
+        waveformProgress: 0,
       });
+
+      // Generate waveform in background - only if enabled
+      if (get().waveformsEnabled) {
+        (async () => {
+          try {
+            console.log(`[Waveform] Starting generation for ${file.name}...`);
+            const waveform = await generateWaveform(file);
+            console.log(`[Waveform] Complete: ${waveform.length} samples for ${file.name}`);
+            updateClip(clipId, {
+              waveform,
+              waveformGenerating: false,
+              waveformProgress: 100,
+            });
+          } catch (e) {
+            console.warn('[Waveform] Failed:', e);
+            updateClip(clipId, {
+              waveformGenerating: false,
+            });
+          }
+        })();
+      }
 
       // Sync to media store
       const mediaStore = useMediaStore.getState();

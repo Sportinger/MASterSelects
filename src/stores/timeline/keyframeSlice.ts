@@ -288,7 +288,7 @@ export const createKeyframeSlice: SliceCreator<KeyframeActions> = (set, get) => 
 
   // Calculate expanded track height based on visible property rows
   getExpandedTrackHeight: (trackId, baseHeight) => {
-    const { expandedTracks, expandedTrackPropertyGroups, clips, selectedClipId, clipKeyframes } = get();
+    const { expandedTracks, expandedTrackPropertyGroups, clips, selectedClipIds, clipKeyframes } = get();
 
     if (!expandedTracks.has(trackId)) {
       return baseHeight;
@@ -296,7 +296,7 @@ export const createKeyframeSlice: SliceCreator<KeyframeActions> = (set, get) => 
 
     // Get the selected clip in this track
     const trackClips = clips.filter(c => c.trackId === trackId);
-    const selectedTrackClip = trackClips.find(c => c.id === selectedClipId);
+    const selectedTrackClip = trackClips.find(c => selectedClipIds.has(c.id));
 
     // If no clip is selected in this track, no property rows
     if (!selectedTrackClip) {

@@ -114,7 +114,6 @@ export function TranscriptPanel() {
     return localStorage.getItem('transcriptLanguage') || 'de';
   });
   const containerRef = useRef<HTMLDivElement>(null);
-  const activeWordRef = useRef<HTMLSpanElement | null>(null);
 
   // Timeline store
   const {

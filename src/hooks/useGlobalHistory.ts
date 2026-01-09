@@ -73,7 +73,7 @@ export function useGlobalHistory() {
       (state) => ({
         clips: state.clips,
         tracks: state.tracks,
-        selectedClipId: state.selectedClipId,
+        selectedClipIds: state.selectedClipIds,
       }),
       (curr, prev) => {
         // Check if this is during undo/redo
@@ -88,7 +88,7 @@ export function useGlobalHistory() {
           }
         } else if (curr.tracks !== prev.tracks) {
           debouncedCapture('Modify track');
-        } else if (curr.selectedClipId !== prev.selectedClipId) {
+        } else if (curr.selectedClipIds !== prev.selectedClipIds) {
           // Selection changes are not captured as separate undo steps
         }
       },

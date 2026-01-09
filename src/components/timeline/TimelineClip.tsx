@@ -1,9 +1,9 @@
 // TimelineClip component - Clip rendering within tracks
 
-import { memo, useRef, useEffect, useMemo } from 'react';
+import { memo, useRef, useEffect } from 'react';
 import type { TimelineClipProps } from './types';
 import { THUMB_WIDTH } from './constants';
-import type { TranscriptWord, ClipAnalysis } from '../../types';
+import type { ClipAnalysis } from '../../types';
 
 // Render waveform for audio clips using canvas for better performance
 const Waveform = memo(function Waveform({
@@ -294,6 +294,12 @@ function TimelineClipComponent({
       {clip.reversed && (
         <div className="clip-reversed-badge" title="Reversed playback">
           {'\u27F2'}
+        </div>
+      )}
+      {/* Linked group indicator */}
+      {isInLinkedGroup && (
+        <div className="clip-linked-group-badge" title="Multicam linked group">
+          {'\u26D3'}
         </div>
       )}
       {/* Audio waveform */}
