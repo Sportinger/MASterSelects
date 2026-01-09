@@ -34,8 +34,11 @@ const DEFAULT_LAYOUT: DockLayout = {
           {
             kind: 'tab-group',
             id: 'preview-group',
-            panels: [{ id: 'preview', type: 'preview', title: 'Preview' }],
-            activeIndex: 0,
+            panels: [
+              { id: 'ai-chat', type: 'ai-chat', title: 'AI Chat' },
+              { id: 'preview', type: 'preview', title: 'Preview' },
+            ],
+            activeIndex: 1, // Default to Preview tab
           },
           {
             kind: 'tab-group',
