@@ -195,9 +195,10 @@ export async function transcribeClip(clipId: string, language: string = 'de'): P
 
       try {
         // English-only models don't support language/task parameters
+        // Use chunk-level timestamps (word-level requires cross-attention outputs)
         const isEnglishOnly = language === 'en';
         const result = await model(segmentData, {
-          return_timestamps: 'word',
+          return_timestamps: true,
           chunk_length_s: 30,
           stride_length_s: 5,
           ...(isEnglishOnly ? {} : { language, task: 'transcribe' }),
