@@ -1546,7 +1546,6 @@ input[type="checkbox"] {
   flex: 1;
   overflow-x: hidden;
   overflow-y: auto;
-  position: relative;
 }
 
 /* Sticky header row - spans full width */
@@ -2160,7 +2159,7 @@ input[type="checkbox"] {
 /* Playhead */
 .playhead {
   position: absolute;
-  top: 0;
+  top: -30px; /* Extend into header row */
   bottom: 0;
   width: 2px;
   z-index: 100;
