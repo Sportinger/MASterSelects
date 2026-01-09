@@ -1,9 +1,14 @@
 // Unified Properties Panel - Transform, Effects, Masks in one panel with sub-tabs
+// Also handles Audio clips with Volume and EQ
 
-import { useRef, useCallback, useState } from 'react';
+import { useRef, useCallback, useState, useEffect } from 'react';
 import { useTimelineStore } from '../../stores/timeline';
 import type { BlendMode, AnimatableProperty, MaskMode, ClipMask, EffectType } from '../../types';
 import { createEffectProperty } from '../../types';
+import { EQ_FREQUENCIES } from '../../services/audioManager';
+
+// EQ band parameter names
+const EQ_BAND_PARAMS = ['band31', 'band62', 'band125', 'band250', 'band500', 'band1k', 'band2k', 'band4k', 'band8k', 'band16k'];
 
 // ============================================
 // SHARED COMPONENTS
@@ -200,7 +205,7 @@ function DraggableNumber({ value, onChange, defaultValue, sensitivity = 2, decim
 // ============================================
 // TAB TYPE
 // ============================================
-type PropertiesTab = 'transform' | 'effects' | 'masks';
+type PropertiesTab = 'transform' | 'effects' | 'masks' | 'volume';
 
 // ============================================
 // TRANSFORM TAB
@@ -315,6 +320,109 @@ function TransformTab({ clipId, transform }: TransformTabProps) {
             position: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1 }, rotation: { x: 0, y: 0, z: 0 },
           });
         }}>Reset All</button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// VOLUME TAB (Audio Clips)
+// ============================================
+interface VolumeTabProps {
+  clipId: string;
+  effects: Array<{ id: string; name: string; type: string; params: Record<string, number | boolean | string> }>;
+}
+
+function VolumeTab({ clipId, effects }: VolumeTabProps) {
+  const { setPropertyValue, getInterpolatedEffects, playheadPosition, clips, addClipEffect } = useTimelineStore();
+  const clip = clips.find(c => c.id === clipId);
+  const clipLocalTime = clip ? playheadPosition - clip.startTime : 0;
+  const interpolatedEffects = getInterpolatedEffects(clipId, clipLocalTime);
+
+  // Auto-add audio effects if they don't exist
+  useEffect(() => {
+    const hasVolumeEffect = effects.some(e => e.type === 'audio-volume');
+    const hasEQEffect = effects.some(e => e.type === 'audio-eq');
+    if (!hasVolumeEffect) addClipEffect(clipId, 'audio-volume');
+    if (!hasEQEffect) addClipEffect(clipId, 'audio-eq');
+  }, [clipId, effects, addClipEffect]);
+
+  // Get current values
+  const volumeEffect = interpolatedEffects.find(e => e.type === 'audio-volume');
+  const eqEffect = interpolatedEffects.find(e => e.type === 'audio-eq');
+  const volume = (volumeEffect?.params?.volume as number) ?? 1;
+  const eqBands = EQ_BAND_PARAMS.map(param => (eqEffect?.params?.[param] as number) ?? 0);
+
+  const formatFreq = (freq: number) => freq >= 1000 ? `${freq / 1000}k` : `${freq}`;
+
+  const handleVolumeChange = (value: number) => {
+    if (!volumeEffect) return;
+    const property = createEffectProperty(volumeEffect.id, 'volume');
+    setPropertyValue(clipId, property, value);
+  };
+
+  const handleEQChange = (bandIndex: number, value: number) => {
+    if (!eqEffect) return;
+    const property = createEffectProperty(eqEffect.id, EQ_BAND_PARAMS[bandIndex]);
+    setPropertyValue(clipId, property, value);
+  };
+
+  const handleResetEQ = () => {
+    if (!eqEffect) return;
+    EQ_BAND_PARAMS.forEach(param => {
+      const property = createEffectProperty(eqEffect.id, param);
+      setPropertyValue(clipId, property, 0);
+    });
+  };
+
+  return (
+    <div className="properties-tab-content volume-tab">
+      {/* Volume Section */}
+      <div className="properties-section">
+        <div className="section-header-row">
+          <h4>Volume</h4>
+          {volumeEffect && (
+            <EffectKeyframeToggle clipId={clipId} effectId={volumeEffect.id} paramName="volume" value={volume} />
+          )}
+        </div>
+        <div className="control-row">
+          <input type="range" min="0" max="2" step="0.01" value={volume}
+            onChange={(e) => handleVolumeChange(parseFloat(e.target.value))} />
+          <span className="value">{Math.round(volume * 100)}%</span>
+        </div>
+      </div>
+
+      {/* 10-Band EQ Section */}
+      <div className="properties-section eq-section">
+        <div className="section-header-row">
+          <h4>10-Band Equalizer</h4>
+          <button className="btn btn-sm" onClick={handleResetEQ}>Reset</button>
+        </div>
+
+        <div className="eq-bands">
+          {EQ_FREQUENCIES.map((freq, index) => (
+            <div key={freq} className="eq-band">
+              <div className="eq-band-kf">
+                {eqEffect && (
+                  <EffectKeyframeToggle clipId={clipId} effectId={eqEffect.id} paramName={EQ_BAND_PARAMS[index]} value={eqBands[index]} />
+                )}
+              </div>
+              <div className="eq-band-value">
+                {eqBands[index] > 0 ? '+' : ''}{eqBands[index].toFixed(1)}
+              </div>
+              <input type="range" className="eq-slider" min="-12" max="12" step="0.5"
+                value={eqBands[index]} onChange={(e) => handleEQChange(index, parseFloat(e.target.value))}
+                title={`${formatFreq(freq)}Hz: ${eqBands[index].toFixed(1)}dB`} />
+              <div className="eq-band-label">{formatFreq(freq)}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="eq-scale">
+          <span>+12dB</span>
+          <span>0dB</span>
+          <span>-12dB</span>
+        </div>
       </div>
     </div>
   );
@@ -668,11 +776,29 @@ function MasksTab({ clipId, masks }: MasksTabProps) {
 // MAIN PANEL
 // ============================================
 export function PropertiesPanel() {
-  const { clips, selectedClipIds, playheadPosition, getInterpolatedTransform } = useTimelineStore();
+  const { clips, tracks, selectedClipIds, playheadPosition, getInterpolatedTransform } = useTimelineStore();
   const [activeTab, setActiveTab] = useState<PropertiesTab>('transform');
+  const [lastClipId, setLastClipId] = useState<string | null>(null);
 
   const selectedClipId = selectedClipIds.size > 0 ? [...selectedClipIds][0] : null;
   const selectedClip = clips.find(c => c.id === selectedClipId);
+
+  // Check if it's an audio clip
+  const selectedTrack = selectedClip ? tracks.find(t => t.id === selectedClip.trackId) : null;
+  const isAudioClip = selectedTrack?.type === 'audio';
+
+  // Reset tab when switching between audio/video clips
+  useEffect(() => {
+    if (selectedClipId && selectedClipId !== lastClipId) {
+      setLastClipId(selectedClipId);
+      // Set appropriate default tab based on clip type
+      if (isAudioClip && (activeTab === 'transform' || activeTab === 'masks')) {
+        setActiveTab('volume');
+      } else if (!isAudioClip && activeTab === 'volume') {
+        setActiveTab('transform');
+      }
+    }
+  }, [selectedClipId, isAudioClip, lastClipId, activeTab]);
 
   if (!selectedClip) {
     return (
@@ -686,26 +812,42 @@ export function PropertiesPanel() {
   const clipLocalTime = playheadPosition - selectedClip.startTime;
   const transform = getInterpolatedTransform(selectedClip.id, clipLocalTime);
 
+  // Count non-audio effects for badge
+  const visualEffects = (selectedClip.effects || []).filter(e => e.type !== 'audio-volume' && e.type !== 'audio-eq');
+
   return (
     <div className="properties-panel">
       <div className="panel-header">
         <h3>{selectedClip.name}</h3>
+        <span className="clip-type-badge">{isAudioClip ? 'Audio' : 'Video'}</span>
       </div>
 
       <div className="properties-tabs">
-        <button className={`tab-btn ${activeTab === 'transform' ? 'active' : ''}`} onClick={() => setActiveTab('transform')}>Transform</button>
-        <button className={`tab-btn ${activeTab === 'effects' ? 'active' : ''}`} onClick={() => setActiveTab('effects')}>
-          Effects {selectedClip.effects && selectedClip.effects.length > 0 && <span className="badge">{selectedClip.effects.length}</span>}
-        </button>
-        <button className={`tab-btn ${activeTab === 'masks' ? 'active' : ''}`} onClick={() => setActiveTab('masks')}>
-          Masks {selectedClip.masks && selectedClip.masks.length > 0 && <span className="badge">{selectedClip.masks.length}</span>}
-        </button>
+        {isAudioClip ? (
+          <>
+            <button className={`tab-btn ${activeTab === 'volume' ? 'active' : ''}`} onClick={() => setActiveTab('volume')}>Volume</button>
+            <button className={`tab-btn ${activeTab === 'effects' ? 'active' : ''}`} onClick={() => setActiveTab('effects')}>
+              Effects {visualEffects.length > 0 && <span className="badge">{visualEffects.length}</span>}
+            </button>
+          </>
+        ) : (
+          <>
+            <button className={`tab-btn ${activeTab === 'transform' ? 'active' : ''}`} onClick={() => setActiveTab('transform')}>Transform</button>
+            <button className={`tab-btn ${activeTab === 'effects' ? 'active' : ''}`} onClick={() => setActiveTab('effects')}>
+              Effects {visualEffects.length > 0 && <span className="badge">{visualEffects.length}</span>}
+            </button>
+            <button className={`tab-btn ${activeTab === 'masks' ? 'active' : ''}`} onClick={() => setActiveTab('masks')}>
+              Masks {selectedClip.masks && selectedClip.masks.length > 0 && <span className="badge">{selectedClip.masks.length}</span>}
+            </button>
+          </>
+        )}
       </div>
 
       <div className="properties-content">
-        {activeTab === 'transform' && <TransformTab clipId={selectedClip.id} transform={transform} />}
+        {activeTab === 'transform' && !isAudioClip && <TransformTab clipId={selectedClip.id} transform={transform} />}
+        {activeTab === 'volume' && isAudioClip && <VolumeTab clipId={selectedClip.id} effects={selectedClip.effects || []} />}
         {activeTab === 'effects' && <EffectsTab clipId={selectedClip.id} effects={selectedClip.effects || []} />}
-        {activeTab === 'masks' && <MasksTab clipId={selectedClip.id} masks={selectedClip.masks} />}
+        {activeTab === 'masks' && !isAudioClip && <MasksTab clipId={selectedClip.id} masks={selectedClip.masks} />}
       </div>
     </div>
   );

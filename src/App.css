@@ -1537,6 +1537,96 @@ input, textarea {
   margin-bottom: 8px;
 }
 
+/* Clip type badge in header */
+.properties-panel .panel-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.clip-type-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Volume Tab (Audio) */
+.volume-tab .section-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.volume-tab .section-header-row h4 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+}
+
+/* EQ Section */
+.eq-section {
+  padding-bottom: 16px;
+}
+
+.eq-bands {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.eq-band {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.eq-band-kf {
+  height: 20px;
+  display: flex;
+  align-items: center;
+}
+
+.eq-band-value {
+  font-size: 9px;
+  font-family: 'SF Mono', monospace;
+  color: var(--text-secondary);
+  text-align: center;
+  min-width: 28px;
+}
+
+.eq-slider {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  height: 100px;
+  width: 18px;
+  margin: 0;
+  cursor: pointer;
+}
+
+.eq-band-label {
+  font-size: 9px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.eq-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  color: var(--text-secondary);
+  padding: 0 4px;
+}
+
 /* Buttons */
 .btn {
   padding: 6px 12px;
