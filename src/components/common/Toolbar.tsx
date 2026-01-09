@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useEngine } from '../../hooks/useEngine';
 import { useMixerStore } from '../../stores/mixerStore';
 import { useDockStore } from '../../stores/dockStore';
+import { PANEL_CONFIGS, type PanelType } from '../../types/dock';
 import { useMediaStore } from '../../stores/mediaStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useMIDI } from '../../hooks/useMIDI';
@@ -22,7 +23,7 @@ export function Toolbar() {
       setPlaying(true);
     }
   }, [isEngineReady, setPlaying]);
-  const { resetLayout } = useDockStore();
+  const { resetLayout, isPanelTypeVisible, togglePanelType } = useDockStore();
   const {
     currentProjectName,
     setProjectName,
@@ -254,7 +255,26 @@ export function Toolbar() {
             View
           </button>
           {openMenu === 'view' && (
-            <div className="menu-dropdown">
+            <div className="menu-dropdown menu-dropdown-wide">
+              <div className="menu-submenu">
+                <span className="menu-label">Panels</span>
+                {(Object.keys(PANEL_CONFIGS) as PanelType[])
+                  .filter(type => type !== 'slots') // Hide slots panel
+                  .map((type) => {
+                    const config = PANEL_CONFIGS[type];
+                    const isVisible = isPanelTypeVisible(type);
+                    return (
+                      <button
+                        key={type}
+                        className={`menu-option ${isVisible ? 'checked' : ''}`}
+                        onClick={() => togglePanelType(type)}
+                      >
+                        <span>{isVisible ? '✓ ' : '   '}{config.title}</span>
+                      </button>
+                    );
+                  })}
+              </div>
+              <div className="menu-separator" />
               <button className="menu-option" onClick={handleNewOutput} disabled={!isEngineReady}>
                 <span>New Output Window</span>
               </button>

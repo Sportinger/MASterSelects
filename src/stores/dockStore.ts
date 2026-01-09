@@ -9,7 +9,10 @@ import type {
   DockDragState,
   DropTarget,
   FloatingPanel,
+  PanelType,
+  DockTabGroup,
 } from '../types/dock';
+import { PANEL_CONFIGS } from '../types/dock';
 import {
   removePanel,
   insertPanelAtTarget,
@@ -120,6 +123,13 @@ interface DockState {
   // Panel zoom
   setPanelZoom: (panelId: string, zoom: number) => void;
   getPanelZoom: (panelId: string) => number;
+
+  // Panel visibility
+  getVisiblePanelTypes: () => PanelType[];
+  isPanelTypeVisible: (type: PanelType) => boolean;
+  togglePanelType: (type: PanelType) => void;
+  showPanelType: (type: PanelType) => void;
+  hidePanelType: (type: PanelType) => void;
 
   // Layout management
   resetLayout: () => void;
@@ -321,6 +331,90 @@ export const useDockStore = create<DockState>()(
           return get().layout.panelZoom[panelId] ?? 1.0;
         },
 
+        getVisiblePanelTypes: () => {
+          const { layout } = get();
+          const types: PanelType[] = [];
+          collectPanelTypes(layout.root, types);
+          // Also check floating panels
+          layout.floatingPanels.forEach((f) => {
+            if (!types.includes(f.panel.type)) {
+              types.push(f.panel.type);
+            }
+          });
+          return types;
+        },
+
+        isPanelTypeVisible: (type) => {
+          return get().getVisiblePanelTypes().includes(type);
+        },
+
+        togglePanelType: (type) => {
+          const { isPanelTypeVisible, showPanelType, hidePanelType } = get();
+          if (isPanelTypeVisible(type)) {
+            hidePanelType(type);
+          } else {
+            showPanelType(type);
+          }
+        },
+
+        showPanelType: (type) => {
+          const { layout, isPanelTypeVisible } = get();
+          if (isPanelTypeVisible(type)) return; // Already visible
+
+          const config = PANEL_CONFIGS[type];
+          const newPanel: DockPanel = {
+            id: type,
+            type,
+            title: config.title,
+          };
+
+          // Find the right-group to add to, or create a new floating panel
+          const rightGroup = findTabGroupById(layout.root, 'right-group');
+          if (rightGroup) {
+            const newLayout = insertPanelAtTarget(layout, newPanel, {
+              groupId: 'right-group',
+              position: 'center',
+            });
+            set({ layout: newLayout });
+          } else {
+            // Fallback: find any tab group
+            const anyGroup = findFirstTabGroup(layout.root);
+            if (anyGroup) {
+              const newLayout = insertPanelAtTarget(layout, newPanel, {
+                groupId: anyGroup.id,
+                position: 'center',
+              });
+              set({ layout: newLayout });
+            }
+          }
+        },
+
+        hidePanelType: (type) => {
+          const { layout } = get();
+
+          // Find and remove the panel from the layout
+          const result = findPanelAndGroup(layout.root, type);
+          if (result) {
+            let newLayout = removePanel(layout, result.panel.id, result.groupId);
+            newLayout = {
+              ...newLayout,
+              root: collapseSingleChildSplits(newLayout.root),
+            };
+            set({ layout: newLayout });
+          }
+
+          // Also check floating panels
+          const floatingIndex = layout.floatingPanels.findIndex((f) => f.panel.type === type);
+          if (floatingIndex >= 0) {
+            set({
+              layout: {
+                ...layout,
+                floatingPanels: layout.floatingPanels.filter((_, i) => i !== floatingIndex),
+              },
+            });
+          }
+        },
+
         resetLayout: () => {
           set({ layout: DEFAULT_LAYOUT, maxZIndex: 1000 });
         },
@@ -384,4 +478,55 @@ function findPanelInNode(node: DockNode, panelId: string): DockPanel | null {
   const left = findPanelInNode(node.children[0], panelId);
   if (left) return left;
   return findPanelInNode(node.children[1], panelId);
+}
+
+// Helper: Collect all panel types in a node
+function collectPanelTypes(node: DockNode, types: PanelType[]): void {
+  if (node.kind === 'tab-group') {
+    node.panels.forEach((p) => {
+      if (!types.includes(p.type)) {
+        types.push(p.type);
+      }
+    });
+  } else {
+    collectPanelTypes(node.children[0], types);
+    collectPanelTypes(node.children[1], types);
+  }
+}
+
+// Helper: Find a tab group by ID
+function findTabGroupById(node: DockNode, groupId: string): DockTabGroup | null {
+  if (node.kind === 'tab-group') {
+    return node.id === groupId ? node : null;
+  }
+  const left = findTabGroupById(node.children[0], groupId);
+  if (left) return left;
+  return findTabGroupById(node.children[1], groupId);
+}
+
+// Helper: Find the first tab group in the tree
+function findFirstTabGroup(node: DockNode): DockTabGroup | null {
+  if (node.kind === 'tab-group') {
+    return node;
+  }
+  const left = findFirstTabGroup(node.children[0]);
+  if (left) return left;
+  return findFirstTabGroup(node.children[1]);
+}
+
+// Helper: Find a panel and its group by panel type
+function findPanelAndGroup(
+  node: DockNode,
+  panelType: PanelType
+): { panel: DockPanel; groupId: string } | null {
+  if (node.kind === 'tab-group') {
+    const panel = node.panels.find((p) => p.type === panelType);
+    if (panel) {
+      return { panel, groupId: node.id };
+    }
+    return null;
+  }
+  const left = findPanelAndGroup(node.children[0], panelType);
+  if (left) return left;
+  return findPanelAndGroup(node.children[1], panelType);
 }
