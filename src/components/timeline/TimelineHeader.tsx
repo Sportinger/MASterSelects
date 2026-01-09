@@ -111,18 +111,28 @@ function PropertyRow({
   // Check if there's a keyframe at current time
   const hasKeyframeAtPlayhead = propKeyframes.some(kf => Math.abs(kf.time - clipLocalTime) < 0.01);
 
-  // Handle value scrubbing (right-click drag)
+  // Get base sensitivity based on property type
+  const getBaseSensitivity = () => {
+    if (prop === 'opacity') return 0.005; // 0-1 range
+    if (prop.startsWith('scale')) return 0.005; // typically 0-2 range
+    if (prop.startsWith('rotation')) return 0.5; // degrees
+    if (prop.startsWith('position')) return 1; // pixels
+    return 0.1;
+  };
+
+  // Handle value scrubbing (left-click drag)
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button !== 2) return; // Right click only
+    if (e.button !== 0) return; // Left click only
     e.preventDefault();
+    e.stopPropagation();
     setIsDragging(true);
     dragStart.current = { y: e.clientY, value: currentValue };
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
       const deltaY = dragStart.current.y - moveEvent.clientY;
-      let sensitivity = 0.01;
-      if (moveEvent.shiftKey && moveEvent.altKey) sensitivity = 0.001; // Slow mode
-      else if (moveEvent.shiftKey) sensitivity = 0.1; // Fast mode
+      let sensitivity = getBaseSensitivity();
+      if (moveEvent.shiftKey && moveEvent.altKey) sensitivity *= 0.1; // Slow mode
+      else if (moveEvent.shiftKey) sensitivity *= 10; // Fast mode
 
       const newValue = dragStart.current.value + deltaY * sensitivity;
       setPropertyValue(clipId, prop as AnimatableProperty, newValue);
@@ -188,7 +198,7 @@ function PropertyRow({
         className="property-value"
         onMouseDown={handleMouseDown}
         onContextMenu={(e) => e.preventDefault()}
-        title="Right-drag to scrub (Shift+Alt for slow)"
+        title="Drag to scrub (Shift+Alt for slow)"
       >
         {isWithinClip ? formatValue(currentValue, prop) : '—'}
       </span>
