@@ -170,6 +170,9 @@
 .message-content {
   font-size: 13px;
   line-height: 1.5;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
 }
 
 .message-content p {
@@ -336,6 +339,8 @@
   color: var(--text-secondary);
   font-family: monospace;
   word-break: break-all;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /* Tool Result Messages */
@@ -378,6 +383,9 @@
   overflow-y: auto;
   white-space: pre-wrap;
   word-break: break-word;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
 }
 
 /* Tool Action Indicator */

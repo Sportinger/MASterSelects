@@ -206,7 +206,8 @@ export interface TimelineUtils {
   getSnappedPosition: (clipId: string, desiredStartTime: number, trackId: string) => { startTime: number; snapped: boolean };
   findNonOverlappingPosition: (clipId: string, desiredStartTime: number, trackId: string, duration: number) => number;
   // Get position with magnetic resistance at clip edges - returns adjusted position and whether user has "broken through"
-  getPositionWithResistance: (clipId: string, desiredStartTime: number, trackId: string, duration: number) => { startTime: number; forcingOverlap: boolean };
+  // Uses pixel-based resistance (zoom converts time distance to pixels)
+  getPositionWithResistance: (clipId: string, desiredStartTime: number, trackId: string, duration: number, zoom?: number) => { startTime: number; forcingOverlap: boolean };
   // Trim any clips that the placed clip overlaps with
   trimOverlappingClips: (clipId: string, startTime: number, trackId: string, duration: number) => void;
   getSerializableState: () => CompositionTimelineData;

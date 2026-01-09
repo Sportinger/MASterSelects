@@ -22,8 +22,9 @@ export const DEFAULT_TRACKS: TimelineTrack[] = [
 export const SNAP_THRESHOLD_SECONDS = 0.1;
 
 // Resistance threshold - how far past a clip edge the user must drag to "break through"
-// and be allowed to overlap (in seconds). Higher = harder to overlap.
-export const OVERLAP_RESISTANCE_SECONDS = 2.0;
+// and be allowed to overlap (in PIXELS). Higher = harder to overlap.
+// 100 pixels means user must drag about 2 inches on screen to force an overlap.
+export const OVERLAP_RESISTANCE_PIXELS = 100;
 
 // Property row heights for expanded tracks
 export const PROPERTY_ROW_HEIGHT = 18;

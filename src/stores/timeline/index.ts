@@ -5,7 +5,7 @@ import { subscribeWithSelector } from 'zustand/middleware';
 
 import type { TimelineStore, TimelineUtils, TimelineClip, Keyframe, CompositionTimelineData } from './types';
 import type { SerializableClip } from '../../types';
-import { DEFAULT_TRACKS, SNAP_THRESHOLD_SECONDS, OVERLAP_RESISTANCE_SECONDS } from './constants';
+import { DEFAULT_TRACKS, SNAP_THRESHOLD_SECONDS, OVERLAP_RESISTANCE_PIXELS } from './constants';
 import { useMediaStore } from '../mediaStore';
 import { useMixerStore } from '../mixerStore';
 
@@ -220,10 +220,11 @@ export const useTimelineStore = create<TimelineStore>()(
 
       // Apply magnetic resistance at clip edges during drag
       // Returns position with resistance applied, and whether user has "broken through" to force overlap
-      getPositionWithResistance: (clipId: string, desiredStartTime: number, trackId: string, duration: number) => {
-        const { clips } = get();
+      // Uses PIXEL-based resistance so it works regardless of clip duration
+      getPositionWithResistance: (clipId: string, desiredStartTime: number, trackId: string, duration: number, zoom?: number) => {
+        const { clips, zoom: storeZoom } = get();
+        const currentZoom = zoom ?? storeZoom;
         const movingClip = clips.find(c => c.id === clipId);
-        const originalStartTime = movingClip?.startTime ?? desiredStartTime;
 
         // Get other clips on the TARGET track (excluding the moving clip and its linked clip)
         const otherClips = clips.filter(c =>
@@ -260,23 +261,16 @@ export const useTimelineStore = create<TimelineStore>()(
 
         // Choose the closer snap position
         const snapToPosition = distToSnapBefore < distToSnapAfter ? snapBeforePosition : snapAfterPosition;
-        const distToSnap = Math.min(distToSnapBefore, distToSnapAfter);
+        const distToSnapTime = Math.min(distToSnapBefore, distToSnapAfter);
 
-        console.log('[Resistance] Overlap!', {
-          clip: movingClip?.name,
-          with: overlappingClip.name,
-          snapTo: snapToPosition.toFixed(2),
-          distToSnap: distToSnap.toFixed(2),
-          threshold: OVERLAP_RESISTANCE_SECONDS,
-        });
+        // Convert time distance to PIXELS using current zoom level
+        const distToSnapPixels = distToSnapTime * currentZoom;
 
-        // If the user hasn't dragged far enough past the snap point, resist (snap back)
-        if (distToSnap < OVERLAP_RESISTANCE_SECONDS) {
-          console.log('[Resistance] RESISTING! Snapping to:', snapToPosition.toFixed(2));
+        // If the user hasn't dragged far enough past the snap point (in pixels), resist (snap back)
+        if (distToSnapPixels < OVERLAP_RESISTANCE_PIXELS) {
           return { startTime: Math.max(0, snapToPosition), forcingOverlap: false };
         } else {
           // User has pushed through the resistance - allow overlap
-          console.log('[Resistance] BREAKTHROUGH! Allowing overlap');
           return { startTime: Math.max(0, desiredStartTime), forcingOverlap: true };
         }
       },
