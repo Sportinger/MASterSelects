@@ -249,53 +249,49 @@ export const useTimelineStore = create<TimelineStore>()(
           return { startTime: Math.max(0, desiredStartTime), forcingOverlap: false };
         }
 
+        // There's an overlap - apply resistance based on nearest edge
+        const overlappingEnd = overlappingClip.startTime + overlappingClip.duration;
+
+        // Calculate distance to each edge of the overlapping clip
+        const distToLeftEdge = Math.abs(desiredEndTime - overlappingClip.startTime);
+        const distToRightEdge = Math.abs(desiredStartTime - overlappingEnd);
+
+        // Find which edge is closer and use that for resistance
+        const nearestEdgeIsLeft = distToLeftEdge < distToRightEdge;
+
         console.log('[Resistance] Overlap detected!', {
           movingClip: movingClip?.name,
           overlappingWith: overlappingClip.name,
-          trackId,
-          desiredStartTime,
-          overlappingClipStart: overlappingClip.startTime,
-          overlappingClipEnd: overlappingClip.startTime + overlappingClip.duration,
+          nearestEdge: nearestEdgeIsLeft ? 'LEFT' : 'RIGHT',
+          distToLeftEdge,
+          distToRightEdge,
+          threshold: OVERLAP_RESISTANCE_SECONDS,
         });
 
-        // There's an overlap - apply resistance
-        const overlappingEnd = overlappingClip.startTime + overlappingClip.duration;
-
-        // Check which edge is closer and calculate resistance
-        const distToStart = desiredEndTime - overlappingClip.startTime; // How far into the clip from left
-        const distToEnd = overlappingEnd - desiredStartTime; // How far into the clip from right
-
-        // Determine if user is trying to enter from left or right
-        const enteringFromLeft = distToStart < distToEnd;
-
-        if (enteringFromLeft) {
-          // User approaching from left - their clip end is past the other clip's start
-          const penetrationDepth = desiredEndTime - overlappingClip.startTime;
-          console.log('[Resistance] From LEFT, penetration:', penetrationDepth, 'threshold:', OVERLAP_RESISTANCE_SECONDS);
-
-          if (penetrationDepth < OVERLAP_RESISTANCE_SECONDS) {
-            // Within resistance zone - snap to edge (clip end at other clip's start)
+        if (nearestEdgeIsLeft) {
+          // Nearest edge is the left (start) of the overlapping clip
+          // User's clip end is overlapping with the start of the other clip
+          if (distToLeftEdge < OVERLAP_RESISTANCE_SECONDS) {
+            // Within resistance zone - snap clip end to other clip's start
             const snappedStart = Math.max(0, overlappingClip.startTime - duration);
-            console.log('[Resistance] RESISTING! Snapping to:', snappedStart);
+            console.log('[Resistance] RESISTING at LEFT edge! Snapping to:', snappedStart);
             return { startTime: snappedStart, forcingOverlap: false };
           } else {
             // User has broken through resistance - allow overlap
-            console.log('[Resistance] BREAKTHROUGH! Allowing overlap');
+            console.log('[Resistance] BREAKTHROUGH at LEFT edge!');
             return { startTime: Math.max(0, desiredStartTime), forcingOverlap: true };
           }
         } else {
-          // User approaching from right - their clip start is before the other clip's end
-          const penetrationDepth = overlappingEnd - desiredStartTime;
-          console.log('[Resistance] From RIGHT, penetration:', penetrationDepth, 'threshold:', OVERLAP_RESISTANCE_SECONDS);
-
-          if (penetrationDepth < OVERLAP_RESISTANCE_SECONDS) {
-            // Within resistance zone - snap to edge (clip start at other clip's end)
+          // Nearest edge is the right (end) of the overlapping clip
+          // User's clip start is overlapping with the end of the other clip
+          if (distToRightEdge < OVERLAP_RESISTANCE_SECONDS) {
+            // Within resistance zone - snap clip start to other clip's end
             const snappedStart = Math.max(0, overlappingEnd);
-            console.log('[Resistance] RESISTING! Snapping to:', snappedStart);
+            console.log('[Resistance] RESISTING at RIGHT edge! Snapping to:', snappedStart);
             return { startTime: snappedStart, forcingOverlap: false };
           } else {
             // User has broken through resistance - allow overlap
-            console.log('[Resistance] BREAKTHROUGH! Allowing overlap');
+            console.log('[Resistance] BREAKTHROUGH at RIGHT edge!');
             return { startTime: Math.max(0, desiredStartTime), forcingOverlap: true };
           }
         }
