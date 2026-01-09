@@ -23,7 +23,7 @@ export function Toolbar() {
       setPlaying(true);
     }
   }, [isEngineReady, setPlaying]);
-  const { resetLayout, isPanelTypeVisible, togglePanelType } = useDockStore();
+  const { resetLayout, isPanelTypeVisible, togglePanelType, saveLayoutAsDefault } = useDockStore();
   const {
     currentProjectName,
     setProjectName,
@@ -297,6 +297,10 @@ export function Toolbar() {
                   </button>
                 ))}
               </div>
+              <div className="menu-separator" />
+              <button className="menu-option" onClick={() => { saveLayoutAsDefault(); closeMenu(); }}>
+                <span>Save Layout as Default</span>
+              </button>
             </div>
           )}
         </div>

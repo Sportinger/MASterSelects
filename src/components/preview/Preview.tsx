@@ -164,7 +164,6 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
   // Determine which composition this preview is showing
   const displayedCompId = compositionId ?? activeCompositionId;
   const displayedComp = compositions.find(c => c.id === displayedCompId);
-  const isActiveComp = compositionId === null || compositionId === activeCompositionId;
 
   // Stats overlay state
   const [statsExpanded, setStatsExpanded] = useState(false);
@@ -579,6 +578,55 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
             </button>
           </>
         )}
+      </div>
+
+      {/* Composition selector and add preview button */}
+      <div className="preview-comp-selector">
+        <div className="preview-comp-dropdown-wrapper">
+          <button
+            className="preview-comp-dropdown-btn"
+            onClick={() => setSelectorOpen(!selectorOpen)}
+            title="Select composition to display"
+          >
+            <span className="preview-comp-name">
+              {compositionId === null ? 'Active' : displayedComp?.name || 'Unknown'}
+            </span>
+            <span className="preview-comp-arrow">▼</span>
+          </button>
+          {selectorOpen && (
+            <div className="preview-comp-dropdown">
+              <button
+                className={`preview-comp-option ${compositionId === null ? 'active' : ''}`}
+                onClick={() => {
+                  updatePanelData(panelId, { compositionId: null });
+                  setSelectorOpen(false);
+                }}
+              >
+                Active Composition
+              </button>
+              <div className="preview-comp-separator" />
+              {compositions.map((comp) => (
+                <button
+                  key={comp.id}
+                  className={`preview-comp-option ${compositionId === comp.id ? 'active' : ''}`}
+                  onClick={() => {
+                    updatePanelData(panelId, { compositionId: comp.id });
+                    setSelectorOpen(false);
+                  }}
+                >
+                  {comp.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <button
+          className="preview-add-btn"
+          onClick={() => addPreviewPanel(null)}
+          title="Add another preview panel"
+        >
+          +
+        </button>
       </div>
 
       <StatsOverlay

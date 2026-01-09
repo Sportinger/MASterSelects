@@ -139,6 +139,7 @@ interface DockState {
 
   // Layout management
   resetLayout: () => void;
+  saveLayoutAsDefault: () => void;
 }
 
 export const useDockStore = create<DockState>()(
@@ -460,7 +461,23 @@ export const useDockStore = create<DockState>()(
         },
 
         resetLayout: () => {
+          // Check if there's a saved default layout
+          const savedDefault = localStorage.getItem('webvj-dock-layout-default');
+          if (savedDefault) {
+            try {
+              const parsed = JSON.parse(savedDefault);
+              set({ layout: parsed, maxZIndex: 1000 });
+              return;
+            } catch (e) {
+              console.error('Failed to parse saved default layout:', e);
+            }
+          }
           set({ layout: DEFAULT_LAYOUT, maxZIndex: 1000 });
+        },
+
+        saveLayoutAsDefault: () => {
+          const { layout } = get();
+          localStorage.setItem('webvj-dock-layout-default', JSON.stringify(layout));
         },
       }),
       {
