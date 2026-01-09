@@ -23,7 +23,7 @@ import {
   PROXY_IDLE_DELAY,
   DURATION_CHECK_TIMEOUT,
 } from './constants';
-import { MIN_ZOOM, MAX_ZOOM } from '../../stores/timeline/constants';
+import { MIN_ZOOM, MAX_ZOOM, PROPERTY_ROW_HEIGHT } from '../../stores/timeline/constants';
 import type {
   ClipDragState,
   ClipTrimState,
@@ -88,6 +88,7 @@ export function Timeline() {
     getExpandedTrackHeight,
     getClipKeyframes,
     selectKeyframe,
+    deselectAllKeyframes,
     selectedKeyframeIds,
     hasKeyframes,
     trackHasKeyframes,
@@ -1532,10 +1533,12 @@ export function Timeline() {
       // Clear selection unless shift is held
       if (!e.shiftKey) {
         selectClip(null, false);
+        deselectAllKeyframes();
       }
 
       // Store the initial selection (for shift+drag to add to it)
       const initialSelection = e.shiftKey ? new Set(selectedClipIds) : new Set<string>();
+      const initialKeyframeSelection = e.shiftKey ? new Set(selectedKeyframeIds) : new Set<string>();
 
       setMarquee({
         startX,
@@ -1544,11 +1547,12 @@ export function Timeline() {
         currentY: startY,
         startScrollX: scrollX,
         initialSelection,
+        initialKeyframeSelection,
       });
 
       e.preventDefault();
     },
-    [clipDrag, clipTrim, markerDrag, isDraggingPlayhead, scrollX, selectClip, selectedClipIds]
+    [clipDrag, clipTrim, markerDrag, isDraggingPlayhead, scrollX, selectClip, selectedClipIds, deselectAllKeyframes, selectedKeyframeIds]
   );
 
   // Helper: Calculate which clips intersect with a rectangle
@@ -1594,6 +1598,90 @@ export function Timeline() {
     [pixelToTime, tracks, clips, getExpandedTrackHeight]
   );
 
+  // Helper: Calculate which keyframes intersect with a rectangle
+  const getKeyframesInRect = useCallback(
+    (left: number, right: number, top: number, bottom: number): Set<string> => {
+      const result = new Set<string>();
+
+      // Convert pixel bounds to time
+      const startTime = pixelToTime(left);
+      const endTime = pixelToTime(right);
+
+      // Property order for calculating Y position within expanded track
+      const propertyOrder = ['opacity', 'position.x', 'position.y', 'position.z', 'scale.x', 'scale.y', 'rotation.x', 'rotation.y', 'rotation.z'];
+
+      // Calculate track positions
+      let currentY = 0;
+
+      for (const track of tracks) {
+        if (track.type !== 'video') {
+          currentY += track.height;
+          continue;
+        }
+
+        const baseHeight = track.height;
+        const isExpanded = isTrackExpanded(track.id);
+
+        // Get the selected clip in this track for keyframe display
+        const trackClips = clips.filter(c => c.trackId === track.id);
+        const selectedTrackClip = trackClips.find(c => selectedClipIds.has(c.id));
+
+        if (!isExpanded || !selectedTrackClip) {
+          currentY += baseHeight;
+          continue;
+        }
+
+        // Get keyframes for the selected clip
+        const keyframes = clipKeyframes.get(selectedTrackClip.id) || [];
+        if (keyframes.length === 0) {
+          currentY += baseHeight;
+          continue;
+        }
+
+        // Get unique properties with keyframes in sorted order
+        const uniqueProps = [...new Set(keyframes.map(k => k.property))];
+        const sortedProps = uniqueProps.sort((a, b) => {
+          const aIdx = propertyOrder.indexOf(a);
+          const bIdx = propertyOrder.indexOf(b);
+          if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx;
+          if (aIdx !== -1) return -1;
+          if (bIdx !== -1) return 1;
+          return a.localeCompare(b);
+        });
+
+        // Calculate Y position for each property row
+        // Property rows start after the base track height
+        const propertyRowStart = currentY + baseHeight;
+
+        for (let propIndex = 0; propIndex < sortedProps.length; propIndex++) {
+          const prop = sortedProps[propIndex];
+          const rowTop = propertyRowStart + propIndex * PROPERTY_ROW_HEIGHT;
+          const rowBottom = rowTop + PROPERTY_ROW_HEIGHT;
+
+          // Check if this row is within the marquee Y bounds
+          if (bottom > rowTop && top < rowBottom) {
+            // Find keyframes in this property that are within the time range
+            const propKeyframes = keyframes.filter(k => k.property === prop);
+
+            for (const kf of propKeyframes) {
+              const absTime = selectedTrackClip.startTime + kf.time;
+              // Check if keyframe time is within selection
+              if (absTime >= startTime && absTime <= endTime) {
+                result.add(kf.id);
+              }
+            }
+          }
+        }
+
+        // Move to next track (include expanded height)
+        currentY += getExpandedTrackHeight(track.id, baseHeight);
+      }
+
+      return result;
+    },
+    [pixelToTime, tracks, clips, selectedClipIds, clipKeyframes, isTrackExpanded, getExpandedTrackHeight]
+  );
+
   // Marquee selection: mouse move and mouse up handlers
   useEffect(() => {
     if (!marquee) return;
@@ -1623,22 +1711,37 @@ export function Timeline() {
       const intersectingClips = getClipsInRect(left, right, top, bottom);
 
       // Combine with initial selection (for shift+drag)
-      const newSelection = new Set([...m.initialSelection, ...intersectingClips]);
+      const newClipSelection = new Set([...m.initialSelection, ...intersectingClips]);
 
-      // Update selection: first clear, then select all
-      // We need to set the exact selection, so clear first if needed
-      const currentSelection = useTimelineStore.getState().selectedClipIds;
+      // Update clip selection
+      const currentClipSelection = useTimelineStore.getState().selectedClipIds;
+      const clipSelectionChanged =
+        newClipSelection.size !== currentClipSelection.size ||
+        [...newClipSelection].some(id => !currentClipSelection.has(id));
 
-      // Check if selection changed
-      const selectionChanged =
-        newSelection.size !== currentSelection.size ||
-        [...newSelection].some(id => !currentSelection.has(id));
-
-      if (selectionChanged) {
-        // Clear and rebuild selection
+      if (clipSelectionChanged) {
         selectClip(null, false);
-        for (const clipId of newSelection) {
+        for (const clipId of newClipSelection) {
           selectClip(clipId, true);
+        }
+      }
+
+      // Get keyframes that intersect with the rectangle
+      const intersectingKeyframes = getKeyframesInRect(left, right, top, bottom);
+
+      // Combine with initial keyframe selection (for shift+drag)
+      const newKeyframeSelection = new Set([...m.initialKeyframeSelection, ...intersectingKeyframes]);
+
+      // Update keyframe selection
+      const currentKeyframeSelection = useTimelineStore.getState().selectedKeyframeIds;
+      const keyframeSelectionChanged =
+        newKeyframeSelection.size !== currentKeyframeSelection.size ||
+        [...newKeyframeSelection].some(id => !currentKeyframeSelection.has(id));
+
+      if (keyframeSelectionChanged) {
+        deselectAllKeyframes();
+        for (const kfId of newKeyframeSelection) {
+          selectKeyframe(kfId, true);
         }
       }
     };
@@ -1654,7 +1757,7 @@ export function Timeline() {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [marquee, scrollX, selectClip, getClipsInRect]);
+  }, [marquee, scrollX, selectClip, getClipsInRect, getKeyframesInRect, selectKeyframe, deselectAllKeyframes]);
 
   // Get all snap target times
   const getSnapTargetTimes = useCallback(() => {
