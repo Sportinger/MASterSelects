@@ -143,7 +143,7 @@ export interface EngineStats {
   layerCount: number;
   targetFps: number;
   // Decoder info
-  decoder: 'WebCodecs' | 'HTMLVideo' | 'none';
+  decoder: 'WebCodecs' | 'HTMLVideo' | 'HTMLVideo(cached)' | 'none';
 }
 
 // Timeline types

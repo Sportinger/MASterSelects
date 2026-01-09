@@ -1,554 +1,30 @@
-// WebGPU Rendering Engine for WebVJ Mixer - Optimized
+// WebGPU Rendering Engine for WebVJ Mixer - Facade Pattern
+// This is the main engine class that orchestrates all the manager modules
 
-import type { Layer, BlendMode, OutputWindow, EngineStats, Effect } from '../types';
-import compositeShader from '../shaders/composite.wgsl?raw';
-import outputShader from '../shaders/output.wgsl?raw';
-import effectsShader from '../shaders/effects.wgsl?raw';
-
-const BLEND_MODE_MAP: Record<BlendMode, number> = {
-  // Normal
-  'normal': 0,
-  'dissolve': 1,
-  'dancing-dissolve': 2,
-  // Darken
-  'darken': 3,
-  'multiply': 4,
-  'color-burn': 5,
-  'classic-color-burn': 6,
-  'linear-burn': 7,
-  'darker-color': 8,
-  // Lighten
-  'add': 9,
-  'lighten': 10,
-  'screen': 11,
-  'color-dodge': 12,
-  'classic-color-dodge': 13,
-  'linear-dodge': 14,
-  'lighter-color': 15,
-  // Contrast
-  'overlay': 16,
-  'soft-light': 17,
-  'hard-light': 18,
-  'linear-light': 19,
-  'vivid-light': 20,
-  'pin-light': 21,
-  'hard-mix': 22,
-  // Inversion
-  'difference': 23,
-  'classic-difference': 24,
-  'exclusion': 25,
-  'subtract': 26,
-  'divide': 27,
-  // Component
-  'hue': 28,
-  'saturation': 29,
-  'color': 30,
-  'luminosity': 31,
-  // Stencil
-  'stencil-alpha': 32,
-  'stencil-luma': 33,
-  'silhouette-alpha': 34,
-  'silhouette-luma': 35,
-  'alpha-add': 36,
-};
-
-// Composite shader for external video textures (true zero-copy)
-const externalCompositeShader = `
-struct VertexOutput {
-  @builtin(position) position: vec4f,
-  @location(0) uv: vec2f,
-};
-
-struct LayerUniforms {
-  opacity: f32,
-  blendMode: u32,
-  posX: f32,
-  posY: f32,
-  scaleX: f32,
-  scaleY: f32,
-  rotationZ: f32,
-  sourceAspect: f32,
-  outputAspect: f32,
-  time: f32,
-  hasMask: u32,
-  maskInvert: u32,
-  rotationX: f32,
-  rotationY: f32,
-  perspective: f32,
-  maskFeather: f32,
-  maskFeatherQuality: u32,
-  _pad1: f32,
-  _pad2: f32,
-  _pad3: f32,
-};
-
-@vertex
-fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
-  var positions = array<vec2f, 6>(
-    vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
-    vec2f(-1.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0)
-  );
-  var uvs = array<vec2f, 6>(
-    vec2f(0.0, 1.0), vec2f(1.0, 1.0), vec2f(0.0, 0.0),
-    vec2f(0.0, 0.0), vec2f(1.0, 1.0), vec2f(1.0, 0.0)
-  );
-  var output: VertexOutput;
-  output.position = vec4f(positions[vertexIndex], 0.0, 1.0);
-  output.uv = uvs[vertexIndex];
-  return output;
-}
-
-@group(0) @binding(0) var texSampler: sampler;
-@group(0) @binding(1) var baseTexture: texture_2d<f32>;
-@group(0) @binding(2) var videoTexture: texture_external;
-@group(0) @binding(3) var<uniform> layer: LayerUniforms;
-@group(0) @binding(4) var maskTexture: texture_2d<f32>;
-
-// ============ Utility Functions ============
-fn hash(p: vec2f) -> f32 {
-  var p3 = fract(vec3f(p.xyx) * 0.1031);
-  p3 = p3 + dot(p3, p3.yzx + 33.33);
-  return fract((p3.x + p3.y) * p3.z);
-}
-
-fn getLuminosity(c: vec3f) -> f32 {
-  return 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
-}
-
-fn clipColor(c: vec3f) -> vec3f {
-  let l = getLuminosity(c);
-  let n = min(min(c.r, c.g), c.b);
-  let x = max(max(c.r, c.g), c.b);
-  var result = c;
-  if (n < 0.0) { result = l + (((c - l) * l) / (l - n)); }
-  if (x > 1.0) { result = l + (((c - l) * (1.0 - l)) / (x - l)); }
-  return result;
-}
-
-fn setLuminosity(c: vec3f, l: f32) -> vec3f {
-  let d = l - getLuminosity(c);
-  return clipColor(c + vec3f(d));
-}
-
-fn rgbToHsl(c: vec3f) -> vec3f {
-  let cMax = max(max(c.r, c.g), c.b);
-  let cMin = min(min(c.r, c.g), c.b);
-  let delta = cMax - cMin;
-  var h: f32 = 0.0;
-  var s: f32 = 0.0;
-  let l = (cMax + cMin) / 2.0;
-  if (delta > 0.0) {
-    s = select(delta / (2.0 - cMax - cMin), delta / (cMax + cMin), l < 0.5);
-    if (cMax == c.r) {
-      h = ((c.g - c.b) / delta) + select(0.0, 6.0, c.g < c.b);
-    } else if (cMax == c.g) {
-      h = ((c.b - c.r) / delta) + 2.0;
-    } else {
-      h = ((c.r - c.g) / delta) + 4.0;
-    }
-    h = h / 6.0;
-  }
-  return vec3f(h, s, l);
-}
-
-fn hueToRgb(p: f32, q: f32, t: f32) -> f32 {
-  var tt = t;
-  if (tt < 0.0) { tt = tt + 1.0; }
-  if (tt > 1.0) { tt = tt - 1.0; }
-  if (tt < 1.0/6.0) { return p + (q - p) * 6.0 * tt; }
-  if (tt < 1.0/2.0) { return q; }
-  if (tt < 2.0/3.0) { return p + (q - p) * (2.0/3.0 - tt) * 6.0; }
-  return p;
-}
-
-fn hslToRgb(hsl: vec3f) -> vec3f {
-  if (hsl.y == 0.0) { return vec3f(hsl.z); }
-  let q = select(hsl.z + hsl.y - hsl.z * hsl.y, hsl.z * (1.0 + hsl.y), hsl.z < 0.5);
-  let p = 2.0 * hsl.z - q;
-  return vec3f(
-    hueToRgb(p, q, hsl.x + 1.0/3.0),
-    hueToRgb(p, q, hsl.x),
-    hueToRgb(p, q, hsl.x - 1.0/3.0)
-  );
-}
-
-// ============ Blend Mode Functions ============
-fn blendNormal(base: vec3f, blend: vec3f) -> vec3f { return blend; }
-fn blendDissolve(base: vec3f, blend: vec3f, uv: vec2f, opacity: f32) -> vec3f {
-  return select(base, blend, hash(uv * 1000.0) < opacity);
-}
-fn blendDancingDissolve(base: vec3f, blend: vec3f, uv: vec2f, opacity: f32, time: f32) -> vec3f {
-  return select(base, blend, hash(uv * 1000.0 + vec2f(time * 60.0)) < opacity);
-}
-fn blendDarken(base: vec3f, blend: vec3f) -> vec3f { return min(base, blend); }
-fn blendMultiply(base: vec3f, blend: vec3f) -> vec3f { return base * blend; }
-fn blendColorBurn(base: vec3f, blend: vec3f) -> vec3f {
-  return vec3f(
-    select(1.0 - min(1.0, (1.0 - base.r) / blend.r), 0.0, blend.r == 0.0),
-    select(1.0 - min(1.0, (1.0 - base.g) / blend.g), 0.0, blend.g == 0.0),
-    select(1.0 - min(1.0, (1.0 - base.b) / blend.b), 0.0, blend.b == 0.0)
-  );
-}
-fn blendClassicColorBurn(base: vec3f, blend: vec3f) -> vec3f {
-  return 1.0 - (1.0 - base) / max(blend, vec3f(0.001));
-}
-fn blendLinearBurn(base: vec3f, blend: vec3f) -> vec3f {
-  return max(base + blend - 1.0, vec3f(0.0));
-}
-fn blendDarkerColor(base: vec3f, blend: vec3f) -> vec3f {
-  return select(blend, base, getLuminosity(base) < getLuminosity(blend));
-}
-fn blendAdd(base: vec3f, blend: vec3f) -> vec3f { return min(base + blend, vec3f(1.0)); }
-fn blendLighten(base: vec3f, blend: vec3f) -> vec3f { return max(base, blend); }
-fn blendScreen(base: vec3f, blend: vec3f) -> vec3f { return 1.0 - (1.0 - base) * (1.0 - blend); }
-fn blendColorDodge(base: vec3f, blend: vec3f) -> vec3f {
-  return vec3f(
-    select(min(1.0, base.r / (1.0 - blend.r)), 1.0, blend.r == 1.0),
-    select(min(1.0, base.g / (1.0 - blend.g)), 1.0, blend.g == 1.0),
-    select(min(1.0, base.b / (1.0 - blend.b)), 1.0, blend.b == 1.0)
-  );
-}
-fn blendClassicColorDodge(base: vec3f, blend: vec3f) -> vec3f {
-  return base / max(1.0 - blend, vec3f(0.001));
-}
-fn blendLinearDodge(base: vec3f, blend: vec3f) -> vec3f { return min(base + blend, vec3f(1.0)); }
-fn blendLighterColor(base: vec3f, blend: vec3f) -> vec3f {
-  return select(blend, base, getLuminosity(base) > getLuminosity(blend));
-}
-fn blendOverlay(base: vec3f, blend: vec3f) -> vec3f {
-  return vec3f(
-    select(1.0 - 2.0 * (1.0 - base.r) * (1.0 - blend.r), 2.0 * base.r * blend.r, base.r < 0.5),
-    select(1.0 - 2.0 * (1.0 - base.g) * (1.0 - blend.g), 2.0 * base.g * blend.g, base.g < 0.5),
-    select(1.0 - 2.0 * (1.0 - base.b) * (1.0 - blend.b), 2.0 * base.b * blend.b, base.b < 0.5)
-  );
-}
-fn blendSoftLight(base: vec3f, blend: vec3f) -> vec3f {
-  let d = select(sqrt(base), ((16.0 * base - 12.0) * base + 4.0) * base, base <= vec3f(0.25));
-  return select(base + (2.0 * blend - 1.0) * (d - base), base - (1.0 - 2.0 * blend) * base * (1.0 - base), blend <= vec3f(0.5));
-}
-fn blendHardLight(base: vec3f, blend: vec3f) -> vec3f {
-  return vec3f(
-    select(1.0 - 2.0 * (1.0 - base.r) * (1.0 - blend.r), 2.0 * base.r * blend.r, blend.r < 0.5),
-    select(1.0 - 2.0 * (1.0 - base.g) * (1.0 - blend.g), 2.0 * base.g * blend.g, blend.g < 0.5),
-    select(1.0 - 2.0 * (1.0 - base.b) * (1.0 - blend.b), 2.0 * base.b * blend.b, blend.b < 0.5)
-  );
-}
-fn blendLinearLight(base: vec3f, blend: vec3f) -> vec3f {
-  return clamp(base + 2.0 * blend - 1.0, vec3f(0.0), vec3f(1.0));
-}
-fn blendVividLight(base: vec3f, blend: vec3f) -> vec3f {
-  return vec3f(
-    select(blendColorDodge(base, 2.0 * (blend - 0.5)).r, blendColorBurn(base, 2.0 * blend).r, blend.r <= 0.5),
-    select(blendColorDodge(base, 2.0 * (blend - 0.5)).g, blendColorBurn(base, 2.0 * blend).g, blend.g <= 0.5),
-    select(blendColorDodge(base, 2.0 * (blend - 0.5)).b, blendColorBurn(base, 2.0 * blend).b, blend.b <= 0.5)
-  );
-}
-fn blendPinLight(base: vec3f, blend: vec3f) -> vec3f {
-  return vec3f(
-    select(max(base.r, 2.0 * (blend.r - 0.5)), min(base.r, 2.0 * blend.r), blend.r <= 0.5),
-    select(max(base.g, 2.0 * (blend.g - 0.5)), min(base.g, 2.0 * blend.g), blend.g <= 0.5),
-    select(max(base.b, 2.0 * (blend.b - 0.5)), min(base.b, 2.0 * blend.b), blend.b <= 0.5)
-  );
-}
-fn blendHardMix(base: vec3f, blend: vec3f) -> vec3f {
-  return vec3f(
-    select(0.0, 1.0, base.r + blend.r >= 1.0),
-    select(0.0, 1.0, base.g + blend.g >= 1.0),
-    select(0.0, 1.0, base.b + blend.b >= 1.0)
-  );
-}
-fn blendDifference(base: vec3f, blend: vec3f) -> vec3f { return abs(base - blend); }
-fn blendClassicDifference(base: vec3f, blend: vec3f) -> vec3f { return abs(base - blend); }
-fn blendExclusion(base: vec3f, blend: vec3f) -> vec3f { return base + blend - 2.0 * base * blend; }
-fn blendSubtract(base: vec3f, blend: vec3f) -> vec3f { return max(base - blend, vec3f(0.0)); }
-fn blendDivide(base: vec3f, blend: vec3f) -> vec3f { return base / max(blend, vec3f(0.001)); }
-fn blendHue(base: vec3f, blend: vec3f) -> vec3f {
-  let baseHsl = rgbToHsl(base);
-  let blendHsl = rgbToHsl(blend);
-  return hslToRgb(vec3f(blendHsl.x, baseHsl.y, baseHsl.z));
-}
-fn blendSaturation(base: vec3f, blend: vec3f) -> vec3f {
-  let baseHsl = rgbToHsl(base);
-  let blendHsl = rgbToHsl(blend);
-  return hslToRgb(vec3f(baseHsl.x, blendHsl.y, baseHsl.z));
-}
-fn blendColor(base: vec3f, blend: vec3f) -> vec3f {
-  let baseHsl = rgbToHsl(base);
-  let blendHsl = rgbToHsl(blend);
-  return hslToRgb(vec3f(blendHsl.x, blendHsl.y, baseHsl.z));
-}
-fn blendLuminosity(base: vec3f, blend: vec3f) -> vec3f {
-  let baseHsl = rgbToHsl(base);
-  let blendHsl = rgbToHsl(blend);
-  return hslToRgb(vec3f(baseHsl.x, baseHsl.y, blendHsl.z));
-}
-
-@fragment
-fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
-  // Calculate video UV coordinates with all transformations
-  var uv = input.uv;
-  uv = uv - vec2f(0.5);
-
-  // Apply user scale first
-  uv = uv / vec2f(layer.scaleX, layer.scaleY);
-
-  // For 3D rotation, work in world coordinates where the panel has its actual aspect ratio
-  var p = vec3f(uv.x, uv.y / layer.outputAspect, 0.0);
-
-  // X rotation (tilt forward/back)
-  if (abs(layer.rotationX) > 0.0001) {
-    let cosX = cos(-layer.rotationX);
-    let sinX = sin(-layer.rotationX);
-    p = vec3f(p.x, p.y * cosX - p.z * sinX, p.y * sinX + p.z * cosX);
-  }
-
-  // Y rotation (turn left/right)
-  if (abs(layer.rotationY) > 0.0001) {
-    let cosY = cos(-layer.rotationY);
-    let sinY = sin(-layer.rotationY);
-    p = vec3f(p.x * cosY + p.z * sinY, p.y, -p.x * sinY + p.z * cosY);
-  }
-
-  // Z rotation (spin)
-  if (abs(layer.rotationZ) > 0.0001) {
-    let cosZ = cos(layer.rotationZ);
-    let sinZ = sin(layer.rotationZ);
-    p = vec3f(p.x * cosZ - p.y * sinZ, p.x * sinZ + p.y * cosZ, p.z);
-  }
-
-  // Perspective projection using homogeneous coordinates
-  let perspectiveDist = max(layer.perspective, 0.5);
-  let w = 1.0 - p.z / perspectiveDist;
-  let projectedX = p.x / w;
-  let projectedY = p.y / w;
-
-  // Convert back from world coordinates to UV coordinates
-  uv = vec2f(projectedX, projectedY * layer.outputAspect);
-
-  // Apply source aspect ratio correction
-  let aspectRatio = layer.sourceAspect / layer.outputAspect;
-  if (aspectRatio > 1.0) {
-    uv.y = uv.y * aspectRatio;
-  } else {
-    uv.x = uv.x / aspectRatio;
-  }
-
-  uv = uv + vec2f(0.5) - vec2f(layer.posX, layer.posY);
-
-  let clampedUV = clamp(uv, vec2f(0.0), vec2f(1.0));
-  let baseColor = textureSample(baseTexture, texSampler, input.uv);
-  let layerColor = textureSampleBaseClampToEdge(videoTexture, texSampler, clampedUV);
-
-  let outOfBounds = uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0;
-  let maskAlpha = select(layerColor.a, 0.0, outOfBounds);
-
-  var blended: vec3f;
-  var finalAlpha: f32 = maskAlpha * layer.opacity;
-
-  switch (layer.blendMode) {
-    case 0u: { blended = blendNormal(baseColor.rgb, layerColor.rgb); }
-    case 1u: { blended = blendDissolve(baseColor.rgb, layerColor.rgb, input.uv, layer.opacity); finalAlpha = 1.0; }
-    case 2u: { blended = blendDancingDissolve(baseColor.rgb, layerColor.rgb, input.uv, layer.opacity, layer.time); finalAlpha = 1.0; }
-    case 3u: { blended = blendDarken(baseColor.rgb, layerColor.rgb); }
-    case 4u: { blended = blendMultiply(baseColor.rgb, layerColor.rgb); }
-    case 5u: { blended = blendColorBurn(baseColor.rgb, layerColor.rgb); }
-    case 6u: { blended = blendClassicColorBurn(baseColor.rgb, layerColor.rgb); }
-    case 7u: { blended = blendLinearBurn(baseColor.rgb, layerColor.rgb); }
-    case 8u: { blended = blendDarkerColor(baseColor.rgb, layerColor.rgb); }
-    case 9u: { blended = blendAdd(baseColor.rgb, layerColor.rgb); }
-    case 10u: { blended = blendLighten(baseColor.rgb, layerColor.rgb); }
-    case 11u: { blended = blendScreen(baseColor.rgb, layerColor.rgb); }
-    case 12u: { blended = blendColorDodge(baseColor.rgb, layerColor.rgb); }
-    case 13u: { blended = blendClassicColorDodge(baseColor.rgb, layerColor.rgb); }
-    case 14u: { blended = blendLinearDodge(baseColor.rgb, layerColor.rgb); }
-    case 15u: { blended = blendLighterColor(baseColor.rgb, layerColor.rgb); }
-    case 16u: { blended = blendOverlay(baseColor.rgb, layerColor.rgb); }
-    case 17u: { blended = blendSoftLight(baseColor.rgb, layerColor.rgb); }
-    case 18u: { blended = blendHardLight(baseColor.rgb, layerColor.rgb); }
-    case 19u: { blended = blendLinearLight(baseColor.rgb, layerColor.rgb); }
-    case 20u: { blended = blendVividLight(baseColor.rgb, layerColor.rgb); }
-    case 21u: { blended = blendPinLight(baseColor.rgb, layerColor.rgb); }
-    case 22u: { blended = blendHardMix(baseColor.rgb, layerColor.rgb); }
-    case 23u: { blended = blendDifference(baseColor.rgb, layerColor.rgb); }
-    case 24u: { blended = blendClassicDifference(baseColor.rgb, layerColor.rgb); }
-    case 25u: { blended = blendExclusion(baseColor.rgb, layerColor.rgb); }
-    case 26u: { blended = blendSubtract(baseColor.rgb, layerColor.rgb); }
-    case 27u: { blended = blendDivide(baseColor.rgb, layerColor.rgb); }
-    case 28u: { blended = blendHue(baseColor.rgb, layerColor.rgb); }
-    case 29u: { blended = blendSaturation(baseColor.rgb, layerColor.rgb); }
-    case 30u: { blended = blendColor(baseColor.rgb, layerColor.rgb); }
-    case 31u: { blended = blendLuminosity(baseColor.rgb, layerColor.rgb); }
-    case 32u: { blended = baseColor.rgb; finalAlpha = layerColor.a * layer.opacity; }
-    case 33u: { blended = baseColor.rgb; finalAlpha = getLuminosity(layerColor.rgb) * layer.opacity; }
-    case 34u: { blended = baseColor.rgb; finalAlpha = (1.0 - layerColor.a) * layer.opacity; }
-    case 35u: { blended = baseColor.rgb; finalAlpha = (1.0 - getLuminosity(layerColor.rgb)) * layer.opacity; }
-    case 36u: { blended = layerColor.rgb; finalAlpha = min(baseColor.a + layerColor.a * layer.opacity, 1.0); }
-    default: { blended = layerColor.rgb; }
-  }
-
-  // Apply mask if present
-  // Mask is in output frame coordinates, sample with input.uv
-  if (layer.hasMask == 1u) {
-    var maskValue: f32;
-
-    // GPU blur for feather effect with quality levels (1-100 mapped to low/med/high)
-    if (layer.maskFeather > 0.5) {
-      let maskDim = vec2f(textureDimensions(maskTexture));
-      let texelSize = 1.0 / maskDim;
-      let r = layer.maskFeather * texelSize;
-
-      // Map quality 1-100: 1-33=low, 34-66=medium, 67-100=high
-      if (layer.maskFeatherQuality >= 67u) {
-        // HIGH QUALITY: 61-tap blur with dense sampling
-        var blur: f32 = 0.0;
-        // Center
-        blur += textureSample(maskTexture, texSampler, input.uv).r * 0.08;
-        // Ring at 0.2r (8 samples)
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x * 0.2, 0.0)).r * 0.04;
-        blur += textureSample(maskTexture, texSampler, input.uv - vec2f(r.x * 0.2, 0.0)).r * 0.04;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(0.0, r.y * 0.2)).r * 0.04;
-        blur += textureSample(maskTexture, texSampler, input.uv - vec2f(0.0, r.y * 0.2)).r * 0.04;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x * 0.14, r.y * 0.14)).r * 0.03;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(-r.x * 0.14, r.y * 0.14)).r * 0.03;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x * 0.14, -r.y * 0.14)).r * 0.03;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(-r.x * 0.14, -r.y * 0.14)).r * 0.03;
-        // Ring at 0.4r (8 samples)
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x * 0.4, 0.0)).r * 0.035;
-        blur += textureSample(maskTexture, texSampler, input.uv - vec2f(r.x * 0.4, 0.0)).r * 0.035;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(0.0, r.y * 0.4)).r * 0.035;
-        blur += textureSample(maskTexture, texSampler, input.uv - vec2f(0.0, r.y * 0.4)).r * 0.035;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x * 0.28, r.y * 0.28)).r * 0.028;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(-r.x * 0.28, r.y * 0.28)).r * 0.028;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x * 0.28, -r.y * 0.28)).r * 0.028;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(-r.x * 0.28, -r.y * 0.28)).r * 0.028;
-        // Ring at 0.6r (8 samples)
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x * 0.6, 0.0)).r * 0.03;
-        blur += textureSample(maskTexture, texSampler, input.uv - vec2f(r.x * 0.6, 0.0)).r * 0.03;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(0.0, r.y * 0.6)).r * 0.03;
-        blur += textureSample(maskTexture, texSampler, input.uv - vec2f(0.0, r.y * 0.6)).r * 0.03;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x * 0.42, r.y * 0.42)).r * 0.024;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(-r.x * 0.42, r.y * 0.42)).r * 0.024;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x * 0.42, -r.y * 0.42)).r * 0.024;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(-r.x * 0.42, -r.y * 0.42)).r * 0.024;
-        // Ring at 0.8r (8 samples)
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x * 0.8, 0.0)).r * 0.025;
-        blur += textureSample(maskTexture, texSampler, input.uv - vec2f(r.x * 0.8, 0.0)).r * 0.025;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(0.0, r.y * 0.8)).r * 0.025;
-        blur += textureSample(maskTexture, texSampler, input.uv - vec2f(0.0, r.y * 0.8)).r * 0.025;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x * 0.56, r.y * 0.56)).r * 0.02;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(-r.x * 0.56, r.y * 0.56)).r * 0.02;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x * 0.56, -r.y * 0.56)).r * 0.02;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(-r.x * 0.56, -r.y * 0.56)).r * 0.02;
-        // Ring at 1.0r (8 samples)
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x, 0.0)).r * 0.02;
-        blur += textureSample(maskTexture, texSampler, input.uv - vec2f(r.x, 0.0)).r * 0.02;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(0.0, r.y)).r * 0.02;
-        blur += textureSample(maskTexture, texSampler, input.uv - vec2f(0.0, r.y)).r * 0.02;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x * 0.7, r.y * 0.7)).r * 0.016;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(-r.x * 0.7, r.y * 0.7)).r * 0.016;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x * 0.7, -r.y * 0.7)).r * 0.016;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(-r.x * 0.7, -r.y * 0.7)).r * 0.016;
-        // Ring at 1.2r (8 samples)
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x * 1.2, 0.0)).r * 0.012;
-        blur += textureSample(maskTexture, texSampler, input.uv - vec2f(r.x * 1.2, 0.0)).r * 0.012;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(0.0, r.y * 1.2)).r * 0.012;
-        blur += textureSample(maskTexture, texSampler, input.uv - vec2f(0.0, r.y * 1.2)).r * 0.012;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x * 0.85, r.y * 0.85)).r * 0.01;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(-r.x * 0.85, r.y * 0.85)).r * 0.01;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x * 0.85, -r.y * 0.85)).r * 0.01;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(-r.x * 0.85, -r.y * 0.85)).r * 0.01;
-        // Ring at 1.4r (4 samples)
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x * 1.4, 0.0)).r * 0.008;
-        blur += textureSample(maskTexture, texSampler, input.uv - vec2f(r.x * 1.4, 0.0)).r * 0.008;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(0.0, r.y * 1.4)).r * 0.008;
-        blur += textureSample(maskTexture, texSampler, input.uv - vec2f(0.0, r.y * 1.4)).r * 0.008;
-        maskValue = blur;
-      } else if (layer.maskFeatherQuality >= 34u) {
-        // MEDIUM QUALITY: 33-tap blur
-        var blur: f32 = 0.0;
-        blur += textureSample(maskTexture, texSampler, input.uv).r * 0.12;
-        // Ring at 0.33r
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x * 0.33, 0.0)).r * 0.06;
-        blur += textureSample(maskTexture, texSampler, input.uv - vec2f(r.x * 0.33, 0.0)).r * 0.06;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(0.0, r.y * 0.33)).r * 0.06;
-        blur += textureSample(maskTexture, texSampler, input.uv - vec2f(0.0, r.y * 0.33)).r * 0.06;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x * 0.23, r.y * 0.23)).r * 0.045;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(-r.x * 0.23, r.y * 0.23)).r * 0.045;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x * 0.23, -r.y * 0.23)).r * 0.045;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(-r.x * 0.23, -r.y * 0.23)).r * 0.045;
-        // Ring at 0.66r
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x * 0.66, 0.0)).r * 0.045;
-        blur += textureSample(maskTexture, texSampler, input.uv - vec2f(r.x * 0.66, 0.0)).r * 0.045;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(0.0, r.y * 0.66)).r * 0.045;
-        blur += textureSample(maskTexture, texSampler, input.uv - vec2f(0.0, r.y * 0.66)).r * 0.045;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x * 0.47, r.y * 0.47)).r * 0.035;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(-r.x * 0.47, r.y * 0.47)).r * 0.035;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x * 0.47, -r.y * 0.47)).r * 0.035;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(-r.x * 0.47, -r.y * 0.47)).r * 0.035;
-        // Ring at 1.0r
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x, 0.0)).r * 0.03;
-        blur += textureSample(maskTexture, texSampler, input.uv - vec2f(r.x, 0.0)).r * 0.03;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(0.0, r.y)).r * 0.03;
-        blur += textureSample(maskTexture, texSampler, input.uv - vec2f(0.0, r.y)).r * 0.03;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x * 0.7, r.y * 0.7)).r * 0.024;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(-r.x * 0.7, r.y * 0.7)).r * 0.024;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x * 0.7, -r.y * 0.7)).r * 0.024;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(-r.x * 0.7, -r.y * 0.7)).r * 0.024;
-        // Ring at 1.33r
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x * 1.33, 0.0)).r * 0.015;
-        blur += textureSample(maskTexture, texSampler, input.uv - vec2f(r.x * 1.33, 0.0)).r * 0.015;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(0.0, r.y * 1.33)).r * 0.015;
-        blur += textureSample(maskTexture, texSampler, input.uv - vec2f(0.0, r.y * 1.33)).r * 0.015;
-        maskValue = blur;
-      } else {
-        // LOW QUALITY: 17-tap blur (fast)
-        var blur: f32 = 0.0;
-        blur += textureSample(maskTexture, texSampler, input.uv).r * 0.18;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x * 0.5, 0.0)).r * 0.08;
-        blur += textureSample(maskTexture, texSampler, input.uv - vec2f(r.x * 0.5, 0.0)).r * 0.08;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(0.0, r.y * 0.5)).r * 0.08;
-        blur += textureSample(maskTexture, texSampler, input.uv - vec2f(0.0, r.y * 0.5)).r * 0.08;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x, 0.0)).r * 0.06;
-        blur += textureSample(maskTexture, texSampler, input.uv - vec2f(r.x, 0.0)).r * 0.06;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(0.0, r.y)).r * 0.06;
-        blur += textureSample(maskTexture, texSampler, input.uv - vec2f(0.0, r.y)).r * 0.06;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x * 0.35, r.y * 0.35)).r * 0.04;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(-r.x * 0.35, r.y * 0.35)).r * 0.04;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x * 0.35, -r.y * 0.35)).r * 0.04;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(-r.x * 0.35, -r.y * 0.35)).r * 0.04;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x * 0.7, r.y * 0.7)).r * 0.03;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(-r.x * 0.7, r.y * 0.7)).r * 0.03;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(r.x * 0.7, -r.y * 0.7)).r * 0.03;
-        blur += textureSample(maskTexture, texSampler, input.uv + vec2f(-r.x * 0.7, -r.y * 0.7)).r * 0.03;
-        maskValue = blur;
-      }
-    } else {
-      maskValue = textureSample(maskTexture, texSampler, input.uv).r;
-    }
-
-    // Apply inversion in shader (not CPU)
-    if (layer.maskInvert == 1u) {
-      maskValue = 1.0 - maskValue;
-    }
-    finalAlpha = finalAlpha * maskValue;
-  }
-
-  if (layer.blendMode >= 32u && layer.blendMode <= 35u) {
-    return vec4f(blended * finalAlpha, finalAlpha);
-  }
-  if (layer.blendMode == 36u) {
-    return vec4f(mix(baseColor.rgb, blended, layerColor.a * layer.opacity), finalAlpha);
-  }
-
-  let alpha = select(finalAlpha, 0.0, outOfBounds);
-  let result = mix(baseColor.rgb, blended, alpha);
-  return vec4f(result, max(baseColor.a, alpha));
-}
-`;
+import type { Layer, OutputWindow, EngineStats, LayerRenderData, DetailedStats, ProfileData } from './core/types';
+import { WebGPUContext } from './core/WebGPUContext';
+import { TextureManager } from './texture/TextureManager';
+import { MaskTextureManager } from './texture/MaskTextureManager';
+import { ScrubbingCache } from './texture/ScrubbingCache';
+import { CompositorPipeline } from './pipeline/CompositorPipeline';
+import { EffectsPipeline } from './pipeline/EffectsPipeline';
+import { OutputPipeline } from './pipeline/OutputPipeline';
+import { VideoFrameManager } from './video/VideoFrameManager';
 
 export class WebGPUEngine {
-  private device: GPUDevice | null = null;
-  private adapter: GPUAdapter | null = null;
+  // Core context
+  private context: WebGPUContext;
+
+  // Managers
+  private textureManager: TextureManager | null = null;
+  private maskTextureManager: MaskTextureManager | null = null;
+  private scrubbingCache: ScrubbingCache | null = null;
+  private videoFrameManager: VideoFrameManager;
+
+  // Pipelines
+  private compositorPipeline: CompositorPipeline | null = null;
+  private effectsPipeline: EffectsPipeline | null = null;
+  private outputPipeline: OutputPipeline | null = null;
 
   // Main preview canvas
   private previewContext: GPUCanvasContext | null = null;
@@ -557,36 +33,13 @@ export class WebGPUEngine {
   private pingTexture: GPUTexture | null = null;
   private pongTexture: GPUTexture | null = null;
   private blackTexture: GPUTexture | null = null;
-  private whiteMaskTexture: GPUTexture | null = null;  // Fallback mask texture (fully white = no masking)
-  private whiteMaskView: GPUTextureView | null = null;
-
-  // Mask textures per layer
-  private maskTextures: Map<string, GPUTexture> = new Map();
-  private maskTextureViews: Map<string, GPUTextureView> = new Map();
-  private lastMaskDebugLog: number | null = null;
 
   // Cached texture views
   private pingView: GPUTextureView | null = null;
   private pongView: GPUTextureView | null = null;
 
-  // Pipelines
-  private compositePipeline: GPURenderPipeline | null = null;
-  private externalCompositePipeline: GPURenderPipeline | null = null;
-  private outputPipeline: GPURenderPipeline | null = null;
-
-  // Effect pipelines
-  private effectPipelines: Map<string, GPURenderPipeline> = new Map();
-  private effectBindGroupLayouts: Map<string, GPUBindGroupLayout> = new Map();
-
   // Resources
   private sampler: GPUSampler | null = null;
-  private layerUniformBuffer: GPUBuffer | null = null;
-
-  // Pre-allocated uniform data for layer uniforms
-  // Using ArrayBuffer with typed views to handle mixed float/uint data
-  private uniformBuffer = new ArrayBuffer(80); // 20 floats for extended uniforms (including mask quality)
-  private uniformData = new Float32Array(this.uniformBuffer);
-  private uniformDataU32 = new Uint32Array(this.uniformBuffer);
 
   // Output windows
   private outputWindows: Map<string, OutputWindow> = new Map();
@@ -597,7 +50,7 @@ export class WebGPUEngine {
   private fpsUpdateTime = 0;
 
   // Detailed stats tracking
-  private detailedStats = {
+  private detailedStats: DetailedStats = {
     rafGap: 0,
     importTexture: 0,
     renderPass: 0,
@@ -606,24 +59,18 @@ export class WebGPUEngine {
     dropsTotal: 0,
     dropsLastSecond: 0,
     dropsThisSecond: 0,
-    lastDropReason: 'none' as 'none' | 'slow_raf' | 'slow_render' | 'slow_import',
+    lastDropReason: 'none',
     lastRafTime: 0,
-    decoder: 'none' as 'WebCodecs' | 'HTMLVideo' | 'HTMLVideo(cached)' | 'none',
+    decoder: 'none',
   };
   private readonly TARGET_FRAME_TIME = 16.67; // 60fps target
-
-  // Video frame textures (rendered from external textures)
-  private videoFrameTextures: Map<string, GPUTexture> = new Map();
-  private videoFrameViews: Map<string, GPUTextureView> = new Map();
 
   // Animation
   private animationId: number | null = null;
   private isRunning = false;
-  private isInitialized = false;
-  private initPromise: Promise<boolean> | null = null;
 
   // Performance profiling
-  private profileData = {
+  private profileData: ProfileData = {
     importTexture: 0,
     createBindGroup: 0,
     renderPass: 0,
@@ -638,25 +85,6 @@ export class WebGPUEngine {
   private outputWidth = 1920;
   private outputHeight = 1080;
 
-  // Bind group layout cache
-  private compositeBindGroupLayout: GPUBindGroupLayout | null = null;
-  private externalCompositeBindGroupLayout: GPUBindGroupLayout | null = null;
-  private outputBindGroupLayout: GPUBindGroupLayout | null = null;
-
-  // Cached bind groups to avoid per-frame creation
-  private cachedCompositeBindGroups: Map<string, GPUBindGroup> = new Map();
-  private cachedOutputBindGroupPing: GPUBindGroup | null = null;
-  private cachedOutputBindGroupPong: GPUBindGroup | null = null;
-
-  // Per-layer uniform buffers (fixes the shared buffer bug!)
-  private layerUniformBuffers: Map<string, GPUBuffer> = new Map();
-
-  // Cached image texture views
-  private cachedImageViews: Map<GPUTexture, GPUTextureView> = new Map();
-
-  // Cached image textures (created from HTMLImageElement)
-  private imageTextures: Map<HTMLImageElement, GPUTexture> = new Map();
-
   // Ring buffer for frame times (avoids O(n) shift)
   private frameTimeBuffer = new Float32Array(60);
   private frameTimeIndex = 0;
@@ -665,161 +93,78 @@ export class WebGPUEngine {
   // Track which texture has the final composited frame (for export)
   private lastRenderWasPing = false;
 
-  // === FRAME CACHING FOR SMOOTH SCRUBBING ===
-  // Last valid frame cache - keeps last frame visible during seeks
-  private lastFrameTextures: Map<HTMLVideoElement, GPUTexture> = new Map();
-  private lastFrameViews: Map<HTMLVideoElement, GPUTextureView> = new Map();
-  private lastFrameSizes: Map<HTMLVideoElement, { width: number; height: number }> = new Map();
-  private lastCaptureTime: Map<HTMLVideoElement, number> = new Map();
+  // Reusable layer data array to avoid allocations
+  private layerRenderData: LayerRenderData[] = [];
 
-  // Scrubbing frame cache - pre-decoded frames for instant access
-  // Key: "videoSrc:frameTime" -> GPUTexture
-  private scrubbingCache: Map<string, GPUTexture> = new Map();
-  private scrubbingCacheViews: Map<string, GPUTextureView> = new Map();
-  private scrubbingCacheOrder: string[] = []; // LRU order
-  private maxScrubbingCacheFrames = 300; // ~10 seconds at 30fps, ~2.4GB VRAM at 1080p
+  // Track active video for frame rate limiting
+  private hasActiveVideo = false;
+  private lastRenderTime = 0;
+  private readonly VIDEO_FRAME_TIME = 33.33; // ~30fps when video is playing
 
-  // RAM Preview cache - fully composited frames for instant playback
-  // Key: time (quantized to frame) -> ImageData (CPU-side for memory efficiency)
-  private compositeCache: Map<number, ImageData> = new Map();
-  private compositeCacheOrder: number[] = []; // LRU order
-  private maxCompositeCacheFrames = 900; // 30 seconds at 30fps
+  // Performance tracking
+  private lastFrameStart = 0;
+  private statsCounter = 0;
+  private lastLayerCount = 0;
 
-  // GPU texture cache for instant RAM Preview playback (no CPU->GPU upload needed)
-  // Limited size to conserve VRAM (~500MB at 1080p for 60 frames)
-  private gpuFrameCache: Map<number, { texture: GPUTexture; view: GPUTextureView; bindGroup: GPUBindGroup }> = new Map();
-  private gpuFrameCacheOrder: number[] = []; // LRU order
-  private maxGpuCacheFrames = 60; // ~500MB at 1080p
+  // Flag to skip preview updates during RAM preview generation
+  private isGeneratingRamPreview = false;
 
-  // Reusable resources for RAM Preview playback (avoid creating per-frame)
+  // Reusable resources for RAM Preview playback
   private ramPlaybackCanvas: HTMLCanvasElement | null = null;
   private ramPlaybackCtx: CanvasRenderingContext2D | null = null;
-  private ramPlaybackTexture: GPUTexture | null = null;
-  private ramPlaybackTextureView: GPUTextureView | null = null;
-  private ramPlaybackBindGroup: GPUBindGroup | null = null;
-  private ramPlaybackTextureSize: { width: number; height: number } | null = null;
 
-  async initialize(): Promise<boolean> {
-    // Prevent multiple initializations with promise-based lock
-    if (this.isInitialized && this.device) {
-      console.log('[WebGPU] Already initialized, skipping');
-      return true;
-    }
-
-    // If initialization is in progress, wait for it
-    if (this.initPromise) {
-      console.log('[WebGPU] Initialization in progress, waiting...');
-      return this.initPromise;
-    }
-
-    if (!navigator.gpu) {
-      console.error('WebGPU not supported');
-      return false;
-    }
-
-    // Create the initialization promise
-    this.initPromise = this.doInitialize();
-    return this.initPromise;
+  constructor() {
+    this.context = new WebGPUContext();
+    this.videoFrameManager = new VideoFrameManager();
   }
 
-  private async doInitialize(): Promise<boolean> {
-    try {
-      this.adapter = await navigator.gpu.requestAdapter({
-        powerPreference: 'high-performance',
-      });
+  async initialize(): Promise<boolean> {
+    const success = await this.context.initialize();
+    if (!success) return false;
 
-      if (!this.adapter) {
-        console.error('Failed to get GPU adapter');
-        return false;
-      }
-
-      this.device = await this.adapter.requestDevice({
-        requiredFeatures: [],
-        requiredLimits: {
-          maxTextureDimension2D: 4096,
-        },
-      });
-
-      this.device.lost.then((info) => {
-        console.error('WebGPU device lost:', info.message);
-        this.isInitialized = false;
-      });
-
-      await this.createResources();
-      this.isInitialized = true;
-      console.log('[WebGPU] Engine initialized successfully');
-      return true;
-    } catch (error) {
-      console.error('Failed to initialize WebGPU:', error);
-      this.initPromise = null;
-      return false;
-    }
+    await this.createResources();
+    console.log('[WebGPU] Engine initialized successfully');
+    return true;
   }
 
   private async createResources(): Promise<void> {
-    if (!this.device) return;
+    const device = this.context.getDevice();
+    if (!device) return;
+
+    // Initialize managers
+    this.textureManager = new TextureManager(device);
+    this.maskTextureManager = new MaskTextureManager(device);
+    this.scrubbingCache = new ScrubbingCache(device);
+
+    // Initialize pipelines
+    this.compositorPipeline = new CompositorPipeline(device);
+    this.effectsPipeline = new EffectsPipeline(device);
+    this.outputPipeline = new OutputPipeline(device);
 
     // Create sampler
-    this.sampler = this.device.createSampler({
-      magFilter: 'linear',
-      minFilter: 'linear',
-      addressModeU: 'clamp-to-edge',
-      addressModeV: 'clamp-to-edge',
-    });
-
-    // Create layer uniform buffer (48 bytes for 12 floats)
-    this.layerUniformBuffer = this.device.createBuffer({
-      size: 48,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
+    this.sampler = this.context.createSampler();
 
     // Create black texture
-    this.blackTexture = this.device.createTexture({
-      size: [1, 1],
-      format: 'rgba8unorm',
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-    });
-
-    this.device.queue.writeTexture(
-      { texture: this.blackTexture },
-      new Uint8Array([0, 0, 0, 255]),
-      { bytesPerRow: 4 },
-      [1, 1]
-    );
-
-    // Create white mask texture (fallback for layers without masks)
-    this.whiteMaskTexture = this.device.createTexture({
-      size: [1, 1],
-      format: 'rgba8unorm',
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-    });
-
-    this.device.queue.writeTexture(
-      { texture: this.whiteMaskTexture },
-      new Uint8Array([255, 255, 255, 255]),  // Pure white = fully visible
-      { bytesPerRow: 4 },
-      [1, 1]
-    );
-
-    this.whiteMaskView = this.whiteMaskTexture.createView();
+    this.blackTexture = this.context.createSolidColorTexture(0, 0, 0, 255);
 
     this.createPingPongTextures();
     await this.createPipelines();
   }
 
   private createPingPongTextures(): void {
-    if (!this.device) return;
+    const device = this.context.getDevice();
+    if (!device) return;
 
     this.pingTexture?.destroy();
     this.pongTexture?.destroy();
 
-    this.pingTexture = this.device.createTexture({
+    this.pingTexture = device.createTexture({
       size: [this.outputWidth, this.outputHeight],
       format: 'rgba8unorm',
       usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
     });
 
-    this.pongTexture = this.device.createTexture({
+    this.pongTexture = device.createTexture({
       size: [this.outputWidth, this.outputHeight],
       format: 'rgba8unorm',
       usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
@@ -829,219 +174,38 @@ export class WebGPUEngine {
     this.pingView = this.pingTexture.createView();
     this.pongView = this.pongTexture.createView();
 
-    // Invalidate bind group caches (they reference old textures)
-    this.cachedCompositeBindGroups.clear();
-    this.cachedOutputBindGroupPing = null;
-    this.cachedOutputBindGroupPong = null;
+    // Invalidate bind group caches
+    this.outputPipeline?.invalidateCache();
   }
 
   private async createPipelines(): Promise<void> {
-    if (!this.device) return;
-
-    // Composite bind group layout
-    this.compositeBindGroupLayout = this.device.createBindGroupLayout({
-      entries: [
-        { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
-        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
-        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: {} },
-        { binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
-        { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: {} },  // Mask texture
-      ],
-    });
-
-    // Composite pipeline
-    const compositeModule = this.device.createShaderModule({ code: compositeShader });
-
-    this.compositePipeline = this.device.createRenderPipeline({
-      layout: this.device.createPipelineLayout({
-        bindGroupLayouts: [this.compositeBindGroupLayout],
-      }),
-      vertex: { module: compositeModule, entryPoint: 'vertexMain' },
-      fragment: {
-        module: compositeModule,
-        entryPoint: 'fragmentMain',
-        targets: [{ format: 'rgba8unorm' }],
-      },
-      primitive: { topology: 'triangle-list' },
-    });
-
-    // Output bind group layout
-    this.outputBindGroupLayout = this.device.createBindGroupLayout({
-      entries: [
-        { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
-        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
-      ],
-    });
-
-    // Output pipeline
-    const outputModule = this.device.createShaderModule({ code: outputShader });
-
-    this.outputPipeline = this.device.createRenderPipeline({
-      layout: this.device.createPipelineLayout({
-        bindGroupLayouts: [this.outputBindGroupLayout],
-      }),
-      vertex: { module: outputModule, entryPoint: 'vertexMain' },
-      fragment: {
-        module: outputModule,
-        entryPoint: 'fragmentMain',
-        targets: [{ format: 'bgra8unorm' }],
-      },
-      primitive: { topology: 'triangle-list' },
-    });
-
-    // External composite pipeline (for direct video texture compositing - zero copy!)
-    this.externalCompositeBindGroupLayout = this.device.createBindGroupLayout({
-      entries: [
-        { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
-        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
-        { binding: 2, visibility: GPUShaderStage.FRAGMENT, externalTexture: {} },
-        { binding: 3, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
-        { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: {} },  // Mask texture
-      ],
-    });
-
-    const externalCompositeModule = this.device.createShaderModule({ code: externalCompositeShader });
-
-    this.externalCompositePipeline = this.device.createRenderPipeline({
-      layout: this.device.createPipelineLayout({
-        bindGroupLayouts: [this.externalCompositeBindGroupLayout],
-      }),
-      vertex: { module: externalCompositeModule, entryPoint: 'vertexMain' },
-      fragment: {
-        module: externalCompositeModule,
-        entryPoint: 'fragmentMain',
-        targets: [{ format: 'rgba8unorm' }],
-      },
-      primitive: { topology: 'triangle-list' },
-    });
-
-    // Create effect pipelines
-    await this.createEffectPipelines();
-  }
-
-  private async createEffectPipelines(): Promise<void> {
-    if (!this.device) return;
-
-    const effectModule = this.device.createShaderModule({ code: effectsShader });
-
-    // Define effect configurations: [entryPoint, needsUniform, uniformSize]
-    const effectConfigs: Record<string, [string, boolean, number]> = {
-      'hue-shift': ['hueShiftFragment', true, 16],
-      'brightness': ['colorAdjustFragment', true, 16],
-      'contrast': ['colorAdjustFragment', true, 16],
-      'saturation': ['colorAdjustFragment', true, 16],
-      'pixelate': ['pixelateFragment', true, 16],
-      'kaleidoscope': ['kaleidoscopeFragment', true, 16],
-      'mirror': ['mirrorFragment', true, 16],
-      'rgb-split': ['rgbSplitFragment', true, 16],
-      'invert': ['invertFragment', false, 0],
-      'levels': ['levelsFragment', true, 32],
-    };
-
-    for (const [effectType, [entryPoint, needsUniform, uniformSize]] of Object.entries(effectConfigs)) {
-      // Create bind group layout
-      const entries: GPUBindGroupLayoutEntry[] = [
-        { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
-        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
-      ];
-
-      if (needsUniform) {
-        entries.push({ binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } });
-      }
-
-      const bindGroupLayout = this.device.createBindGroupLayout({ entries });
-      this.effectBindGroupLayouts.set(effectType, bindGroupLayout);
-
-      // Create pipeline
-      const pipeline = this.device.createRenderPipeline({
-        layout: this.device.createPipelineLayout({
-          bindGroupLayouts: [bindGroupLayout],
-        }),
-        vertex: { module: effectModule, entryPoint: 'vertexMain' },
-        fragment: {
-          module: effectModule,
-          entryPoint,
-          targets: [{ format: 'rgba8unorm' }],
-        },
-        primitive: { topology: 'triangle-list' },
-      });
-
-      this.effectPipelines.set(effectType, pipeline);
-    }
+    await this.compositorPipeline?.createPipelines();
+    await this.effectsPipeline?.createPipelines();
+    await this.outputPipeline?.createPipeline();
   }
 
   setPreviewCanvas(canvas: HTMLCanvasElement): void {
-    if (!this.device) return;
-
-    this.previewContext = canvas.getContext('webgpu');
-
-    if (this.previewContext) {
-      this.previewContext.configure({
-        device: this.device,
-        format: 'bgra8unorm',
-        alphaMode: 'premultiplied',
-      });
-    }
+    this.previewContext = this.context.configureCanvas(canvas);
   }
 
-  // Update mask texture for a layer
+  // === MASK TEXTURE MANAGEMENT ===
+
   updateMaskTexture(layerId: string, imageData: ImageData | null): void {
-    if (!this.device) return;
-
-    // Remove existing mask texture
-    const existingTexture = this.maskTextures.get(layerId);
-    if (existingTexture) {
-      existingTexture.destroy();
-      this.maskTextures.delete(layerId);
-      this.maskTextureViews.delete(layerId);
-    }
-
-    // If no imageData, layer will use white fallback (no masking)
-    if (!imageData) {
-      console.log(`[Engine] No mask data for layer ${layerId}, using white fallback`);
-      return;
-    }
-
-    // Create new mask texture
-    const maskTexture = this.device.createTexture({
-      size: [imageData.width, imageData.height],
-      format: 'rgba8unorm',
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
-    });
-
-    // Upload mask data
-    this.device.queue.writeTexture(
-      { texture: maskTexture },
-      imageData.data,
-      {
-        bytesPerRow: imageData.width * 4,
-        rowsPerImage: imageData.height,
-      },
-      [imageData.width, imageData.height]
-    );
-
-    // Cache texture and view
-    this.maskTextures.set(layerId, maskTexture);
-    this.maskTextureViews.set(layerId, maskTexture.createView());
-
-    console.log(`[Engine] Uploaded mask texture for layer ${layerId}: ${imageData.width}x${imageData.height}`);
+    this.maskTextureManager?.updateMaskTexture(layerId, imageData);
   }
 
-  // Remove mask texture for a layer
   removeMaskTexture(layerId: string): void {
-    const existingTexture = this.maskTextures.get(layerId);
-    if (existingTexture) {
-      existingTexture.destroy();
-      this.maskTextures.delete(layerId);
-      this.maskTextureViews.delete(layerId);
-    }
+    this.maskTextureManager?.removeMaskTexture(layerId);
   }
 
   hasMaskTexture(layerId: string): boolean {
-    return this.maskTextureViews.has(layerId);
+    return this.maskTextureManager?.hasMaskTexture(layerId) ?? false;
   }
 
+  // === OUTPUT WINDOW MANAGEMENT ===
+
   createOutputWindow(id: string, name: string): OutputWindow | null {
+    const device = this.context.getDevice();
     const outputWindow = window.open(
       '',
       `output_${id}`,
@@ -1075,8 +239,6 @@ export class WebGPUEngine {
 
       const currentWidth = outputWindow.innerWidth;
       const currentHeight = outputWindow.innerHeight;
-
-      // Determine which dimension changed more
       const widthDelta = Math.abs(currentWidth - lastWidth);
       const heightDelta = Math.abs(currentHeight - lastHeight);
 
@@ -1084,22 +246,18 @@ export class WebGPUEngine {
       let newHeight: number;
 
       if (widthDelta >= heightDelta) {
-        // Width changed - adjust height to match
         newWidth = currentWidth;
         newHeight = Math.round(currentWidth / aspectRatio);
       } else {
-        // Height changed - adjust width to match
         newHeight = currentHeight;
         newWidth = Math.round(currentHeight * aspectRatio);
       }
 
-      // Resize window to enforce aspect ratio
       if (newWidth !== currentWidth || newHeight !== currentHeight) {
         outputWindow.resizeTo(newWidth + (outputWindow.outerWidth - currentWidth),
                               newHeight + (outputWindow.outerHeight - currentHeight));
       }
 
-      // Update canvas to fill window
       canvas.style.width = '100%';
       canvas.style.height = '100%';
 
@@ -1109,20 +267,17 @@ export class WebGPUEngine {
       setTimeout(() => { resizing = false; }, 50);
     };
 
-    // Initial setup
     canvas.style.width = '100%';
     canvas.style.height = '100%';
-
-    // Enforce on resize
     outputWindow.addEventListener('resize', enforceAspectRatio);
 
     let context: GPUCanvasContext | null = null;
 
-    if (this.device) {
+    if (device) {
       context = canvas.getContext('webgpu');
       if (context) {
         context.configure({
-          device: this.device,
+          device,
           format: 'bgra8unorm',
           alphaMode: 'premultiplied',
         });
@@ -1138,7 +293,6 @@ export class WebGPUEngine {
     };
     outputWindow.document.body.appendChild(fullscreenBtn);
 
-    // Hide button in fullscreen
     outputWindow.document.addEventListener('fullscreenchange', () => {
       fullscreenBtn.style.display = outputWindow.document.fullscreenElement ? 'none' : 'block';
     });
@@ -1168,291 +322,76 @@ export class WebGPUEngine {
     this.outputWindows.delete(id);
   }
 
-  // Create GPU texture from HTMLImageElement
+  // === TEXTURE MANAGEMENT ===
+
   createImageTexture(image: HTMLImageElement): GPUTexture | null {
-    // Use naturalWidth/naturalHeight for images not added to DOM (like proxy frames)
-    const width = image.naturalWidth || image.width;
-    const height = image.naturalHeight || image.height;
-
-    if (!this.device || width === 0 || height === 0) return null;
-
-    // Check cache first
-    const cached = this.imageTextures.get(image);
-    if (cached) return cached;
-
-    try {
-      const texture = this.device.createTexture({
-        size: [width, height],
-        format: 'rgba8unorm',
-        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
-      });
-
-      this.device.queue.copyExternalImageToTexture(
-        { source: image },
-        { texture },
-        [width, height]
-      );
-
-      this.imageTextures.set(image, texture);
-      return texture;
-    } catch (e) {
-      console.error('Failed to create image texture:', e);
-      return null;
-    }
+    return this.textureManager?.createImageTexture(image) ?? null;
   }
 
-  // Import external texture - true zero-copy from video decoder
-  // Supports both HTMLVideoElement and VideoFrame (from WebCodecs)
   importVideoTexture(source: HTMLVideoElement | VideoFrame): GPUExternalTexture | null {
-    if (!this.device) return null;
-
-    // Check if source is valid
-    if (source instanceof HTMLVideoElement) {
-      // readyState >= 2 means HAVE_CURRENT_DATA (has at least one frame)
-      // Also check we're not in middle of seeking which can cause blank frames
-      if (source.readyState < 2 || source.videoWidth === 0 || source.videoHeight === 0) {
-        return null;
-      }
-      // Skip if video is seeking - frame might not be ready
-      if (source.seeking) {
-        return null;
-      }
-    } else if (source instanceof VideoFrame) {
-      if (source.codedWidth === 0 || source.codedHeight === 0) {
-        return null;
-      }
-    } else {
-      return null;
-    }
-
-    try {
-      return this.device.importExternalTexture({ source });
-    } catch {
-      // Silently fail - video may not be ready yet
-      return null;
-    }
+    return this.textureManager?.importVideoTexture(source) ?? null;
   }
 
-  // Capture current video frame to a persistent GPU texture (for last-frame cache)
-  private captureVideoFrame(video: HTMLVideoElement): void {
-    if (!this.device || video.videoWidth === 0 || video.videoHeight === 0) return;
+  // === VIDEO MANAGEMENT ===
 
-    const width = video.videoWidth;
-    const height = video.videoHeight;
-
-    // Get or create texture for this video
-    let texture = this.lastFrameTextures.get(video);
-    const existingSize = this.lastFrameSizes.get(video);
-
-    // Recreate if size changed
-    if (!texture || !existingSize || existingSize.width !== width || existingSize.height !== height) {
-      texture?.destroy();
-      texture = this.device.createTexture({
-        size: [width, height],
-        format: 'rgba8unorm',
-        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
-      });
-      this.lastFrameTextures.set(video, texture);
-      this.lastFrameSizes.set(video, { width, height });
-      this.lastFrameViews.set(video, texture.createView());
-    }
-
-    // Copy current frame to texture
-    try {
-      this.device.queue.copyExternalImageToTexture(
-        { source: video },
-        { texture },
-        [width, height]
-      );
-    } catch {
-      // Video might not be ready - ignore
-    }
+  registerVideo(video: HTMLVideoElement): void {
+    this.videoFrameManager.registerVideo(video);
   }
 
-  // Get last cached frame for a video (used during seeks)
-  private getLastFrame(video: HTMLVideoElement): { view: GPUTextureView; width: number; height: number } | null {
-    const view = this.lastFrameViews.get(video);
-    const size = this.lastFrameSizes.get(video);
-    if (view && size) {
-      return { view, width: size.width, height: size.height };
-    }
-    return null;
+  setActiveVideo(video: HTMLVideoElement | null): void {
+    this.videoFrameManager.setActiveVideo(video);
   }
 
-  // Cleanup resources for a video that's no longer used
   cleanupVideo(video: HTMLVideoElement): void {
-    // Destroy GPU textures
-    const texture = this.lastFrameTextures.get(video);
-    if (texture) {
-      texture.destroy();
-      this.lastFrameTextures.delete(video);
-    }
-    this.lastFrameViews.delete(video);
-    this.lastFrameSizes.delete(video);
-    this.lastCaptureTime.delete(video);
-
-    // Cleanup frame tracking
-    this.videoFrameReady.delete(video);
-    this.videoLastTime.delete(video);
-    this.videoCallbackActive.delete(video);
-
+    this.scrubbingCache?.cleanupVideo(video);
+    this.videoFrameManager.cleanupVideo(video);
     console.log('[WebGPU] Cleaned up video resources');
   }
 
-  // Clear all caches (call periodically to prevent memory buildup)
+  setHasActiveVideo(hasVideo: boolean): void {
+    this.hasActiveVideo = hasVideo;
+  }
+
+  // === CACHING ===
+
   clearCaches(): void {
-    // Clear scrubbing cache
-    for (const texture of this.scrubbingCache.values()) {
-      texture.destroy();
-    }
-    this.scrubbingCache.clear();
-    this.scrubbingCacheViews.clear();
-    this.scrubbingCacheOrder.length = 0;
-
-    // Clear composite cache
-    this.compositeCache.clear();
-    this.compositeCacheOrder.length = 0;
-
-    // Clear GPU frame cache
-    for (const entry of this.gpuFrameCache.values()) {
-      entry.texture.destroy();
-    }
-    this.gpuFrameCache.clear();
-    this.gpuFrameCacheOrder.length = 0;
-
+    this.scrubbingCache?.clearAll();
+    this.textureManager?.clearCaches();
     console.log('[WebGPU] Cleared all caches');
   }
 
-  // === SCRUBBING FRAME CACHE ===
-  // Cache a frame at a specific time for instant scrubbing access
   cacheFrameAtTime(video: HTMLVideoElement, time: number): void {
-    if (!this.device || video.videoWidth === 0 || video.readyState < 2) return;
-
-    const key = `${video.src}:${time.toFixed(3)}`;
-    if (this.scrubbingCache.has(key)) return; // Already cached
-
-    const width = video.videoWidth;
-    const height = video.videoHeight;
-
-    // Create texture for this frame
-    const texture = this.device.createTexture({
-      size: [width, height],
-      format: 'rgba8unorm',
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
-    });
-
-    try {
-      this.device.queue.copyExternalImageToTexture(
-        { source: video },
-        { texture },
-        [width, height]
-      );
-
-      // Add to cache
-      this.scrubbingCache.set(key, texture);
-      this.scrubbingCacheViews.set(key, texture.createView());
-      this.scrubbingCacheOrder.push(key);
-
-      // LRU eviction
-      while (this.scrubbingCacheOrder.length > this.maxScrubbingCacheFrames) {
-        const oldKey = this.scrubbingCacheOrder.shift()!;
-        const oldTexture = this.scrubbingCache.get(oldKey);
-        oldTexture?.destroy();
-        this.scrubbingCache.delete(oldKey);
-        this.scrubbingCacheViews.delete(oldKey);
-      }
-    } catch {
-      texture.destroy();
-    }
+    this.scrubbingCache?.cacheFrameAtTime(video, time);
   }
 
-  // Get cached frame for scrubbing
   getCachedFrame(videoSrc: string, time: number): GPUTextureView | null {
-    const key = `${videoSrc}:${time.toFixed(3)}`;
-    const view = this.scrubbingCacheViews.get(key);
-    if (view) {
-      // Move to end of LRU list
-      const idx = this.scrubbingCacheOrder.indexOf(key);
-      if (idx > -1) {
-        this.scrubbingCacheOrder.splice(idx, 1);
-        this.scrubbingCacheOrder.push(key);
-      }
-      return view;
-    }
-    return null;
+    return this.scrubbingCache?.getCachedFrame(videoSrc, time) ?? null;
   }
 
-  // Pre-cache frames around a time point for smooth scrubbing
-  preCacheFrames(video: HTMLVideoElement, centerTime: number, radiusSeconds: number = 2, fps: number = 30): void {
-    if (!this.device || !video.src) return;
-
-    const frameInterval = 1 / fps;
-    const startTime = Math.max(0, centerTime - radiusSeconds);
-    const endTime = Math.min(video.duration || 0, centerTime + radiusSeconds);
-
-    // Queue frames to cache (will be cached as video seeks to each position)
-    const framesToCache: number[] = [];
-    for (let t = startTime; t <= endTime; t += frameInterval) {
-      const key = `${video.src}:${t.toFixed(3)}`;
-      if (!this.scrubbingCache.has(key)) {
-        framesToCache.push(t);
-      }
-    }
-
-    // Return the list for external caching logic
-    return;
+  preCacheFrames(_video: HTMLVideoElement, _centerTime: number, _radiusSeconds: number = 2, _fps: number = 30): void {
+    // Implemented in ScrubbingCache but not exposed - for future use
   }
 
-  // Get scrubbing cache stats
   getScrubbingCacheStats(): { count: number; maxCount: number } {
-    return {
-      count: this.scrubbingCache.size,
-      maxCount: this.maxScrubbingCacheFrames,
-    };
+    return this.scrubbingCache?.getScrubbingCacheStats() ?? { count: 0, maxCount: 0 };
   }
 
-  // Clear scrubbing cache for a specific video
   clearScrubbingCache(videoSrc?: string): void {
-    if (videoSrc) {
-      // Clear only frames from this video
-      const keysToRemove = this.scrubbingCacheOrder.filter(k => k.startsWith(videoSrc));
-      keysToRemove.forEach(key => {
-        const texture = this.scrubbingCache.get(key);
-        texture?.destroy();
-        this.scrubbingCache.delete(key);
-        this.scrubbingCacheViews.delete(key);
-      });
-      this.scrubbingCacheOrder = this.scrubbingCacheOrder.filter(k => !k.startsWith(videoSrc));
-    } else {
-      // Clear all
-      this.scrubbingCache.forEach(t => t.destroy());
-      this.scrubbingCache.clear();
-      this.scrubbingCacheViews.clear();
-      this.scrubbingCacheOrder = [];
-    }
+    this.scrubbingCache?.clearScrubbingCache(videoSrc);
   }
 
-  // === RAM PREVIEW COMPOSITE CACHE ===
-  // Cache fully composited frames for instant scrubbing
+  // === RAM PREVIEW CACHE ===
 
-  // Quantize time to frame number at 30fps for cache key
-  private quantizeTime(time: number): number {
-    return Math.round(time * 30) / 30;
-  }
-
-  // Cache the current composited frame at a specific time
   async cacheCompositeFrame(time: number): Promise<void> {
-    if (!this.device || !this.pingTexture || !this.pongTexture) return;
+    if (!this.scrubbingCache) return;
 
-    const key = this.quantizeTime(time);
-    if (this.compositeCache.has(key)) return; // Already cached
+    if (this.scrubbingCache.hasCompositeCacheFrame(time)) return;
 
-    // Read pixels from current composite result
     const pixels = await this.readPixels();
     if (!pixels) return;
 
     // Debug: check if pixels have data
-    if (this.compositeCache.size === 0) {
+    if (this.scrubbingCache.getCompositeCacheStats(this.outputWidth, this.outputHeight).count === 0) {
       let nonZero = 0;
       for (let i = 0; i < Math.min(1000, pixels.length); i++) {
         if (pixels[i] !== 0) nonZero++;
@@ -1460,118 +399,61 @@ export class WebGPUEngine {
       console.log(`[RAM Preview] First frame: ${nonZero} non-zero pixels in first 1000, size: ${this.outputWidth}x${this.outputHeight}`);
     }
 
-    // Create ImageData for CPU-side storage
     const imageData = new ImageData(
       new Uint8ClampedArray(pixels),
       this.outputWidth,
       this.outputHeight
     );
 
-    // Add to cache with LRU eviction
-    this.compositeCache.set(key, imageData);
-    this.compositeCacheOrder.push(key);
-
-    // Evict old frames if over limit
-    while (this.compositeCacheOrder.length > this.maxCompositeCacheFrames) {
-      const oldKey = this.compositeCacheOrder.shift()!;
-      this.compositeCache.delete(oldKey);
-    }
+    this.scrubbingCache.cacheCompositeFrame(time, imageData);
   }
 
-  // Get cached composite frame if available
   getCachedCompositeFrame(time: number): ImageData | null {
-    const key = this.quantizeTime(time);
-    const imageData = this.compositeCache.get(key);
-
-    if (imageData) {
-      // Move to end of LRU order
-      const idx = this.compositeCacheOrder.indexOf(key);
-      if (idx > -1) {
-        this.compositeCacheOrder.splice(idx, 1);
-        this.compositeCacheOrder.push(key);
-      }
-      return imageData;
-    }
-    return null;
+    return this.scrubbingCache?.getCachedCompositeFrame(time) ?? null;
   }
 
-  // Check if a frame is cached
   hasCompositeCacheFrame(time: number): boolean {
-    return this.compositeCache.has(this.quantizeTime(time));
+    return this.scrubbingCache?.hasCompositeCacheFrame(time) ?? false;
   }
 
-  // Clear composite cache
   clearCompositeCache(): void {
-    this.compositeCache.clear();
-    this.compositeCacheOrder = [];
-
-    // Clear GPU frame cache
-    for (const entry of this.gpuFrameCache.values()) {
-      entry.texture.destroy();
-    }
-    this.gpuFrameCache.clear();
-    this.gpuFrameCacheOrder = [];
-
-    // Also clear reusable playback resources
-    this.ramPlaybackTexture?.destroy();
-    this.ramPlaybackTexture = null;
-    this.ramPlaybackTextureView = null;
-    this.ramPlaybackBindGroup = null;
-    this.ramPlaybackTextureSize = null;
+    this.scrubbingCache?.clearCompositeCache();
     this.ramPlaybackCanvas = null;
     this.ramPlaybackCtx = null;
     console.log('[WebGPU] Composite cache cleared');
   }
 
-  // Get composite cache stats
   getCompositeCacheStats(): { count: number; maxFrames: number; memoryMB: number } {
-    const count = this.compositeCache.size;
-    // Each frame is width * height * 4 bytes (RGBA)
-    const bytesPerFrame = this.outputWidth * this.outputHeight * 4;
-    const memoryMB = (count * bytesPerFrame) / (1024 * 1024);
-    return { count, maxFrames: this.maxCompositeCacheFrames, memoryMB };
+    return this.scrubbingCache?.getCompositeCacheStats(this.outputWidth, this.outputHeight) ??
+      { count: 0, maxFrames: 0, memoryMB: 0 };
   }
-
-  // Flag to skip preview updates during RAM preview generation
-  private isGeneratingRamPreview = false;
 
   setGeneratingRamPreview(generating: boolean): void {
     this.isGeneratingRamPreview = generating;
   }
 
-  // Render cached frame to preview canvas if available
-  // Returns true if cached frame was used, false if live render needed
   renderCachedFrame(time: number): boolean {
-    const key = this.quantizeTime(time);
-
-    if (!this.previewContext || !this.device) {
+    const device = this.context.getDevice();
+    if (!this.previewContext || !device || !this.scrubbingCache || !this.outputPipeline || !this.sampler) {
       return false;
     }
 
-    // First, check GPU cache for instant playback (no upload needed)
-    const gpuCached = this.gpuFrameCache.get(key);
+    // First, check GPU cache for instant playback
+    const gpuCached = this.scrubbingCache.getGpuCachedFrame(time);
     if (gpuCached) {
-      // Update LRU order
-      const idx = this.gpuFrameCacheOrder.indexOf(key);
-      if (idx > -1) {
-        this.gpuFrameCacheOrder.splice(idx, 1);
-        this.gpuFrameCacheOrder.push(key);
-      }
-
-      // Instant render from GPU cache
-      const commandEncoder = this.device.createCommandEncoder();
-      this.renderToCanvasCached(commandEncoder, this.previewContext, gpuCached.bindGroup);
+      const commandEncoder = device.createCommandEncoder();
+      this.outputPipeline.renderToCanvas(commandEncoder, this.previewContext, gpuCached.bindGroup);
       for (const output of this.outputWindows.values()) {
         if (output.context) {
-          this.renderToCanvasCached(commandEncoder, output.context, gpuCached.bindGroup);
+          this.outputPipeline.renderToCanvas(commandEncoder, output.context, gpuCached.bindGroup);
         }
       }
-      this.device.queue.submit([commandEncoder.finish()]);
+      device.queue.submit([commandEncoder.finish()]);
       return true;
     }
 
     // Fall back to CPU cache and upload to GPU
-    const imageData = this.compositeCache.get(key);
+    const imageData = this.scrubbingCache.getCachedCompositeFrame(time);
     if (!imageData) {
       return false;
     }
@@ -1593,57 +475,38 @@ export class WebGPUEngine {
 
       if (!this.ramPlaybackCtx) return false;
 
-      // Put imageData to canvas
       this.ramPlaybackCtx.putImageData(imageData, 0, 0);
 
-      // Create a new GPU texture for this frame and add to GPU cache
-      const texture = this.device.createTexture({
+      // Create a new GPU texture for this frame
+      const texture = device.createTexture({
         size: [width, height],
         format: 'rgba8unorm',
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
       });
 
-      // Copy canvas to GPU texture
-      this.device.queue.copyExternalImageToTexture(
+      device.queue.copyExternalImageToTexture(
         { source: this.ramPlaybackCanvas },
         { texture },
         [width, height]
       );
 
       const view = texture.createView();
-      const bindGroup = this.device.createBindGroup({
-        layout: this.outputBindGroupLayout!,
-        entries: [
-          { binding: 0, resource: this.sampler! },
-          { binding: 1, resource: view },
-        ],
-      });
+      const bindGroup = this.outputPipeline.createOutputBindGroup(this.sampler, view);
 
-      // Add to GPU cache with LRU eviction
-      this.gpuFrameCache.set(key, { texture, view, bindGroup });
-      this.gpuFrameCacheOrder.push(key);
+      // Add to GPU cache
+      this.scrubbingCache.addToGpuCache(time, { texture, view, bindGroup });
 
-      // Evict oldest GPU cached frames if over limit
-      while (this.gpuFrameCacheOrder.length > this.maxGpuCacheFrames) {
-        const oldKey = this.gpuFrameCacheOrder.shift()!;
-        const oldEntry = this.gpuFrameCache.get(oldKey);
-        oldEntry?.texture.destroy();
-        this.gpuFrameCache.delete(oldKey);
-      }
+      // Render to preview
+      const commandEncoder = device.createCommandEncoder();
+      this.outputPipeline.renderToCanvas(commandEncoder, this.previewContext, bindGroup);
 
-      // Render texture to preview
-      const commandEncoder = this.device.createCommandEncoder();
-      this.renderToCanvasCached(commandEncoder, this.previewContext, bindGroup);
-
-      // Also render to output windows
       for (const output of this.outputWindows.values()) {
         if (output.context) {
-          this.renderToCanvasCached(commandEncoder, output.context, bindGroup);
+          this.outputPipeline.renderToCanvas(commandEncoder, output.context, bindGroup);
         }
       }
 
-      this.device.queue.submit([commandEncoder.finish()]);
-
+      device.queue.submit([commandEncoder.finish()]);
       return true;
     } catch (e) {
       console.warn('[WebGPU] Failed to render cached frame:', e);
@@ -1651,18 +514,11 @@ export class WebGPUEngine {
     }
   }
 
-  // Reusable layer data array to avoid allocations
-  private layerRenderData: Array<{
-    layer: Layer;
-    isVideo: boolean;
-    externalTexture: GPUExternalTexture | null;
-    textureView: GPUTextureView | null;
-    sourceWidth: number;
-    sourceHeight: number;
-  }> = [];
+  // === MAIN RENDER ===
 
   render(layers: Layer[]): void {
-    if (!this.device || !this.externalCompositePipeline || !this.outputPipeline) return;
+    const device = this.context.getDevice();
+    if (!device || !this.compositorPipeline || !this.outputPipeline || !this.sampler) return;
     if (!this.pingView || !this.pongView) return;
 
     const t0 = performance.now();
@@ -1682,7 +538,7 @@ export class WebGPUEngine {
       if (layer.source.webCodecsPlayer) {
         const frame = layer.source.webCodecsPlayer.getCurrentFrame();
         if (frame) {
-          const extTex = this.importVideoTexture(frame);
+          const extTex = this.textureManager?.importVideoTexture(frame);
           if (extTex) {
             this.detailedStats.decoder = 'WebCodecs';
             this.layerRenderData.push({
@@ -1708,15 +564,14 @@ export class WebGPUEngine {
         }
 
         if (video.readyState >= 2) {
-          // Always try to import external texture (zero-copy GPU path)
-          const extTex = this.importVideoTexture(video);
+          const extTex = this.textureManager?.importVideoTexture(video);
           if (extTex) {
-            // Cache frame occasionally for seek/pause fallback (not every frame)
+            // Cache frame occasionally for seek/pause fallback
             const now = performance.now();
-            const lastCapture = this.lastCaptureTime.get(video) || 0;
-            if (now - lastCapture > 500) { // Cache every 500ms
-              this.captureVideoFrame(video);
-              this.lastCaptureTime.set(video, now);
+            const lastCapture = this.scrubbingCache?.getLastCaptureTime(video) || 0;
+            if (now - lastCapture > 500) {
+              this.scrubbingCache?.captureVideoFrame(video);
+              this.scrubbingCache?.setLastCaptureTime(video, now);
             }
             this.detailedStats.decoder = 'HTMLVideo';
 
@@ -1731,8 +586,8 @@ export class WebGPUEngine {
             continue;
           }
 
-          // Import failed (seeking, not ready) - use cached frame
-          const lastFrame = this.getLastFrame(video);
+          // Import failed - use cached frame
+          const lastFrame = this.scrubbingCache?.getLastFrame(video);
           if (lastFrame) {
             this.detailedStats.decoder = 'HTMLVideo(cached)';
             this.layerRenderData.push({
@@ -1747,7 +602,7 @@ export class WebGPUEngine {
           }
         } else {
           // Video not ready - try last frame cache
-          const lastFrame = this.getLastFrame(video);
+          const lastFrame = this.scrubbingCache?.getLastFrame(video);
           if (lastFrame) {
             this.layerRenderData.push({
               layer,
@@ -1765,16 +620,12 @@ export class WebGPUEngine {
       // Images
       if (layer.source.imageElement) {
         const img = layer.source.imageElement;
-        let texture = this.imageTextures.get(img);
+        let texture = this.textureManager?.getCachedImageTexture(img);
         if (!texture) {
-          texture = this.createImageTexture(img) ?? undefined;
+          texture = this.textureManager?.createImageTexture(img) ?? undefined;
         }
         if (texture) {
-          let imageView = this.cachedImageViews.get(texture);
-          if (!imageView) {
-            imageView = texture.createView();
-            this.cachedImageViews.set(texture, imageView);
-          }
+          const imageView = this.textureManager!.getImageView(texture);
           this.layerRenderData.push({
             layer,
             isVideo: false,
@@ -1791,11 +642,10 @@ export class WebGPUEngine {
     // Update video flag for frame rate limiting
     this.hasActiveVideo = this.layerRenderData.some(d => d.isVideo);
 
-    // Early exit if nothing to render - save CPU!
+    // Early exit if nothing to render
     if (this.layerRenderData.length === 0) {
-      // Just clear the preview to black
       if (this.previewContext) {
-        const commandEncoder = this.device.createCommandEncoder();
+        const commandEncoder = device.createCommandEncoder();
         const pass = commandEncoder.beginRenderPass({
           colorAttachments: [{
             view: this.previewContext.getCurrentTexture().createView(),
@@ -1805,14 +655,14 @@ export class WebGPUEngine {
           }],
         });
         pass.end();
-        this.device.queue.submit([commandEncoder.finish()]);
+        device.queue.submit([commandEncoder.finish()]);
       }
       this.lastLayerCount = 0;
       return;
     }
 
     const t2 = performance.now();
-    const commandEncoder = this.device.createCommandEncoder();
+    const commandEncoder = device.createCommandEncoder();
 
     // Ping-pong compositing
     let readView = this.pingView;
@@ -1836,93 +686,44 @@ export class WebGPUEngine {
       const layer = data.layer;
 
       // Get or create per-layer uniform buffer
-      let uniformBuffer = this.layerUniformBuffers.get(layer.id);
-      if (!uniformBuffer) {
-        uniformBuffer = this.device.createBuffer({
-          size: 80, // 20 floats for extended uniforms (incl. mask quality)
-          usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-        });
-        this.layerUniformBuffers.set(layer.id, uniformBuffer);
-      }
+      const uniformBuffer = this.compositorPipeline!.getOrCreateUniformBuffer(layer.id);
 
       // Calculate aspect ratios
       const sourceAspect = data.sourceWidth / data.sourceHeight;
       const outputAspect = this.outputWidth / this.outputHeight;
 
-      // Get mask texture view for this layer (if any)
-      const maskTextureView = this.maskTextureViews.get(layer.id) || this.whiteMaskView!;
-      const hasMask = this.maskTextureViews.has(layer.id) ? 1 : 0;
+      // Get mask texture view for this layer
+      const hasMask = this.maskTextureManager?.hasMaskTexture(layer.id) ?? false;
+      const maskTextureView = this.maskTextureManager?.getMaskTextureView(layer.id) ??
+                             this.maskTextureManager?.getWhiteMaskView()!;
 
-      // Debug logging for mask state (throttled to avoid spam)
-      if (hasMask === 1 && (!this.lastMaskDebugLog || Date.now() - this.lastMaskDebugLog > 1000)) {
-        console.log(`[Engine] Rendering layer ${layer.id} WITH mask (hasMask=${hasMask})`);
-        this.lastMaskDebugLog = Date.now();
-      }
-
-      // Get rotation values (layer.rotation can be number or {x,y,z} object)
-      let rotX = 0, rotY = 0, rotZ = 0;
-      if (typeof layer.rotation === 'number') {
-        rotZ = layer.rotation;
-      } else if (layer.rotation && typeof layer.rotation === 'object') {
-        rotX = (layer.rotation as { x?: number; y?: number; z?: number }).x || 0;
-        rotY = (layer.rotation as { x?: number; y?: number; z?: number }).y || 0;
-        rotZ = (layer.rotation as { x?: number; y?: number; z?: number }).z || 0;
-      }
+      // Debug logging for mask state
+      this.maskTextureManager?.logMaskState(layer.id, hasMask);
 
       // Update uniforms
-      this.uniformData[0] = layer.opacity;
-      this.uniformDataU32[1] = BLEND_MODE_MAP[layer.blendMode]; // blendMode is u32 in shader
-      this.uniformData[2] = layer.position.x;
-      this.uniformData[3] = layer.position.y;
-      this.uniformData[4] = layer.scale.x;
-      this.uniformData[5] = layer.scale.y;
-      this.uniformData[6] = rotZ;         // rotationZ
-      this.uniformData[7] = sourceAspect;
-      this.uniformData[8] = outputAspect;
-      this.uniformData[9] = 0;  // time (for dissolve effects)
-      this.uniformDataU32[10] = hasMask;  // hasMask
-      this.uniformDataU32[11] = layer.maskInvert ? 1 : 0; // maskInvert (now handled in shader)
-      this.uniformData[12] = rotX;        // rotationX
-      this.uniformData[13] = rotY;        // rotationY
-      this.uniformData[14] = 2.0;         // perspective distance (lower = stronger 3D effect)
-      this.uniformData[15] = layer.maskFeather || 0;      // maskFeather (blur radius in pixels)
-      this.uniformDataU32[16] = layer.maskFeatherQuality || 0; // maskFeatherQuality (0=low, 1=med, 2=high)
-      this.uniformData[17] = 0;           // _pad1
-      this.uniformData[18] = 0;           // _pad2
-      this.uniformData[19] = 0;           // _pad3
-      this.device.queue.writeBuffer(uniformBuffer, 0, this.uniformData);
+      this.compositorPipeline!.updateLayerUniforms(layer, sourceAspect, outputAspect, hasMask, uniformBuffer);
 
       let pipeline: GPURenderPipeline;
       let bindGroup: GPUBindGroup;
 
       if (data.isVideo && data.externalTexture) {
-        // External textures are ephemeral - must create bind group each frame
-        pipeline = this.externalCompositePipeline!;
-        bindGroup = this.device.createBindGroup({
-          layout: this.externalCompositeBindGroupLayout!,
-          entries: [
-            { binding: 0, resource: this.sampler! },
-            { binding: 1, resource: readView },
-            { binding: 2, resource: data.externalTexture },
-            { binding: 3, resource: { buffer: uniformBuffer } },
-            { binding: 4, resource: maskTextureView },
-          ],
-        });
+        pipeline = this.compositorPipeline!.getExternalCompositePipeline()!;
+        bindGroup = this.compositorPipeline!.createExternalCompositeBindGroup(
+          this.sampler!,
+          readView,
+          data.externalTexture,
+          uniformBuffer,
+          maskTextureView
+        );
       } else if (data.textureView) {
-        // Images - create bind group each frame since texture may change (proxy frames)
-        // External textures (video) are ephemeral by nature, but image textures can also
-        // change when using proxy frames, so we always create fresh bind groups
-        pipeline = this.compositePipeline!;
-        bindGroup = this.device.createBindGroup({
-          layout: this.compositeBindGroupLayout!,
-          entries: [
-            { binding: 0, resource: this.sampler! },
-            { binding: 1, resource: readView },
-            { binding: 2, resource: data.textureView },
-            { binding: 3, resource: { buffer: uniformBuffer } },
-            { binding: 4, resource: maskTextureView },
-          ],
-        });
+        pipeline = this.compositorPipeline!.getCompositePipeline()!;
+        bindGroup = this.compositorPipeline!.createCompositeBindGroup(
+          this.sampler!,
+          readView,
+          data.textureView,
+          uniformBuffer,
+          maskTextureView
+        );
       } else {
         continue;
       }
@@ -1940,76 +741,25 @@ export class WebGPUEngine {
       compositePass.end();
 
       // Apply effects to the layer if any
-      if (layer.effects && layer.effects.length > 0) {
-        const enabledEffects = layer.effects.filter(e => e.enabled);
-        if (enabledEffects.length > 0) {
-          // writeView contains the composited result
-          // We'll ping-pong between writeView and readView for each effect
-          let effectInput = writeView;
-          let effectOutput = readView;
+      if (layer.effects && layer.effects.length > 0 && this.effectsPipeline) {
+        const result = this.effectsPipeline.applyEffects(
+          commandEncoder,
+          layer.effects,
+          this.sampler!,
+          writeView,
+          readView,
+          this.pingView!,
+          this.pongView!,
+          this.outputWidth,
+          this.outputHeight
+        );
 
-          for (const effect of enabledEffects) {
-            const pipeline = this.effectPipelines.get(effect.type);
-            const bindGroupLayout = this.effectBindGroupLayouts.get(effect.type);
-
-            if (!pipeline || !bindGroupLayout) continue;
-
-            // Create uniform buffer for effect parameters
-            const effectParams = this.createEffectUniformData(effect);
-            const effectUniformBuffer = effectParams ? this.device.createBuffer({
-              size: effectParams.byteLength,
-              usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-            }) : null;
-
-            if (effectUniformBuffer && effectParams) {
-              this.device.queue.writeBuffer(effectUniformBuffer, 0, effectParams);
-            }
-
-            // Create bind group
-            const entries: GPUBindGroupEntry[] = [
-              { binding: 0, resource: this.sampler! },
-              { binding: 1, resource: effectInput },
-            ];
-
-            if (effectUniformBuffer) {
-              entries.push({ binding: 2, resource: { buffer: effectUniformBuffer } });
-            }
-
-            const effectBindGroup = this.device.createBindGroup({
-              layout: bindGroupLayout,
-              entries,
-            });
-
-            // Render effect
-            const effectPass = commandEncoder.beginRenderPass({
-              colorAttachments: [{
-                view: effectOutput,
-                loadOp: 'clear',
-                storeOp: 'store',
-              }],
-            });
-            effectPass.setPipeline(pipeline);
-            effectPass.setBindGroup(0, effectBindGroup);
-            effectPass.draw(6);
-            effectPass.end();
-
-            // Swap for next effect
-            const tempView = effectInput;
-            effectInput = effectOutput;
-            effectOutput = tempView;
-          }
-
-          // After all effects, effectInput contains the final result
-          // Make sure it's in writeView for the buffer swap below
-          if (effectInput !== writeView) {
-            // Need to copy back to writeView
-            // The result is in readView, and we want it in writeView
-            // So we swap them conceptually by adjusting which is which
-            const tempView = readView;
-            readView = writeView;
-            writeView = tempView;
-            usePing = !usePing;
-          }
+        if (result.swapped) {
+          // Adjust for effect swaps
+          const tempView = readView;
+          readView = writeView;
+          writeView = tempView;
+          usePing = !usePing;
         }
       }
 
@@ -2022,55 +772,39 @@ export class WebGPUEngine {
     this.profileData.renderPass = performance.now() - t2;
 
     this.lastLayerCount = this.layerRenderData.length;
-    // Track which buffer has the final composited result (readView after loop)
-    // After swapping, readView contains the result. usePing tracks if readView is ping.
     this.lastRenderWasPing = usePing;
 
-    // Get cached output bind group
+    // Get output bind group
     const finalIsPing = !usePing;
-    let outputBindGroup = finalIsPing ? this.cachedOutputBindGroupPing : this.cachedOutputBindGroupPong;
-    if (!outputBindGroup) {
-      outputBindGroup = this.device.createBindGroup({
-        layout: this.outputBindGroupLayout!,
-        entries: [
-          { binding: 0, resource: this.sampler! },
-          { binding: 1, resource: readView },
-        ],
-      });
-      if (finalIsPing) {
-        this.cachedOutputBindGroupPing = outputBindGroup;
-      } else {
-        this.cachedOutputBindGroupPong = outputBindGroup;
-      }
-    }
+    const outputBindGroup = this.outputPipeline!.getOutputBindGroup(this.sampler!, readView, finalIsPing);
 
-    // Render to preview (skip during RAM preview generation for efficiency)
+    // Render to preview (skip during RAM preview generation)
     if (this.previewContext && !this.isGeneratingRamPreview) {
-      this.renderToCanvasCached(commandEncoder, this.previewContext, outputBindGroup);
+      this.outputPipeline!.renderToCanvas(commandEncoder, this.previewContext, outputBindGroup);
     }
 
-    // Render to output windows (also skip during RAM preview)
+    // Render to output windows
     if (!this.isGeneratingRamPreview) {
       for (const output of this.outputWindows.values()) {
         if (output.context) {
-          this.renderToCanvasCached(commandEncoder, output.context, outputBindGroup);
+          this.outputPipeline!.renderToCanvas(commandEncoder, output.context, outputBindGroup);
         }
       }
     }
 
     const t3 = performance.now();
-    this.device.queue.submit([commandEncoder.finish()]);
+    device.queue.submit([commandEncoder.finish()]);
     this.profileData.submit = performance.now() - t3;
 
     this.profileData.total = performance.now() - t0;
 
-    // Update detailed stats (smoothed averages)
+    // Update detailed stats
     this.detailedStats.importTexture = this.detailedStats.importTexture * 0.9 + this.profileData.importTexture * 0.1;
     this.detailedStats.renderPass = this.detailedStats.renderPass * 0.9 + this.profileData.renderPass * 0.1;
     this.detailedStats.submit = this.detailedStats.submit * 0.9 + this.profileData.submit * 0.1;
     this.detailedStats.total = this.detailedStats.total * 0.9 + this.profileData.total * 0.1;
 
-    // Detect drops caused by slow render (if render takes > 1 frame time)
+    // Detect drops caused by slow render
     if (this.profileData.total > this.TARGET_FRAME_TIME) {
       if (this.profileData.importTexture > this.TARGET_FRAME_TIME * 0.5) {
         this.detailedStats.lastDropReason = 'slow_import';
@@ -2079,7 +813,7 @@ export class WebGPUEngine {
       }
     }
 
-    // Log profile every second (based on time, not frame count)
+    // Log profile every second
     this.profileCounter++;
     const now = performance.now();
     if (now - this.lastProfileTime >= 1000) {
@@ -2087,12 +821,10 @@ export class WebGPUEngine {
       this.profileCounter = 0;
       this.lastProfileTime = now;
 
-      // Calculate where time is being lost
       const jsTime = this.profileData.total;
       const gapTime = timeSinceLastRender;
-      const unaccountedTime = gapTime - jsTime; // Time lost outside our code
+      const unaccountedTime = gapTime - jsTime;
 
-      // Detailed breakdown with bottleneck indicator
       let bottleneck = 'ok';
       if (gapTime > 20) {
         if (unaccountedTime > 15) bottleneck = 'BROWSER/DECODE';
@@ -2107,116 +839,16 @@ export class WebGPUEngine {
     this.updateStats();
   }
 
-  private createEffectUniformData(effect: Effect): Float32Array | null {
-    const params = effect.params;
-
-    switch (effect.type) {
-      case 'hue-shift':
-        return new Float32Array([
-          params.shift as number || 0,
-          0, 0, 0, // padding
-        ]);
-
-      case 'brightness':
-      case 'contrast':
-      case 'saturation': {
-        // ColorAdjust shader uses: brightness, contrast, saturation
-        const brightness = effect.type === 'brightness' ? (params.amount as number || 0) : 0;
-        const contrast = effect.type === 'contrast' ? (params.amount as number || 1) : 1;
-        const saturation = effect.type === 'saturation' ? (params.amount as number || 1) : 1;
-        return new Float32Array([
-          brightness,
-          contrast,
-          saturation,
-          0, // padding
-        ]);
-      }
-
-      case 'pixelate':
-        return new Float32Array([
-          params.size as number || 8,
-          this.outputWidth,
-          this.outputHeight,
-          0, // padding
-        ]);
-
-      case 'kaleidoscope':
-        return new Float32Array([
-          params.segments as number || 6,
-          params.rotation as number || 0,
-          0, 0, // padding
-        ]);
-
-      case 'mirror':
-        return new Float32Array([
-          params.horizontal ? 1 : 0,
-          params.vertical ? 1 : 0,
-          0, 0, // padding
-        ]);
-
-      case 'rgb-split':
-        return new Float32Array([
-          params.amount as number || 0.01,
-          params.angle as number || 0,
-          0, 0, // padding
-        ]);
-
-      case 'levels':
-        return new Float32Array([
-          params.inputBlack as number || 0,
-          params.inputWhite as number || 1,
-          params.gamma as number || 1,
-          params.outputBlack as number || 0,
-          params.outputWhite as number || 1,
-          0, 0, 0, // padding
-        ]);
-
-      case 'invert':
-        return null; // No uniforms needed
-
-      default:
-        return null;
-    }
-  }
-
-  private renderToCanvasCached(
-    commandEncoder: GPUCommandEncoder,
-    context: GPUCanvasContext,
-    bindGroup: GPUBindGroup
-  ): void {
-    if (!this.outputPipeline) return;
-
-    const renderPass = commandEncoder.beginRenderPass({
-      colorAttachments: [
-        {
-          view: context.getCurrentTexture().createView(),
-          loadOp: 'clear',
-          storeOp: 'store',
-        },
-      ],
-    });
-
-    renderPass.setPipeline(this.outputPipeline);
-    renderPass.setBindGroup(0, bindGroup);
-    renderPass.draw(6);
-    renderPass.end();
-  }
-
-  // Performance tracking - optimized
-  private lastFrameStart = 0;
-  private statsCounter = 0;
-
   private updateStats(): void {
     this.frameCount++;
     this.statsCounter++;
 
-    // Only calculate timing every 10 frames to reduce overhead
     if (this.statsCounter >= 10) {
       this.statsCounter = 0;
       const now = performance.now();
 
       if (this.lastFrameStart > 0) {
-        const frameTime = (now - this.lastFrameStart) / 10; // Average over 10 frames
+        const frameTime = (now - this.lastFrameStart) / 10;
         this.frameTimeBuffer[this.frameTimeIndex] = frameTime;
         this.frameTimeIndex = (this.frameTimeIndex + 1) % 60;
         if (this.frameTimeCount < 60) this.frameTimeCount++;
@@ -2230,8 +862,6 @@ export class WebGPUEngine {
       }
     }
   }
-
-  private lastLayerCount = 0;
 
   getStats(): EngineStats {
     let sum = 0;
@@ -2261,100 +891,7 @@ export class WebGPUEngine {
     };
   }
 
-  // Track active video for requestVideoFrameCallback
-  private activeVideo: HTMLVideoElement | null = null;
-  private videoFrameCallbackId: number | null = null;
-
-  // Track video frame readiness - only import texture when new frame is available
-  private videoFrameReady: Map<HTMLVideoElement, boolean> = new Map();
-  private videoLastTime: Map<HTMLVideoElement, number> = new Map();
-  private videoCallbackActive: Map<HTMLVideoElement, boolean> = new Map();
-
-  // Register a video to track frame readiness
-  registerVideo(video: HTMLVideoElement): void {
-    // Already fully registered
-    if (this.videoFrameReady.has(video) && this.videoCallbackActive.get(video)) {
-      // Re-register callback if video is playing but callback isn't active
-      if (!video.paused && !this.videoCallbackActive.get(video)) {
-        this.startVideoFrameCallback(video);
-      }
-      return;
-    }
-
-    this.videoFrameReady.set(video, true); // First frame is ready
-    this.videoLastTime.set(video, -1);
-    this.videoCallbackActive.set(video, false);
-
-    // Start frame callback if video is playing
-    if (!video.paused) {
-      this.startVideoFrameCallback(video);
-    }
-
-    // Listen for play event to restart callback
-    video.addEventListener('play', () => {
-      this.startVideoFrameCallback(video);
-    });
-  }
-
-  private startVideoFrameCallback(video: HTMLVideoElement): void {
-    if (!('requestVideoFrameCallback' in video)) return;
-    if (this.videoCallbackActive.get(video)) return;
-
-    this.videoCallbackActive.set(video, true);
-
-    const onFrame = () => {
-      this.videoFrameReady.set(video, true);
-      if (!video.paused) {
-        (video as any).requestVideoFrameCallback(onFrame);
-      } else {
-        this.videoCallbackActive.set(video, false);
-      }
-    };
-    (video as any).requestVideoFrameCallback(onFrame);
-  }
-
-  // Check if a new frame is available (for non-rVFC browsers, check currentTime)
-  private hasNewFrame(video: HTMLVideoElement): boolean {
-    const lastTime = this.videoLastTime.get(video) ?? -1;
-    const currentTime = video.currentTime;
-
-    // When video is paused, no new frames are being decoded
-    // Return true only if time changed (e.g., user seeked) or first frame
-    if (video.paused) {
-      if (lastTime === -1 || Math.abs(currentTime - lastTime) > 0.001) {
-        this.videoLastTime.set(video, currentTime);
-        return true;
-      }
-      return false; // Same frame, use cache
-    }
-
-    // Video is playing - use requestVideoFrameCallback if available
-    if ('requestVideoFrameCallback' in video) {
-      const ready = this.videoFrameReady.get(video) ?? false;
-      if (ready) {
-        this.videoFrameReady.set(video, false);
-        this.videoLastTime.set(video, currentTime);
-        return true;
-      }
-      return false;
-    }
-
-    // Fallback: check if time changed (at least 1ms difference for ~1000fps max)
-    if (Math.abs(currentTime - lastTime) > 0.001) {
-      this.videoLastTime.set(video, currentTime);
-      return true;
-    }
-    return false;
-  }
-
-  // Track if we have active video to enable frame limiting
-  private hasActiveVideo = false;
-  private lastRenderTime = 0;
-  private readonly VIDEO_FRAME_TIME = 33.33; // ~30fps when video is playing
-
-  setHasActiveVideo(hasVideo: boolean): void {
-    this.hasActiveVideo = hasVideo;
-  }
+  // === ANIMATION LOOP ===
 
   start(renderCallback: () => void): void {
     if (this.isRunning) return;
@@ -2367,27 +904,22 @@ export class WebGPUEngine {
     const loop = (timestamp: number) => {
       if (!this.isRunning) return;
 
-      // Measure time since last rAF callback
       const rafGap = lastTimestamp > 0 ? timestamp - lastTimestamp : 0;
       lastTimestamp = timestamp;
 
       // Frame rate limiting when video is playing
-      // Skip frames to reduce importExternalTexture overhead
       if (this.hasActiveVideo) {
         const timeSinceLastRender = timestamp - this.lastRenderTime;
         if (timeSinceLastRender < this.VIDEO_FRAME_TIME) {
-          // Skip this frame, schedule next
           this.animationId = requestAnimationFrame(loop);
           return;
         }
         this.lastRenderTime = timestamp;
       }
 
-      // Update RAF gap stat (smoothed)
       this.detailedStats.rafGap = this.detailedStats.rafGap * 0.9 + rafGap * 0.1;
 
-      // Detect frame drops based on RAF gap
-      // A drop is when we miss more than 1.5 frames (>25ms for 60fps)
+      // Detect frame drops
       if (rafGap > this.TARGET_FRAME_TIME * 1.5 && lastTimestamp > 0) {
         const missedFrames = Math.floor(rafGap / this.TARGET_FRAME_TIME) - 1;
         this.detailedStats.dropsTotal += missedFrames;
@@ -2395,7 +927,7 @@ export class WebGPUEngine {
         this.detailedStats.lastDropReason = 'slow_raf';
       }
 
-      // Reset per-second drop counter every second
+      // Reset per-second drop counter
       if (timestamp - lastFpsReset >= 1000) {
         this.detailedStats.dropsLastSecond = this.detailedStats.dropsThisSecond;
         this.detailedStats.dropsThisSecond = 0;
@@ -2408,18 +940,6 @@ export class WebGPUEngine {
     };
 
     this.animationId = requestAnimationFrame(loop);
-  }
-
-  // Set the active video to sync rendering with its frame delivery
-  setActiveVideo(video: HTMLVideoElement | null): void {
-    // Clean up old callback
-    if (this.activeVideo && this.videoFrameCallbackId !== null) {
-      if ('cancelVideoFrameCallback' in this.activeVideo) {
-        (this.activeVideo as any).cancelVideoFrameCallback(this.videoFrameCallbackId);
-      }
-      this.videoFrameCallbackId = null;
-    }
-    this.activeVideo = video;
   }
 
   stop(): void {
@@ -2437,56 +957,46 @@ export class WebGPUEngine {
   }
 
   getDevice(): GPUDevice | null {
-    return this.device;
+    return this.context.getDevice();
   }
 
-  // Get output dimensions (for export)
   getOutputDimensions(): { width: number; height: number } {
     return { width: this.outputWidth, height: this.outputHeight };
   }
 
-  // Read pixels from the final composited frame (for video export)
-  // Returns RGBA pixel data as Uint8ClampedArray
   async readPixels(): Promise<Uint8ClampedArray | null> {
-    if (!this.device || !this.pingTexture || !this.pongTexture) return null;
+    const device = this.context.getDevice();
+    if (!device || !this.pingTexture || !this.pongTexture) return null;
 
-    // Determine which texture has the final composited frame
     const sourceTexture = this.lastRenderWasPing ? this.pingTexture : this.pongTexture;
 
-    // WebGPU requires bytesPerRow to be aligned to 256 bytes
     const bytesPerPixel = 4;
     const unalignedBytesPerRow = this.outputWidth * bytesPerPixel;
     const bytesPerRow = Math.ceil(unalignedBytesPerRow / 256) * 256;
     const bufferSize = bytesPerRow * this.outputHeight;
 
-    // Create staging buffer for GPU -> CPU transfer
-    const stagingBuffer = this.device.createBuffer({
+    const stagingBuffer = device.createBuffer({
       size: bufferSize,
       usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
     });
 
-    // Copy texture to staging buffer
-    const commandEncoder = this.device.createCommandEncoder();
+    const commandEncoder = device.createCommandEncoder();
     commandEncoder.copyTextureToBuffer(
       { texture: sourceTexture },
       { buffer: stagingBuffer, bytesPerRow, rowsPerImage: this.outputHeight },
       [this.outputWidth, this.outputHeight]
     );
-    this.device.queue.submit([commandEncoder.finish()]);
+    device.queue.submit([commandEncoder.finish()]);
 
-    // Wait for GPU to finish and map buffer
     await stagingBuffer.mapAsync(GPUMapMode.READ);
     const arrayBuffer = stagingBuffer.getMappedRange();
 
-    // Copy data, removing row padding if any
     const result = new Uint8ClampedArray(this.outputWidth * this.outputHeight * bytesPerPixel);
     const srcView = new Uint8Array(arrayBuffer);
 
     if (bytesPerRow === unalignedBytesPerRow) {
-      // No padding, direct copy
       result.set(srcView.subarray(0, result.length));
     } else {
-      // Remove row padding
       for (let y = 0; y < this.outputHeight; y++) {
         const srcOffset = y * bytesPerRow;
         const dstOffset = y * unalignedBytesPerRow;
@@ -2494,7 +1004,6 @@ export class WebGPUEngine {
       }
     }
 
-    // Cleanup
     stagingBuffer.unmap();
     stagingBuffer.destroy();
 
@@ -2513,47 +1022,14 @@ export class WebGPUEngine {
     this.pongTexture?.destroy();
     this.blackTexture?.destroy();
 
-    for (const texture of this.videoFrameTextures.values()) {
-      texture.destroy();
-    }
-    this.videoFrameTextures.clear();
-    this.videoFrameViews.clear();
-
-    // Clear caches
-    this.cachedCompositeBindGroups.clear();
-    this.cachedOutputBindGroupPing = null;
-    this.cachedOutputBindGroupPong = null;
-    this.cachedImageViews.clear();
-
-    // Destroy image textures
-    for (const texture of this.imageTextures.values()) {
-      texture.destroy();
-    }
-    this.imageTextures.clear();
-
-    // Destroy per-layer uniform buffers
-    for (const buffer of this.layerUniformBuffers.values()) {
-      buffer.destroy();
-    }
-    this.layerUniformBuffers.clear();
-
-    // Destroy last-frame cache textures
-    for (const texture of this.lastFrameTextures.values()) {
-      texture.destroy();
-    }
-    this.lastFrameTextures.clear();
-    this.lastFrameViews.clear();
-    this.lastFrameSizes.clear();
-    this.lastCaptureTime.clear();
-
-    // Destroy scrubbing cache
-    this.clearScrubbingCache();
-
-    // Destroy composite cache and RAM playback resources
-    this.clearCompositeCache();
-
-    this.layerUniformBuffer?.destroy();
-    this.device?.destroy();
+    this.textureManager?.destroy();
+    this.maskTextureManager?.destroy();
+    this.scrubbingCache?.destroy();
+    this.videoFrameManager.destroy();
+    this.compositorPipeline?.destroy();
+    this.effectsPipeline?.destroy();
+    this.outputPipeline?.destroy();
+    this.context.destroy();
   }
 }
 
