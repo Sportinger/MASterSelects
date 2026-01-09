@@ -22,10 +22,11 @@ interface TranscriptChunk {
  * Get model name based on language
  */
 function getModelName(language: string): string {
+  // Use Xenova models - they have cross-attention outputs for word-level timestamps
   if (language === 'en') {
-    return 'onnx-community/whisper-tiny.en';
+    return 'Xenova/whisper-tiny.en';
   }
-  return 'onnx-community/whisper-tiny';
+  return 'Xenova/whisper-tiny';
 }
 
 /**
@@ -195,10 +196,9 @@ export async function transcribeClip(clipId: string, language: string = 'de'): P
 
       try {
         // English-only models don't support language/task parameters
-        // Use chunk-level timestamps (word-level requires cross-attention outputs)
         const isEnglishOnly = language === 'en';
         const result = await model(segmentData, {
-          return_timestamps: true,
+          return_timestamps: 'word',
           chunk_length_s: 30,
           stride_length_s: 5,
           ...(isEnglishOnly ? {} : { language, task: 'transcribe' }),
