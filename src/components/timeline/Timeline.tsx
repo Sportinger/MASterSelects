@@ -667,21 +667,9 @@ export function Timeline() {
         );
       });
 
-    if (
-      isPlaying &&
-      !hasActiveProxies &&
-      activeClipIdsRef.current.startsWith('playing:')
-    ) {
-      const prevActiveIds = activeClipIdsRef.current.slice(8);
-      if (prevActiveIds === currentActiveIds) {
-        clipsAtTime.forEach((clip) => {
-          if (clip.source?.videoElement?.paused) {
-            clip.source.videoElement.play().catch(() => {});
-          }
-        });
-        return;
-      }
-    }
+    // Note: We removed the early return optimization here to allow real-time
+    // effect/property changes during playback. The layer sync below will
+    // detect if effects have actually changed and skip unnecessary updates.
 
     if (isPlaying) {
       clipsAtTime.forEach((clip) => {
