@@ -155,6 +155,10 @@ function TimelineClipComponent({
 }: TimelineClipProps) {
   const thumbnails = clip.thumbnails || [];
 
+  // Determine if this is an audio clip (check source type or file type as fallback)
+  const isAudioClip = clip.source?.type === 'audio' ||
+    (!clip.source?.type && clip.file?.type?.startsWith('audio/'));
+
   const isGeneratingProxy = proxyStatus === 'generating';
   const hasProxy = proxyStatus === 'ready';
 
@@ -249,6 +253,9 @@ function TimelineClipComponent({
     return null;
   }
 
+  // Determine clip type class (audio, video, or image)
+  const clipTypeClass = isAudioClip ? 'audio' : (clip.source?.type || 'video');
+
   const clipClass = [
     'timeline-clip',
     isSelected ? 'selected' : '',
@@ -257,7 +264,7 @@ function TimelineClipComponent({
     isLinkedToDragging ? 'linked-dragging' : '',
     isTrimming ? 'trimming' : '',
     isLinkedToTrimming ? 'linked-trimming' : '',
-    clip.source?.type || 'video',
+    clipTypeClass,
     clip.isLoading ? 'loading' : '',
     hasProxy ? 'has-proxy' : '',
     isGeneratingProxy ? 'generating-proxy' : '',
@@ -310,19 +317,22 @@ function TimelineClipComponent({
         </div>
       )}
       {/* Audio waveform */}
-      {clip.source?.type === 'audio' &&
-        clip.waveform &&
-        clip.waveform.length > 0 && (
-          <div className="clip-waveform">
-            <Waveform
-              waveform={clip.waveform}
-              width={width}
-              height={Math.max(20, track.height - 12)}
-            />
-          </div>
-        )}
-      {/* Thumbnail filmstrip */}
-      {thumbnails.length > 0 && clip.source?.type !== 'audio' && (
+      {isAudioClip && clip.waveform && clip.waveform.length > 0 ? (
+        <div className="clip-waveform">
+          <Waveform
+            waveform={clip.waveform}
+            width={width}
+            height={Math.max(20, track.height - 12)}
+          />
+        </div>
+      ) : isAudioClip && !clip.waveformGenerating && (
+        // Debug: Show placeholder when audio clip has no waveform
+        <div className="clip-waveform" style={{ opacity: 0.5, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 10 }}>
+          {clip.waveform ? `${clip.waveform.length} samples` : 'No waveform'}
+        </div>
+      )}
+      {/* Thumbnail filmstrip - only for non-audio clips */}
+      {thumbnails.length > 0 && !isAudioClip && (
         <div className="clip-thumbnails">
           {Array.from({ length: visibleThumbs }).map((_, i) => {
             const thumbIndex = Math.floor((i / visibleThumbs) * thumbnails.length);
