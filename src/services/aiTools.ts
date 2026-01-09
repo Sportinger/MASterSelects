@@ -920,49 +920,61 @@ export async function executeAITool(toolName: string, args: Record<string, unkno
           };
         }
 
-        const silentSections: Array<{ start: number; end: number; duration: number }> = [];
-        const segments = clip.transcript.segments;
+        // Only consider the visible range of the clip
+        const sourceStart = clip.inPoint;
+        const sourceEnd = clip.outPoint;
 
-        // Check for silence at the beginning
-        if (segments[0].start > minDuration) {
+        // Filter segments to those within the visible range
+        const allSegments = clip.transcript.segments;
+        const segments = allSegments.filter(seg => seg.end > sourceStart && seg.start < sourceEnd);
+
+        const silentSections: Array<{ sourceStart: number; sourceEnd: number; duration: number }> = [];
+
+        // Check for silence at the beginning (from inPoint to first segment)
+        const firstSegStart = segments.length > 0 ? Math.max(segments[0].start, sourceStart) : sourceEnd;
+        if (firstSegStart - sourceStart >= minDuration) {
           silentSections.push({
-            start: 0,
-            end: segments[0].start,
-            duration: segments[0].start,
+            sourceStart: sourceStart,
+            sourceEnd: firstSegStart,
+            duration: firstSegStart - sourceStart,
           });
         }
 
         // Check gaps between segments
         for (let i = 0; i < segments.length - 1; i++) {
-          const gapStart = segments[i].end;
-          const gapEnd = segments[i + 1].start;
+          const gapStart = Math.max(segments[i].end, sourceStart);
+          const gapEnd = Math.min(segments[i + 1].start, sourceEnd);
           const gapDuration = gapEnd - gapStart;
 
           if (gapDuration >= minDuration) {
             silentSections.push({
-              start: gapStart,
-              end: gapEnd,
+              sourceStart: gapStart,
+              sourceEnd: gapEnd,
               duration: gapDuration,
             });
           }
         }
 
-        // Check for silence at the end
-        const lastSegment = segments[segments.length - 1];
-        const clipDuration = clip.outPoint - clip.inPoint;
-        if (clipDuration - lastSegment.end > minDuration) {
-          silentSections.push({
-            start: lastSegment.end,
-            end: clipDuration,
-            duration: clipDuration - lastSegment.end,
-          });
+        // Check for silence at the end (from last segment to outPoint)
+        if (segments.length > 0) {
+          const lastSegEnd = Math.min(segments[segments.length - 1].end, sourceEnd);
+          if (sourceEnd - lastSegEnd >= minDuration) {
+            silentSections.push({
+              sourceStart: lastSegEnd,
+              sourceEnd: sourceEnd,
+              duration: sourceEnd - lastSegEnd,
+            });
+          }
         }
 
-        // Convert to timeline time (add clip start time)
+        // Convert source time to timeline time
+        // Source time t maps to timeline time: clip.startTime + (t - clip.inPoint)
         const timelineSilentSections = silentSections.map(s => ({
-          ...s,
-          timelineStart: clip.startTime + s.start,
-          timelineEnd: clip.startTime + s.end,
+          sourceStart: s.sourceStart,
+          sourceEnd: s.sourceEnd,
+          duration: s.duration,
+          timelineStart: clip.startTime + (s.sourceStart - clip.inPoint),
+          timelineEnd: clip.startTime + (s.sourceEnd - clip.inPoint),
         }));
 
         return {
@@ -970,6 +982,7 @@ export async function executeAITool(toolName: string, args: Record<string, unkno
           data: {
             clipId,
             minDuration,
+            clipTimelineRange: { start: clip.startTime, end: clip.startTime + clip.duration },
             silentSections: timelineSilentSections,
             totalSilentTime: silentSections.reduce((sum, s) => sum + s.duration, 0),
             count: silentSections.length,
@@ -995,7 +1008,29 @@ export async function executeAITool(toolName: string, args: Record<string, unkno
           };
         }
 
-        const frames = clip.analysis.frames;
+        // Only consider frames within the clip's visible range (inPoint to outPoint)
+        const sourceStart = clip.inPoint;
+        const sourceEnd = clip.outPoint;
+        const allFrames = clip.analysis.frames;
+        const frames = allFrames.filter(f => f.timestamp >= sourceStart && f.timestamp <= sourceEnd);
+
+        if (frames.length === 0) {
+          return {
+            success: true,
+            data: {
+              clipId,
+              metric,
+              threshold,
+              minDuration,
+              clipTimelineRange: { start: clip.startTime, end: clip.startTime + clip.duration },
+              sections: [],
+              totalLowQualityTime: 0,
+              count: 0,
+              note: 'No analysis frames within the visible clip range.',
+            },
+          };
+        }
+
         const lowQualitySections: Array<{ start: number; end: number; duration: number; avgValue: number }> = [];
 
         // Find contiguous sections below threshold
@@ -1046,11 +1081,15 @@ export async function executeAITool(toolName: string, args: Record<string, unkno
           }
         }
 
-        // Convert to timeline time
+        // Convert source time to timeline time
+        // Source time t maps to timeline time: clip.startTime + (t - clip.inPoint)
         const timelineSections = lowQualitySections.map(s => ({
-          ...s,
-          timelineStart: clip.startTime + s.start,
-          timelineEnd: clip.startTime + s.end,
+          sourceStart: s.start,
+          sourceEnd: s.end,
+          duration: s.duration,
+          avgValue: s.avgValue,
+          timelineStart: clip.startTime + (s.start - clip.inPoint),
+          timelineEnd: clip.startTime + (s.end - clip.inPoint),
         }));
 
         return {
@@ -1060,6 +1099,7 @@ export async function executeAITool(toolName: string, args: Record<string, unkno
             metric,
             threshold,
             minDuration,
+            clipTimelineRange: { start: clip.startTime, end: clip.startTime + clip.duration },
             sections: timelineSections,
             totalLowQualityTime: lowQualitySections.reduce((sum, s) => sum + s.duration, 0),
             count: lowQualitySections.length,
