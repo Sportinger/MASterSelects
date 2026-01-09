@@ -1,6 +1,6 @@
 // Media Panel - Project browser like After Effects
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState, useEffect } from 'react';
 import { useMediaStore } from '../../stores/mediaStore';
 import type { MediaFile, Composition, ProjectItem } from '../../stores/mediaStore';
 
@@ -33,6 +33,7 @@ export function MediaPanel() {
     pickProxyFolder,
     showInExplorer,
     activeCompositionId,
+    moveToFolder,
   } = useMediaStore();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -40,6 +41,22 @@ export function MediaPanel() {
   const [renameValue, setRenameValue] = useState('');
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; itemId?: string } | null>(null);
   const [settingsDialog, setSettingsDialog] = useState<{ compositionId: string; width: number; height: number; frameRate: number } | null>(null);
+  const [addDropdownOpen, setAddDropdownOpen] = useState(false);
+  const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
+  const [internalDragId, setInternalDragId] = useState<string | null>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    if (!addDropdownOpen) return;
+    const handleClickOutside = () => setAddDropdownOpen(false);
+    const timer = setTimeout(() => {
+      document.addEventListener('click', handleClickOutside);
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('click', handleClickOutside);
+    };
+  }, [addDropdownOpen]);
 
   // Handle file import - prefer File System Access API for better file path access
   const handleImport = useCallback(async () => {
@@ -56,15 +73,6 @@ export function MediaPanel() {
     if (e.target.files && e.target.files.length > 0) {
       await importFiles(e.target.files);
       e.target.value = ''; // Reset input
-    }
-  }, [importFiles]);
-
-  // Handle drag & drop import
-  const handleDrop = useCallback(async (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.dataTransfer.files.length > 0) {
-      await importFiles(e.dataTransfer.files);
     }
   }, [importFiles]);
 
@@ -177,11 +185,20 @@ export function MediaPanel() {
     setSettingsDialog(null);
   }, [settingsDialog, updateComposition]);
 
-  // Handle drag start for media files and compositions (to drag to Timeline)
+  // Handle drag start for media files and compositions (to drag to Timeline OR to folders)
   const handleDragStart = useCallback((e: React.DragEvent, item: ProjectItem) => {
-    // Don't allow dragging folders
-    if ('isExpanded' in item) {
-      e.preventDefault();
+    const isFolder = 'isExpanded' in item;
+
+    // Mark as internal drag (for moving to folders)
+    e.dataTransfer.setData('application/x-media-panel-item', item.id);
+    setInternalDragId(item.id);
+
+    // Don't set timeline data for folders
+    if (isFolder) {
+      e.dataTransfer.effectAllowed = 'move';
+      if (e.currentTarget instanceof HTMLElement) {
+        e.dataTransfer.setDragImage(e.currentTarget, 10, 10);
+      }
       return;
     }
 
@@ -189,13 +206,12 @@ export function MediaPanel() {
     if (item.type === 'composition') {
       const comp = item as Composition;
       // Don't allow dragging comp into itself (check active comp)
-      // Using activeCompositionId from hook state since we subscribed to it
       if (comp.id === activeCompositionId) {
         e.preventDefault();
         return;
       }
       e.dataTransfer.setData('application/x-composition-id', comp.id);
-      e.dataTransfer.effectAllowed = 'copy';
+      e.dataTransfer.effectAllowed = 'copyMove';
       if (e.currentTarget instanceof HTMLElement) {
         e.dataTransfer.setDragImage(e.currentTarget, 10, 10);
       }
@@ -205,20 +221,104 @@ export function MediaPanel() {
     // Handle media file drag
     const mediaFile = item as MediaFile;
     if (!mediaFile.file) {
-      // File not available (e.g., after page refresh)
-      e.preventDefault();
+      // File not available - only allow internal move
+      e.dataTransfer.effectAllowed = 'move';
+      if (e.currentTarget instanceof HTMLElement) {
+        e.dataTransfer.setDragImage(e.currentTarget, 10, 10);
+      }
       return;
     }
 
     // Set the media file ID so Timeline can look it up
     e.dataTransfer.setData('application/x-media-file-id', mediaFile.id);
-    e.dataTransfer.effectAllowed = 'copy';
+    e.dataTransfer.effectAllowed = 'copyMove';
 
     // Set drag image
     if (e.currentTarget instanceof HTMLElement) {
       e.dataTransfer.setDragImage(e.currentTarget, 10, 10);
     }
   }, [activeCompositionId]);
+
+  // Handle drag end (clear internal drag state)
+  const handleDragEnd = useCallback(() => {
+    setInternalDragId(null);
+    setDragOverFolderId(null);
+  }, []);
+
+  // Handle drag over folder (for internal moves)
+  const handleFolderDragOver = useCallback((e: React.DragEvent, folderId: string) => {
+    // Only accept internal drags
+    if (!e.dataTransfer.types.includes('application/x-media-panel-item')) {
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverFolderId(folderId);
+  }, []);
+
+  // Handle drag leave folder
+  const handleFolderDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverFolderId(null);
+  }, []);
+
+  // Handle drop on folder
+  const handleFolderDrop = useCallback((e: React.DragEvent, folderId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const itemId = e.dataTransfer.getData('application/x-media-panel-item');
+    if (itemId && itemId !== folderId) {
+      // Don't allow dropping a folder into itself or its children
+      const draggedFolder = folders.find(f => f.id === itemId);
+      if (draggedFolder) {
+        // Check if target is a child of dragged folder (would create cycle)
+        let parent = folders.find(f => f.id === folderId);
+        while (parent) {
+          if (parent.id === itemId) {
+            // Would create cycle - abort
+            setDragOverFolderId(null);
+            setInternalDragId(null);
+            return;
+          }
+          parent = folders.find(f => f.id === parent?.parentId);
+        }
+      }
+
+      // Move item(s) to folder
+      const itemsToMove = selectedIds.includes(itemId) ? selectedIds : [itemId];
+      moveToFolder(itemsToMove, folderId);
+    }
+
+    setDragOverFolderId(null);
+    setInternalDragId(null);
+  }, [folders, selectedIds, moveToFolder]);
+
+  // Handle drop on root (move out of folder)
+  const handleRootDrop = useCallback((e: React.DragEvent) => {
+    // Only handle internal drags
+    if (!e.dataTransfer.types.includes('application/x-media-panel-item')) {
+      // External file drop - import
+      if (e.dataTransfer.files.length > 0) {
+        importFiles(e.dataTransfer.files);
+      }
+      return;
+    }
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const itemId = e.dataTransfer.getData('application/x-media-panel-item');
+    if (itemId) {
+      const itemsToMove = selectedIds.includes(itemId) ? selectedIds : [itemId];
+      moveToFolder(itemsToMove, null); // null = root
+    }
+
+    setDragOverFolderId(null);
+    setInternalDragId(null);
+  }, [selectedIds, moveToFolder, importFiles]);
 
   // Render a single item
   const renderItem = (item: ProjectItem, depth: number = 0) => {
@@ -227,18 +327,23 @@ export function MediaPanel() {
     const isRenaming = renamingId === item.id;
     const isExpanded = isFolder && expandedFolderIds.includes(item.id);
     const isMediaFile = !isFolder && 'type' in item && item.type !== 'composition';
-    const isComposition = 'type' in item && item.type === 'composition';
     const hasFile = isMediaFile && 'file' in item && !!(item as MediaFile).file;
-    // Compositions are always draggable, media files only if they have the blob
-    const canDrag = isComposition || hasFile;
+    // All items are draggable for internal moves
+    const canDrag = true;
+    const isDragTarget = isFolder && dragOverFolderId === item.id;
+    const isBeingDragged = internalDragId === item.id;
 
     return (
       <div key={item.id}>
         <div
-          className={`media-item ${isSelected ? 'selected' : ''} ${isFolder ? 'folder' : ''} ${isMediaFile && !hasFile ? 'no-file' : ''}`}
+          className={`media-item ${isSelected ? 'selected' : ''} ${isFolder ? 'folder' : ''} ${isMediaFile && !hasFile ? 'no-file' : ''} ${isDragTarget ? 'drag-target' : ''} ${isBeingDragged ? 'dragging' : ''}`}
           style={{ paddingLeft: `${12 + depth * 16}px` }}
           draggable={canDrag}
           onDragStart={(e) => handleDragStart(e, item)}
+          onDragEnd={handleDragEnd}
+          onDragOver={isFolder ? (e) => handleFolderDragOver(e, item.id) : undefined}
+          onDragLeave={isFolder ? handleFolderDragLeave : undefined}
+          onDrop={isFolder ? (e) => handleFolderDrop(e, item.id) : undefined}
           onClick={(e) => handleItemClick(item.id, e)}
           onDoubleClick={() => handleItemDoubleClick(item)}
           onContextMenu={(e) => handleContextMenu(e, item.id)}
@@ -322,9 +427,9 @@ export function MediaPanel() {
   return (
     <div
       className="media-panel"
-      onDrop={handleDrop}
+      onDrop={handleRootDrop}
       onDragOver={handleDragOver}
-      onClick={() => contextMenu && closeContextMenu()}
+      onClick={() => { contextMenu && closeContextMenu(); }}
     >
       {/* Header */}
       <div className="media-panel-header">
@@ -332,14 +437,45 @@ export function MediaPanel() {
         <span className="media-panel-count">{totalItems} items</span>
         <div className="media-panel-actions">
           <button className="btn btn-sm" onClick={handleImport} title="Import Media">
-            + Import
+            Import
           </button>
-          <button className="btn btn-sm" onClick={handleNewComposition} title="New Composition">
-            + Comp
-          </button>
-          <button className="btn btn-sm" onClick={handleNewFolder} title="New Folder">
-            + Folder
-          </button>
+          <div className="add-dropdown-container">
+            <button
+              className={`btn btn-sm add-dropdown-trigger ${addDropdownOpen ? 'active' : ''}`}
+              onClick={() => setAddDropdownOpen(!addDropdownOpen)}
+              title="Add New Item"
+            >
+              + Add ▾
+            </button>
+            {addDropdownOpen && (
+              <div className="add-dropdown-menu">
+                <div className="add-dropdown-item" onClick={() => { handleNewComposition(); setAddDropdownOpen(false); }}>
+                  <span className="add-dropdown-icon">🎬</span>
+                  <span>Composition</span>
+                </div>
+                <div className="add-dropdown-item" onClick={() => { handleNewFolder(); setAddDropdownOpen(false); }}>
+                  <span className="add-dropdown-icon">📁</span>
+                  <span>Folder</span>
+                </div>
+                <div className="add-dropdown-separator" />
+                <div className="add-dropdown-item" onClick={() => { /* TODO: Add text layer */ setAddDropdownOpen(false); }}>
+                  <span className="add-dropdown-icon">T</span>
+                  <span>Text</span>
+                  <span className="add-dropdown-hint">Coming soon</span>
+                </div>
+                <div className="add-dropdown-item" onClick={() => { /* TODO: Add solid */ setAddDropdownOpen(false); }}>
+                  <span className="add-dropdown-icon">◼</span>
+                  <span>Solid</span>
+                  <span className="add-dropdown-hint">Coming soon</span>
+                </div>
+                <div className="add-dropdown-item" onClick={() => { /* TODO: Add adjustment layer */ setAddDropdownOpen(false); }}>
+                  <span className="add-dropdown-icon">◐</span>
+                  <span>Adjustment Layer</span>
+                  <span className="add-dropdown-hint">Coming soon</span>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
