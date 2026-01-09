@@ -146,8 +146,8 @@ const AnalysisOverlay = memo(function AnalysisOverlay({
     if (visibleFrames.length < 2) return;
 
     // Draw filled area + line for Focus (green) - from bottom
-    // Moderate amplification for visibility
-    const focusMultiplier = 1.5;
+    // Lower multiplier so focus line sits lower on the graph
+    const focusMultiplier = 1.0;
     const heightScale = 0.6; // Use 60% of height
     ctx.beginPath();
     ctx.moveTo(0, height); // Start at bottom-left
@@ -178,8 +178,9 @@ const AnalysisOverlay = memo(function AnalysisOverlay({
     ctx.fill();
 
     // Draw the focus line on top with gradient coloring based on threshold
-    // Green when good (high focus), red when bad (low focus)
-    const focusThreshold = 0.3; // Below this = red
+    // Green when good (>70% focus), red when bad (<40% focus)
+    const focusRedThreshold = 0.4;   // Below this = full red
+    const focusGreenThreshold = 0.7; // Above this = full green
     ctx.lineWidth = 1.5;
 
     for (let i = 0; i < visibleFrames.length - 1; i++) {
@@ -199,8 +200,9 @@ const AnalysisOverlay = memo(function AnalysisOverlay({
       const y2 = height - (amplifiedFocus2 * height * heightScale);
 
       // Calculate color based on average value of segment
+      // t=0 at 40% or below (red), t=1 at 70% or above (green)
       const avgFocus = (frame.focus + nextFrame.focus) / 2;
-      const t = Math.min(1, Math.max(0, (avgFocus - focusThreshold * 0.5) / (focusThreshold * 1.5)));
+      const t = Math.min(1, Math.max(0, (avgFocus - focusRedThreshold) / (focusGreenThreshold - focusRedThreshold)));
 
       // Interpolate from red (low) to green (high)
       const r = Math.round(239 - t * (239 - 34));   // 239 -> 34
