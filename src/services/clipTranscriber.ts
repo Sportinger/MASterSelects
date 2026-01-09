@@ -150,15 +150,21 @@ async function transcribeFile(
     task: 'transcribe',
   });
 
-  console.log('[ClipTranscriber] Raw result:', result);
+  console.log('[ClipTranscriber] Raw result:', JSON.stringify(result, null, 2));
+  console.log('[ClipTranscriber] Result keys:', Object.keys(result));
+  console.log('[ClipTranscriber] Has chunks:', !!result.chunks, 'length:', result.chunks?.length);
+  console.log('[ClipTranscriber] Has text:', !!result.text);
   onProgress(95);
 
   // Convert result to TranscriptWord array
   const words: TranscriptWord[] = [];
   let wordIndex = 0;
 
-  if (result.chunks && result.chunks.length > 0) {
-    for (const chunk of result.chunks) {
+  // Handle different result formats from Whisper
+  const chunks = result.chunks || result.output?.chunks || [];
+
+  if (chunks.length > 0) {
+    for (const chunk of chunks) {
       const chunkText = chunk.text?.trim();
       if (!chunkText) continue;
 
@@ -198,9 +204,13 @@ async function transcribeFile(
         }
       }
     }
-  } else if (result.text) {
-    // Fallback: split text into words and distribute evenly
-    const allWords = result.text.trim().split(/\s+/).filter((w: string) => w.length > 0);
+  }
+
+  // Fallback: if no chunks but have text, split it
+  const textResult = result.text || result.output?.text || '';
+  if (words.length === 0 && textResult) {
+    console.log('[ClipTranscriber] Using text fallback:', textResult);
+    const allWords = textResult.trim().split(/\s+/).filter((w: string) => w.length > 0);
     const totalDuration = audioBuffer.duration;
     const wordDuration = totalDuration / allWords.length;
 
