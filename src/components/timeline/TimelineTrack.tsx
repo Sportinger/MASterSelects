@@ -1,8 +1,9 @@
 // TimelineTrack component - Individual track row
 
-import React, { memo, useMemo } from 'react';
+import React, { memo, useMemo, useRef, useEffect, useState } from 'react';
 import type { TimelineTrackProps } from './types';
-import type { AnimatableProperty } from '../../types';
+import type { AnimatableProperty, BezierHandle, Keyframe } from '../../types';
+import { CurveEditor } from './CurveEditor';
 
 // Render keyframe tracks for timeline area (right column) - flat list without folder structure
 function TrackPropertyTracks({
@@ -10,11 +11,27 @@ function TrackPropertyTracks({
   selectedClip,
   clipKeyframes,
   renderKeyframeDiamonds,
+  expandedCurveProperties,
+  selectedKeyframeIds,
+  scrollX,
+  onSelectKeyframe,
+  onMoveKeyframe,
+  onUpdateBezierHandle,
+  timeToPixel,
+  pixelToTime,
 }: {
   trackId: string;
-  selectedClip: { id: string; effects?: Array<{ id: string; name: string; params: Record<string, unknown> }> } | null;
+  selectedClip: { id: string; startTime: number; duration: number; effects?: Array<{ id: string; name: string; params: Record<string, unknown> }> } | null;
   clipKeyframes: Map<string, Array<{ id: string; clipId: string; time: number; property: AnimatableProperty; value: number; easing: string }>>;
   renderKeyframeDiamonds: (trackId: string, property: AnimatableProperty) => React.ReactNode;
+  expandedCurveProperties: Map<string, Set<AnimatableProperty>>;
+  selectedKeyframeIds: Set<string>;
+  scrollX: number;
+  onSelectKeyframe: (keyframeId: string, addToSelection: boolean) => void;
+  onMoveKeyframe: (keyframeId: string, newTime: number) => void;
+  onUpdateBezierHandle: (keyframeId: string, handle: 'in' | 'out', position: BezierHandle) => void;
+  timeToPixel: (time: number) => number;
+  pixelToTime: (pixel: number) => number;
 }) {
   const clipId = selectedClip?.id;
 
@@ -27,9 +44,25 @@ function TrackPropertyTracks({
     return props;
   }, [clipId, clipKeyframes]);
 
+  // Track container ref for getting width
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(1000);
+
+  // Measure container width
+  useEffect(() => {
+    const updateWidth = () => {
+      if (containerRef.current) {
+        setContainerWidth(containerRef.current.clientWidth);
+      }
+    };
+    updateWidth();
+    window.addEventListener('resize', updateWidth);
+    return () => window.removeEventListener('resize', updateWidth);
+  }, []);
+
   // If no clip is selected in this track or no keyframes, show nothing
   if (!selectedClip || keyframeProperties.size === 0) {
-    return <div className="track-property-tracks" />;
+    return <div className="track-property-tracks" ref={containerRef} />;
   }
 
   // Convert Set to sorted array for consistent ordering (matching the labels)
@@ -43,16 +76,49 @@ function TrackPropertyTracks({
     return a.localeCompare(b);
   });
 
+  // Get expanded curve properties for this track
+  const trackCurveProps = expandedCurveProperties.get(trackId);
+
+  // Get all keyframes for this clip
+  const allKeyframes = clipKeyframes.get(selectedClip.id) || [];
+
   return (
-    <div className="track-property-tracks">
-      {sortedProperties.map((prop) => (
-        <div key={prop} className="keyframe-track-row flat">
-          <div className="keyframe-track">
-            <div className="keyframe-track-line" />
-            {renderKeyframeDiamonds(trackId, prop as AnimatableProperty)}
+    <div className="track-property-tracks" ref={containerRef}>
+      {sortedProperties.map((prop) => {
+        const isCurveExpanded = trackCurveProps?.has(prop as AnimatableProperty) ?? false;
+        const propKeyframes = allKeyframes.filter(kf => kf.property === prop);
+
+        return (
+          <div key={prop} className={`keyframe-track-row flat ${isCurveExpanded ? 'curve-expanded' : ''}`}>
+            <div className="keyframe-track">
+              <div className="keyframe-track-line" />
+              {renderKeyframeDiamonds(trackId, prop as AnimatableProperty)}
+            </div>
+            {isCurveExpanded && (
+              <CurveEditor
+                trackId={trackId}
+                clipId={selectedClip.id}
+                property={prop as AnimatableProperty}
+                keyframes={propKeyframes as Keyframe[]}
+                clipStartTime={selectedClip.startTime}
+                clipDuration={selectedClip.duration}
+                width={containerWidth}
+                scrollX={scrollX}
+                selectedKeyframeIds={selectedKeyframeIds}
+                onSelectKeyframe={onSelectKeyframe}
+                onMoveKeyframe={(id, newTime, _newValue) => {
+                  // CurveEditor passes both time and value, but we need separate calls
+                  onMoveKeyframe(id, newTime);
+                  // Value changes happen through bezier handle updates
+                }}
+                onUpdateBezierHandle={onUpdateBezierHandle}
+                timeToPixel={timeToPixel}
+                pixelToTime={pixelToTime}
+              />
+            )}
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -66,6 +132,7 @@ function TimelineTrackComponent({
   isDragTarget,
   isExternalDragTarget,
   selectedClipIds,
+  selectedKeyframeIds,
   clipDrag,
   externalDrag,
   onDrop,
@@ -76,6 +143,12 @@ function TimelineTrackComponent({
   clipKeyframes,
   renderKeyframeDiamonds,
   timeToPixel,
+  pixelToTime,
+  scrollX,
+  expandedCurveProperties,
+  onSelectKeyframe,
+  onMoveKeyframe,
+  onUpdateBezierHandle,
 }: TimelineTrackProps) {
   // Get clips belonging to this track
   const trackClips = clips.filter((c) => c.trackId === track.id);
@@ -143,6 +216,14 @@ function TimelineTrackComponent({
           selectedClip={selectedTrackClip || null}
           clipKeyframes={clipKeyframes}
           renderKeyframeDiamonds={renderKeyframeDiamonds}
+          expandedCurveProperties={expandedCurveProperties}
+          selectedKeyframeIds={selectedKeyframeIds}
+          scrollX={scrollX}
+          onSelectKeyframe={onSelectKeyframe}
+          onMoveKeyframe={onMoveKeyframe}
+          onUpdateBezierHandle={onUpdateBezierHandle}
+          timeToPixel={timeToPixel}
+          pixelToTime={pixelToTime}
         />
       )}
     </div>

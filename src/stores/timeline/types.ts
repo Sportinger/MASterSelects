@@ -8,6 +8,7 @@ import type {
   Keyframe,
   AnimatableProperty,
   EasingType,
+  BezierHandle,
   ClipMask,
   MaskVertex,
   Effect
@@ -23,6 +24,7 @@ export type {
   Keyframe,
   AnimatableProperty,
   EasingType,
+  BezierHandle,
   ClipMask,
   MaskVertex,
   Effect,
@@ -70,6 +72,7 @@ export interface TimelineState {
   expandedTracks: Set<string>;
   expandedTrackPropertyGroups: Map<string, Set<string>>;
   selectedKeyframeIds: Set<string>;
+  expandedCurveProperties: Map<string, Set<AnimatableProperty>>;  // trackId -> expanded curve editors
 
   // Mask state
   maskEditMode: MaskEditMode;
@@ -177,6 +180,11 @@ export interface KeyframeActions {
   isTrackPropertyGroupExpanded: (trackId: string, groupName: string) => boolean;
   getExpandedTrackHeight: (trackId: string, baseHeight: number) => number;
   trackHasKeyframes: (trackId: string) => boolean;
+  // Curve editor expansion
+  toggleCurveExpanded: (trackId: string, property: AnimatableProperty) => void;
+  isCurveExpanded: (trackId: string, property: AnimatableProperty) => boolean;
+  // Bezier handle manipulation
+  updateBezierHandle: (keyframeId: string, handle: 'in' | 'out', position: BezierHandle) => void;
 }
 
 // Mask actions interface

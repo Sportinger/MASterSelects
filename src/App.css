@@ -3813,6 +3813,135 @@ input[type="checkbox"] {
   overflow: visible;
 }
 
+/* ========== CURVE EDITOR ========== */
+.curve-editor-svg {
+  display: block;
+  background: rgba(0, 0, 0, 0.3);
+  border-top: 1px solid var(--border-color);
+}
+
+.curve-editor-grid {
+  stroke: var(--border-color);
+  stroke-width: 0.5;
+  opacity: 0.3;
+}
+
+.curve-editor-grid-major {
+  stroke: var(--border-color);
+  stroke-width: 1;
+  opacity: 0.5;
+}
+
+.curve-editor-curve {
+  fill: none;
+  stroke: #f59e0b;
+  stroke-width: 2;
+}
+
+.curve-editor-keyframe {
+  fill: #f59e0b;
+  stroke: var(--bg-primary);
+  stroke-width: 2;
+  cursor: pointer;
+  transition: r 0.1s ease;
+}
+
+.curve-editor-keyframe:hover {
+  r: 6;
+}
+
+.curve-editor-keyframe.selected {
+  fill: #ef4444;
+  stroke: #fff;
+}
+
+.curve-editor-handle {
+  fill: #22d3ee;
+  stroke: var(--bg-primary);
+  stroke-width: 1;
+  cursor: pointer;
+}
+
+.curve-editor-handle:hover {
+  fill: #67e8f9;
+}
+
+.curve-editor-handle-line {
+  stroke: #22d3ee;
+  stroke-width: 1;
+  opacity: 0.6;
+}
+
+.curve-editor-value-label {
+  font-size: 9px;
+  fill: var(--text-secondary);
+}
+
+/* Curve editor header (left side Y-axis) */
+.curve-editor-header {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: rgba(0, 0, 0, 0.3);
+  border-top: 1px solid var(--border-color);
+}
+
+.curve-editor-close-btn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.1s;
+}
+
+.curve-editor-close-btn:hover {
+  opacity: 1;
+  color: var(--text-primary);
+}
+
+.curve-editor-y-axis {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.curve-editor-tick {
+  position: absolute;
+  right: 4px;
+  transform: translateY(-50%);
+}
+
+.curve-editor-tick-label {
+  font-size: 9px;
+  color: var(--text-secondary);
+  font-family: monospace;
+}
+
+/* Property row when curve is expanded */
+.property-label-row.flat.curve-expanded {
+  background: rgba(245, 158, 11, 0.1);
+  border-left: 2px solid #f59e0b;
+}
+
+/* Keyframe track row when curve is expanded */
+.keyframe-track-row.flat.curve-expanded {
+  flex-direction: column;
+}
+
+.keyframe-track-row.flat.curve-expanded .keyframe-track {
+  flex-shrink: 0;
+}
+
 /* ========== PREVIEW EDIT MODE ========== */
 .preview-container {
   position: relative;

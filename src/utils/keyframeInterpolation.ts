@@ -1,12 +1,134 @@
-import type { Keyframe, EasingType, AnimatableProperty, ClipTransform } from '../types';
+import type { Keyframe, EasingType, AnimatableProperty, ClipTransform, BezierHandle } from '../types';
 
-// Easing functions
-export const easingFunctions: Record<EasingType, (t: number) => number> = {
+// Preset easing functions (for non-bezier easing types)
+export const easingFunctions: Record<Exclude<EasingType, 'bezier'>, (t: number) => number> = {
   'linear': (t) => t,
   'ease-in': (t) => t * t,
   'ease-out': (t) => t * (2 - t),
   'ease-in-out': (t) => t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t,
 };
+
+// Standard CSS-equivalent bezier control points for presets
+export const PRESET_BEZIER: Record<Exclude<EasingType, 'bezier'>, { p1: [number, number]; p2: [number, number] }> = {
+  'linear': { p1: [0, 0], p2: [1, 1] },
+  'ease-in': { p1: [0.42, 0], p2: [1, 1] },
+  'ease-out': { p1: [0, 0], p2: [0.58, 1] },
+  'ease-in-out': { p1: [0.42, 0], p2: [0.58, 1] },
+};
+
+/**
+ * Solve cubic bezier for Y given X (time) using Newton-Raphson iteration.
+ * Uses standard CSS cubic-bezier format where X controls timing and Y controls output.
+ *
+ * @param targetX - The input value (normalized time, 0-1)
+ * @param p1x - First control point X
+ * @param p1y - First control point Y
+ * @param p2x - Second control point X
+ * @param p2y - Second control point Y
+ * @param epsilon - Precision for Newton-Raphson iteration
+ * @returns The output value (eased time, 0-1)
+ */
+export function solveCubicBezierForX(
+  targetX: number,
+  p1x: number, p1y: number,
+  p2x: number, p2y: number,
+  epsilon: number = 0.0001
+): number {
+  // Edge cases
+  if (targetX <= 0) return 0;
+  if (targetX >= 1) return 1;
+
+  // Bezier coefficients for X
+  const cx = 3 * p1x;
+  const bx = 3 * (p2x - p1x) - cx;
+  const ax = 1 - cx - bx;
+
+  // Bezier coefficients for Y
+  const cy = 3 * p1y;
+  const by = 3 * (p2y - p1y) - cy;
+  const ay = 1 - cy - by;
+
+  // Newton-Raphson iteration to find t where bezier_x(t) = targetX
+  let t = targetX;  // Initial guess
+
+  for (let i = 0; i < 10; i++) {
+    const x = ((ax * t + bx) * t + cx) * t;
+    const dx = (3 * ax * t + 2 * bx) * t + cx;
+
+    const diff = x - targetX;
+    if (Math.abs(diff) < epsilon) break;
+
+    if (dx === 0) break;  // Avoid division by zero
+    t -= diff / dx;
+    t = Math.max(0, Math.min(1, t));  // Clamp to [0, 1]
+  }
+
+  // Evaluate Y at solved t
+  return ((ay * t + by) * t + cy) * t;
+}
+
+/**
+ * Interpolate between two keyframes using custom bezier handles.
+ * The handles define the curve shape between the keyframes.
+ *
+ * @param prevKey - The keyframe at the start of the segment
+ * @param nextKey - The keyframe at the end of the segment
+ * @param t - Normalized time (0-1) between the two keyframes
+ * @returns Interpolated value
+ */
+export function interpolateBezier(
+  prevKey: Keyframe,
+  nextKey: Keyframe,
+  t: number
+): number {
+  const timeDelta = nextKey.time - prevKey.time;
+  const valueDelta = nextKey.value - prevKey.value;
+
+  // If no time difference, return target value
+  if (timeDelta <= 0) return nextKey.value;
+
+  // Default handles if not specified (equivalent to linear)
+  const handleOut = prevKey.handleOut || { x: timeDelta / 3, y: valueDelta / 3 };
+  const handleIn = nextKey.handleIn || { x: -timeDelta / 3, y: -valueDelta / 3 };
+
+  // Convert relative handles to normalized 0-1 control points
+  // handleOut.x is seconds from prevKey, convert to 0-1 range
+  // handleOut.y is value offset from prevKey.value
+  const p1x = Math.max(0, Math.min(1, handleOut.x / timeDelta));
+  const p1y = valueDelta !== 0 ? handleOut.y / valueDelta : 0;
+
+  // handleIn.x is seconds from nextKey (negative), convert to 0-1 range
+  const p2x = Math.max(0, Math.min(1, 1 + handleIn.x / timeDelta));
+  const p2y = valueDelta !== 0 ? 1 + handleIn.y / valueDelta : 1;
+
+  // Solve bezier to get eased t
+  const easedT = solveCubicBezierForX(t, p1x, p1y, p2x, p2y);
+
+  // Return interpolated value
+  return prevKey.value + valueDelta * easedT;
+}
+
+/**
+ * Convert a preset easing type to bezier handles for a specific keyframe segment.
+ * Useful when user wants to customize an existing preset.
+ */
+export function convertPresetToBezierHandles(
+  easing: Exclude<EasingType, 'bezier'>,
+  timeDelta: number,
+  valueDelta: number
+): { handleOut: BezierHandle; handleIn: BezierHandle } {
+  const preset = PRESET_BEZIER[easing];
+  return {
+    handleOut: {
+      x: preset.p1[0] * timeDelta,
+      y: preset.p1[1] * valueDelta,
+    },
+    handleIn: {
+      x: (preset.p2[0] - 1) * timeDelta,
+      y: (preset.p2[1] - 1) * valueDelta,
+    },
+  };
+}
 
 // Get interpolated value for a single property at a given time
 export function interpolateKeyframes(
@@ -50,7 +172,12 @@ export function interpolateKeyframes(
   const localTime = time - prevKey.time;
   const t = range > 0 ? localTime / range : 0;
 
-  // Apply easing from the previous keyframe
+  // Use bezier interpolation if easing is 'bezier' or if keyframe has custom handles
+  if (prevKey.easing === 'bezier' || prevKey.handleOut || nextKey.handleIn) {
+    return interpolateBezier(prevKey, nextKey, t);
+  }
+
+  // Apply preset easing from the previous keyframe
   const easedT = easingFunctions[prevKey.easing](t);
 
   // Linear interpolation between values

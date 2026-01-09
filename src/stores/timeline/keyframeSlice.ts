@@ -1,7 +1,7 @@
 // Keyframe-related actions slice
 
 import type { KeyframeActions, SliceCreator, Keyframe, AnimatableProperty, ClipTransform } from './types';
-import { DEFAULT_TRANSFORM, PROPERTY_ROW_HEIGHT, GROUP_HEADER_HEIGHT } from './constants';
+import { DEFAULT_TRANSFORM, PROPERTY_ROW_HEIGHT, CURVE_EDITOR_HEIGHT } from './constants';
 import {
   getInterpolatedClipTransform,
   getKeyframeAtTime,
@@ -288,7 +288,7 @@ export const createKeyframeSlice: SliceCreator<KeyframeActions> = (set, get) => 
 
   // Calculate expanded track height based on visible property rows
   getExpandedTrackHeight: (trackId, baseHeight) => {
-    const { expandedTracks, expandedTrackPropertyGroups, clips, selectedClipIds, clipKeyframes } = get();
+    const { expandedTracks, expandedCurveProperties, clips, selectedClipIds, clipKeyframes } = get();
 
     if (!expandedTracks.has(trackId)) {
       return baseHeight;
@@ -306,31 +306,6 @@ export const createKeyframeSlice: SliceCreator<KeyframeActions> = (set, get) => 
     const clipId = selectedTrackClip.id;
     const keyframes = clipKeyframes.get(clipId) || [];
 
-    // Helper to check if a property has keyframes
-    const propertyHasKeyframes = (property: string): boolean => {
-      return keyframes.some(k => k.property === property);
-    };
-
-    // Check which property groups have keyframes
-    const hasOpacityKeyframes = propertyHasKeyframes('opacity');
-    const hasPositionXKeyframes = propertyHasKeyframes('position.x');
-    const hasPositionYKeyframes = propertyHasKeyframes('position.y');
-    const hasPositionZKeyframes = propertyHasKeyframes('position.z');
-    const hasPositionKeyframes = hasPositionXKeyframes || hasPositionYKeyframes || hasPositionZKeyframes;
-    const hasScaleXKeyframes = propertyHasKeyframes('scale.x');
-    const hasScaleYKeyframes = propertyHasKeyframes('scale.y');
-    const hasScaleKeyframes = hasScaleXKeyframes || hasScaleYKeyframes;
-    const hasRotationXKeyframes = propertyHasKeyframes('rotation.x');
-    const hasRotationYKeyframes = propertyHasKeyframes('rotation.y');
-    const hasRotationZKeyframes = propertyHasKeyframes('rotation.z');
-    const hasRotationKeyframes = hasRotationXKeyframes || hasRotationYKeyframes || hasRotationZKeyframes;
-
-    // Check for effect keyframes
-    const effectsWithKeyframes = selectedTrackClip.effects?.filter(effect => {
-      const numericParams = Object.keys(effect.params).filter(k => typeof effect.params[k] === 'number');
-      return numericParams.some(paramName => propertyHasKeyframes(`effect.${effect.id}.${paramName}`));
-    }) || [];
-
     // If no keyframes at all, no property rows
     if (keyframes.length === 0) {
       return baseHeight;
@@ -338,7 +313,17 @@ export const createKeyframeSlice: SliceCreator<KeyframeActions> = (set, get) => 
 
     // Flattened display: count unique properties with keyframes
     const uniqueProperties = new Set(keyframes.map(k => k.property));
-    const extraHeight = uniqueProperties.size * PROPERTY_ROW_HEIGHT;
+    let extraHeight = uniqueProperties.size * PROPERTY_ROW_HEIGHT;
+
+    // Add curve editor height for expanded properties
+    const trackCurveProps = expandedCurveProperties.get(trackId);
+    if (trackCurveProps) {
+      trackCurveProps.forEach(prop => {
+        if (uniqueProperties.has(prop)) {
+          extraHeight += CURVE_EDITOR_HEIGHT;
+        }
+      });
+    }
 
     return baseHeight + extraHeight;
   },
@@ -351,5 +336,53 @@ export const createKeyframeSlice: SliceCreator<KeyframeActions> = (set, get) => 
       const kfs = clipKeyframes.get(clip.id);
       return kfs && kfs.length > 0;
     });
+  },
+
+  // Curve editor expansion
+  toggleCurveExpanded: (trackId, property) => {
+    const { expandedCurveProperties } = get();
+    const newMap = new Map(expandedCurveProperties);
+    const trackProps = newMap.get(trackId) || new Set<AnimatableProperty>();
+    const newTrackProps = new Set(trackProps);
+
+    if (newTrackProps.has(property)) {
+      newTrackProps.delete(property);
+    } else {
+      newTrackProps.add(property);
+    }
+
+    if (newTrackProps.size === 0) {
+      newMap.delete(trackId);
+    } else {
+      newMap.set(trackId, newTrackProps);
+    }
+
+    set({ expandedCurveProperties: newMap });
+  },
+
+  isCurveExpanded: (trackId, property) => {
+    const { expandedCurveProperties } = get();
+    const trackProps = expandedCurveProperties.get(trackId);
+    return trackProps?.has(property) ?? false;
+  },
+
+  // Bezier handle manipulation
+  updateBezierHandle: (keyframeId, handle, position) => {
+    const { clipKeyframes, invalidateCache } = get();
+    const newMap = new Map<string, Keyframe[]>();
+
+    clipKeyframes.forEach((keyframes, clipId) => {
+      newMap.set(clipId, keyframes.map(k => {
+        if (k.id !== keyframeId) return k;
+        return {
+          ...k,
+          easing: 'bezier' as const,
+          [handle === 'in' ? 'handleIn' : 'handleOut']: position,
+        };
+      }));
+    });
+
+    set({ clipKeyframes: newMap });
+    invalidateCache();
   },
 });

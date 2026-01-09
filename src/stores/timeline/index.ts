@@ -476,6 +476,7 @@ export const useTimelineStore = create<TimelineStore>()(
           expandedTracks: new Set<string>(data.tracks.filter(t => t.type === 'video').map(t => t.id)),
           expandedTrackPropertyGroups: new Map<string, Set<string>>(),
           selectedKeyframeIds: new Set<string>(),
+          expandedCurveProperties: new Map<string, Set<import('../../types').AnimatableProperty>>(),
         });
 
         // Restore keyframes from serialized clips
@@ -797,6 +798,7 @@ export const useTimelineStore = create<TimelineStore>()(
           expandedTracks: new Set<string>(tracks.filter(t => t.type === 'video').map(t => t.id)),
           expandedTrackPropertyGroups: new Map<string, Set<string>>(),
           selectedKeyframeIds: new Set<string>(),
+          expandedCurveProperties: new Map<string, Set<import('../../types').AnimatableProperty>>(),
         });
       },
     };
@@ -839,6 +841,7 @@ export const useTimelineStore = create<TimelineStore>()(
       expandedTracks: new Set<string>(DEFAULT_TRACKS.filter(t => t.type === 'video').map(t => t.id)),
       expandedTrackPropertyGroups: new Map<string, Set<string>>(),
       selectedKeyframeIds: new Set<string>(),
+      expandedCurveProperties: new Map<string, Set<import('../../types').AnimatableProperty>>(),
 
       // Mask state
       maskEditMode: 'none' as const,

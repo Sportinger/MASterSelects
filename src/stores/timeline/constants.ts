@@ -30,6 +30,10 @@ export const OVERLAP_RESISTANCE_PIXELS = 100;
 export const PROPERTY_ROW_HEIGHT = 18;
 export const GROUP_HEADER_HEIGHT = 20;
 
+// Curve editor constants
+export const CURVE_EDITOR_HEIGHT = 250;
+export const BEZIER_HANDLE_SIZE = 8;
+
 // Default durations
 export const DEFAULT_TIMELINE_DURATION = 60;
 export const DEFAULT_IMAGE_DURATION = 5;

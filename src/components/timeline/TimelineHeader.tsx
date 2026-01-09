@@ -2,9 +2,8 @@
 
 import { memo, useMemo, useState, useRef, useEffect } from 'react';
 import type { TimelineHeaderProps } from './types';
-import type { AnimatableProperty } from '../../types';
-
-import type { ClipTransform } from '../../types';
+import type { AnimatableProperty, ClipTransform, Keyframe } from '../../types';
+import { CurveEditorHeader } from './CurveEditorHeader';
 
 // Get friendly names for properties
 const getPropertyLabel = (prop: string): string => {
@@ -55,6 +54,7 @@ const formatValue = (value: number, prop: string): string => {
 function PropertyRow({
   prop,
   clipId,
+  trackId: _trackId,
   clip,
   keyframes,
   playheadPosition,
@@ -62,16 +62,21 @@ function PropertyRow({
   addKeyframe,
   setPlayheadPosition,
   setPropertyValue,
+  isCurveExpanded,
+  onToggleCurveExpanded,
 }: {
   prop: string;
   clipId: string;
+  trackId: string;
   clip: { startTime: number; duration: number };
-  keyframes: Array<{ id: string; time: number; property: string; value: number }>;
+  keyframes: Array<{ id: string; time: number; property: string; value: number; easing: string }>;
   playheadPosition: number;
   getInterpolatedTransform: (clipId: string, clipLocalTime: number) => ClipTransform;
   addKeyframe: (clipId: string, property: AnimatableProperty, value: number) => void;
   setPlayheadPosition: (time: number) => void;
   setPropertyValue: (clipId: string, property: AnimatableProperty, value: number) => void;
+  isCurveExpanded: boolean;
+  onToggleCurveExpanded: () => void;
 }) {
   const [isDragging, setIsDragging] = useState(false);
   const dragStart = useRef({ y: 0, value: 0 });
@@ -184,46 +189,66 @@ function PropertyRow({
     addKeyframe(clipId, prop as AnimatableProperty, currentValue);
   };
 
+  // Handle double-click to toggle curve editor
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onToggleCurveExpanded();
+  };
+
   return (
-    <div className={`property-label-row flat ${isDragging ? 'dragging' : ''}`}>
-      <span className="property-label">{getPropertyLabel(prop)}</span>
-      <div className="property-keyframe-controls">
-        <button
-          className={`kf-nav-btn ${prevKeyframe ? '' : 'disabled'}`}
-          onClick={jumpToPrev}
-          title="Previous keyframe"
-        >
-          ◀
-        </button>
-        <button
-          className={`kf-add-btn ${hasKeyframeAtPlayhead ? 'has-keyframe' : ''}`}
-          onClick={toggleKeyframe}
-          title={hasKeyframeAtPlayhead ? 'Keyframe exists' : 'Add keyframe'}
-        >
-          ◆
-        </button>
-        <button
-          className={`kf-nav-btn ${nextKeyframe ? '' : 'disabled'}`}
-          onClick={jumpToNext}
-          title="Next keyframe"
-        >
-          ▶
-        </button>
-      </div>
-      <span
-        className="property-value"
-        onMouseDown={handleMouseDown}
-        onContextMenu={handleRightClick}
-        title="Drag to scrub, Right-click to reset"
+    <>
+      <div
+        className={`property-label-row flat ${isDragging ? 'dragging' : ''} ${isCurveExpanded ? 'curve-expanded' : ''}`}
+        onDoubleClick={handleDoubleClick}
+        title="Double-click to toggle curve editor"
       >
-        {isWithinClip ? formatValue(currentValue, prop) : '—'}
-      </span>
-    </div>
+        <span className="property-label">{getPropertyLabel(prop)}</span>
+        <div className="property-keyframe-controls">
+          <button
+            className={`kf-nav-btn ${prevKeyframe ? '' : 'disabled'}`}
+            onClick={jumpToPrev}
+            title="Previous keyframe"
+          >
+            ◀
+          </button>
+          <button
+            className={`kf-add-btn ${hasKeyframeAtPlayhead ? 'has-keyframe' : ''}`}
+            onClick={toggleKeyframe}
+            title={hasKeyframeAtPlayhead ? 'Keyframe exists' : 'Add keyframe'}
+          >
+            ◆
+          </button>
+          <button
+            className={`kf-nav-btn ${nextKeyframe ? '' : 'disabled'}`}
+            onClick={jumpToNext}
+            title="Next keyframe"
+          >
+            ▶
+          </button>
+        </div>
+        <span
+          className="property-value"
+          onMouseDown={handleMouseDown}
+          onContextMenu={handleRightClick}
+          title="Drag to scrub, Right-click to reset"
+        >
+          {isWithinClip ? formatValue(currentValue, prop) : '—'}
+        </span>
+      </div>
+      {isCurveExpanded && (
+        <CurveEditorHeader
+          property={prop as AnimatableProperty}
+          keyframes={propKeyframes as Keyframe[]}
+          onClose={onToggleCurveExpanded}
+        />
+      )}
+    </>
   );
 }
 
 // Render property labels for track header (left column) - flat list without folder structure
 function TrackPropertyLabels({
+  trackId,
   selectedClip,
   clipKeyframes,
   playheadPosition,
@@ -231,7 +256,10 @@ function TrackPropertyLabels({
   addKeyframe,
   setPlayheadPosition,
   setPropertyValue,
+  expandedCurveProperties,
+  onToggleCurveExpanded,
 }: {
+  trackId: string;
   selectedClip: { id: string; startTime: number; duration: number; effects?: Array<{ id: string; name: string; params: Record<string, unknown> }> } | null;
   clipKeyframes: Map<string, Array<{ id: string; clipId: string; time: number; property: AnimatableProperty; value: number; easing: string }>>;
   playheadPosition: number;
@@ -239,6 +267,8 @@ function TrackPropertyLabels({
   addKeyframe: (clipId: string, property: AnimatableProperty, value: number) => void;
   setPlayheadPosition: (time: number) => void;
   setPropertyValue: (clipId: string, property: AnimatableProperty, value: number) => void;
+  expandedCurveProperties: Map<string, Set<AnimatableProperty>>;
+  onToggleCurveExpanded: (trackId: string, property: AnimatableProperty) => void;
 }) {
   const clipId = selectedClip?.id;
   const keyframes = clipId ? clipKeyframes.get(clipId) || [] : [];
@@ -266,22 +296,31 @@ function TrackPropertyLabels({
     return a.localeCompare(b);
   });
 
+  // Check if property has curve editor expanded
+  const trackCurveProps = expandedCurveProperties.get(trackId);
+
   return (
     <div className="track-property-labels">
-      {sortedProperties.map((prop) => (
-        <PropertyRow
-          key={prop}
-          prop={prop}
-          clipId={selectedClip.id}
-          clip={selectedClip}
-          keyframes={keyframes}
-          playheadPosition={playheadPosition}
-          getInterpolatedTransform={getInterpolatedTransform}
-          addKeyframe={addKeyframe}
-          setPlayheadPosition={setPlayheadPosition}
-          setPropertyValue={setPropertyValue}
-        />
-      ))}
+      {sortedProperties.map((prop) => {
+        const isCurveExpanded = trackCurveProps?.has(prop as AnimatableProperty) ?? false;
+        return (
+          <PropertyRow
+            key={prop}
+            prop={prop}
+            clipId={selectedClip.id}
+            trackId={trackId}
+            clip={selectedClip}
+            keyframes={keyframes}
+            playheadPosition={playheadPosition}
+            getInterpolatedTransform={getInterpolatedTransform}
+            addKeyframe={addKeyframe}
+            setPlayheadPosition={setPlayheadPosition}
+            setPropertyValue={setPropertyValue}
+            isCurveExpanded={isCurveExpanded}
+            onToggleCurveExpanded={() => onToggleCurveExpanded(trackId, prop as AnimatableProperty)}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -306,6 +345,8 @@ function TimelineHeaderComponent({
   addKeyframe,
   setPlayheadPosition,
   setPropertyValue,
+  expandedCurveProperties,
+  onToggleCurveExpanded,
 }: TimelineHeaderProps) {
   // Get the first selected clip in this track
   const trackClips = clips.filter((c) => c.trackId === track.id);
@@ -437,6 +478,7 @@ function TimelineHeaderComponent({
       {/* Property labels - shown when track is expanded */}
       {track.type === 'video' && isExpanded && (
         <TrackPropertyLabels
+          trackId={track.id}
           selectedClip={selectedTrackClip || null}
           clipKeyframes={clipKeyframes}
           playheadPosition={playheadPosition}
@@ -444,6 +486,8 @@ function TimelineHeaderComponent({
           addKeyframe={addKeyframe}
           setPlayheadPosition={setPlayheadPosition}
           setPropertyValue={setPropertyValue}
+          expandedCurveProperties={expandedCurveProperties}
+          onToggleCurveExpanded={onToggleCurveExpanded}
         />
       )}
     </div>

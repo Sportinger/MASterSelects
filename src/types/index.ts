@@ -94,7 +94,15 @@ export type EffectType =
   | 'mirror'
   | 'invert'
   | 'rgb-split'
-  | 'levels';
+  | 'levels'
+  // Audio effects
+  | 'audio-eq'
+  | 'audio-volume';
+
+// Helper to check if an effect type is an audio effect
+export function isAudioEffect(type: EffectType): boolean {
+  return type === 'audio-eq' || type === 'audio-volume';
+}
 
 export interface OutputWindow {
   id: string;
@@ -302,7 +310,13 @@ export interface CompositionTimelineData {
 }
 
 // Keyframe animation types
-export type EasingType = 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out';
+export type EasingType = 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out' | 'bezier';
+
+// Bezier control handle for custom curves
+export interface BezierHandle {
+  x: number;  // Time offset from keyframe (seconds, negative for in-handle)
+  y: number;  // Value offset from keyframe value
+}
 
 // Transform properties that can be animated
 export type TransformProperty =
@@ -370,4 +384,6 @@ export interface Keyframe {
   property: AnimatableProperty;
   value: number;
   easing: EasingType;     // Easing for interpolation TO the next keyframe
+  handleIn?: BezierHandle;   // Bezier control point for curve entering this keyframe
+  handleOut?: BezierHandle;  // Bezier control point for curve leaving this keyframe
 }

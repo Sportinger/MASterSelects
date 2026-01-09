@@ -1,6 +1,6 @@
 // Timeline-specific types for component props
 
-import type { TimelineClip, TimelineTrack, AnimatableProperty, ClipTransform } from '../../types';
+import type { TimelineClip, TimelineTrack, AnimatableProperty, ClipTransform, BezierHandle, EasingType } from '../../types';
 
 // Clip drag state (Premiere-style)
 export interface ClipDragState {
@@ -145,6 +145,9 @@ export interface TimelineHeaderProps {
   addKeyframe: (clipId: string, property: AnimatableProperty, value: number) => void;
   setPlayheadPosition: (time: number) => void;
   setPropertyValue: (clipId: string, property: AnimatableProperty, value: number) => void;
+  // Curve editor
+  expandedCurveProperties: Map<string, Set<AnimatableProperty>>;
+  onToggleCurveExpanded: (trackId: string, property: AnimatableProperty) => void;
 }
 
 // Props for TimelineTrack component
@@ -157,6 +160,7 @@ export interface TimelineTrackProps {
   isDragTarget: boolean;
   isExternalDragTarget: boolean;
   selectedClipIds: Set<string>;
+  selectedKeyframeIds: Set<string>;
   clipDrag: ClipDragState | null;
   clipTrim: ClipTrimState | null;
   externalDrag: ExternalDragState | null;
@@ -176,6 +180,11 @@ export interface TimelineTrackProps {
   renderKeyframeDiamonds: (trackId: string, property: AnimatableProperty) => React.ReactNode;
   timeToPixel: (time: number) => number;
   pixelToTime: (pixel: number) => number;
+  // Curve editor
+  expandedCurveProperties: Map<string, Set<AnimatableProperty>>;
+  onSelectKeyframe: (keyframeId: string, addToSelection: boolean) => void;
+  onMoveKeyframe: (keyframeId: string, newTime: number) => void;
+  onUpdateBezierHandle: (keyframeId: string, handle: 'in' | 'out', position: BezierHandle) => void;
 }
 
 // Props for TimelineClip component
@@ -228,7 +237,7 @@ export interface TimelineKeyframesProps {
   timelineRef: React.RefObject<HTMLDivElement | null>;
   onSelectKeyframe: (keyframeId: string, addToSelection: boolean) => void;
   onMoveKeyframe: (keyframeId: string, newTime: number) => void;
-  onUpdateKeyframe: (keyframeId: string, updates: { easing?: string }) => void;
+  onUpdateKeyframe: (keyframeId: string, updates: { easing?: EasingType }) => void;
   timeToPixel: (time: number) => number;
   pixelToTime: (pixel: number) => number;
 }

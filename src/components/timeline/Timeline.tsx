@@ -98,6 +98,9 @@ export function Timeline() {
     updateKeyframe,
     removeKeyframe,
     setPropertyValue,
+    expandedCurveProperties,
+    toggleCurveExpanded,
+    updateBezierHandle,
     thumbnailsEnabled,
     waveformsEnabled,
     toggleThumbnailsEnabled,
@@ -2739,6 +2742,8 @@ export function Timeline() {
                   addKeyframe={addKeyframe}
                   setPlayheadPosition={setPlayheadPosition}
                   setPropertyValue={setPropertyValue}
+                  expandedCurveProperties={expandedCurveProperties}
+                  onToggleCurveExpanded={toggleCurveExpanded}
                 />
               );
             })}
@@ -2806,6 +2811,7 @@ export function Timeline() {
                   externalDrag?.audioTrackId === track.id
                 }
                 selectedClipIds={selectedClipIds}
+                selectedKeyframeIds={selectedKeyframeIds}
                 clipDrag={clipDrag}
                 clipTrim={clipTrim}
                 externalDrag={externalDrag}
@@ -2824,6 +2830,10 @@ export function Timeline() {
                 renderKeyframeDiamonds={renderKeyframeDiamonds}
                 timeToPixel={timeToPixel}
                 pixelToTime={pixelToTime}
+                expandedCurveProperties={expandedCurveProperties}
+                onSelectKeyframe={selectKeyframe}
+                onMoveKeyframe={moveKeyframe}
+                onUpdateBezierHandle={updateBezierHandle}
               />
             );
           })}
