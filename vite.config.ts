@@ -27,6 +27,6 @@ export default defineConfig({
       target: 'esnext',
     },
     // Exclude transformers.js and onnxruntime from pre-bundling
-    exclude: ['@xenova/transformers', 'onnxruntime-web'],
+    exclude: ['@huggingface/transformers', 'onnxruntime-web'],
   },
 })

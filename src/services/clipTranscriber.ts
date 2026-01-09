@@ -23,9 +23,9 @@ interface TranscriptChunk {
  */
 function getModelName(language: string): string {
   if (language === 'en') {
-    return 'Xenova/whisper-tiny.en';
+    return 'onnx-community/whisper-tiny.en';
   }
-  return 'Xenova/whisper-tiny';
+  return 'onnx-community/whisper-tiny';
 }
 
 /**
@@ -34,7 +34,7 @@ function getModelName(language: string): string {
 async function loadTransformers(): Promise<void> {
   if (transformersLoaded) return;
 
-  const transformers = await import('@xenova/transformers');
+  const transformers = await import('@huggingface/transformers');
 
   // Configure environment
   transformers.env.allowLocalModels = false;
