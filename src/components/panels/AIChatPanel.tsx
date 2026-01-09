@@ -6,7 +6,14 @@ import './AIChatPanel.css';
 
 // Available OpenAI models
 const OPENAI_MODELS = [
-  // GPT-5 series (latest)
+  // GPT-5.2 series (newest - Dec 2025)
+  { id: 'gpt-5.2', name: 'GPT-5.2 (Thinking)' },
+  { id: 'gpt-5.2-pro', name: 'GPT-5.2 Pro' },
+  // GPT-5.1 series
+  { id: 'gpt-5.1', name: 'GPT-5.1' },
+  { id: 'gpt-5.1-codex', name: 'GPT-5.1 Codex' },
+  { id: 'gpt-5.1-codex-mini', name: 'GPT-5.1 Codex Mini' },
+  // GPT-5 series
   { id: 'gpt-5', name: 'GPT-5' },
   { id: 'gpt-5-mini', name: 'GPT-5 Mini' },
   { id: 'gpt-5-nano', name: 'GPT-5 Nano' },
@@ -18,7 +25,7 @@ const OPENAI_MODELS = [
   { id: 'gpt-4.1', name: 'GPT-4.1' },
   { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini' },
   { id: 'gpt-4.1-nano', name: 'GPT-4.1 Nano' },
-  // GPT-4o series (still available)
+  // GPT-4o series (legacy)
   { id: 'gpt-4o', name: 'GPT-4o' },
   { id: 'gpt-4o-mini', name: 'GPT-4o Mini' },
 ];
@@ -35,7 +42,7 @@ export function AIChatPanel() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [model, setModel] = useState('gpt-4.1-mini');
+  const [model, setModel] = useState('gpt-5.1');
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);

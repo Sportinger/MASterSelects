@@ -293,6 +293,7 @@ export interface CompositionTimelineData {
   clips: SerializableClip[];
   playheadPosition: number;
   duration: number;
+  durationLocked?: boolean;  // When true, duration won't auto-update based on clips
   zoom: number;
   scrollX: number;
   inPoint: number | null;

@@ -85,6 +85,25 @@ export const createPlaybackSlice: SliceCreator<PlaybackAndRamPreviewActions> = (
     set({ loopPlayback: !get().loopPlayback });
   },
 
+  setDuration: (duration: number) => {
+    // Manually set duration and lock it so it won't auto-update
+    const clampedDuration = Math.max(1, duration); // Minimum 1 second
+    set({ duration: clampedDuration, durationLocked: true });
+
+    // Clamp playhead if it's beyond new duration
+    const { playheadPosition, inPoint, outPoint } = get();
+    if (playheadPosition > clampedDuration) {
+      set({ playheadPosition: clampedDuration });
+    }
+    // Clamp in/out points if needed
+    if (inPoint !== null && inPoint > clampedDuration) {
+      set({ inPoint: clampedDuration });
+    }
+    if (outPoint !== null && outPoint > clampedDuration) {
+      set({ outPoint: clampedDuration });
+    }
+  },
+
   // RAM Preview actions
   toggleRamPreviewEnabled: () => {
     const { ramPreviewEnabled } = get();

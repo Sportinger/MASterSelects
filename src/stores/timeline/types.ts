@@ -50,6 +50,9 @@ export interface TimelineState {
   outPoint: number | null;
   loopPlayback: boolean;
 
+  // Duration lock (when true, duration won't auto-update based on clips)
+  durationLocked: boolean;
+
   // RAM Preview state
   ramPreviewEnabled: boolean;
   ramPreviewProgress: number | null;
@@ -123,6 +126,7 @@ export interface PlaybackActions {
   setOutPointAtPlayhead: () => void;
   setLoopPlayback: (loop: boolean) => void;
   toggleLoopPlayback: () => void;
+  setDuration: (duration: number) => void;
 }
 
 // RAM Preview actions interface

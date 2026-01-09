@@ -41,7 +41,10 @@ export const useTimelineStore = create<TimelineStore>()(
       },
 
       updateDuration: () => {
-        const { clips } = get();
+        const { clips, durationLocked } = get();
+        // Don't auto-update if duration is manually locked
+        if (durationLocked) return;
+
         if (clips.length === 0) {
           set({ duration: 60 });
           return;
@@ -820,6 +823,9 @@ export const useTimelineStore = create<TimelineStore>()(
       inPoint: null as number | null,
       outPoint: null as number | null,
       loopPlayback: false,
+
+      // Duration lock (when true, duration won't auto-update based on clips)
+      durationLocked: false,
 
       // RAM Preview state
       ramPreviewEnabled: false,
