@@ -323,10 +323,11 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
       const naturalDuration = audio.duration || estimatedDuration;
 
       // Check if this is a large file before setting waveform state
-      const LARGE_AUDIO_THRESHOLD = 500 * 1024 * 1024; // 500MB
+      // Audio waveform can handle larger files (up to 4GB) since we just need to decode and sample
+      const LARGE_AUDIO_THRESHOLD = 4 * 1024 * 1024 * 1024; // 4GB
       const isLargeAudioFile = file.size > LARGE_AUDIO_THRESHOLD;
 
-      // Mark clip as ready first (waveform will load in background for small files)
+      // Mark clip as ready first (waveform will load in background)
       updateClip(clipId, {
         duration: naturalDuration,
         outPoint: naturalDuration,
@@ -337,10 +338,10 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
       });
 
       // Generate waveform in background - only if enabled
-      // Skip for large files (>500MB) as generateWaveform loads entire file into memory
+      // Skip for very large files (>4GB) to avoid memory issues
 
       if (isLargeAudioFile) {
-        console.log(`[Waveform] Skipping for large file (${(file.size / 1024 / 1024).toFixed(0)}MB): ${file.name}`);
+        console.log(`[Waveform] Skipping for very large file (${(file.size / 1024 / 1024).toFixed(0)}MB): ${file.name}`);
       }
 
       if (get().waveformsEnabled && !isLargeAudioFile) {

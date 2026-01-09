@@ -19,7 +19,6 @@ const Waveform = memo(function Waveform({
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    console.log(`[Waveform] Render: width=${width}, height=${height}, samples=${waveform?.length || 0}, canvas=${!!canvas}`);
     if (!canvas || !waveform || waveform.length === 0 || width <= 0) return;
 
     const ctx = canvas.getContext('2d');
@@ -177,10 +176,6 @@ function TimelineClipComponent({
     clip.file?.type?.startsWith('audio/') ||
     audioExtensions.includes(fileExt);
 
-  // Debug: log detection
-  if (fileExt === 'wav' || clip.name?.includes('.wav')) {
-    console.log(`[TimelineClip] WAV: isAudio=${isAudioClip}, waveform=${clip.waveform?.length || 0}, thumbs=${thumbnails.length}, loading=${clip.isLoading}`);
-  }
 
 
   const isGeneratingProxy = proxyStatus === 'generating';
@@ -341,17 +336,13 @@ function TimelineClipComponent({
         </div>
       )}
       {/* Audio waveform */}
-      {isAudioClip && clip.waveform && clip.waveform.length > 0 ? (
+      {isAudioClip && clip.waveform && clip.waveform.length > 0 && (
         <div className="clip-waveform">
           <Waveform
             waveform={clip.waveform}
             width={width}
             height={Math.max(20, track.height - 12)}
           />
-        </div>
-      ) : isAudioClip && (
-        <div style={{ position: 'absolute', top: 4, left: 4, color: '#fff', fontSize: 9, opacity: 0.7 }}>
-          {clip.waveformGenerating ? 'Gen...' : (clip.waveform ? `w:${clip.waveform.length}` : 'no-wf')}
         </div>
       )}
       {/* Thumbnail filmstrip - only for non-audio clips */}
