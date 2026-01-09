@@ -148,10 +148,15 @@ export function AIChatPanel() {
     content: string | null;
     toolCalls: ToolCall[];
   }> => {
+    // Newer models (GPT-5.x, o3, o4) use max_completion_tokens instead of max_tokens
+    const isNewerModel = model.startsWith('gpt-5') || model.startsWith('o3') || model.startsWith('o4');
+
     const requestBody: Record<string, unknown> = {
       model,
       messages: apiMessages,
-      max_tokens: 4096,
+      ...(isNewerModel
+        ? { max_completion_tokens: 4096 }
+        : { max_tokens: 4096 }),
     };
 
     // Add tools in editor mode
