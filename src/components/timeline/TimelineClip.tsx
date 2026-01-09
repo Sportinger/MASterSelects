@@ -17,32 +17,34 @@ const Waveform = memo(function Waveform({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  console.log(`[Waveform] Rendering: width=${width}, height=${height}, samples=${waveform?.length}`);
-
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !waveform || waveform.length === 0 || width <= 0) {
-      console.log(`[Waveform] Early exit: canvas=${!!canvas}, waveform=${waveform?.length}, width=${width}`);
-      return;
-    }
+    if (!canvas || !waveform || waveform.length === 0 || width <= 0) return;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    // Limit canvas size to browser maximum (16384 is safe for most browsers)
+    const MAX_CANVAS_WIDTH = 16384;
+    const canvasWidth = Math.min(width, MAX_CANVAS_WIDTH);
+
     // Set canvas size (account for device pixel ratio for sharpness)
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-    ctx.scale(dpr, dpr);
+    // Also limit by dpr to avoid exceeding canvas limits
+    const effectiveDpr = Math.min(dpr, MAX_CANVAS_WIDTH / canvasWidth);
+
+    canvas.width = canvasWidth * effectiveDpr;
+    canvas.height = height * effectiveDpr;
+    ctx.scale(effectiveDpr, effectiveDpr);
 
     // Clear
-    ctx.clearRect(0, 0, width, height);
+    ctx.clearRect(0, 0, canvasWidth, height);
 
     // Determine number of bars to draw (max 2 per pixel for detail)
-    const maxBars = Math.floor(width * 2);
+    const maxBars = Math.floor(canvasWidth * 2);
     const samplesPerBar = Math.max(1, Math.floor(waveform.length / maxBars));
     const numBars = Math.ceil(waveform.length / samplesPerBar);
-    const barWidth = width / numBars;
+    const barWidth = canvasWidth / numBars;
 
     ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
 
@@ -298,23 +300,6 @@ function TimelineClipComponent({
     .filter(Boolean)
     .join(' ');
 
-  // Debug logging for audio clips
-  if (clip.name?.toLowerCase().includes('.wav')) {
-    console.log(`[TimelineClip] WAV clip debug:`, {
-      name: clip.name,
-      clipTypeClass,
-      isAudioClip,
-      sourceType: clip.source?.type,
-      fileType: clip.file?.type,
-      fileExt,
-      waveformLength: clip.waveform?.length,
-      waveformGenerating: clip.waveformGenerating,
-      clipClass,
-      trackHeight: track.height,
-      clipWidth: width,
-    });
-  }
-
   return (
     <div
       className={clipClass}
@@ -356,13 +341,6 @@ function TimelineClipComponent({
         </div>
       )}
       {/* Audio waveform */}
-      {(() => {
-        const shouldRenderWaveform = isAudioClip && clip.waveform && clip.waveform.length > 0;
-        if (clip.name?.toLowerCase().includes('.wav')) {
-          console.log(`[TimelineClip] Waveform render check:`, { shouldRenderWaveform, isAudioClip, waveformLength: clip.waveform?.length, width });
-        }
-        return null;
-      })()}
       {isAudioClip && clip.waveform && clip.waveform.length > 0 && (
         <div className="clip-waveform">
           <Waveform
