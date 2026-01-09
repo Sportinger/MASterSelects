@@ -2326,16 +2326,19 @@ export function Timeline() {
     const handleWheel = (e: WheelEvent) => {
       if (e.ctrlKey || e.altKey) {
         e.preventDefault();
+        // Get the track lanes container width for accurate centering
+        const trackLanes = el.querySelector('.track-lanes');
+        const viewportWidth = trackLanes?.clientWidth ?? el.clientWidth - 120; // 120 = track headers width
+
+        // Calculate dynamic minimum zoom so you can't zoom out beyond timeline duration
+        // This ensures the entire timeline fits exactly when fully zoomed out
+        const dynamicMinZoom = Math.max(MIN_ZOOM, viewportWidth / duration);
+
         // Adjust delta based on current zoom level for smoother zooming
         // Use smaller steps at low zoom levels for precision
         const zoomFactor = zoom < 1 ? 0.1 : zoom < 10 ? 1 : 5;
         const delta = e.deltaY > 0 ? -zoomFactor : zoomFactor;
-        const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom + delta));
-
-        // Center on playhead when zooming
-        // Get the track lanes container width for accurate centering
-        const trackLanes = el.querySelector('.track-lanes');
-        const viewportWidth = trackLanes?.clientWidth ?? el.clientWidth - 120; // 120 = track headers width
+        const newZoom = Math.max(dynamicMinZoom, Math.min(MAX_ZOOM, zoom + delta));
 
         // Calculate playhead position in pixels with new zoom
         const playheadPixel = playheadPosition * newZoom;
@@ -2356,7 +2359,7 @@ export function Timeline() {
 
     el.addEventListener('wheel', handleWheel, { passive: false });
     return () => el.removeEventListener('wheel', handleWheel);
-  }, [zoom, scrollX, playheadPosition, setZoom, setScrollX]);
+  }, [zoom, scrollX, playheadPosition, duration, setZoom, setScrollX]);
 
   // Render keyframe diamonds
   const renderKeyframeDiamonds = useCallback(
