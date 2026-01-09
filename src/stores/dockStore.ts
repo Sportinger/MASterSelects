@@ -21,6 +21,40 @@ import {
   collapseSingleChildSplits,
 } from '../utils/dockLayout';
 
+// Valid panel types (used to filter out removed panels from saved layouts)
+const VALID_PANEL_TYPES = new Set(Object.keys(PANEL_CONFIGS));
+
+// Filter out invalid panel types from a layout node
+function filterInvalidPanels(node: DockNode): DockNode | null {
+  if (node.kind === 'tab-group') {
+    const validPanels = node.panels.filter(p => VALID_PANEL_TYPES.has(p.type));
+    if (validPanels.length === 0) return null;
+    return {
+      ...node,
+      panels: validPanels,
+      activeIndex: Math.min(node.activeIndex, validPanels.length - 1),
+    };
+  } else {
+    const [left, right] = node.children;
+    const filteredLeft = filterInvalidPanels(left);
+    const filteredRight = filterInvalidPanels(right);
+    if (!filteredLeft && !filteredRight) return null;
+    if (!filteredLeft) return filteredRight;
+    if (!filteredRight) return filteredLeft;
+    return { ...node, children: [filteredLeft, filteredRight] };
+  }
+}
+
+// Clean up a persisted layout by removing invalid panels
+function cleanupPersistedLayout(layout: DockLayout): DockLayout {
+  const cleanedRoot = filterInvalidPanels(layout.root);
+  return {
+    ...layout,
+    root: cleanedRoot || DEFAULT_LAYOUT.root,
+    floatingPanels: layout.floatingPanels.filter(fp => VALID_PANEL_TYPES.has(fp.panel.type)),
+  };
+}
+
 // Default layout configuration
 // 3-column layout: Media/Properties/AI Chat left, Preview center, Multi-Cam/Export right
 // Timeline at bottom
@@ -66,9 +100,12 @@ const DEFAULT_LAYOUT: DockLayout = {
                 id: 'right-group',
                 panels: [
                   { id: 'multicam', type: 'multicam', title: 'Multi-Cam' },
+                  { id: 'transcript', type: 'transcript', title: 'Transcript' },
+                  { id: 'analysis', type: 'analysis', title: 'Analysis' },
+                  { id: 'effects', type: 'effects', title: 'Effects' },
                   { id: 'export', type: 'export', title: 'Export' },
                 ],
-                activeIndex: 0,
+                activeIndex: 1,
               },
             ],
           },
@@ -536,6 +573,19 @@ export const useDockStore = create<DockState>()(
       {
         name: 'webvj-dock-layout',
         partialize: (state) => ({ layout: state.layout, maxZIndex: state.maxZIndex }),
+        merge: (persistedState, currentState) => {
+          const persisted = persistedState as Partial<DockState> | undefined;
+          if (persisted?.layout) {
+            // Clean up any invalid panel types from persisted layout
+            const cleanedLayout = cleanupPersistedLayout(persisted.layout);
+            return {
+              ...currentState,
+              layout: cleanedLayout,
+              maxZIndex: persisted.maxZIndex ?? currentState.maxZIndex,
+            };
+          }
+          return currentState;
+        },
       }
     )
   )
