@@ -22,6 +22,7 @@ import {
   PROXY_IDLE_DELAY,
   DURATION_CHECK_TIMEOUT,
 } from './constants';
+import { MIN_ZOOM, MAX_ZOOM } from '../../stores/timeline/constants';
 import type {
   ClipDragState,
   ClipTrimState,
@@ -2290,8 +2291,11 @@ export function Timeline() {
     const handleWheel = (e: WheelEvent) => {
       if (e.ctrlKey || e.altKey) {
         e.preventDefault();
-        const delta = e.deltaY > 0 ? -5 : 5;
-        const newZoom = Math.max(5, Math.min(500, zoom + delta));
+        // Adjust delta based on current zoom level for smoother zooming
+        // Use smaller steps at low zoom levels for precision
+        const zoomFactor = zoom < 1 ? 0.1 : zoom < 10 ? 1 : 5;
+        const delta = e.deltaY > 0 ? -zoomFactor : zoomFactor;
+        const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom + delta));
 
         // Center on playhead when zooming
         // Get the track lanes container width for accurate centering

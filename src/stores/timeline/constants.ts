@@ -34,8 +34,8 @@ export const DEFAULT_TIMELINE_DURATION = 60;
 export const DEFAULT_IMAGE_DURATION = 5;
 
 // Zoom limits (pixels per second)
-// MIN_ZOOM = 1 allows viewing ~1000 seconds in a 1000px wide timeline
-export const MIN_ZOOM = 1;
+// MIN_ZOOM = 0.1 allows viewing ~10000 seconds (~2.7 hours) in a 1000px wide timeline
+export const MIN_ZOOM = 0.1;
 export const MAX_ZOOM = 200;
 
 // Track height limits
