@@ -11,7 +11,7 @@ Vollständige Dokumentation aller Features der Video-Editing-Anwendung.
 - **Clip-Management**: Hinzufügen, Entfernen, Verschieben von Clips
 - **Clip-Trimming**: Links/Rechts-Kanten ziehen für In/Out-Points
 - **Linked Clips**: Audio/Video bleiben beim Verschieben synchron
-- **Clip-Splitting**: Clips teilen (manuell oder am Playhead)
+- **Clip-Splitting**: Clips teilen mit C-Taste (splittet ALLE Clips am Playhead, oder nur ausgewählte)
 - **Playhead**: Klicken zum Springen, Ziehen zum Scrubben
 - **Zoom**: Dynamischer Zoom mit Scroll-Rad
 - **Track-Höhe**: Individuelle Track-Höhen anpassbar

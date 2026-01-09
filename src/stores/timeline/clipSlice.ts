@@ -890,13 +890,13 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
     console.log(`[Timeline] Split clip "${clip.name}" at ${splitTime.toFixed(2)}s`);
   },
 
-  // Split the clip under the playhead (or selected clip if playhead is on it)
+  // Split clips at the playhead position
+  // If clips are selected, split only selected clips at playhead
+  // If no clips are selected, split ALL clips at playhead (like standard NLE behavior)
   splitClipAtPlayhead: () => {
     const { clips, playheadPosition, selectedClipIds, splitClip } = get();
-    // Get first selected clip ID for checking if it's at playhead
-    const selectedClipId = selectedClipIds.size > 0 ? [...selectedClipIds][0] : null;
 
-    // Find clips at the current playhead position
+    // Find clips at the current playhead position (excluding linked clips to avoid double-split)
     const clipsAtPlayhead = clips.filter(c =>
       playheadPosition > c.startTime &&
       playheadPosition < c.startTime + c.duration
@@ -907,18 +907,29 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
       return;
     }
 
-    // If selected clip is at playhead, split that one
-    // Otherwise, split the topmost video clip at playhead
-    let clipToSplit = clipsAtPlayhead.find(c => c.id === selectedClipId);
-    if (!clipToSplit) {
-      // Prefer video clips over audio clips
-      clipToSplit = clipsAtPlayhead.find(c => c.source?.type === 'video' || c.source?.type === 'image');
-      if (!clipToSplit) {
-        clipToSplit = clipsAtPlayhead[0];
+    // Determine which clips to split
+    let clipsToSplit: typeof clipsAtPlayhead;
+
+    if (selectedClipIds.size > 0) {
+      // Split only selected clips that are at playhead
+      clipsToSplit = clipsAtPlayhead.filter(c => selectedClipIds.has(c.id));
+      if (clipsToSplit.length === 0) {
+        // No selected clips at playhead - fall back to splitting all clips at playhead
+        clipsToSplit = clipsAtPlayhead;
       }
+    } else {
+      // No selection - split ALL clips at playhead (standard NLE behavior)
+      clipsToSplit = clipsAtPlayhead;
     }
 
-    splitClip(clipToSplit.id, playheadPosition);
+    // Filter out clips that will be split via their linked clip (to avoid double-splitting)
+    const linkedClipIds = new Set(clipsToSplit.map(c => c.linkedClipId).filter(Boolean));
+    const clipsToSplitFiltered = clipsToSplit.filter(c => !linkedClipIds.has(c.id));
+
+    // Split each clip
+    for (const clip of clipsToSplitFiltered) {
+      splitClip(clip.id, playheadPosition);
+    }
   },
 
   updateClipTransform: (id, transform) => {
