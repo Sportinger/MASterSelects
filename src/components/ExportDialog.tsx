@@ -4,7 +4,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { FrameExporter, downloadBlob } from '../engine/FrameExporter';
 import type { ExportProgress } from '../engine/FrameExporter';
-import { useTimelineStore } from '../stores/timelineStore';
+import { useTimelineStore } from '../stores/timeline';
 import { useMediaStore } from '../stores/mediaStore';
 
 interface ExportDialogProps {

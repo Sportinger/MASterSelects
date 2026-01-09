@@ -6,7 +6,7 @@ import { EffectsPanel } from '../EffectsPanel';
 import { ExportPanel } from '../ExportPanel';
 import { ClipPropertiesPanel } from '../ClipPropertiesPanel';
 import { LayerPanel } from '../LayerPanel';
-import { Timeline } from '../Timeline';
+import { Timeline } from '../timeline';
 import { MediaPanel } from '../MediaPanel';
 
 interface DockPanelContentProps {

@@ -1,7 +1,7 @@
 // Global history hook - initializes undo/redo system and keyboard shortcuts
 
 import { useEffect, useRef } from 'react';
-import { useTimelineStore } from '../stores/timelineStore';
+import { useTimelineStore } from '../stores/timeline';
 import { useMixerStore } from '../stores/mixerStore';
 import { useMediaStore } from '../stores/mediaStore';
 import { useDockStore } from '../stores/dockStore';

@@ -1,7 +1,7 @@
 // MaskOverlay - SVG overlay for mask drawing and editing on preview canvas
 
 import { useRef, useCallback, useEffect, useMemo, useState } from 'react';
-import { useTimelineStore } from '../stores/timelineStore';
+import { useTimelineStore } from '../stores/timeline';
 import type { MaskVertex } from '../types';
 
 // Shape drawing state

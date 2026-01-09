@@ -1,7 +1,7 @@
 // Clip Properties Panel - Shows transform controls for selected timeline clip
 
 import { useRef, useCallback, useState } from 'react';
-import { useTimelineStore } from '../stores/timelineStore';
+import { useTimelineStore } from '../stores/timeline';
 import type { BlendMode, AnimatableProperty, MaskMode, ClipMask } from '../types';
 
 // Organized by category like After Effects

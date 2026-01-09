@@ -1,7 +1,7 @@
 // Effects panel component
 
 import { useMixerStore } from '../stores/mixerStore';
-import { useTimelineStore } from '../stores/timelineStore';
+import { useTimelineStore } from '../stores/timeline';
 import type { EffectType, BlendMode } from '../types';
 import { createEffectProperty } from '../types';
 

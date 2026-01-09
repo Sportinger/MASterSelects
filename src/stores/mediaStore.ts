@@ -2,7 +2,7 @@
 
 import { create } from 'zustand';
 import { subscribeWithSelector, persist } from 'zustand/middleware';
-import { useTimelineStore } from './timelineStore';
+import { useTimelineStore } from './timeline';
 import { projectDB, type StoredMediaFile, type StoredProject } from '../services/projectDB';
 import { fileSystemService } from '../services/fileSystemService';
 

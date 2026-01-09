@@ -3,7 +3,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { engine } from '../engine/WebGPUEngine';
 import { useMixerStore } from '../stores/mixerStore';
-import { useTimelineStore } from '../stores/timelineStore';
+import { useTimelineStore } from '../stores/timeline';
 import { generateMaskTexture } from '../utils/maskRenderer';
 
 export function useEngine() {

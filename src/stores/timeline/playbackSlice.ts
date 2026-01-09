@@ -1,0 +1,440 @@
+// Playback-related actions slice
+
+import type { PlaybackActions, RamPreviewActions, SliceCreator } from './types';
+import type { Layer } from '../../types';
+import { RAM_PREVIEW_FPS, FRAME_TOLERANCE } from './constants';
+import { quantizeTime } from './utils';
+
+// Combined playback and RAM preview actions
+export type PlaybackAndRamPreviewActions = PlaybackActions & RamPreviewActions;
+
+export const createPlaybackSlice: SliceCreator<PlaybackAndRamPreviewActions> = (set, get) => ({
+  // Playback actions
+  setPlayheadPosition: (position) => {
+    const { duration } = get();
+    set({ playheadPosition: Math.max(0, Math.min(position, duration)) });
+  },
+
+  setDraggingPlayhead: (dragging) => {
+    set({ isDraggingPlayhead: dragging });
+  },
+
+  play: () => {
+    set({ isPlaying: true });
+  },
+
+  pause: () => {
+    set({ isPlaying: false });
+  },
+
+  stop: () => {
+    set({ isPlaying: false, playheadPosition: 0 });
+  },
+
+  // View actions
+  setZoom: (zoom) => {
+    set({ zoom: Math.max(10, Math.min(200, zoom)) });
+  },
+
+  setScrollX: (scrollX) => {
+    set({ scrollX: Math.max(0, scrollX) });
+  },
+
+  // In/Out marker actions
+  setInPoint: (time) => {
+    const { outPoint, duration } = get();
+    if (time === null) {
+      set({ inPoint: null });
+      return;
+    }
+    // Ensure in point doesn't exceed out point or duration
+    const clampedTime = Math.max(0, Math.min(time, outPoint ?? duration));
+    set({ inPoint: clampedTime });
+  },
+
+  setOutPoint: (time) => {
+    const { inPoint, duration } = get();
+    if (time === null) {
+      set({ outPoint: null });
+      return;
+    }
+    // Ensure out point doesn't precede in point and doesn't exceed duration
+    const clampedTime = Math.max(inPoint ?? 0, Math.min(time, duration));
+    set({ outPoint: clampedTime });
+  },
+
+  clearInOut: () => {
+    set({ inPoint: null, outPoint: null });
+  },
+
+  setInPointAtPlayhead: () => {
+    const { playheadPosition, setInPoint } = get();
+    setInPoint(playheadPosition);
+  },
+
+  setOutPointAtPlayhead: () => {
+    const { playheadPosition, setOutPoint } = get();
+    setOutPoint(playheadPosition);
+  },
+
+  setLoopPlayback: (loop) => {
+    set({ loopPlayback: loop });
+  },
+
+  toggleLoopPlayback: () => {
+    set({ loopPlayback: !get().loopPlayback });
+  },
+
+  // RAM Preview actions
+  toggleRamPreviewEnabled: () => {
+    const { ramPreviewEnabled } = get();
+    if (ramPreviewEnabled) {
+      // Turning OFF - cancel any running preview and clear cache
+      set({ ramPreviewEnabled: false, isRamPreviewing: false, ramPreviewProgress: null });
+      import('../../engine/WebGPUEngine').then(({ engine }) => {
+        engine.setGeneratingRamPreview(false);
+        engine.clearCompositeCache();
+      });
+      set({ ramPreviewRange: null, cachedFrameTimes: new Set() });
+    } else {
+      // Turning ON - enable automatic RAM preview
+      set({ ramPreviewEnabled: true });
+    }
+  },
+
+  startRamPreview: async () => {
+    const { inPoint, outPoint, duration, clips, tracks, isRamPreviewing, playheadPosition, addCachedFrame, ramPreviewEnabled } = get();
+    // Don't start if RAM Preview is disabled or already running
+    if (!ramPreviewEnabled || isRamPreviewing) return;
+
+    // Determine range to preview (use In/Out or clips extent)
+    const start = inPoint ?? 0;
+    const end = outPoint ?? (clips.length > 0
+      ? Math.max(...clips.map(c => c.startTime + c.duration))
+      : duration);
+
+    if (end <= start) return;
+
+    // Import engine dynamically to avoid circular dependency
+    const { engine } = await import('../../engine/WebGPUEngine');
+
+    // Tell engine to skip preview updates for efficiency
+    engine.setGeneratingRamPreview(true);
+
+    set({
+      isRamPreviewing: true,
+      ramPreviewProgress: 0,
+      ramPreviewRange: null
+    });
+
+    const fps = RAM_PREVIEW_FPS;
+    const frameInterval = 1 / fps;
+
+    // Helper: check if there's a video clip at a given time
+    const hasVideoAt = (time: number) => {
+      return clips.some(c =>
+        time >= c.startTime &&
+        time < c.startTime + c.duration &&
+        (c.source?.type === 'video' || c.source?.type === 'image')
+      );
+    };
+
+    // Generate frame times spreading outward from playhead
+    // Only include times where there are video clips
+    const centerTime = Math.max(start, Math.min(end, playheadPosition));
+    const frameTimes: number[] = [];
+
+    // Add center frame if it has video
+    if (hasVideoAt(centerTime)) {
+      frameTimes.push(centerTime);
+    }
+
+    // Alternate left and right from center, only adding frames with video
+    let offset = frameInterval;
+    while (offset <= (end - start)) {
+      const rightTime = centerTime + offset;
+      const leftTime = centerTime - offset;
+
+      if (rightTime <= end && hasVideoAt(rightTime)) {
+        frameTimes.push(rightTime);
+      }
+      if (leftTime >= start && hasVideoAt(leftTime)) {
+        frameTimes.push(leftTime);
+      }
+
+      offset += frameInterval;
+    }
+
+    // No frames to render
+    if (frameTimes.length === 0) {
+      engine.setGeneratingRamPreview(false);
+      set({ isRamPreviewing: false, ramPreviewProgress: null });
+      return;
+    }
+
+    const totalFrames = frameTimes.length;
+    let cancelled = false;
+
+    // Store cancel function
+    const checkCancelled = () => !get().isRamPreviewing;
+
+    try {
+      for (let frame = 0; frame < totalFrames; frame++) {
+        if (checkCancelled()) {
+          cancelled = true;
+          break;
+        }
+
+        const time = frameTimes[frame];
+
+        // Skip frames that are already cached (reuse existing work)
+        const quantizedTime = quantizeTime(time);
+        if (get().cachedFrameTimes.has(quantizedTime)) {
+          // Update progress even for skipped frames
+          const progress = ((frame + 1) / totalFrames) * 100;
+          set({ ramPreviewProgress: progress });
+          continue;
+        }
+
+        // Get clips at this time
+        const clipsAtTime = clips.filter(c =>
+          time >= c.startTime && time < c.startTime + c.duration
+        );
+
+        // Build layers for this frame
+        const videoTracks = tracks.filter(t => t.type === 'video');
+        const layers: Layer[] = [];
+
+        // Seek all videos and build layers
+        for (const clip of clipsAtTime) {
+          const track = tracks.find(t => t.id === clip.trackId);
+          if (!track?.visible || track.type !== 'video') continue;
+
+          if (clip.source?.type === 'video' && clip.source.videoElement) {
+            const video = clip.source.videoElement;
+            const clipLocalTime = time - clip.startTime;
+            // Handle reversed clips
+            const clipTime = clip.reversed
+              ? clip.outPoint - clipLocalTime
+              : clipLocalTime + clip.inPoint;
+
+            // Robust seek with verification and retry
+            const seekWithVerify = async (targetTime: number, maxRetries = 3): Promise<boolean> => {
+              for (let attempt = 0; attempt < maxRetries; attempt++) {
+                // Check if cancelled
+                if (checkCancelled()) return false;
+
+                // Seek to target time
+                await new Promise<void>((resolve) => {
+                  const timeout = setTimeout(() => {
+                    video.removeEventListener('seeked', onSeeked);
+                    resolve();
+                  }, 500);
+
+                  const onSeeked = () => {
+                    clearTimeout(timeout);
+                    video.removeEventListener('seeked', onSeeked);
+                    resolve();
+                  };
+
+                  video.addEventListener('seeked', onSeeked);
+                  video.currentTime = targetTime;
+                });
+
+                // Wait for video to be fully ready (not seeking, has data)
+                await new Promise<void>((resolve) => {
+                  const checkReady = () => {
+                    if (!video.seeking && video.readyState >= 2) {
+                      resolve();
+                    } else {
+                      requestAnimationFrame(checkReady);
+                    }
+                  };
+                  checkReady();
+                  // Timeout fallback
+                  setTimeout(resolve, 200);
+                });
+
+                // Verify position is correct (within 1 frame tolerance at 30fps)
+                if (Math.abs(video.currentTime - targetTime) < FRAME_TOLERANCE) {
+                  return true; // Success
+                }
+
+                // Position wrong (user scrubbed?), retry
+                if (checkCancelled()) return false;
+              }
+              return false; // Failed after retries
+            };
+
+            // Perform seek with verification
+            const seekSuccess = await seekWithVerify(clipTime);
+            if (!seekSuccess || checkCancelled()) {
+              continue; // Skip this clip if seek failed or cancelled
+            }
+
+            // Add to layers
+            layers.push({
+              id: clip.id,
+              name: clip.name,
+              visible: true,
+              opacity: clip.transform.opacity,
+              blendMode: clip.transform.blendMode,
+              source: { type: 'video', videoElement: video },
+              effects: [],
+              position: { x: clip.transform.position.x, y: clip.transform.position.y },
+              scale: { x: clip.transform.scale.x, y: clip.transform.scale.y },
+              rotation: { x: clip.transform.rotation.x * (Math.PI / 180), y: clip.transform.rotation.y * (Math.PI / 180), z: clip.transform.rotation.z * (Math.PI / 180) },
+            });
+          } else if (clip.source?.type === 'image' && clip.source.imageElement) {
+            layers.push({
+              id: clip.id,
+              name: clip.name,
+              visible: true,
+              opacity: clip.transform.opacity,
+              blendMode: clip.transform.blendMode,
+              source: { type: 'image', imageElement: clip.source.imageElement },
+              effects: [],
+              position: { x: clip.transform.position.x, y: clip.transform.position.y },
+              scale: { x: clip.transform.scale.x, y: clip.transform.scale.y },
+              rotation: { x: clip.transform.rotation.x * (Math.PI / 180), y: clip.transform.rotation.y * (Math.PI / 180), z: clip.transform.rotation.z * (Math.PI / 180) },
+            });
+          }
+        }
+
+        // Sort layers by track order
+        const trackOrder = new Map(videoTracks.map((t, i) => [t.id, i]));
+        layers.sort((a, b) => {
+          const clipA = clipsAtTime.find(c => c.id === a.id);
+          const clipB = clipsAtTime.find(c => c.id === b.id);
+          const orderA = clipA ? (trackOrder.get(clipA.trackId) ?? 0) : 0;
+          const orderB = clipB ? (trackOrder.get(clipB.trackId) ?? 0) : 0;
+          return orderA - orderB;
+        });
+
+        // Final verification: ensure all videos are still at correct position before rendering
+        // This catches cases where user interaction changed position between seek and render
+        let allPositionsCorrect = true;
+        for (const clip of clipsAtTime) {
+          if (clip.source?.type === 'video' && clip.source.videoElement) {
+            const video = clip.source.videoElement;
+            const localTime = time - clip.startTime;
+            const expectedTime = clip.reversed
+              ? clip.outPoint - localTime
+              : localTime + clip.inPoint;
+            if (Math.abs(video.currentTime - expectedTime) > FRAME_TOLERANCE) {
+              allPositionsCorrect = false;
+              break;
+            }
+          }
+        }
+
+        // Skip this frame if positions are wrong (user scrubbed) or cancelled
+        if (!allPositionsCorrect || checkCancelled()) {
+          continue;
+        }
+
+        // Render and cache this frame
+        if (layers.length > 0) {
+          engine.render(layers);
+        }
+        await engine.cacheCompositeFrame(time);
+
+        // Add to cached frames set (shows green indicator immediately)
+        addCachedFrame(time);
+
+        // Update progress percentage
+        const progress = ((frame + 1) / totalFrames) * 100;
+        set({ ramPreviewProgress: progress });
+
+        // Yield to allow UI updates (every frame for smooth green dot updates)
+        if (frame % 3 === 0) {
+          await new Promise(resolve => setTimeout(resolve, 0));
+        }
+      }
+
+      if (!cancelled) {
+        // Set the preview range for cache hit detection
+        set({
+          ramPreviewRange: { start, end },
+          ramPreviewProgress: null
+        });
+      }
+    } catch (error) {
+      console.error('[RAM Preview] Error:', error);
+    } finally {
+      engine.setGeneratingRamPreview(false);
+      set({ isRamPreviewing: false, ramPreviewProgress: null });
+    }
+  },
+
+  cancelRamPreview: () => {
+    // IMMEDIATELY set state to cancel the loop - this must be synchronous!
+    // The RAM preview loop checks !get().isRamPreviewing to know when to stop
+    set({ isRamPreviewing: false, ramPreviewProgress: null });
+    // Then async cleanup the engine
+    import('../../engine/WebGPUEngine').then(({ engine }) => {
+      engine.setGeneratingRamPreview(false);
+    });
+  },
+
+  clearRamPreview: async () => {
+    const { engine } = await import('../../engine/WebGPUEngine');
+    engine.clearCompositeCache();
+    set({ ramPreviewRange: null, ramPreviewProgress: null, cachedFrameTimes: new Set() });
+  },
+
+  // Playback frame caching (green line like After Effects)
+  addCachedFrame: (time: number) => {
+    const quantized = quantizeTime(time);
+    const { cachedFrameTimes } = get();
+    if (!cachedFrameTimes.has(quantized)) {
+      const newSet = new Set(cachedFrameTimes);
+      newSet.add(quantized);
+      set({ cachedFrameTimes: newSet });
+    }
+  },
+
+  getCachedRanges: () => {
+    const { cachedFrameTimes } = get();
+    if (cachedFrameTimes.size === 0) return [];
+
+    // Convert set to sorted array
+    const times = Array.from(cachedFrameTimes).sort((a, b) => a - b);
+    const ranges: Array<{ start: number; end: number }> = [];
+    const frameInterval = 1 / RAM_PREVIEW_FPS;
+    const gap = frameInterval * 2; // Allow gap of 2 frames
+
+    let rangeStart = times[0];
+    let rangeEnd = times[0];
+
+    for (let i = 1; i < times.length; i++) {
+      if (times[i] - rangeEnd <= gap) {
+        // Continue range
+        rangeEnd = times[i];
+      } else {
+        // End range and start new one
+        ranges.push({ start: rangeStart, end: rangeEnd + frameInterval });
+        rangeStart = times[i];
+        rangeEnd = times[i];
+      }
+    }
+
+    // Add final range
+    ranges.push({ start: rangeStart, end: rangeEnd + frameInterval });
+
+    return ranges;
+  },
+
+  // Invalidate cache when content changes (clip moved, trimmed, etc.)
+  invalidateCache: () => {
+    // Cancel any ongoing RAM preview
+    set({ isRamPreviewing: false });
+    // Then async cleanup the engine
+    import('../../engine/WebGPUEngine').then(({ engine }) => {
+      engine.setGeneratingRamPreview(false);
+      engine.clearCompositeCache();
+    });
+    // Clear cached frame times
+    set({ cachedFrameTimes: new Set(), ramPreviewRange: null, ramPreviewProgress: null });
+  },
+});

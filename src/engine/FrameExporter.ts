@@ -3,7 +3,7 @@
 
 import { Muxer, ArrayBufferTarget } from 'mp4-muxer';
 import { engine } from './WebGPUEngine';
-import { useTimelineStore } from '../stores/timelineStore';
+import { useTimelineStore } from '../stores/timeline';
 import type { Layer } from '../types';
 
 // ============ TYPES ============

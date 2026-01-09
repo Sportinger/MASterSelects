@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useEngine } from '../hooks/useEngine';
 import { useMixerStore } from '../stores/mixerStore';
-import { useTimelineStore } from '../stores/timelineStore';
+import { useTimelineStore } from '../stores/timeline';
 import { MaskOverlay } from './MaskOverlay';
 import type { Layer, EngineStats } from '../types';
 
