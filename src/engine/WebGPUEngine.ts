@@ -32,14 +32,21 @@ export class WebGPUEngine {
   // Multiple preview canvases (inline previews in dock panels)
   private previewCanvases: Map<string, GPUCanvasContext> = new Map();
 
-  // Render targets - ping pong buffers
+  // Render targets - ping pong buffers (main render loop)
   private pingTexture: GPUTexture | null = null;
   private pongTexture: GPUTexture | null = null;
   private blackTexture: GPUTexture | null = null;
 
-  // Cached texture views
+  // Cached texture views (main render loop)
   private pingView: GPUTextureView | null = null;
   private pongView: GPUTextureView | null = null;
+
+  // Separate ping-pong buffers for independent preview rendering
+  // This prevents flickering when main loop and independent previews run simultaneously
+  private independentPingTexture: GPUTexture | null = null;
+  private independentPongTexture: GPUTexture | null = null;
+  private independentPingView: GPUTextureView | null = null;
+  private independentPongView: GPUTextureView | null = null;
 
   // Resources
   private sampler: GPUSampler | null = null;
@@ -164,9 +171,13 @@ export class WebGPUEngine {
     const device = this.context.getDevice();
     if (!device) return;
 
+    // Destroy existing textures
     this.pingTexture?.destroy();
     this.pongTexture?.destroy();
+    this.independentPingTexture?.destroy();
+    this.independentPongTexture?.destroy();
 
+    // Main render loop ping-pong buffers
     this.pingTexture = device.createTexture({
       size: [this.outputWidth, this.outputHeight],
       format: 'rgba8unorm',
@@ -179,9 +190,24 @@ export class WebGPUEngine {
       usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
     });
 
+    // Independent preview ping-pong buffers (prevents flickering)
+    this.independentPingTexture = device.createTexture({
+      size: [this.outputWidth, this.outputHeight],
+      format: 'rgba8unorm',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
+    });
+
+    this.independentPongTexture = device.createTexture({
+      size: [this.outputWidth, this.outputHeight],
+      format: 'rgba8unorm',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
+    });
+
     // Cache views
     this.pingView = this.pingTexture.createView();
     this.pongView = this.pongTexture.createView();
+    this.independentPingView = this.independentPingTexture.createView();
+    this.independentPongView = this.independentPongTexture.createView();
 
     // Invalidate bind group caches (textures changed)
     this.outputPipeline?.invalidateCache();
@@ -904,7 +930,8 @@ export class WebGPUEngine {
     if (!device || !canvasContext || !this.compositorPipeline || !this.outputPipeline || !this.sampler) {
       return;
     }
-    if (!this.pingView || !this.pongView) return;
+    // Use independent ping-pong buffers to avoid conflicts with main render loop
+    if (!this.independentPingView || !this.independentPongView) return;
 
     // Prepare layer data
     const layerData: LayerRenderData[] = [];
@@ -967,9 +994,9 @@ export class WebGPUEngine {
 
     const commandEncoder = device.createCommandEncoder();
 
-    // Ping-pong compositing (same pattern as main render)
-    let readView = this.pingView;
-    let writeView = this.pongView;
+    // Ping-pong compositing using INDEPENDENT buffers (avoids main loop conflicts)
+    let readView = this.independentPingView!;
+    let writeView = this.independentPongView!;
     let usePing = true;
 
     // Clear first buffer
