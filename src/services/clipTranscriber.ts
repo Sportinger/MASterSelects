@@ -95,9 +95,18 @@ async function transcribeFile(
 
   // Dynamically import transformers.js
   let pipeline: any;
+  let env: any;
   try {
     const transformers = await import('@xenova/transformers');
     pipeline = transformers.pipeline;
+    env = transformers.env;
+
+    // Configure environment for browser usage
+    // Use CDN for model files and enable caching
+    env.allowLocalModels = false;
+    env.useBrowserCache = true;
+    // Use jsDelivr CDN as fallback (more reliable for browser)
+    env.backends.onnx.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/';
   } catch (error) {
     throw new Error(
       'Whisper model requires @xenova/transformers. Install with: npm install @xenova/transformers'
@@ -107,17 +116,22 @@ async function transcribeFile(
   onProgress(30);
 
   // Load Whisper model
+  console.log('[ClipTranscriber] Loading Whisper model...');
   const transcriber = await pipeline(
     'automatic-speech-recognition',
-    'Xenova/whisper-tiny',
+    'Xenova/whisper-tiny.en', // Use English-only model (smaller, faster)
     {
       progress_callback: (data: any) => {
-        if (data.status === 'progress') {
+        if (data.status === 'progress' && data.progress) {
           // Model loading progress (30-50%)
           const modelProgress = 30 + (data.progress * 0.2);
           onProgress(Math.round(modelProgress));
         }
+        if (data.status === 'ready') {
+          console.log('[ClipTranscriber] Whisper model ready');
+        }
       },
+      revision: 'main',
     }
   );
 
