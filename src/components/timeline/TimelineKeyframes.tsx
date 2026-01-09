@@ -188,7 +188,7 @@ function TimelineKeyframesComponent({
         return (
           <div
             key={kf.id}
-            className={`keyframe-diamond ${isSelected ? 'selected' : ''} ${isDragging ? 'dragging' : ''}`}
+            className={`keyframe-diamond easing-${kf.easing} ${isSelected ? 'selected' : ''} ${isDragging ? 'dragging' : ''}`}
             style={{ left: `${xPos}px` }}
             onMouseDown={(e) => handleMouseDown(e, kf, clip)}
             onContextMenu={(e) => handleContextMenu(e, kf)}

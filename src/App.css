@@ -3292,6 +3292,54 @@ input[type="checkbox"] {
   transform: translateX(calc(-50% - 3px)) rotate(45deg) translateY(-50%) scale(1.3);
 }
 
+/* Keyframe easing type visual styles */
+/* Linear: Diamond shape (default) */
+.keyframe-diamond.easing-linear {
+  border-radius: 0;
+}
+
+/* Ease-in: Left half rounded (slow start) */
+.keyframe-diamond.easing-ease-in {
+  border-radius: 50% 0 0 50%;
+  background: linear-gradient(135deg, #a855f7 0%, #f59e0b 100%);
+}
+
+.keyframe-diamond.easing-ease-in:hover {
+  background: linear-gradient(135deg, #c084fc 0%, #fbbf24 100%);
+}
+
+.keyframe-diamond.easing-ease-in.selected {
+  background: linear-gradient(135deg, #ef4444 0%, #f87171 100%);
+}
+
+/* Ease-out: Right half rounded (slow end) */
+.keyframe-diamond.easing-ease-out {
+  border-radius: 0 50% 50% 0;
+  background: linear-gradient(135deg, #f59e0b 0%, #22d3ee 100%);
+}
+
+.keyframe-diamond.easing-ease-out:hover {
+  background: linear-gradient(135deg, #fbbf24 0%, #67e8f9 100%);
+}
+
+.keyframe-diamond.easing-ease-out.selected {
+  background: linear-gradient(135deg, #f87171 0%, #ef4444 100%);
+}
+
+/* Ease-in-out: Fully rounded (circle/pill) */
+.keyframe-diamond.easing-ease-in-out {
+  border-radius: 50%;
+  background: linear-gradient(135deg, #a855f7 0%, #22d3ee 100%);
+}
+
+.keyframe-diamond.easing-ease-in-out:hover {
+  background: linear-gradient(135deg, #c084fc 0%, #67e8f9 100%);
+}
+
+.keyframe-diamond.easing-ease-in-out.selected {
+  background: linear-gradient(135deg, #ef4444 0%, #f87171 100%);
+}
+
 /* Keyframe context menu */
 .keyframe-context-menu {
   background: var(--panel-bg);
