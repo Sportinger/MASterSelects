@@ -119,15 +119,35 @@
 }
 
 /* Progress */
+.analysis-progress-section {
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-bottom: 1px solid var(--border-color, #333);
+}
+
 .analysis-progress {
-  height: 3px;
+  height: 4px;
   background: var(--bg-tertiary, #252525);
+  border-radius: 2px;
+  overflow: hidden;
 }
 
 .analysis-progress-bar {
   height: 100%;
   background: var(--accent-primary, #4a9eff);
   transition: width 0.2s ease;
+}
+
+.btn-analyze.btn-cancel {
+  background: rgba(255, 107, 107, 0.15);
+  border: 1px solid rgba(255, 107, 107, 0.3);
+  color: var(--accent-danger, #ff6b6b);
+}
+
+.btn-analyze.btn-cancel:hover {
+  background: rgba(255, 107, 107, 0.25);
 }
 
 /* Stats */

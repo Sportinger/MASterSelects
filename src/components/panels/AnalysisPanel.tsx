@@ -62,6 +62,12 @@ export function AnalysisPanel() {
     await analyzeClip(selectedClipId);
   }, [selectedClipId]);
 
+  // Handle cancel analysis
+  const handleCancel = useCallback(async () => {
+    const { cancelAnalysis } = await import('../../services/clipAnalyzer');
+    cancelAnalysis();
+  }, []);
+
   // Handle clear analysis
   const handleClear = useCallback(async () => {
     if (!selectedClipId) return;
@@ -152,13 +158,18 @@ export function AnalysisPanel() {
         )}
       </div>
 
-      {/* Progress bar */}
+      {/* Progress bar and cancel button */}
       {analysisStatus === 'analyzing' && (
-        <div className="analysis-progress">
-          <div
-            className="analysis-progress-bar"
-            style={{ width: `${analysisProgress}%` }}
-          />
+        <div className="analysis-progress-section">
+          <div className="analysis-progress">
+            <div
+              className="analysis-progress-bar"
+              style={{ width: `${analysisProgress}%` }}
+            />
+          </div>
+          <button className="btn-analyze btn-cancel" onClick={handleCancel}>
+            Cancel
+          </button>
         </div>
       )}
 
