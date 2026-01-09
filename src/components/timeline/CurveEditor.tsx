@@ -286,13 +286,18 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
       if (!kf) return;
 
       const handleTime = xToTime(x) - kf.time;
-      const handleValue = yToValue(y) - kf.value;
+      let handleValue = yToValue(y) - kf.value;
 
       // Constrain handle direction
       const isIn = dragState.type === 'handle-in';
       const constrainedTime = isIn
         ? Math.min(0, handleTime)  // In handle must be <= 0
         : Math.max(0, handleTime); // Out handle must be >= 0
+
+      // Shift key: snap to horizontal (no vertical offset)
+      if (e.shiftKey) {
+        handleValue = 0;
+      }
 
       onUpdateBezierHandle(dragState.keyframeId, isIn ? 'in' : 'out', {
         x: constrainedTime,
