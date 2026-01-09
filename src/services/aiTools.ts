@@ -839,7 +839,7 @@ export async function executeAITool(toolName: string, args: Record<string, unkno
         const avgMotion = frames.reduce((sum, f) => sum + f.motion, 0) / frames.length;
         const avgBrightness = frames.reduce((sum, f) => sum + f.brightness, 0) / frames.length;
         const avgFocus = frames.reduce((sum, f) => sum + (f.focus || 0), 0) / frames.length;
-        const totalFaces = frames.reduce((sum, f) => sum + (f.faces || 0), 0);
+        const totalFaces = frames.reduce((sum, f) => sum + (f.faceCount || 0), 0);
 
         return {
           success: true,
@@ -859,11 +859,11 @@ export async function executeAITool(toolName: string, args: Record<string, unkno
             },
             // Include detailed frame data for specific queries
             frames: frames.map(f => ({
-              time: f.time,
+              time: f.timestamp,
               motion: f.motion,
               brightness: f.brightness,
               focus: f.focus || 0,
-              faces: f.faces || 0,
+              faces: f.faceCount || 0,
             })),
           },
         };
@@ -1010,13 +1010,13 @@ export async function executeAITool(toolName: string, args: Record<string, unkno
 
           if (value < threshold) {
             if (sectionStart === null) {
-              sectionStart = frame.time;
+              sectionStart = frame.timestamp;
             }
             sectionValues.push(value);
           } else {
             // End of low quality section
             if (sectionStart !== null) {
-              const sectionEnd = frames[i - 1]?.time ?? frame.time;
+              const sectionEnd = frames[i - 1]?.timestamp ?? frame.timestamp;
               const sectionDuration = sectionEnd - sectionStart;
               if (sectionDuration >= minDuration) {
                 lowQualitySections.push({
@@ -1034,7 +1034,7 @@ export async function executeAITool(toolName: string, args: Record<string, unkno
 
         // Handle section at the end
         if (sectionStart !== null) {
-          const sectionEnd = frames[frames.length - 1].time;
+          const sectionEnd = frames[frames.length - 1].timestamp;
           const sectionDuration = sectionEnd - sectionStart;
           if (sectionDuration >= minDuration) {
             lowQualitySections.push({
