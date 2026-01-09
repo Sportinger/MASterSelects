@@ -16,6 +16,7 @@ interface WorkerMessage {
   type: 'start';
   audioData: Float32Array;
   audioDuration: number;
+  language: string;
 }
 
 interface ProgressMessage {
@@ -58,28 +59,54 @@ interface ErrorMessage {
 
 type OutgoingMessage = ProgressMessage | PartialResultMessage | CompleteMessage | ErrorMessage;
 
+// Cache for loaded models
 let transcriber: any = null;
+let loadedModel: string | null = null;
 
-// Load model once
-async function loadModel(onProgress: (progress: number, message: string) => void) {
-  if (transcriber) return transcriber;
+// Get model name based on language
+function getModelName(language: string): string {
+  // Use English-only model for English (faster), multilingual for others
+  if (language === 'en') {
+    return 'Xenova/whisper-tiny.en';
+  }
+  // Use multilingual model for all other languages
+  return 'Xenova/whisper-tiny';
+}
 
-  onProgress(0, 'Loading Whisper model...');
+// Load model (reload if language changed)
+async function loadModel(
+  language: string,
+  onProgress: (progress: number, message: string) => void
+) {
+  const modelName = getModelName(language);
+
+  // Return cached model if same language
+  if (transcriber && loadedModel === modelName) {
+    return transcriber;
+  }
+
+  // Clear old model
+  transcriber = null;
+  loadedModel = null;
+
+  const langName = language === 'en' ? 'English' : 'multilingual';
+  onProgress(0, `Lade Whisper Model (${langName})...`);
 
   transcriber = await pipeline(
     'automatic-speech-recognition',
-    'Xenova/whisper-tiny.en',
+    modelName,
     {
       progress_callback: (data: any) => {
         if (data.status === 'progress' && data.progress) {
-          onProgress(data.progress, `Loading model: ${Math.round(data.progress)}%`);
+          onProgress(data.progress, `Model laden: ${Math.round(data.progress)}%`);
         }
       },
       revision: 'main',
     }
   );
 
-  onProgress(100, 'Model loaded');
+  loadedModel = modelName;
+  onProgress(100, 'Model geladen');
   return transcriber;
 }
 
@@ -87,10 +114,11 @@ async function loadModel(onProgress: (progress: number, message: string) => void
 async function transcribeAudio(
   audioData: Float32Array,
   audioDuration: number,
+  language: string,
   postMessage: (msg: OutgoingMessage) => void
 ) {
   // Load model first
-  const model = await loadModel((progress, message) => {
+  const model = await loadModel(language, (progress, message) => {
     postMessage({
       type: 'progress',
       stage: 'loading',
@@ -103,7 +131,7 @@ async function transcribeAudio(
     type: 'progress',
     stage: 'transcribing',
     progress: 30,
-    message: 'Starting transcription...',
+    message: 'Starte Transkription...',
   });
 
   // For long audio, process in segments to get incremental results
@@ -136,15 +164,17 @@ async function transcribeAudio(
       type: 'progress',
       stage: 'transcribing',
       progress: transcriptionProgress,
-      message: `Transcribing segment ${segmentIdx + 1}/${numSegments}...`,
+      message: `Segment ${segmentIdx + 1}/${numSegments}...`,
     });
 
     try {
-      // Transcribe this segment
+      // Transcribe this segment with language setting
       const result = await model(segmentData, {
         return_timestamps: 'word',
         chunk_length_s: 30,
         stride_length_s: 5,
+        language: language,
+        task: 'transcribe',
       });
 
       // Process chunks from this segment
@@ -228,11 +258,11 @@ async function transcribeAudio(
 
 // Handle messages from main thread
 self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
-  const { type, audioData, audioDuration } = event.data;
+  const { type, audioData, audioDuration, language } = event.data;
 
   if (type === 'start') {
     try {
-      await transcribeAudio(audioData, audioDuration, (msg) => self.postMessage(msg));
+      await transcribeAudio(audioData, audioDuration, language || 'de', (msg) => self.postMessage(msg));
     } catch (error) {
       self.postMessage({
         type: 'error',

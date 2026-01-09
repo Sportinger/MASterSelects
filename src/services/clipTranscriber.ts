@@ -51,8 +51,10 @@ function getWorker(): Worker {
 
 /**
  * Extract audio from a clip's file and transcribe it using Web Worker
+ * @param clipId - The ID of the clip to transcribe
+ * @param language - Language code (e.g., 'de', 'en', 'es') - defaults to 'de' (German)
  */
-export async function transcribeClip(clipId: string): Promise<void> {
+export async function transcribeClip(clipId: string, language: string = 'de'): Promise<void> {
   const store = useTimelineStore.getState();
   const clip = store.clips.find(c => c.id === clipId);
 
@@ -149,6 +151,7 @@ export async function transcribeClip(clipId: string): Promise<void> {
       type: 'start',
       audioData,
       audioDuration,
+      language,
     });
 
   } catch (error) {

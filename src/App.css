@@ -1542,9 +1542,47 @@ input[type="checkbox"] {
 
 .timeline-body {
   display: flex;
+  flex-direction: column;
   flex: 1;
   overflow-x: hidden;
   overflow-y: auto;
+}
+
+/* Sticky header row - spans full width */
+.timeline-header-row {
+  display: flex;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--bg-tertiary);
+  flex-shrink: 0;
+}
+
+.timeline-header-row .ruler-header {
+  width: 150px;
+  flex-shrink: 0;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border-right: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.time-ruler-wrapper {
+  flex: 1;
+  overflow: hidden;
+  height: 30px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* Content row - track headers and lanes side by side */
+.timeline-content-row {
+  display: flex;
+  flex: 1;
   align-items: flex-start;
 }
 
@@ -1565,9 +1603,6 @@ input[type="checkbox"] {
   color: var(--text-secondary);
   background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border-color);
-  position: sticky;
-  top: 0;
-  z-index: 10;
 }
 
 .track-header {

@@ -84,12 +84,35 @@ function SpeakerBlock({
 }
 
 // =============================================================================
+// Language options
+// =============================================================================
+
+const LANGUAGES = [
+  { code: 'de', name: 'Deutsch' },
+  { code: 'en', name: 'English' },
+  { code: 'es', name: 'Español' },
+  { code: 'fr', name: 'Français' },
+  { code: 'it', name: 'Italiano' },
+  { code: 'pt', name: 'Português' },
+  { code: 'nl', name: 'Nederlands' },
+  { code: 'pl', name: 'Polski' },
+  { code: 'ru', name: 'Русский' },
+  { code: 'ja', name: '日本語' },
+  { code: 'zh', name: '中文' },
+  { code: 'ko', name: '한국어' },
+];
+
+// =============================================================================
 // Main Component
 // =============================================================================
 
 export function TranscriptPanel() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showMarkersGlobal, setShowMarkersGlobal] = useState(true);
+  const [language, setLanguage] = useState(() => {
+    // Load from localStorage or default to German
+    return localStorage.getItem('transcriptLanguage') || 'de';
+  });
   const containerRef = useRef<HTMLDivElement>(null);
   const activeWordRef = useRef<HTMLSpanElement | null>(null);
 
@@ -226,14 +249,20 @@ export function TranscriptPanel() {
     }
   }, [currentWordId]);
 
+  // Handle language change
+  const handleLanguageChange = useCallback((newLanguage: string) => {
+    setLanguage(newLanguage);
+    localStorage.setItem('transcriptLanguage', newLanguage);
+  }, []);
+
   // Handle transcribe button click
   const handleTranscribe = useCallback(async () => {
     if (!selectedClipId) return;
 
-    // Import and call transcription
+    // Import and call transcription with selected language
     const { transcribeClip } = await import('../../services/clipTranscriber');
-    await transcribeClip(selectedClipId);
-  }, [selectedClipId]);
+    await transcribeClip(selectedClipId, language);
+  }, [selectedClipId, language]);
 
   // Handle cancel transcription
   const handleCancel = useCallback(async () => {
@@ -310,6 +339,23 @@ export function TranscriptPanel() {
             Error
           </span>
         )}
+      </div>
+
+      {/* Language selector */}
+      <div className="transcript-language">
+        <label htmlFor="language-select">Sprache:</label>
+        <select
+          id="language-select"
+          value={language}
+          onChange={(e) => handleLanguageChange(e.target.value)}
+          disabled={transcriptStatus === 'transcribing'}
+        >
+          {LANGUAGES.map((lang) => (
+            <option key={lang.code} value={lang.code}>
+              {lang.name}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* Actions */}
