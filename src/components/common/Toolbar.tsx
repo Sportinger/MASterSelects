@@ -10,12 +10,13 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { useMIDI } from '../../hooks/useMIDI';
 import { SettingsDialog } from './SettingsDialog';
 import type { StoredProject } from '../../services/projectDB';
+import { EQ_FREQUENCIES } from '../../services/audioManager';
 
-type MenuId = 'file' | 'edit' | 'view' | 'playback' | 'window' | null;
+type MenuId = 'file' | 'edit' | 'view' | 'audio' | 'output' | 'window' | null;
 
 export function Toolbar() {
   const { isEngineReady, createOutputWindow } = useEngine();
-  const { outputResolution, setResolution, setPlaying } = useMixerStore();
+  const { outputResolution, setResolution, setPlaying, outputWindows, masterVolume, setMasterVolume, eqBands, setEQBand, resetEQ } = useMixerStore();
 
   // Auto-start playback when engine is ready
   useEffect(() => {
@@ -309,6 +310,91 @@ export function Toolbar() {
               <button className="menu-option" onClick={() => { resetLayout(); closeMenu(); }}>
                 <span>Reset Layout</span>
               </button>
+            </div>
+          )}
+        </div>
+
+        {/* Output Menu */}
+        <div className="menu-item">
+          <button
+            className={`menu-trigger ${openMenu === 'output' ? 'active' : ''}`}
+            onClick={() => handleMenuClick('output')}
+            onMouseEnter={() => handleMenuHover('output')}
+          >
+            Output
+          </button>
+          {openMenu === 'output' && (
+            <div className="menu-dropdown">
+              <button className="menu-option" onClick={handleNewOutput} disabled={!isEngineReady}>
+                <span>New Output Window</span>
+              </button>
+              {outputWindows.length > 0 && (
+                <>
+                  <div className="menu-separator" />
+                  <div className="menu-submenu">
+                    <span className="menu-label">Active Outputs</span>
+                    {outputWindows.map((output) => (
+                      <div key={output.id} className="menu-option">
+                        <span>{output.name || `Output ${output.id}`}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Audio Menu */}
+        <div className="menu-item">
+          <button
+            className={`menu-trigger ${openMenu === 'audio' ? 'active' : ''}`}
+            onClick={() => handleMenuClick('audio')}
+            onMouseEnter={() => handleMenuHover('audio')}
+          >
+            Audio
+          </button>
+          {openMenu === 'audio' && (
+            <div className="menu-dropdown menu-dropdown-wide">
+              <div className="menu-submenu">
+                <span className="menu-label">Master Volume</span>
+                <div className="menu-slider">
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={masterVolume}
+                    onChange={(e) => setMasterVolume(parseFloat(e.target.value))}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                  <span className="slider-value">{Math.round(masterVolume * 100)}%</span>
+                </div>
+              </div>
+              <div className="menu-separator" />
+              <div className="menu-submenu">
+                <span className="menu-label">10-Band EQ</span>
+                <div className="eq-container" onClick={(e) => e.stopPropagation()}>
+                  {EQ_FREQUENCIES.map((freq, index) => (
+                    <div key={freq} className="eq-band">
+                      <input
+                        type="range"
+                        min="-12"
+                        max="12"
+                        step="0.5"
+                        value={eqBands[index]}
+                        onChange={(e) => setEQBand(index, parseFloat(e.target.value))}
+                        className="eq-slider"
+                        title={`${freq >= 1000 ? `${freq / 1000}k` : freq}Hz: ${eqBands[index].toFixed(1)}dB`}
+                      />
+                      <span className="eq-label">{freq >= 1000 ? `${freq / 1000}k` : freq}</span>
+                    </div>
+                  ))}
+                </div>
+                <button className="menu-option" onClick={() => resetEQ()}>
+                  <span>Reset EQ</span>
+                </button>
+              </div>
             </div>
           )}
         </div>

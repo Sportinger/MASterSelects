@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import type { Layer, BlendMode, Effect, OutputWindow, MIDIMapping, EngineStats } from '../types';
 import { WebCodecsPlayer } from '../engine/WebCodecsPlayer';
+import { audioManager } from '../services/audioManager';
 
 // Slot group - slots that are visually linked together
 export type SlotGroup = number[];
@@ -24,6 +25,10 @@ interface MixerState {
   outputWindows: OutputWindow[];
   outputResolution: { width: number; height: number };
   fps: number;
+
+  // Audio
+  masterVolume: number; // 0-1
+  eqBands: number[]; // 10-band EQ gains (-12 to +12 dB)
 
   // Engine
   isEngineReady: boolean;
@@ -77,6 +82,12 @@ interface MixerState {
   addMidiMapping: (mapping: MIDIMapping) => void;
   removeMidiMapping: (index: number) => void;
 
+  // Audio actions
+  setMasterVolume: (volume: number) => void;
+  setEQBand: (bandIndex: number, gain: number) => void;
+  setAllEQBands: (gains: number[]) => void;
+  resetEQ: () => void;
+
   // Grid actions
   setGridColumns: (columns: number) => void;
   setGridRows: (rows: number) => void;
@@ -122,6 +133,9 @@ export const useMixerStore = create<MixerState>()(
     outputWindows: [],
     outputResolution: { width: 1920, height: 1080 },
     fps: 60,
+
+    masterVolume: 1, // Default to full volume
+    eqBands: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], // 10 bands at 0 dB (flat)
 
     isEngineReady: false,
     engineStats: {
@@ -377,6 +391,8 @@ export const useMixerStore = create<MixerState>()(
       const layer = layers.find((l) => l?.id === layerId);
 
       if (layer?.source?.videoElement) {
+        // Disconnect from audio manager
+        audioManager.disconnectMediaElement(layer.source.videoElement);
         layer.source.videoElement.pause();
         URL.revokeObjectURL(layer.source.videoElement.src);
       }
@@ -528,6 +544,37 @@ export const useMixerStore = create<MixerState>()(
     removeMidiMapping: (index: number) => {
       const { midiMappings } = get();
       set({ midiMappings: midiMappings.filter((_, i) => i !== index) });
+    },
+
+    // Audio actions
+    setMasterVolume: (volume: number) => {
+      const clamped = Math.max(0, Math.min(1, volume));
+      set({ masterVolume: clamped });
+      // Sync with audio manager
+      audioManager.setMasterVolume(clamped);
+    },
+
+    setEQBand: (bandIndex: number, gain: number) => {
+      const { eqBands } = get();
+      const clamped = Math.max(-12, Math.min(12, gain));
+      const newBands = [...eqBands];
+      newBands[bandIndex] = clamped;
+      set({ eqBands: newBands });
+      // Sync with audio manager
+      audioManager.setEQBand(bandIndex, clamped);
+    },
+
+    setAllEQBands: (gains: number[]) => {
+      const newBands = gains.map(g => Math.max(-12, Math.min(12, g)));
+      set({ eqBands: newBands });
+      // Sync with audio manager
+      audioManager.setAllEQBands(newBands);
+    },
+
+    resetEQ: () => {
+      const flatBands = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+      set({ eqBands: flatBands });
+      audioManager.resetEQ();
     },
 
     // Grid actions
@@ -702,23 +749,32 @@ export const useMixerStore = create<MixerState>()(
 );
 
 // Helper function to create video element (fallback when WebCodecs unavailable)
-function createVideoElement(
+async function createVideoElement(
   file: File,
   layerId: string,
   get: () => MixerState,
   set: (state: Partial<MixerState> | ((state: MixerState) => Partial<MixerState>)) => void
-): void {
+): Promise<void> {
   const video = document.createElement('video');
   video.src = URL.createObjectURL(file);
   video.loop = true;
-  video.muted = true;
+  video.muted = false; // We'll control audio through the audio manager
   video.playsInline = true;
   video.crossOrigin = 'anonymous';
   video.preload = 'auto';
 
+  // Initialize audio manager if needed
+  await audioManager.init();
+
   // Wait for canplaythrough to ensure video is ready for playback
-  video.addEventListener('canplaythrough', () => {
+  video.addEventListener('canplaythrough', async () => {
     console.log(`[Video] canplaythrough: ${file.name}, readyState=${video.readyState}`);
+
+    // Connect to audio manager for volume and EQ control
+    audioManager.connectMediaElement(video);
+    // Apply current master volume
+    audioManager.setMasterVolume(get().masterVolume);
+
     // Get fresh state to avoid stale closure
     const currentLayers = get().layers;
     set({

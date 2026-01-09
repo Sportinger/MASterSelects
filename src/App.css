@@ -249,6 +249,97 @@ input, textarea {
   font-style: italic;
 }
 
+.menu-slider {
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+  gap: 8px;
+}
+
+.menu-slider input[type="range"] {
+  flex: 1;
+  height: 4px;
+  appearance: none;
+  background: var(--bg-tertiary);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.menu-slider input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+
+.menu-slider input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: none;
+}
+
+.menu-slider .slider-value {
+  font-size: 11px;
+  color: var(--text-muted);
+  min-width: 36px;
+  text-align: right;
+}
+
+/* EQ Container */
+.eq-container {
+  display: flex;
+  gap: 4px;
+  padding: 8px 16px;
+  justify-content: center;
+}
+
+.eq-band {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.eq-slider {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 20px;
+  height: 80px;
+  appearance: none;
+  background: var(--bg-tertiary);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.eq-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--accent);
+  cursor: pointer;
+}
+
+.eq-slider::-moz-range-thumb {
+  width: 16px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--accent);
+  cursor: pointer;
+  border: none;
+}
+
+.eq-label {
+  font-size: 9px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
 .status {
   font-size: 12px;
 }
