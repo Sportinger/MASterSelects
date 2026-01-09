@@ -132,15 +132,27 @@ export function MediaPanel() {
 
     const file = files.find(f => f.id === renamingId);
     const folder = folders.find(f => f.id === renamingId);
+    const composition = compositions.find(c => c.id === renamingId);
 
     if (file) {
       renameFile(renamingId, renameValue.trim());
     } else if (folder) {
       renameFolder(renamingId, renameValue.trim());
+    } else if (composition) {
+      updateComposition(renamingId, { name: renameValue.trim() });
     }
 
     setRenamingId(null);
-  }, [renamingId, renameValue, files, folders, renameFile, renameFolder]);
+  }, [renamingId, renameValue, files, folders, compositions, renameFile, renameFolder, updateComposition]);
+
+  // Handle click on item name to start rename
+  const handleNameClick = useCallback((e: React.MouseEvent, id: string, currentName: string) => {
+    e.stopPropagation();
+    // Only start rename if item is already selected (double-click on name effect)
+    if (selectedIds.includes(id)) {
+      startRename(id, currentName);
+    }
+  }, [selectedIds, startRename]);
 
   // Delete selected items
   const handleDelete = useCallback(() => {
@@ -383,7 +395,12 @@ export function MediaPanel() {
               onClick={(e) => e.stopPropagation()}
             />
           ) : (
-            <span className="media-item-name">{item.name}</span>
+            <span
+              className={`media-item-name ${isSelected ? 'editable' : ''}`}
+              onClick={(e) => handleNameClick(e, item.id, item.name)}
+            >
+              {item.name}
+            </span>
           )}
 
           {/* Info */}

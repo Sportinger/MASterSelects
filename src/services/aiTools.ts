@@ -467,6 +467,87 @@ export const AI_TOOLS = [
       },
     },
   },
+
+  // === ANALYSIS & TRANSCRIPTION CONTROL ===
+  {
+    type: 'function' as const,
+    function: {
+      name: 'startClipAnalysis',
+      description: 'Start video analysis (motion, focus, brightness) for a clip. Analysis runs in the background. Check clip details later to see results.',
+      parameters: {
+        type: 'object',
+        properties: {
+          clipId: {
+            type: 'string',
+            description: 'The ID of the clip to analyze',
+          },
+        },
+        required: ['clipId'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'startClipTranscription',
+      description: 'Start speech-to-text transcription for a clip. Transcription runs in the background. Check clip details later to see results.',
+      parameters: {
+        type: 'object',
+        properties: {
+          clipId: {
+            type: 'string',
+            description: 'The ID of the clip to transcribe',
+          },
+        },
+        required: ['clipId'],
+      },
+    },
+  },
+
+  // === CUT PREVIEW / EVALUATION ===
+  {
+    type: 'function' as const,
+    function: {
+      name: 'getCutPreviewQuad',
+      description: 'Get an 8-frame preview image showing frames around a cut point: 4 frames BEFORE and 4 frames AFTER. Returns a 4x2 grid image (top row: before, bottom row: after). Use this to evaluate if a cut will look smooth or jarring.',
+      parameters: {
+        type: 'object',
+        properties: {
+          cutTime: {
+            type: 'number',
+            description: 'The timeline time (in seconds) where the cut will happen',
+          },
+          frameSpacing: {
+            type: 'number',
+            description: 'Seconds between each frame (default: 0.1 = 100ms). Smaller = closer to cut point.',
+          },
+        },
+        required: ['cutTime'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'getFramesAtTimes',
+      description: 'Capture frames at specific timeline times and return as a grid image. Useful for comparing different moments or evaluating transitions.',
+      parameters: {
+        type: 'object',
+        properties: {
+          times: {
+            type: 'array',
+            items: { type: 'number' },
+            description: 'Array of timeline times (in seconds) to capture frames at. Max 8 frames.',
+          },
+          columns: {
+            type: 'number',
+            description: 'Number of columns in the grid (default: 4)',
+          },
+        },
+        required: ['times'],
+      },
+    },
+  },
 ];
 
 // ============ TOOL HANDLERS ============
@@ -475,6 +556,107 @@ export interface ToolResult {
   success: boolean;
   data?: unknown;
   error?: string;
+}
+
+// Helper to capture frames at multiple times and combine into a grid image
+async function captureFrameGrid(
+  times: number[],
+  columns: number,
+  timelineStore: ReturnType<typeof useTimelineStore.getState>
+): Promise<ToolResult> {
+  const frameWidth = 320; // Thumbnail size
+  const frameHeight = 180;
+  const rows = Math.ceil(times.length / columns);
+
+  // Create canvas for the grid
+  const gridCanvas = document.createElement('canvas');
+  gridCanvas.width = frameWidth * columns;
+  gridCanvas.height = frameHeight * rows;
+  const gridCtx = gridCanvas.getContext('2d');
+
+  if (!gridCtx) {
+    return { success: false, error: 'Failed to create canvas context' };
+  }
+
+  // Fill with dark background
+  gridCtx.fillStyle = '#1a1a1a';
+  gridCtx.fillRect(0, 0, gridCanvas.width, gridCanvas.height);
+
+  const { width: outputWidth, height: outputHeight } = engine.getOutputDimensions();
+  const originalPosition = timelineStore.playheadPosition;
+
+  // Capture each frame
+  for (let i = 0; i < times.length; i++) {
+    const time = times[i];
+    const col = i % columns;
+    const row = Math.floor(i / columns);
+
+    // Move playhead and wait for render
+    timelineStore.setPlayheadPosition(Math.max(0, time));
+    await new Promise(resolve => setTimeout(resolve, 50)); // Wait for render
+
+    // Capture frame from engine
+    const pixels = await engine.readPixels();
+    if (pixels) {
+      // Create temp canvas for the frame
+      const frameCanvas = document.createElement('canvas');
+      frameCanvas.width = outputWidth;
+      frameCanvas.height = outputHeight;
+      const frameCtx = frameCanvas.getContext('2d');
+
+      if (frameCtx) {
+        const imageData = new ImageData(pixels, outputWidth, outputHeight);
+        frameCtx.putImageData(imageData, 0, 0);
+
+        // Draw scaled frame onto grid
+        gridCtx.drawImage(
+          frameCanvas,
+          col * frameWidth,
+          row * frameHeight,
+          frameWidth,
+          frameHeight
+        );
+      }
+    }
+
+    // Draw time label
+    gridCtx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    gridCtx.fillRect(col * frameWidth, row * frameHeight + frameHeight - 20, frameWidth, 20);
+    gridCtx.fillStyle = '#ffffff';
+    gridCtx.font = '12px monospace';
+    gridCtx.fillText(
+      `${time.toFixed(2)}s`,
+      col * frameWidth + 5,
+      row * frameHeight + frameHeight - 6
+    );
+
+    // Draw separator line between "before" and "after" rows if this is a cut preview
+    if (i === columns - 1 && rows === 2) {
+      gridCtx.strokeStyle = '#ff4444';
+      gridCtx.lineWidth = 2;
+      gridCtx.beginPath();
+      gridCtx.moveTo(0, frameHeight);
+      gridCtx.lineTo(gridCanvas.width, frameHeight);
+      gridCtx.stroke();
+    }
+  }
+
+  // Restore original playhead position
+  timelineStore.setPlayheadPosition(originalPosition);
+
+  // Convert to PNG
+  const dataUrl = gridCanvas.toDataURL('image/png');
+
+  return {
+    success: true,
+    data: {
+      width: gridCanvas.width,
+      height: gridCanvas.height,
+      frameCount: times.length,
+      gridSize: `${columns}x${rows}`,
+      dataUrl,
+    },
+  };
 }
 
 // Helper to format clip info for AI
@@ -1262,6 +1444,106 @@ async function executeToolInternal(
             sections: timelineSections,
             totalLowQualityTime: lowQualitySections.reduce((sum, s) => sum + s.duration, 0),
             count: lowQualitySections.length,
+          },
+        };
+      }
+
+      // === ANALYSIS & TRANSCRIPTION CONTROL ===
+      case 'startClipAnalysis': {
+        const clipId = args.clipId as string;
+        const clip = timelineStore.clips.find(c => c.id === clipId);
+        if (!clip) {
+          return { success: false, error: `Clip not found: ${clipId}` };
+        }
+
+        if (clip.analysisStatus === 'analyzing') {
+          return { success: false, error: 'Analysis already in progress for this clip' };
+        }
+
+        // Import and start analysis (runs in background)
+        const { analyzeClip } = await import('./clipAnalyzer');
+        analyzeClip(clipId); // Don't await - runs in background
+
+        return {
+          success: true,
+          data: {
+            clipId,
+            clipName: clip.name,
+            message: 'Analysis started. Check clip details later for results.',
+          },
+        };
+      }
+
+      case 'startClipTranscription': {
+        const clipId = args.clipId as string;
+        const clip = timelineStore.clips.find(c => c.id === clipId);
+        if (!clip) {
+          return { success: false, error: `Clip not found: ${clipId}` };
+        }
+
+        // Import and start transcription (runs in background)
+        const { transcribeClip } = await import('./clipTranscriber');
+        transcribeClip(clipId, 'de'); // Don't await - runs in background
+
+        return {
+          success: true,
+          data: {
+            clipId,
+            clipName: clip.name,
+            message: 'Transcription started. Check clip details later for results.',
+          },
+        };
+      }
+
+      // === CUT PREVIEW / FRAME CAPTURE ===
+      case 'getCutPreviewQuad': {
+        const cutTime = args.cutTime as number;
+        const frameSpacing = (args.frameSpacing as number) || 0.1;
+
+        // Generate 8 timestamps: 4 before cut, 4 after cut
+        const times: number[] = [];
+        // Before: -4, -3, -2, -1 spacing from cut
+        for (let i = 4; i >= 1; i--) {
+          times.push(cutTime - (i * frameSpacing));
+        }
+        // After: +0, +1, +2, +3 spacing from cut (starting right at cut)
+        for (let i = 0; i < 4; i++) {
+          times.push(cutTime + (i * frameSpacing));
+        }
+
+        // Capture frames and create grid
+        const gridResult = await captureFrameGrid(times, 4, timelineStore);
+        if (!gridResult.success) {
+          return gridResult;
+        }
+
+        return {
+          success: true,
+          data: {
+            cutTime,
+            frameSpacing,
+            frameTimes: times,
+            description: 'Top row: 4 frames BEFORE cut. Bottom row: 4 frames AFTER cut (starting at cut point).',
+            ...gridResult.data,
+          },
+        };
+      }
+
+      case 'getFramesAtTimes': {
+        const times = (args.times as number[]).slice(0, 8); // Max 8 frames
+        const columns = (args.columns as number) || 4;
+
+        const gridResult = await captureFrameGrid(times, columns, timelineStore);
+        if (!gridResult.success) {
+          return gridResult;
+        }
+
+        return {
+          success: true,
+          data: {
+            frameTimes: times,
+            columns,
+            ...gridResult.data,
           },
         };
       }
