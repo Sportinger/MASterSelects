@@ -2394,15 +2394,26 @@ input[type="checkbox"] {
 }
 
 /* Playhead */
-.playhead {
+/* Playhead line - inside track-lanes-scroll, extends full track height */
+.playhead-line {
   position: absolute;
   top: 0;
   bottom: 0;
   width: 2px;
-  z-index: 30; /* Above sticky header (z-index: 20) */
+  background: var(--danger);
+  z-index: 25;
   pointer-events: none;
-  /* Center the 2px line on the exact time position */
   transform: translateX(-1px);
+}
+
+/* Playhead head container - sticky at top of timeline-body */
+.playhead-head-container {
+  position: sticky;
+  top: 0;
+  z-index: 35; /* Above everything */
+  pointer-events: none;
+  height: 0;
+  overflow: visible;
 }
 
 .playhead-head {
@@ -2414,17 +2425,12 @@ input[type="checkbox"] {
   transform: translateX(-5px);
   cursor: grab;
   pointer-events: auto;
+  position: relative;
+  top: 4px;
 }
 
 .playhead-head:hover {
   background: #ff6666;
-}
-
-.playhead-line {
-  width: 2px;
-  height: calc(100% - 12px);
-  background: var(--danger);
-  margin-left: 0;
 }
 
 /* Snap indicator line */

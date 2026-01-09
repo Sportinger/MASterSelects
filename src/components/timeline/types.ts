@@ -107,6 +107,7 @@ export interface TimelineControlsProps {
   onAddVideoTrack: () => void;
   onAddAudioTrack: () => void;
   onSetDuration: (duration: number) => void;
+  onFitToWindow: () => void;
   formatTime: (seconds: number) => string;
   parseTime: (timeStr: string) => number | null;
 }

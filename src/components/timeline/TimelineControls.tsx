@@ -34,6 +34,7 @@ function TimelineControlsComponent({
   onAddVideoTrack,
   onAddAudioTrack,
   onSetDuration,
+  onFitToWindow,
   formatTime,
   parseTime,
 }: TimelineControlsProps) {
@@ -116,12 +117,15 @@ function TimelineControlsComponent({
         )}
       </div>
       <div className="timeline-zoom">
-        <button className="btn btn-sm" onClick={() => onSetZoom(zoom - 10)}>
+        <button className="btn btn-sm" onClick={() => onSetZoom(zoom - 10)} title="Zoom out">
           {'\u2212'}
         </button>
-        <span>{Math.round(zoom)}px/s</span>
-        <button className="btn btn-sm" onClick={() => onSetZoom(zoom + 10)}>
+        <span>{Math.round(zoom * 10) / 10}px/s</span>
+        <button className="btn btn-sm" onClick={() => onSetZoom(zoom + 10)} title="Zoom in">
           +
+        </button>
+        <button className="btn btn-sm" onClick={onFitToWindow} title="Fit composition to window">
+          Fit
         </button>
       </div>
       <div className="timeline-inout-controls">

@@ -1364,6 +1364,17 @@ export function Timeline() {
     [trackMap]
   );
 
+  // Fit composition to window - calculate zoom to show entire duration
+  const handleFitToWindow = useCallback(() => {
+    const trackLanes = timelineBodyRef.current?.querySelector('.track-lanes-scroll');
+    const viewportWidth = trackLanes?.parentElement?.clientWidth ?? 800;
+    // Calculate zoom: viewportWidth = duration * zoom, so zoom = viewportWidth / duration
+    // Subtract some padding (50px) to not be right at the edge
+    const targetZoom = Math.max(MIN_ZOOM, (viewportWidth - 50) / duration);
+    setZoom(targetZoom);
+    setScrollX(0); // Reset scroll to start
+  }, [duration, setZoom, setScrollX]);
+
   // Handle time ruler mousedown
   const handleRulerMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -2480,6 +2491,7 @@ export function Timeline() {
         onAddVideoTrack={() => addTrack('video')}
         onAddAudioTrack={() => addTrack('audio')}
         onSetDuration={setDuration}
+        onFitToWindow={handleFitToWindow}
         formatTime={formatTime}
         parseTime={parseTime}
       />
@@ -2764,18 +2776,23 @@ export function Timeline() {
                 />
               )}
 
+              {/* Playhead line - inside track-lanes-scroll to extend full height */}
+              <div
+                className="playhead-line"
+                style={{ left: timeToPixel(playheadPosition) }}
+              />
+
             </div>{/* track-lanes-scroll */}
           </div>{/* timeline-tracks */}
         </div>{/* timeline-content-row */}
 
-        {/* Playhead - direct child of timeline-body to be above sticky header */}
+        {/* Playhead head - sticky at top */}
         <div
-          className="playhead"
+          className="playhead-head-container"
           style={{ left: timeToPixel(playheadPosition) - scrollX + 150 }}
           onMouseDown={handlePlayheadMouseDown}
         >
           <div className="playhead-head" />
-          <div className="playhead-line" />
         </div>
       </div>{/* timeline-body */}
 
