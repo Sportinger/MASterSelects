@@ -146,6 +146,8 @@ const AnalysisOverlay = memo(function AnalysisOverlay({
     if (visibleFrames.length < 2) return;
 
     // Draw filled area + line for Focus (green) - from bottom
+    // Amplify focus values by 3x for better visibility (clamp to max)
+    const focusMultiplier = 3.0;
     ctx.beginPath();
     ctx.moveTo(0, height); // Start at bottom-left
 
@@ -153,8 +155,9 @@ const AnalysisOverlay = memo(function AnalysisOverlay({
       const frame = visibleFrames[i];
       const frameInClip = frame.timestamp - clipInPoint;
       const x = (frameInClip / clipDuration) * width;
-      // Focus: 0 = bottom, 1 = top (inverted Y)
-      const y = height - (frame.focus * height * 0.8); // Use 80% of height
+      // Focus: 0 = bottom, 1 = top (inverted Y), amplified 3x
+      const amplifiedFocus = Math.min(1, frame.focus * focusMultiplier);
+      const y = height - (amplifiedFocus * height * 0.9); // Use 90% of height
 
       if (i === 0) {
         ctx.lineTo(x, y);
@@ -170,7 +173,7 @@ const AnalysisOverlay = memo(function AnalysisOverlay({
     ctx.closePath();
 
     // Fill with semi-transparent green
-    ctx.fillStyle = 'rgba(34, 197, 94, 0.25)';
+    ctx.fillStyle = 'rgba(34, 197, 94, 0.3)';
     ctx.fill();
 
     // Draw the focus line on top
@@ -179,7 +182,8 @@ const AnalysisOverlay = memo(function AnalysisOverlay({
       const frame = visibleFrames[i];
       const frameInClip = frame.timestamp - clipInPoint;
       const x = (frameInClip / clipDuration) * width;
-      const y = height - (frame.focus * height * 0.8);
+      const amplifiedFocus = Math.min(1, frame.focus * focusMultiplier);
+      const y = height - (amplifiedFocus * height * 0.9);
 
       if (i === 0) {
         ctx.moveTo(x, y);
@@ -187,11 +191,13 @@ const AnalysisOverlay = memo(function AnalysisOverlay({
         ctx.lineTo(x, y);
       }
     }
-    ctx.strokeStyle = 'rgba(34, 197, 94, 0.8)';
+    ctx.strokeStyle = 'rgba(34, 197, 94, 0.9)';
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
     // Draw filled area + line for Motion (blue) - from bottom
+    // Amplify motion values by 2x for better visibility
+    const motionMultiplier = 2.0;
     ctx.beginPath();
     ctx.moveTo(0, height);
 
@@ -199,8 +205,9 @@ const AnalysisOverlay = memo(function AnalysisOverlay({
       const frame = visibleFrames[i];
       const frameInClip = frame.timestamp - clipInPoint;
       const x = (frameInClip / clipDuration) * width;
-      // Motion: 0 = bottom, 1 = top
-      const y = height - (frame.motion * height * 0.8);
+      // Motion: 0 = bottom, 1 = top, amplified 2x
+      const amplifiedMotion = Math.min(1, frame.motion * motionMultiplier);
+      const y = height - (amplifiedMotion * height * 0.9);
 
       if (i === 0) {
         ctx.lineTo(x, y);
@@ -213,7 +220,7 @@ const AnalysisOverlay = memo(function AnalysisOverlay({
     ctx.closePath();
 
     // Fill with semi-transparent blue
-    ctx.fillStyle = 'rgba(59, 130, 246, 0.2)';
+    ctx.fillStyle = 'rgba(59, 130, 246, 0.25)';
     ctx.fill();
 
     // Draw the motion line on top
@@ -222,7 +229,8 @@ const AnalysisOverlay = memo(function AnalysisOverlay({
       const frame = visibleFrames[i];
       const frameInClip = frame.timestamp - clipInPoint;
       const x = (frameInClip / clipDuration) * width;
-      const y = height - (frame.motion * height * 0.8);
+      const amplifiedMotion = Math.min(1, frame.motion * motionMultiplier);
+      const y = height - (amplifiedMotion * height * 0.9);
 
       if (i === 0) {
         ctx.moveTo(x, y);
@@ -230,7 +238,7 @@ const AnalysisOverlay = memo(function AnalysisOverlay({
         ctx.lineTo(x, y);
       }
     }
-    ctx.strokeStyle = 'rgba(59, 130, 246, 0.7)';
+    ctx.strokeStyle = 'rgba(59, 130, 246, 0.8)';
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
