@@ -2263,18 +2263,18 @@ export function Timeline() {
           )}
 
             </div>{/* track-lanes-scroll */}
-
-            {/* Playhead - positioned in timeline-tracks, extends into header */}
-            <div
-              className="playhead"
-              style={{ left: timeToPixel(playheadPosition) - scrollX }}
-              onMouseDown={handlePlayheadMouseDown}
-            >
-              <div className="playhead-head" />
-              <div className="playhead-line" />
-            </div>
           </div>{/* timeline-tracks */}
         </div>{/* timeline-content-row */}
+
+        {/* Playhead - direct child of timeline-body to be above sticky header */}
+        <div
+          className="playhead"
+          style={{ left: timeToPixel(playheadPosition) - scrollX + 150 }}
+          onMouseDown={handlePlayheadMouseDown}
+        >
+          <div className="playhead-head" />
+          <div className="playhead-line" />
+        </div>
       </div>{/* timeline-body */}
 
       {contextMenu &&

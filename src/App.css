@@ -1546,6 +1546,7 @@ input[type="checkbox"] {
   flex: 1;
   overflow-x: hidden;
   overflow-y: auto;
+  position: relative;
 }
 
 /* Sticky header row - spans full width */
@@ -2159,10 +2160,10 @@ input[type="checkbox"] {
 /* Playhead */
 .playhead {
   position: absolute;
-  top: -30px; /* Extend into header row */
+  top: 0;
   bottom: 0;
   width: 2px;
-  z-index: 100;
+  z-index: 30; /* Above sticky header (z-index: 20) */
   pointer-events: none;
   /* Center the 2px line on the exact time position */
   transform: translateX(-1px);
