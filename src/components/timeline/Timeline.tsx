@@ -1146,6 +1146,7 @@ export function Timeline() {
             layer.blendMode !== transform.blendMode ||
             layer.position.x !== transform.position.x ||
             layer.position.y !== transform.position.y ||
+            layer.position.z !== transform.position.z ||
             layer.scale.x !== transform.scale.x ||
             layer.scale.y !== transform.scale.y ||
             (layer.rotation as { z?: number })?.z !==
@@ -1197,6 +1198,7 @@ export function Timeline() {
           layer.blendMode !== transform.blendMode ||
           layer.position.x !== transform.position.x ||
           layer.position.y !== transform.position.y ||
+          layer.position.z !== transform.position.z ||
           layer.scale.x !== transform.scale.x ||
           layer.scale.y !== transform.scale.y ||
           (layer.rotation as { z?: number })?.z !==
