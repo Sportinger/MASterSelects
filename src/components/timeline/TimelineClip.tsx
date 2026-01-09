@@ -176,8 +176,6 @@ function TimelineClipComponent({
     clip.file?.type?.startsWith('audio/') ||
     audioExtensions.includes(fileExt);
 
-
-
   const isGeneratingProxy = proxyStatus === 'generating';
   const hasProxy = proxyStatus === 'ready';
 
@@ -294,6 +292,21 @@ function TimelineClipComponent({
   ]
     .filter(Boolean)
     .join(' ');
+
+  // Debug logging for audio clips
+  if (clip.name?.toLowerCase().includes('.wav')) {
+    console.log(`[TimelineClip] WAV clip debug:`, {
+      name: clip.name,
+      clipTypeClass,
+      isAudioClip,
+      sourceType: clip.source?.type,
+      fileType: clip.file?.type,
+      fileExt,
+      waveformLength: clip.waveform?.length,
+      waveformGenerating: clip.waveformGenerating,
+      clipClass,
+    });
+  }
 
   return (
     <div

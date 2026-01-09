@@ -1868,7 +1868,7 @@ export function Timeline() {
 
   // Handle external file drop on track
   const handleTrackDrop = useCallback(
-    (e: React.DragEvent, trackId: string) => {
+    async (e: React.DragEvent, trackId: string) => {
       e.preventDefault();
 
       const cachedDuration =
@@ -1913,7 +1913,11 @@ export function Timeline() {
           const rect = e.currentTarget.getBoundingClientRect();
           const x = e.clientX - rect.left + scrollX;
           const startTime = pixelToTime(x);
-          addClip(trackId, file, Math.max(0, startTime), cachedDuration);
+          // Import file to media store first to get mediaFileId (needed for multicam sync)
+          const mediaStore = useMediaStore.getState();
+          const importedFile = await mediaStore.importFile(file);
+          const newMediaFileId = importedFile?.id;
+          addClip(trackId, file, Math.max(0, startTime), cachedDuration, newMediaFileId);
         }
       }
     },
