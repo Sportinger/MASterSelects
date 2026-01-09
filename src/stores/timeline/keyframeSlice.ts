@@ -332,66 +332,13 @@ export const createKeyframeSlice: SliceCreator<KeyframeActions> = (set, get) => 
     }) || [];
 
     // If no keyframes at all, no property rows
-    if (!hasOpacityKeyframes && !hasPositionKeyframes && !hasScaleKeyframes && !hasRotationKeyframes && effectsWithKeyframes.length === 0) {
+    if (keyframes.length === 0) {
       return baseHeight;
     }
 
-    let extraHeight = 0;
-    const trackGroups = expandedTrackPropertyGroups.get(trackId);
-
-    // Opacity row (only if has keyframes)
-    if (hasOpacityKeyframes) {
-      extraHeight += PROPERTY_ROW_HEIGHT;
-    }
-
-    // Position group (only if has keyframes)
-    if (hasPositionKeyframes) {
-      extraHeight += GROUP_HEADER_HEIGHT;
-      if (trackGroups?.has('position')) {
-        if (hasPositionXKeyframes) extraHeight += PROPERTY_ROW_HEIGHT;
-        if (hasPositionYKeyframes) extraHeight += PROPERTY_ROW_HEIGHT;
-        if (hasPositionZKeyframes) extraHeight += PROPERTY_ROW_HEIGHT;
-      }
-    }
-
-    // Scale group (only if has keyframes)
-    if (hasScaleKeyframes) {
-      extraHeight += GROUP_HEADER_HEIGHT;
-      if (trackGroups?.has('scale')) {
-        if (hasScaleXKeyframes) extraHeight += PROPERTY_ROW_HEIGHT;
-        if (hasScaleYKeyframes) extraHeight += PROPERTY_ROW_HEIGHT;
-      }
-    }
-
-    // Rotation group (only if has keyframes)
-    if (hasRotationKeyframes) {
-      extraHeight += GROUP_HEADER_HEIGHT;
-      if (trackGroups?.has('rotation')) {
-        if (hasRotationXKeyframes) extraHeight += PROPERTY_ROW_HEIGHT;
-        if (hasRotationYKeyframes) extraHeight += PROPERTY_ROW_HEIGHT;
-        if (hasRotationZKeyframes) extraHeight += PROPERTY_ROW_HEIGHT;
-      }
-    }
-
-    // Effects group - only effects that have keyframes
-    if (effectsWithKeyframes.length > 0) {
-      extraHeight += GROUP_HEADER_HEIGHT; // Effects group header
-
-      if (trackGroups?.has('effects')) {
-        // Add height for each effect with keyframes
-        for (const effect of effectsWithKeyframes) {
-          extraHeight += GROUP_HEADER_HEIGHT; // Effect sub-group header
-
-          // If effect is expanded, add rows for each keyframed parameter
-          if (trackGroups?.has(`effect.${effect.id}`)) {
-            const paramsWithKeyframes = Object.keys(effect.params)
-              .filter(k => typeof effect.params[k] === 'number')
-              .filter(paramName => propertyHasKeyframes(`effect.${effect.id}.${paramName}`));
-            extraHeight += PROPERTY_ROW_HEIGHT * paramsWithKeyframes.length;
-          }
-        }
-      }
-    }
+    // Flattened display: count unique properties with keyframes
+    const uniqueProperties = new Set(keyframes.map(k => k.property));
+    const extraHeight = uniqueProperties.size * PROPERTY_ROW_HEIGHT;
 
     return baseHeight + extraHeight;
   },
