@@ -1760,12 +1760,36 @@ export function Timeline() {
         // Then apply resistance for overlap prevention
         const draggedClip = clipMap.get(drag.clipId);
         const clipDuration = draggedClip?.duration || 0;
-        const { startTime: resistedTime, forcingOverlap } = getPositionWithResistance(
+        const baseTime = snapped ? snappedTime : rawTime;
+
+        let { startTime: resistedTime, forcingOverlap } = getPositionWithResistance(
           drag.clipId,
-          snapped ? snappedTime : rawTime,
+          baseTime,
           newTrackId,
           clipDuration
         );
+
+        // Also check linked clip (audio) for resistance on its track
+        if (draggedClip?.linkedClipId && !moveEvent.altKey) {
+          const linkedClip = clipMap.get(draggedClip.linkedClipId);
+          if (linkedClip) {
+            const timeDelta = resistedTime - draggedClip.startTime;
+            const linkedNewTime = linkedClip.startTime + timeDelta;
+            const linkedResult = getPositionWithResistance(
+              linkedClip.id,
+              linkedNewTime,
+              linkedClip.trackId,
+              linkedClip.duration
+            );
+            // If linked clip has more resistance, use that position
+            const linkedTimeDelta = linkedResult.startTime - linkedClip.startTime;
+            if (Math.abs(linkedTimeDelta) < Math.abs(timeDelta)) {
+              // Linked clip is more constrained - adjust main clip position
+              resistedTime = draggedClip.startTime + linkedTimeDelta;
+              forcingOverlap = linkedResult.forcingOverlap || forcingOverlap;
+            }
+          }
+        }
 
         const newDrag: ClipDragState = {
           ...drag,
