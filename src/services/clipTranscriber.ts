@@ -1,60 +1,92 @@
 // Clip Transcriber Service
-// Handles transcription of individual clips using Whisper in a Web Worker
+// Handles transcription of individual clips using Whisper
 
+import { pipeline, env } from '@xenova/transformers';
 import { useTimelineStore } from '../stores/timeline';
 import { triggerTimelineSave } from '../stores/mediaStore';
 import type { TranscriptWord, TranscriptStatus } from '../types';
 
-// Worker instance (reused across transcriptions)
-let worker: Worker | null = null;
-let currentClipId: string | null = null;
+// Configure transformers.js
+env.allowLocalModels = false;
+env.useBrowserCache = true;
 
-// Message types from worker
-interface ProgressMessage {
-  type: 'progress';
-  stage: 'loading' | 'transcribing';
-  progress: number;
-  message: string;
+// Transcriber instance (cached)
+let transcriber: any = null;
+let loadedModel: string | null = null;
+let isTranscribing = false;
+let shouldCancel = false;
+
+interface TranscriptChunk {
+  text: string;
+  timestamp: [number, number | null];
 }
-
-interface PartialResultMessage {
-  type: 'partial';
-  words: TranscriptWord[];
-  processedDuration: number;
-  totalDuration: number;
-}
-
-interface CompleteMessage {
-  type: 'complete';
-  words: TranscriptWord[];
-}
-
-interface ErrorMessage {
-  type: 'error';
-  error: string;
-}
-
-type WorkerMessage = ProgressMessage | PartialResultMessage | CompleteMessage | ErrorMessage;
 
 /**
- * Get or create worker instance
+ * Get model name based on language
  */
-function getWorker(): Worker {
-  if (!worker) {
-    worker = new Worker(
-      new URL('../workers/transcriptionWorker.ts', import.meta.url),
-      { type: 'module' }
-    );
+function getModelName(language: string): string {
+  if (language === 'en') {
+    return 'Xenova/whisper-tiny.en';
   }
-  return worker;
+  return 'Xenova/whisper-tiny';
 }
 
 /**
- * Extract audio from a clip's file and transcribe it using Web Worker
- * @param clipId - The ID of the clip to transcribe
- * @param language - Language code (e.g., 'de', 'en', 'es') - defaults to 'de' (German)
+ * Load Whisper model
+ */
+async function loadModel(
+  language: string,
+  onProgress: (progress: number, message: string) => void
+): Promise<any> {
+  const modelName = getModelName(language);
+
+  // Return cached model if same
+  if (transcriber && loadedModel === modelName) {
+    return transcriber;
+  }
+
+  // Clear old model
+  transcriber = null;
+  loadedModel = null;
+
+  const langName = language === 'en' ? 'English' : 'multilingual';
+  onProgress(0, `Loading Whisper model (${langName})...`);
+
+  try {
+    transcriber = await pipeline(
+      'automatic-speech-recognition',
+      modelName,
+      {
+        progress_callback: (data: any) => {
+          if (data.status === 'progress' && data.progress) {
+            onProgress(data.progress, `Model loading: ${Math.round(data.progress)}%`);
+          }
+        },
+        revision: 'main',
+      }
+    );
+
+    loadedModel = modelName;
+    onProgress(100, 'Model loaded');
+    return transcriber;
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    if (errorMsg.includes('<!doctype') || errorMsg.includes('Unexpected token')) {
+      throw new Error('Model download failed - network error. Please refresh and try again.');
+    }
+    throw new Error(`Failed to load Whisper model: ${errorMsg}`);
+  }
+}
+
+/**
+ * Extract audio from a clip's file and transcribe it
  */
 export async function transcribeClip(clipId: string, language: string = 'de'): Promise<void> {
+  if (isTranscribing) {
+    console.warn('[Transcribe] Already transcribing');
+    return;
+  }
+
   const store = useTimelineStore.getState();
   const clip = store.clips.find(c => c.id === clipId);
 
@@ -70,8 +102,8 @@ export async function transcribeClip(clipId: string, language: string = 'de'): P
     return;
   }
 
-  // Set current clip ID for worker messages
-  currentClipId = clipId;
+  isTranscribing = true;
+  shouldCancel = false;
 
   // Update status to transcribing
   updateClipTranscript(clipId, {
@@ -81,78 +113,158 @@ export async function transcribeClip(clipId: string, language: string = 'de'): P
   });
 
   try {
-    // Extract audio on main thread (needs AudioContext)
+    // Extract audio
     const audioBuffer = await extractAudioBuffer(clip.file);
     const audioData = await resampleAudio(audioBuffer, 16000);
     const audioDuration = audioBuffer.duration;
 
     console.log('[Transcribe] Audio extracted:', audioDuration.toFixed(1) + 's');
 
+    if (shouldCancel) {
+      updateClipTranscript(clipId, { status: 'none', progress: 0, message: undefined });
+      isTranscribing = false;
+      return;
+    }
+
+    // Load model
+    const model = await loadModel(language, (progress, message) => {
+      updateClipTranscript(clipId, {
+        progress: progress * 0.3, // Model loading is 0-30%
+        message,
+      });
+    });
+
+    if (shouldCancel) {
+      updateClipTranscript(clipId, { status: 'none', progress: 0, message: undefined });
+      isTranscribing = false;
+      return;
+    }
+
     updateClipTranscript(clipId, {
-      progress: 5,
+      progress: 30,
       message: 'Starting transcription...',
     });
 
-    // Send to worker for transcription
-    const transcriptWorker = getWorker();
+    // Process in segments
+    const SEGMENT_DURATION = 30; // seconds
+    const SAMPLE_RATE = 16000;
+    const segmentSamples = SEGMENT_DURATION * SAMPLE_RATE;
+    const totalSamples = audioData.length;
+    const numSegments = Math.ceil(totalSamples / segmentSamples);
 
-    // Set up message handler
-    const handleMessage = (event: MessageEvent<WorkerMessage>) => {
-      const msg = event.data;
+    const allWords: TranscriptWord[] = [];
+    let wordIndex = 0;
 
-      // Only process messages for current clip
-      if (currentClipId !== clipId) return;
-
-      switch (msg.type) {
-        case 'progress':
-          updateClipTranscript(clipId, {
-            progress: msg.progress,
-            message: msg.message,
-          });
-          break;
-
-        case 'partial':
-          // Update with partial results - show words transcribed so far
-          updateClipTranscript(clipId, {
-            words: msg.words,
-            progress: Math.round((msg.processedDuration / msg.totalDuration) * 100),
-            message: `Transcribed ${msg.words.length} words (${Math.round(msg.processedDuration)}s / ${Math.round(msg.totalDuration)}s)`,
-          });
-          break;
-
-        case 'complete':
-          updateClipTranscript(clipId, {
-            status: 'ready',
-            progress: 100,
-            words: msg.words,
-            message: undefined,
-          });
-          triggerTimelineSave();
-          console.log('[Transcribe] Done:', msg.words.length, 'words');
-          transcriptWorker.removeEventListener('message', handleMessage);
-          break;
-
-        case 'error':
-          console.error('[Transcribe] Worker error:', msg.error);
-          updateClipTranscript(clipId, {
-            status: 'error',
-            progress: 0,
-            message: msg.error,
-          });
-          transcriptWorker.removeEventListener('message', handleMessage);
-          break;
+    for (let segmentIdx = 0; segmentIdx < numSegments; segmentIdx++) {
+      if (shouldCancel) {
+        updateClipTranscript(clipId, { status: 'none', progress: 0, message: undefined });
+        isTranscribing = false;
+        return;
       }
-    };
 
-    transcriptWorker.addEventListener('message', handleMessage);
+      const startSample = segmentIdx * segmentSamples;
+      const endSample = Math.min(startSample + segmentSamples, totalSamples);
+      const segmentData = audioData.slice(startSample, endSample);
+      const segmentStartTime = startSample / SAMPLE_RATE;
 
-    // Start transcription in worker
-    transcriptWorker.postMessage({
-      type: 'start',
-      audioData,
-      audioDuration,
-      language,
+      // Update progress
+      const transcriptionProgress = 30 + ((segmentIdx / numSegments) * 70);
+      updateClipTranscript(clipId, {
+        progress: transcriptionProgress,
+        message: `Segment ${segmentIdx + 1}/${numSegments}...`,
+      });
+
+      // Yield to event loop
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      try {
+        const result = await model(segmentData, {
+          return_timestamps: 'word',
+          chunk_length_s: 30,
+          stride_length_s: 5,
+          language: language,
+          task: 'transcribe',
+        });
+
+        // Process chunks
+        const chunks: TranscriptChunk[] = result.chunks || [];
+
+        for (const chunk of chunks) {
+          const chunkText = chunk.text?.trim();
+          if (!chunkText) continue;
+
+          const chunkStart = (chunk.timestamp[0] ?? 0) + segmentStartTime;
+          const chunkEnd = (chunk.timestamp[1] ?? chunkStart + 0.5) + segmentStartTime;
+
+          const chunkWords = chunkText.split(/\s+/).filter((w: string) => w.length > 0);
+
+          if (chunkWords.length === 1) {
+            allWords.push({
+              id: `word-${wordIndex++}`,
+              text: chunkText,
+              start: chunkStart,
+              end: chunkEnd,
+              confidence: 1,
+              speaker: 'Speaker 1',
+            });
+          } else {
+            const duration = chunkEnd - chunkStart;
+            const wordDuration = duration / chunkWords.length;
+
+            for (let i = 0; i < chunkWords.length; i++) {
+              allWords.push({
+                id: `word-${wordIndex++}`,
+                text: chunkWords[i],
+                start: chunkStart + (i * wordDuration),
+                end: chunkStart + ((i + 1) * wordDuration),
+                confidence: 1,
+                speaker: 'Speaker 1',
+              });
+            }
+          }
+        }
+
+        // Fallback: if no chunks but have text
+        if (chunks.length === 0 && result.text) {
+          const segmentText = result.text.trim();
+          const segmentWords = segmentText.split(/\s+/).filter((w: string) => w.length > 0);
+          const segmentDuration = (endSample - startSample) / SAMPLE_RATE;
+          const wordDuration = segmentDuration / Math.max(1, segmentWords.length);
+
+          for (let i = 0; i < segmentWords.length; i++) {
+            allWords.push({
+              id: `word-${wordIndex++}`,
+              text: segmentWords[i],
+              start: segmentStartTime + (i * wordDuration),
+              end: segmentStartTime + ((i + 1) * wordDuration),
+              confidence: 1,
+              speaker: 'Speaker 1',
+            });
+          }
+        }
+
+        // Update with partial results
+        updateClipTranscript(clipId, {
+          words: [...allWords],
+          progress: Math.round((segmentIdx + 1) / numSegments * 100),
+          message: `Transcribed ${allWords.length} words`,
+        });
+
+      } catch (err) {
+        console.error('[Transcribe] Segment error:', err);
+        // Continue with next segment
+      }
+    }
+
+    // Complete
+    updateClipTranscript(clipId, {
+      status: 'ready',
+      progress: 100,
+      words: allWords,
+      message: undefined,
     });
+    triggerTimelineSave();
+    console.log('[Transcribe] Done:', allWords.length, 'words');
 
   } catch (error) {
     console.error('[Transcribe] Failed:', error);
@@ -161,6 +273,8 @@ export async function transcribeClip(clipId: string, language: string = 'de'): P
       progress: 0,
       message: error instanceof Error ? error.message : 'Unknown error',
     });
+  } finally {
+    isTranscribing = false;
   }
 }
 
@@ -243,22 +357,12 @@ export function clearClipTranscript(clipId: string): void {
     words: undefined,
     message: undefined,
   });
+  triggerTimelineSave();
 }
 
 /**
  * Cancel ongoing transcription
  */
 export function cancelTranscription(): void {
-  if (worker) {
-    worker.terminate();
-    worker = null;
-  }
-  if (currentClipId) {
-    updateClipTranscript(currentClipId, {
-      status: 'none',
-      progress: 0,
-      message: undefined,
-    });
-    currentClipId = null;
-  }
+  shouldCancel = true;
 }
