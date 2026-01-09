@@ -134,6 +134,7 @@ interface DockState {
   togglePanelType: (type: PanelType) => void;
   showPanelType: (type: PanelType) => void;
   hidePanelType: (type: PanelType) => void;
+  activatePanelType: (type: PanelType) => void;
 
   // Multiple preview panels
   addPreviewPanel: (compositionId: string | null) => void;
@@ -446,6 +447,30 @@ export const useDockStore = create<DockState>()(
                 floatingPanels: layout.floatingPanels.filter((_, i) => i !== floatingIndex),
               },
             });
+          }
+        },
+
+        activatePanelType: (type) => {
+          const { layout, setActiveTab, showPanelType, isPanelTypeVisible, bringToFront } = get();
+
+          // First make sure the panel is visible
+          if (!isPanelTypeVisible(type)) {
+            showPanelType(type);
+          }
+
+          // Find the panel in the layout and activate it
+          const result = findPanelAndGroup(layout.root, type);
+          if (result) {
+            const panelIndex = result.group.panels.findIndex(p => p.type === type);
+            if (panelIndex >= 0) {
+              setActiveTab(result.groupId, panelIndex);
+            }
+          }
+
+          // Also check floating panels
+          const floatingPanel = layout.floatingPanels.find(f => f.panel.type === type);
+          if (floatingPanel) {
+            bringToFront(floatingPanel.id);
           }
         },
 
