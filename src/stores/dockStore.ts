@@ -42,6 +42,7 @@ const DEFAULT_LAYOUT: DockLayout = {
             id: 'right-group',
             panels: [
               { id: 'media', type: 'media', title: 'Media' },
+              { id: 'multicam', type: 'multicam', title: 'Multi-Cam' },
               { id: 'clip-properties', type: 'clip-properties', title: 'Properties' },
               { id: 'effects', type: 'effects', title: 'Effects' },
               { id: 'export', type: 'export', title: 'Export' },
