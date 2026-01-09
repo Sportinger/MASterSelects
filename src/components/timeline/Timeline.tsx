@@ -1513,8 +1513,7 @@ export function Timeline() {
         target.closest('.in-out-marker') ||
         target.closest('.trim-handle') ||
         target.closest('.track-header') ||
-        target.closest('.keyframe-diamond') ||
-        target.closest('.keyframe-track-row')
+        target.closest('.keyframe-diamond')
       ) {
         return;
       }

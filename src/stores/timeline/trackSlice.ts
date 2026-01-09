@@ -5,7 +5,7 @@ import type { TrackActions, SliceCreator } from './types';
 
 export const createTrackSlice: SliceCreator<TrackActions> = (set, get) => ({
   addTrack: (type) => {
-    const { tracks } = get();
+    const { tracks, expandedTracks } = get();
     const typeCount = tracks.filter(t => t.type === type).length + 1;
     const newTrack: TimelineTrack = {
       id: `${type}-${Date.now()}`,
@@ -20,8 +20,10 @@ export const createTrackSlice: SliceCreator<TrackActions> = (set, get) => ({
     // Video tracks: insert at TOP (before all existing video tracks)
     // Audio tracks: insert at BOTTOM (after all existing audio tracks)
     if (type === 'video') {
-      // Insert at index 0 (top of timeline)
-      set({ tracks: [newTrack, ...tracks] });
+      // Insert at index 0 (top of timeline) and auto-expand
+      const newExpanded = new Set(expandedTracks);
+      newExpanded.add(newTrack.id);
+      set({ tracks: [newTrack, ...tracks], expandedTracks: newExpanded });
     } else {
       // Audio: append at end (bottom of timeline)
       set({ tracks: [...tracks, newTrack] });

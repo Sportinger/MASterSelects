@@ -473,7 +473,7 @@ export const useTimelineStore = create<TimelineStore>()(
           // Clear keyframe state
           clipKeyframes: new Map<string, Keyframe[]>(),
           keyframeRecordingEnabled: new Set<string>(),
-          expandedTracks: new Set<string>(),
+          expandedTracks: new Set<string>(data.tracks.filter(t => t.type === 'video').map(t => t.id)),
           expandedTrackPropertyGroups: new Map<string, Set<string>>(),
           selectedKeyframeIds: new Set<string>(),
         });
@@ -783,6 +783,7 @@ export const useTimelineStore = create<TimelineStore>()(
         // Clear mixer store layers so preview shows black
         useMixerStore.setState({ layers: [] });
 
+        const { tracks } = get();
         set({
           clips: [],
           selectedClipIds: new Set(),
@@ -793,7 +794,7 @@ export const useTimelineStore = create<TimelineStore>()(
           // Clear keyframe state
           clipKeyframes: new Map<string, Keyframe[]>(),
           keyframeRecordingEnabled: new Set<string>(),
-          expandedTracks: new Set<string>(),
+          expandedTracks: new Set<string>(tracks.filter(t => t.type === 'video').map(t => t.id)),
           expandedTrackPropertyGroups: new Map<string, Set<string>>(),
           selectedKeyframeIds: new Set<string>(),
         });
@@ -835,7 +836,7 @@ export const useTimelineStore = create<TimelineStore>()(
       // Keyframe animation state
       clipKeyframes: new Map<string, Keyframe[]>(),
       keyframeRecordingEnabled: new Set<string>(),
-      expandedTracks: new Set<string>(),
+      expandedTracks: new Set<string>(DEFAULT_TRACKS.filter(t => t.type === 'video').map(t => t.id)),
       expandedTrackPropertyGroups: new Map<string, Set<string>>(),
       selectedKeyframeIds: new Set<string>(),
 
