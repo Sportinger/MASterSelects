@@ -101,14 +101,14 @@ export function MulticamDialog({ open, onClose, selectedClipIds }: MulticamDialo
         setProgress(p);
       };
 
-      // Run sync - returns Map<mediaFileId, offsetInSeconds>
+      // Run sync - returns Map<mediaFileId, offsetInMs>
       const mediaFileOffsets = await audioSync.syncMultiple(
         masterMediaFileId,
         targetMediaFileIds,
         onProgress
       );
 
-      // Convert mediaFileId offsets to clipId offsets
+      // Convert mediaFileId offsets to clipId offsets (all in milliseconds)
       const clipOffsets = new Map<string, number>();
 
       // Master clip has 0 offset
@@ -120,15 +120,15 @@ export function MulticamDialog({ open, onClose, selectedClipIds }: MulticamDialo
 
         const mediaFileId = clip.source?.mediaFileId;
         if (mediaFileId && mediaFileOffsets.has(mediaFileId)) {
-          const offsetSeconds = mediaFileOffsets.get(mediaFileId)!;
-          clipOffsets.set(clip.id, offsetSeconds);
+          const offsetMs = mediaFileOffsets.get(mediaFileId)!;
+          clipOffsets.set(clip.id, offsetMs);
         }
       }
 
-      // Add clips without audio with their current relative position to master
+      // Add clips without audio with their current relative position to master (convert to ms)
       for (const clip of clipsWithoutAudio) {
-        const currentOffset = clip.startTime - masterClip.startTime;
-        clipOffsets.set(clip.id, currentOffset);
+        const currentOffsetMs = (clip.startTime - masterClip.startTime) * 1000;
+        clipOffsets.set(clip.id, currentOffsetMs);
       }
 
       // Create linked group with all clips

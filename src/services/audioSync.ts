@@ -170,16 +170,66 @@ class AudioSync {
     const offsets = new Map<string, number>();
     offsets.set(masterMediaFileId, 0); // Master has zero offset
 
+    const totalSteps = targetMediaFileIds.length + 1; // +1 for master fingerprint
+    let currentStep = 0;
+
+    const reportProgress = () => {
+      if (onProgress) {
+        onProgress(Math.round((currentStep / totalSteps) * 100));
+      }
+    };
+
+    // Generate master fingerprint first (this is the slow part)
+    console.log('[AudioSync] Generating master fingerprint...');
+    reportProgress();
+    const masterFp = await this.getFingerprint(masterMediaFileId);
+    currentStep++;
+    reportProgress();
+
+    if (!masterFp) {
+      console.warn('[AudioSync] Could not generate master fingerprint');
+      return offsets;
+    }
+
+    // Process each target
     for (let i = 0; i < targetMediaFileIds.length; i++) {
       const targetId = targetMediaFileIds[i];
-      if (targetId === masterMediaFileId) continue;
-
-      const offset = await this.findOffset(masterMediaFileId, targetId);
-      offsets.set(targetId, offset);
-
-      if (onProgress) {
-        onProgress(Math.round(((i + 1) / targetMediaFileIds.length) * 100));
+      if (targetId === masterMediaFileId) {
+        currentStep++;
+        reportProgress();
+        continue;
       }
+
+      console.log(`[AudioSync] Processing target ${i + 1}/${targetMediaFileIds.length}...`);
+
+      // Get target fingerprint
+      const targetFp = await this.getFingerprint(targetId);
+
+      if (!targetFp) {
+        console.warn('[AudioSync] Could not generate fingerprint for', targetId);
+        currentStep++;
+        reportProgress();
+        continue;
+      }
+
+      // Calculate max offset in samples (30 seconds)
+      const maxOffsetSamples = Math.floor(30 * masterFp.sampleRate);
+
+      // Perform cross-correlation
+      const result = normalizedCrossCorrelate(
+        masterFp.data,
+        targetFp.data,
+        maxOffsetSamples
+      );
+
+      // Convert offset from samples to milliseconds
+      const offsetMs = (result.offset / masterFp.sampleRate) * 1000;
+      offsets.set(targetId, offsetMs);
+
+      console.log(`[AudioSync] Offset for ${targetId}: ${offsetMs.toFixed(1)}ms (correlation: ${result.correlation.toFixed(4)})`);
+
+      currentStep++;
+      reportProgress();
     }
 
     return offsets;
