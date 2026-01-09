@@ -286,7 +286,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
           try {
             console.log(`[Waveform] Starting generation for ${file.name}...`);
             const waveform = await generateWaveform(file);
-            console.log(`[Waveform] Complete: ${waveform.length} samples for ${file.name}`, waveform.slice(0, 5));
+            console.log(`[Waveform] Complete: ${waveform.length} samples for ${file.name}`);
 
             // Verify clip still exists before updating
             const clipExists = get().clips.find(c => c.id === clipId);
@@ -300,10 +300,6 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
               waveformGenerating: false,
               waveformProgress: 100,
             });
-
-            // Verify the update worked
-            const updatedClip = get().clips.find(c => c.id === clipId);
-            console.log(`[Waveform] After update - clip has waveform: ${updatedClip?.waveform?.length || 0} samples`);
           } catch (e) {
             console.warn('[Waveform] Failed:', e);
             updateClip(clipId, {

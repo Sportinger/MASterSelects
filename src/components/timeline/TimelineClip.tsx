@@ -19,7 +19,7 @@ const Waveform = memo(function Waveform({
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !waveform || waveform.length === 0) return;
+    if (!canvas || !waveform || waveform.length === 0 || width <= 0) return;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -33,16 +33,30 @@ const Waveform = memo(function Waveform({
     // Clear
     ctx.clearRect(0, 0, width, height);
 
-    // Draw waveform bars
-    const barWidth = width / waveform.length;
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)'; // Match existing .waveform-bar color for audio clips
+    // Determine number of bars to draw (max 2 per pixel for detail)
+    const maxBars = Math.floor(width * 2);
+    const samplesPerBar = Math.max(1, Math.floor(waveform.length / maxBars));
+    const numBars = Math.ceil(waveform.length / samplesPerBar);
+    const barWidth = width / numBars;
 
-    waveform.forEach((value, i) => {
-      const barHeight = Math.max(2, value * (height - 8));
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+
+    // Draw bars, using peak value for each segment
+    for (let i = 0; i < numBars; i++) {
+      const startIdx = i * samplesPerBar;
+      const endIdx = Math.min(startIdx + samplesPerBar, waveform.length);
+
+      // Get peak value for this segment
+      let peak = 0;
+      for (let j = startIdx; j < endIdx; j++) {
+        if (waveform[j] > peak) peak = waveform[j];
+      }
+
+      const barHeight = Math.max(2, peak * (height - 4));
       const x = i * barWidth;
       const y = (height - barHeight) / 2;
-      ctx.fillRect(x, y, Math.max(1, barWidth - 1), barHeight);
-    });
+      ctx.fillRect(x, y, Math.max(1, barWidth - 0.5), barHeight);
+    }
   }, [waveform, width, height]);
 
   if (!waveform || waveform.length === 0) return null;
@@ -162,10 +176,6 @@ function TimelineClipComponent({
     clip.file?.type?.startsWith('audio/') ||
     audioExtensions.includes(fileExt);
 
-  // Debug: log audio clip waveform status
-  if (isAudioClip) {
-    console.log(`[TimelineClip] "${clip.name}" - isAudio: ${isAudioClip}, waveform: ${clip.waveform?.length || 0}, generating: ${clip.waveformGenerating}, thumbnails: ${thumbnails.length}`);
-  }
 
   const isGeneratingProxy = proxyStatus === 'generating';
   const hasProxy = proxyStatus === 'ready';
