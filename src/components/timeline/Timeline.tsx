@@ -1375,6 +1375,25 @@ export function Timeline() {
     setScrollX(0); // Reset scroll to start
   }, [duration, setZoom, setScrollX]);
 
+  // Wrapper for setZoom that enforces dynamic minimum based on timeline duration
+  const handleSetZoom = useCallback((newZoom: number) => {
+    const trackLanes = timelineBodyRef.current?.querySelector('.track-lanes-scroll');
+    const viewportWidth = trackLanes?.parentElement?.clientWidth ?? 800;
+    // Don't allow zooming out beyond the point where entire timeline duration is visible
+    const dynamicMinZoom = Math.max(MIN_ZOOM, viewportWidth / duration);
+    setZoom(Math.max(dynamicMinZoom, newZoom));
+  }, [duration, setZoom]);
+
+  // Adjust zoom if duration changes and current zoom would show more than timeline
+  useEffect(() => {
+    const trackLanes = timelineBodyRef.current?.querySelector('.track-lanes-scroll');
+    const viewportWidth = trackLanes?.parentElement?.clientWidth ?? 800;
+    const dynamicMinZoom = Math.max(MIN_ZOOM, viewportWidth / duration);
+    if (zoom < dynamicMinZoom) {
+      setZoom(dynamicMinZoom);
+    }
+  }, [duration, zoom, setZoom]);
+
   // Handle time ruler mousedown
   const handleRulerMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -2506,7 +2525,7 @@ export function Timeline() {
         onPause={pause}
         onStop={stop}
         onToggleLoop={toggleLoopPlayback}
-        onSetZoom={setZoom}
+        onSetZoom={handleSetZoom}
         onSetInPoint={setInPointAtPlayhead}
         onSetOutPoint={setOutPointAtPlayhead}
         onClearInOut={clearInOut}
