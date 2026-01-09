@@ -1767,48 +1767,101 @@ export function Timeline() {
       const x = e.clientX - rect.left + scrollX;
       const startTime = pixelToTime(x);
 
+      // Helper to detect audio files
+      const audioExtensions = ['wav', 'mp3', 'ogg', 'flac', 'aac', 'm4a', 'wma', 'aiff', 'opus'];
+
+      // Get target track type
+      const targetTrack = tracks.find((t) => t.id === trackId);
+      const isVideoTrack = targetTrack?.type === 'video';
+
       if (e.dataTransfer.types.includes('application/x-composition-id')) {
-        setExternalDrag({ trackId, startTime, x: e.clientX, y: e.clientY, duration: 5, isVideo: true });
+        setExternalDrag({ trackId, startTime, x: e.clientX, y: e.clientY, duration: 5, isVideo: true, isAudio: false });
         return;
       }
 
       if (e.dataTransfer.types.includes('application/x-media-file-id')) {
-        setExternalDrag({ trackId, startTime, x: e.clientX, y: e.clientY, duration: 5, isVideo: true });
+        // Check if it's an audio file from media panel
+        const mediaFileId = e.dataTransfer.getData('application/x-media-file-id');
+        let isAudio = false;
+        if (mediaFileId) {
+          const mediaStore = useMediaStore.getState();
+          const mediaFile = mediaStore.files.find((f) => f.id === mediaFileId);
+          const fileExt = mediaFile?.file?.name?.split('.').pop()?.toLowerCase() || '';
+          isAudio = mediaFile?.file?.type?.startsWith('audio/') || audioExtensions.includes(fileExt);
+        }
+        // Don't update trackId if dragging audio over video track - use first audio track instead
+        if (isAudio && isVideoTrack) {
+          const firstAudioTrack = tracks.find((t) => t.type === 'audio');
+          setExternalDrag((prev) => ({
+            trackId: prev?.trackId ?? firstAudioTrack?.id ?? trackId,
+            startTime,
+            x: e.clientX,
+            y: e.clientY,
+            duration: prev?.duration ?? 5,
+            isAudio: true,
+            isVideo: false,
+          }));
+          return;
+        }
+        setExternalDrag({ trackId, startTime, x: e.clientX, y: e.clientY, duration: 5, isVideo: !isAudio, isAudio });
         return;
       }
 
       if (e.dataTransfer.types.includes('Files')) {
         let dur: number | undefined;
+        let isAudio = false;
         const items = e.dataTransfer.items;
         if (items && items.length > 0) {
           for (let i = 0; i < items.length; i++) {
             const item = items[i];
             if (item.kind === 'file') {
               const file = item.getAsFile();
-              if (file && file.type.startsWith('video/')) {
-                const cacheKey = `${file.name}_${file.size}`;
-                if (dragDurationCacheRef.current?.url === cacheKey) {
-                  dur = dragDurationCacheRef.current.duration;
-                } else {
-                  getVideoDurationQuick(file).then((d) => {
-                    if (d) {
-                      dragDurationCacheRef.current = { url: cacheKey, duration: d };
-                      setExternalDrag((prev) =>
-                        prev ? { ...prev, duration: d } : null
-                      );
-                    }
-                  });
+              if (file) {
+                // Check if audio file
+                if (file.type.startsWith('audio/')) {
+                  isAudio = true;
+                  break;
                 }
-                break;
+                // Check video file for duration
+                if (file.type.startsWith('video/')) {
+                  const cacheKey = `${file.name}_${file.size}`;
+                  if (dragDurationCacheRef.current?.url === cacheKey) {
+                    dur = dragDurationCacheRef.current.duration;
+                  } else {
+                    getVideoDurationQuick(file).then((d) => {
+                      if (d) {
+                        dragDurationCacheRef.current = { url: cacheKey, duration: d };
+                        setExternalDrag((prev) =>
+                          prev ? { ...prev, duration: d } : null
+                        );
+                      }
+                    });
+                  }
+                  break;
+                }
               }
             }
           }
         }
 
-        setExternalDrag({ trackId, startTime, x: e.clientX, y: e.clientY, duration: dur });
+        // Don't update trackId if dragging audio over video track - use first audio track instead
+        if (isAudio && isVideoTrack) {
+          const firstAudioTrack = tracks.find((t) => t.type === 'audio');
+          setExternalDrag((prev) => ({
+            trackId: prev?.trackId ?? firstAudioTrack?.id ?? trackId,
+            startTime,
+            x: e.clientX,
+            y: e.clientY,
+            duration: prev?.duration ?? dur,
+            isAudio: true,
+            isVideo: false,
+          }));
+          return;
+        }
+        setExternalDrag({ trackId, startTime, x: e.clientX, y: e.clientY, duration: dur, isVideo: !isAudio, isAudio });
       }
     },
-    [scrollX, pixelToTime]
+    [scrollX, pixelToTime, tracks]
   );
 
   // Handle external file drag over track
@@ -1848,6 +1901,22 @@ export function Timeline() {
       // Audio files can only go on audio tracks
       if (isDraggingAudio && isVideoTrack) {
         e.dataTransfer.dropEffect = 'none';
+        // Still update position for preview on audio tracks
+        if (timelineRef.current) {
+          const rect = timelineRef.current.getBoundingClientRect();
+          const x = e.clientX - rect.left + scrollX;
+          const startTime = pixelToTime(x);
+          const firstAudioTrack = tracks.find((t) => t.type === 'audio');
+          setExternalDrag((prev) => ({
+            trackId: prev?.trackId ?? firstAudioTrack?.id ?? trackId,
+            startTime,
+            x: e.clientX,
+            y: e.clientY,
+            isAudio: true,
+            isVideo: false,
+            duration: prev?.duration ?? dragDurationCacheRef.current?.duration,
+          }));
+        }
         return;
       }
 
@@ -2166,8 +2235,10 @@ export function Timeline() {
     const handleWheel = (e: WheelEvent) => {
       if (e.ctrlKey || e.altKey) {
         e.preventDefault();
-        const delta = e.deltaY > 0 ? -5 : 5;
-        setZoom(zoom + delta);
+        // Proportional zoom for smooth, consistent feel
+        const zoomFactor = 1.08; // 8% change per scroll step
+        const newZoom = e.deltaY > 0 ? zoom / zoomFactor : zoom * zoomFactor;
+        setZoom(newZoom);
       } else {
         // Handle horizontal scroll (e.g., shift+scroll or trackpad horizontal)
         if (e.deltaX !== 0) {
@@ -2399,8 +2470,8 @@ export function Timeline() {
             className={`timeline-tracks ${clipDrag ? 'dragging-clip' : ''}`}
           >
             <div className="track-lanes-scroll" style={{ transform: `translateX(-${scrollX}px)` }}>
-              {/* New Video Track drop zone - at TOP above video tracks */}
-              {externalDrag && (
+              {/* New Video Track drop zone - at TOP above video tracks (only for non-audio files) */}
+              {externalDrag && !externalDrag.isAudio && (
                 <div
                   className={`new-track-drop-zone video ${externalDrag.newTrackType === 'video' ? 'active' : ''}`}
                   onDragOver={(e) => handleNewTrackDragOver(e, 'video')}
