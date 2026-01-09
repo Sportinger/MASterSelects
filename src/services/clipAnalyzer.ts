@@ -14,29 +14,111 @@ let shouldCancel = false;
 let currentClipId: string | null = null;
 
 /**
- * Analyze motion between two frames using pixel difference
- * Returns 0-1 (no motion to high motion)
+ * Motion analysis result with global vs local distinction
+ */
+interface MotionResult {
+  total: number;        // Overall motion 0-1
+  global: number;       // Camera/scene motion 0-1 (uniform change across frame)
+  local: number;        // Object motion 0-1 (localized changes)
+  isSceneCut: boolean;  // True if likely a scene cut (>60% change)
+}
+
+/**
+ * Analyze motion between two frames using grid-based analysis
+ * Distinguishes between:
+ * - Global motion: Camera movement, pans, scene cuts (whole frame changes uniformly)
+ * - Local motion: Object movement (only parts of frame change)
  */
 function analyzeMotion(
   currentFrame: ImageData,
   previousFrame: ImageData | null
-): number {
-  if (!previousFrame) return 0;
-
-  const curr = currentFrame.data;
-  const prev = previousFrame.data;
-  let diff = 0;
-
-  // Sample every 4th pixel for performance
-  for (let i = 0; i < curr.length; i += 16) {
-    const currLum = curr[i] * 0.299 + curr[i + 1] * 0.587 + curr[i + 2] * 0.114;
-    const prevLum = prev[i] * 0.299 + prev[i + 1] * 0.587 + prev[i + 2] * 0.114;
-    diff += Math.abs(currLum - prevLum);
+): MotionResult {
+  if (!previousFrame) {
+    return { total: 0, global: 0, local: 0, isSceneCut: false };
   }
 
-  const pixelCount = curr.length / 16;
-  const normalizedDiff = diff / (pixelCount * 255);
-  return Math.min(1, normalizedDiff * 5);
+  const { width, height, data: curr } = currentFrame;
+  const prev = previousFrame.data;
+
+  // Divide frame into a 4x4 grid (16 regions)
+  const gridSize = 4;
+  const regionWidth = Math.floor(width / gridSize);
+  const regionHeight = Math.floor(height / gridSize);
+  const regionMotion: number[] = [];
+
+  // Calculate motion for each region
+  for (let gy = 0; gy < gridSize; gy++) {
+    for (let gx = 0; gx < gridSize; gx++) {
+      let regionDiff = 0;
+      let regionPixels = 0;
+
+      const startX = gx * regionWidth;
+      const startY = gy * regionHeight;
+      const endX = Math.min(startX + regionWidth, width);
+      const endY = Math.min(startY + regionHeight, height);
+
+      // Sample every 2nd pixel in each region for performance
+      for (let y = startY; y < endY; y += 2) {
+        for (let x = startX; x < endX; x += 2) {
+          const idx = (y * width + x) * 4;
+          const currLum = curr[idx] * 0.299 + curr[idx + 1] * 0.587 + curr[idx + 2] * 0.114;
+          const prevLum = prev[idx] * 0.299 + prev[idx + 1] * 0.587 + prev[idx + 2] * 0.114;
+          regionDiff += Math.abs(currLum - prevLum);
+          regionPixels++;
+        }
+      }
+
+      // Normalize region motion to 0-1
+      const normalizedRegion = regionPixels > 0 ? (regionDiff / regionPixels) / 255 : 0;
+      regionMotion.push(Math.min(1, normalizedRegion * 5));
+    }
+  }
+
+  // Calculate statistics across regions
+  const avgMotion = regionMotion.reduce((a, b) => a + b, 0) / regionMotion.length;
+  const motionVariance = regionMotion.reduce((acc, m) => acc + Math.pow(m - avgMotion, 2), 0) / regionMotion.length;
+  const motionStdDev = Math.sqrt(motionVariance);
+
+  // Determine motion type:
+  // - Low variance + high motion = Global motion (camera/scene change)
+  // - High variance = Local motion (objects moving)
+  // Threshold: if std dev < 0.15 and avg motion > 0.1, it's mostly global
+
+  const varianceThreshold = 0.15;
+  const isUniform = motionStdDev < varianceThreshold;
+  const sceneCutThreshold = 0.6;
+  const isSceneCut = avgMotion > sceneCutThreshold;
+
+  let globalMotion: number;
+  let localMotion: number;
+
+  if (isUniform) {
+    // Uniform motion across frame = camera/global motion
+    globalMotion = avgMotion;
+    localMotion = 0;
+  } else {
+    // Non-uniform = mix of global and local
+    // Global component is the minimum motion (background)
+    const minRegionMotion = Math.min(...regionMotion);
+    globalMotion = minRegionMotion;
+
+    // Local component is the excess above the global baseline
+    const maxRegionMotion = Math.max(...regionMotion);
+    localMotion = maxRegionMotion - minRegionMotion;
+  }
+
+  // For scene cuts, mark as high global motion
+  if (isSceneCut) {
+    globalMotion = avgMotion;
+    localMotion = 0;
+  }
+
+  return {
+    total: avgMotion,
+    global: Math.min(1, globalMotion),
+    local: Math.min(1, localMotion),
+    isSceneCut,
+  };
 }
 
 /**
@@ -230,16 +312,19 @@ export async function analyzeClip(clipId: string): Promise<void> {
 
       const frame = await extractFrame(video, absoluteTime, canvas, ctx);
 
-      const motion = analyzeMotion(frame, previousFrame);
+      const motionResult = analyzeMotion(frame, previousFrame);
       const focus = analyzeSharpness(frame);
       const faceCount = detectFaceCount(frame);
 
       frames.push({
         // Store timestamp relative to the source file (for overlay rendering)
         timestamp: absoluteTime,
-        motion,
+        motion: motionResult.total,
+        globalMotion: motionResult.global,
+        localMotion: motionResult.local,
         focus,
         faceCount,
+        isSceneCut: motionResult.isSceneCut,
       });
 
       previousFrame = frame;

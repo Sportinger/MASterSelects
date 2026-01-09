@@ -2,7 +2,7 @@
 // Stores media file blobs and project data
 
 const DB_NAME = 'MASterSelectsDB';
-const DB_VERSION = 3; // Upgraded for file system handles store
+const DB_VERSION = 4; // Upgraded for analysis cache store
 
 // Store names
 const STORES = {
@@ -10,6 +10,7 @@ const STORES = {
   PROJECTS: 'projects',
   PROXY_FRAMES: 'proxyFrames', // New store for proxy frame sequences
   FS_HANDLES: 'fsHandles', // Store for FileSystemHandles (directories, files)
+  ANALYSIS_CACHE: 'analysisCache', // Cache for clip analysis data
 } as const;
 
 export interface StoredMediaFile {
@@ -40,6 +41,28 @@ export interface ProxyMetadata {
   width: number;
   height: number;
   createdAt: number;
+}
+
+// Cached analysis data for a media file
+export interface StoredAnalysis {
+  mediaFileId: string;
+  // Analysis data per time range (key: "inPoint-outPoint")
+  // Allows caching different trim ranges of the same file
+  analyses: {
+    [rangeKey: string]: {
+      frames: Array<{
+        timestamp: number;
+        motion: number;
+        globalMotion: number;
+        localMotion: number;
+        focus: number;
+        faceCount: number;
+        isSceneCut?: boolean;
+      }>;
+      sampleInterval: number;
+      createdAt: number;
+    };
+  };
 }
 
 export interface StoredProject {
@@ -109,6 +132,11 @@ class ProjectDatabase {
         // Create file system handles store (new in v3)
         if (!db.objectStoreNames.contains(STORES.FS_HANDLES)) {
           db.createObjectStore(STORES.FS_HANDLES, { keyPath: 'key' });
+        }
+
+        // Create analysis cache store (new in v4)
+        if (!db.objectStoreNames.contains(STORES.ANALYSIS_CACHE)) {
+          db.createObjectStore(STORES.ANALYSIS_CACHE, { keyPath: 'mediaFileId' });
         }
 
         console.log('[ProjectDB] Database schema created/upgraded');

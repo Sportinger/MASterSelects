@@ -146,8 +146,9 @@ const AnalysisOverlay = memo(function AnalysisOverlay({
     if (visibleFrames.length < 2) return;
 
     // Draw filled area + line for Focus (green) - from bottom
-    // Amplify focus values by 3x for better visibility (clamp to max)
-    const focusMultiplier = 3.0;
+    // Moderate amplification for visibility
+    const focusMultiplier = 1.5;
+    const heightScale = 0.6; // Use 60% of height
     ctx.beginPath();
     ctx.moveTo(0, height); // Start at bottom-left
 
@@ -155,9 +156,9 @@ const AnalysisOverlay = memo(function AnalysisOverlay({
       const frame = visibleFrames[i];
       const frameInClip = frame.timestamp - clipInPoint;
       const x = (frameInClip / clipDuration) * width;
-      // Focus: 0 = bottom, 1 = top (inverted Y), amplified 3x
+      // Focus: 0 = bottom, 1 = top (inverted Y)
       const amplifiedFocus = Math.min(1, frame.focus * focusMultiplier);
-      const y = height - (amplifiedFocus * height * 0.9); // Use 90% of height
+      const y = height - (amplifiedFocus * height * heightScale);
 
       if (i === 0) {
         ctx.lineTo(x, y);
@@ -183,7 +184,7 @@ const AnalysisOverlay = memo(function AnalysisOverlay({
       const frameInClip = frame.timestamp - clipInPoint;
       const x = (frameInClip / clipDuration) * width;
       const amplifiedFocus = Math.min(1, frame.focus * focusMultiplier);
-      const y = height - (amplifiedFocus * height * 0.9);
+      const y = height - (amplifiedFocus * height * heightScale);
 
       if (i === 0) {
         ctx.moveTo(x, y);
@@ -196,8 +197,8 @@ const AnalysisOverlay = memo(function AnalysisOverlay({
     ctx.stroke();
 
     // Draw filled area + line for Motion (blue) - from bottom
-    // Amplify motion values by 2x for better visibility
-    const motionMultiplier = 2.0;
+    // Use globalMotion (camera/scene motion) for display
+    const motionMultiplier = 1.5;
     ctx.beginPath();
     ctx.moveTo(0, height);
 
@@ -205,9 +206,10 @@ const AnalysisOverlay = memo(function AnalysisOverlay({
       const frame = visibleFrames[i];
       const frameInClip = frame.timestamp - clipInPoint;
       const x = (frameInClip / clipDuration) * width;
-      // Motion: 0 = bottom, 1 = top, amplified 2x
-      const amplifiedMotion = Math.min(1, frame.motion * motionMultiplier);
-      const y = height - (amplifiedMotion * height * 0.9);
+      // Use globalMotion if available, fallback to total motion
+      const motionValue = frame.globalMotion ?? frame.motion;
+      const amplifiedMotion = Math.min(1, motionValue * motionMultiplier);
+      const y = height - (amplifiedMotion * height * heightScale);
 
       if (i === 0) {
         ctx.lineTo(x, y);
@@ -229,8 +231,10 @@ const AnalysisOverlay = memo(function AnalysisOverlay({
       const frame = visibleFrames[i];
       const frameInClip = frame.timestamp - clipInPoint;
       const x = (frameInClip / clipDuration) * width;
-      const amplifiedMotion = Math.min(1, frame.motion * motionMultiplier);
-      const y = height - (amplifiedMotion * height * 0.9);
+      // Use globalMotion if available, fallback to total motion
+      const motionValue = frame.globalMotion ?? frame.motion;
+      const amplifiedMotion = Math.min(1, motionValue * motionMultiplier);
+      const y = height - (amplifiedMotion * height * heightScale);
 
       if (i === 0) {
         ctx.moveTo(x, y);
@@ -566,7 +570,7 @@ function TimelineClipComponent({
               clipInPoint={clip.inPoint}
               clipStartTime={displayStartTime}
               width={width}
-              height={Math.max(24, track.height - 24)}
+              height={track.height}
             />
           </div>
         </>

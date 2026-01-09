@@ -141,7 +141,6 @@ export function AnalysisPanel() {
           <button
             className="btn-analyze"
             onClick={handleAnalyze}
-            disabled={analysisStatus === 'analyzing'}
           >
             Analyze Clip
           </button>

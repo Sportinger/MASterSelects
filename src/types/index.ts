@@ -173,9 +173,12 @@ export type AnalysisStatus = 'none' | 'analyzing' | 'ready' | 'error';
 
 export interface FrameAnalysisData {
   timestamp: number;      // Time in seconds (relative to clip source)
-  motion: number;         // 0-1 motion score
+  motion: number;         // 0-1 overall motion score (legacy, kept for compatibility)
+  globalMotion: number;   // 0-1 camera/scene motion (whole frame changes uniformly)
+  localMotion: number;    // 0-1 object motion (localized changes within frame)
   focus: number;          // 0-1 focus/sharpness score
   faceCount: number;      // Number of faces detected
+  isSceneCut?: boolean;   // True if this frame is likely a scene cut
 }
 
 export interface ClipAnalysis {
