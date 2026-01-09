@@ -5,7 +5,9 @@ import { useEngine } from '../../hooks/useEngine';
 import { useMixerStore } from '../../stores/mixerStore';
 import { useDockStore } from '../../stores/dockStore';
 import { useMediaStore } from '../../stores/mediaStore';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { useMIDI } from '../../hooks/useMIDI';
+import { SettingsDialog } from './SettingsDialog';
 import type { StoredProject } from '../../services/projectDB';
 
 export function Toolbar() {
@@ -23,6 +25,7 @@ export function Toolbar() {
     isLoading,
   } = useMediaStore();
   const { isSupported: midiSupported, isEnabled: midiEnabled, enableMIDI, disableMIDI, devices } = useMIDI();
+  const { isSettingsOpen, openSettings, closeSettings } = useSettingsStore();
 
   const [showProjectMenu, setShowProjectMenu] = useState(false);
   const [projects, setProjects] = useState<StoredProject[]>([]);
@@ -157,6 +160,13 @@ export function Toolbar() {
         )}
       </div>
 
+      {/* Settings */}
+      <div className="toolbar-section">
+        <button className="btn btn-sm" onClick={openSettings} title="Settings">
+          ⚙ Settings
+        </button>
+      </div>
+
       <div className="toolbar-section">
         <button
           className={`btn ${isPlaying ? 'btn-active' : ''}`}
@@ -214,6 +224,9 @@ export function Toolbar() {
           {isEngineReady ? '● WebGPU Ready' : '○ Loading...'}
         </span>
       </div>
+
+      {/* Settings Dialog */}
+      {isSettingsOpen && <SettingsDialog onClose={closeSettings} />}
     </div>
   );
 }
