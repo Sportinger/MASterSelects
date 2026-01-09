@@ -114,6 +114,7 @@ export function TranscriptPanel() {
   const transcript = selectedClip?.transcript ?? [];
   const transcriptStatus = selectedClip?.transcriptStatus ?? 'none';
   const transcriptProgress = selectedClip?.transcriptProgress ?? 0;
+  const transcriptMessage = selectedClip?.transcriptMessage;
 
   // Calculate clip-local time for word matching
   const clipLocalTime = useMemo(() => {
@@ -234,6 +235,12 @@ export function TranscriptPanel() {
     await transcribeClip(selectedClipId);
   }, [selectedClipId]);
 
+  // Handle cancel transcription
+  const handleCancel = useCallback(async () => {
+    const { cancelTranscription } = await import('../../services/clipTranscriber');
+    cancelTranscription();
+  }, []);
+
   // Render empty state
   if (!selectedClip) {
     return (
@@ -289,8 +296,8 @@ export function TranscriptPanel() {
           {selectedClip.name}
         </span>
         {transcriptStatus === 'transcribing' && (
-          <span className="transcript-status transcribing">
-            Transcribing... {transcriptProgress}%
+          <span className="transcript-status transcribing" title={transcriptMessage}>
+            {transcript.length > 0 ? `${transcript.length} words` : `${transcriptProgress}%`}
           </span>
         )}
         {transcriptStatus === 'ready' && (
@@ -311,9 +318,16 @@ export function TranscriptPanel() {
           <button
             className="btn-transcribe"
             onClick={handleTranscribe}
-            disabled={transcriptStatus === 'transcribing'}
           >
-            {transcriptStatus === 'transcribing' ? 'Transcribing...' : 'Transcribe'}
+            Transcribe
+          </button>
+        )}
+        {transcriptStatus === 'transcribing' && (
+          <button
+            className="btn-transcribe btn-cancel"
+            onClick={handleCancel}
+          >
+            Cancel
           </button>
         )}
         {transcriptStatus === 'ready' && (
@@ -336,11 +350,20 @@ export function TranscriptPanel() {
         </div>
       )}
 
+      {/* Transcription status message */}
+      {transcriptStatus === 'transcribing' && transcriptMessage && (
+        <div className="transcript-message">
+          {transcriptMessage}
+        </div>
+      )}
+
       {/* Transcript content */}
       <div className="transcript-content" ref={containerRef}>
         {filteredBlocks.length === 0 ? (
           <div className="transcript-empty">
-            {transcript.length === 0 ? (
+            {transcriptStatus === 'transcribing' ? (
+              <p>Transcribing... Words will appear here as they're processed.</p>
+            ) : transcript.length === 0 ? (
               <p>No transcript available. Click "Transcribe" to generate.</p>
             ) : (
               <p>No results found for "{searchQuery}"</p>

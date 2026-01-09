@@ -1,50 +1,162 @@
 // Clip Transcriber Service
-// Handles transcription of individual clips using Whisper
+// Handles transcription of individual clips using Whisper in a Web Worker
 
 import { useTimelineStore } from '../stores/timeline';
 import { triggerTimelineSave } from '../stores/mediaStore';
 import type { TranscriptWord, TranscriptStatus } from '../types';
 
+// Worker instance (reused across transcriptions)
+let worker: Worker | null = null;
+let currentClipId: string | null = null;
+
+// Message types from worker
+interface ProgressMessage {
+  type: 'progress';
+  stage: 'loading' | 'transcribing';
+  progress: number;
+  message: string;
+}
+
+interface PartialResultMessage {
+  type: 'partial';
+  words: TranscriptWord[];
+  processedDuration: number;
+  totalDuration: number;
+}
+
+interface CompleteMessage {
+  type: 'complete';
+  words: TranscriptWord[];
+}
+
+interface ErrorMessage {
+  type: 'error';
+  error: string;
+}
+
+type WorkerMessage = ProgressMessage | PartialResultMessage | CompleteMessage | ErrorMessage;
+
 /**
- * Extract audio from a clip's file and transcribe it
+ * Get or create worker instance
+ */
+function getWorker(): Worker {
+  if (!worker) {
+    worker = new Worker(
+      new URL('../workers/transcriptionWorker.ts', import.meta.url),
+      { type: 'module' }
+    );
+  }
+  return worker;
+}
+
+/**
+ * Extract audio from a clip's file and transcribe it using Web Worker
  */
 export async function transcribeClip(clipId: string): Promise<void> {
   const store = useTimelineStore.getState();
   const clip = store.clips.find(c => c.id === clipId);
 
   if (!clip || !clip.file) {
-    console.warn('[ClipTranscriber] Clip not found or has no file:', clipId);
+    console.warn('[Transcribe] Clip not found or has no file:', clipId);
     return;
   }
+
+  // Check if file has audio
+  const hasAudio = clip.file.type.startsWith('video/') || clip.file.type.startsWith('audio/');
+  if (!hasAudio) {
+    console.warn('[Transcribe] File does not contain audio');
+    return;
+  }
+
+  // Set current clip ID for worker messages
+  currentClipId = clipId;
 
   // Update status to transcribing
   updateClipTranscript(clipId, {
     status: 'transcribing',
     progress: 0,
+    message: 'Extracting audio...',
   });
 
   try {
-    // Extract audio and transcribe
-    const transcript = await transcribeFile(clip.file, (progress) => {
-      updateClipTranscript(clipId, { progress });
-    });
+    // Extract audio on main thread (needs AudioContext)
+    const audioBuffer = await extractAudioBuffer(clip.file);
+    const audioData = await resampleAudio(audioBuffer, 16000);
+    const audioDuration = audioBuffer.duration;
 
-    // Update clip with transcript
+    console.log('[Transcribe] Audio extracted:', audioDuration.toFixed(1) + 's');
+
     updateClipTranscript(clipId, {
-      status: 'ready',
-      progress: 100,
-      words: transcript,
+      progress: 5,
+      message: 'Starting transcription...',
     });
 
-    // Save timeline immediately so transcript persists across refresh
-    triggerTimelineSave();
+    // Send to worker for transcription
+    const transcriptWorker = getWorker();
 
-    console.log('[Transcribe] Done:', transcript.length, 'words');
+    // Set up message handler
+    const handleMessage = (event: MessageEvent<WorkerMessage>) => {
+      const msg = event.data;
+
+      // Only process messages for current clip
+      if (currentClipId !== clipId) return;
+
+      switch (msg.type) {
+        case 'progress':
+          updateClipTranscript(clipId, {
+            progress: msg.progress,
+            message: msg.message,
+          });
+          break;
+
+        case 'partial':
+          // Update with partial results - show words transcribed so far
+          updateClipTranscript(clipId, {
+            words: msg.words,
+            progress: Math.round((msg.processedDuration / msg.totalDuration) * 100),
+            message: `Transcribed ${msg.words.length} words (${Math.round(msg.processedDuration)}s / ${Math.round(msg.totalDuration)}s)`,
+          });
+          break;
+
+        case 'complete':
+          updateClipTranscript(clipId, {
+            status: 'ready',
+            progress: 100,
+            words: msg.words,
+            message: undefined,
+          });
+          triggerTimelineSave();
+          console.log('[Transcribe] Done:', msg.words.length, 'words');
+          transcriptWorker.removeEventListener('message', handleMessage);
+          break;
+
+        case 'error':
+          console.error('[Transcribe] Worker error:', msg.error);
+          updateClipTranscript(clipId, {
+            status: 'error',
+            progress: 0,
+            message: msg.error,
+          });
+          transcriptWorker.removeEventListener('message', handleMessage);
+          break;
+      }
+    };
+
+    transcriptWorker.addEventListener('message', handleMessage);
+
+    // Start transcription in worker
+    transcriptWorker.postMessage({
+      type: 'start',
+      audioData,
+      audioDuration,
+    });
+
   } catch (error) {
-    console.error('[ClipTranscriber] Transcription failed:', error);
+    console.error('[Transcribe] Failed:', error);
     updateClipTranscript(clipId, {
       status: 'error',
       progress: 0,
+      message: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 }
@@ -58,6 +170,7 @@ function updateClipTranscript(
     status?: TranscriptStatus;
     progress?: number;
     words?: TranscriptWord[];
+    message?: string;
   }
 ): void {
   const store = useTimelineStore.getState();
@@ -69,159 +182,11 @@ function updateClipTranscript(
       transcriptStatus: data.status ?? clip.transcriptStatus,
       transcriptProgress: data.progress ?? clip.transcriptProgress,
       transcript: data.words ?? clip.transcript,
+      transcriptMessage: data.message,
     };
   });
 
   useTimelineStore.setState({ clips });
-}
-
-/**
- * Transcribe a media file using Whisper
- */
-async function transcribeFile(
-  file: File,
-  onProgress: (progress: number) => void
-): Promise<TranscriptWord[]> {
-  // Check if file has audio
-  const hasAudio = file.type.startsWith('video/') || file.type.startsWith('audio/');
-  if (!hasAudio) {
-    throw new Error('File does not contain audio');
-  }
-
-  // Extract audio buffer
-  onProgress(5);
-  const audioBuffer = await extractAudioBuffer(file);
-  onProgress(15);
-
-  // Convert to float32 array at 16kHz for Whisper
-  const audioData = await resampleAudio(audioBuffer, 16000);
-  console.log('[Transcribe] Audio:', audioBuffer.duration.toFixed(1) + 's, samples:', audioData.length);
-  onProgress(25);
-
-  // Dynamically import transformers.js
-  let pipeline: any;
-  let env: any;
-  try {
-    const transformers = await import('@xenova/transformers');
-    pipeline = transformers.pipeline;
-    env = transformers.env;
-
-    // Configure environment for browser usage
-    // Use CDN for model files and enable caching
-    env.allowLocalModels = false;
-    env.useBrowserCache = true;
-    // Use jsDelivr CDN as fallback (more reliable for browser)
-    env.backends.onnx.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/';
-  } catch (error) {
-    throw new Error(
-      'Whisper model requires @xenova/transformers. Install with: npm install @xenova/transformers'
-    );
-  }
-
-  onProgress(30);
-
-  // Load Whisper model
-  const transcriber = await pipeline(
-    'automatic-speech-recognition',
-    'Xenova/whisper-tiny.en',
-    {
-      progress_callback: (data: any) => {
-        if (data.status === 'progress' && data.progress) {
-          onProgress(Math.round(30 + (data.progress * 0.2)));
-        }
-      },
-      revision: 'main',
-    }
-  );
-
-  onProgress(50);
-
-  // First try simple transcription
-  const simpleResult = await transcriber(audioData, { return_timestamps: true });
-  console.log('[Transcribe] Simple:', simpleResult.text?.slice(0, 100) || '(empty)');
-
-  // Then try word-level timestamps
-  const result = await transcriber(audioData, {
-    return_timestamps: 'word',
-    chunk_length_s: 30,
-    stride_length_s: 5,
-  });
-  console.log('[Transcribe] Words:', result.chunks?.length || 0, 'text:', result.text?.slice(0, 50) || '(empty)');
-  onProgress(95);
-
-  // Convert result to TranscriptWord array
-  const words: TranscriptWord[] = [];
-  let wordIndex = 0;
-
-  // Handle different result formats from Whisper
-  const chunks = result.chunks || result.output?.chunks || [];
-
-  if (chunks.length > 0) {
-    for (const chunk of chunks) {
-      const chunkText = chunk.text?.trim();
-      if (!chunkText) continue;
-
-      const chunkStart = chunk.timestamp[0] ?? 0;
-      const chunkEnd = chunk.timestamp[1] ?? chunkStart + 0.5;
-
-      // Check if chunk contains multiple words (split by spaces)
-      const chunkWords = chunkText.split(/\s+/).filter(w => w.length > 0);
-
-      if (chunkWords.length === 1) {
-        // Single word chunk - use as-is
-        words.push({
-          id: `word-${wordIndex++}`,
-          text: chunkText,
-          start: chunkStart,
-          end: chunkEnd,
-          confidence: 1,
-          speaker: 'Speaker 1',
-        });
-      } else {
-        // Multiple words in chunk - distribute time evenly
-        const duration = chunkEnd - chunkStart;
-        const wordDuration = duration / chunkWords.length;
-
-        for (let i = 0; i < chunkWords.length; i++) {
-          const wordStart = chunkStart + (i * wordDuration);
-          const wordEnd = wordStart + wordDuration;
-
-          words.push({
-            id: `word-${wordIndex++}`,
-            text: chunkWords[i],
-            start: wordStart,
-            end: wordEnd,
-            confidence: 1,
-            speaker: 'Speaker 1',
-          });
-        }
-      }
-    }
-  }
-
-  // Fallback: if no chunks but have text, split it
-  const textResult = result.text || result.output?.text || '';
-  if (words.length === 0 && textResult) {
-    console.log('[Transcribe] Using text fallback');
-    const allWords = textResult.trim().split(/\s+/).filter((w: string) => w.length > 0);
-    const totalDuration = audioBuffer.duration;
-    const wordDuration = totalDuration / allWords.length;
-
-    for (let i = 0; i < allWords.length; i++) {
-      words.push({
-        id: `word-${i}`,
-        text: allWords[i],
-        start: i * wordDuration,
-        end: (i + 1) * wordDuration,
-        confidence: 1,
-        speaker: 'Speaker 1',
-      });
-    }
-  }
-
-  console.log('[Transcribe] Final:', words.length, 'words');
-  onProgress(100);
-  return words;
 }
 
 /**
@@ -273,5 +238,24 @@ export function clearClipTranscript(clipId: string): void {
     status: 'none',
     progress: 0,
     words: undefined,
+    message: undefined,
   });
+}
+
+/**
+ * Cancel ongoing transcription
+ */
+export function cancelTranscription(): void {
+  if (worker) {
+    worker.terminate();
+    worker = null;
+  }
+  if (currentClipId) {
+    updateClipTranscript(currentClipId, {
+      status: 'none',
+      progress: 0,
+      message: undefined,
+    });
+    currentClipId = null;
+  }
 }

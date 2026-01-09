@@ -219,6 +219,7 @@ export interface TimelineClip {
   transcript?: TranscriptWord[];  // Speech-to-text transcript
   transcriptStatus?: TranscriptStatus;  // Transcription status
   transcriptProgress?: number;  // 0-100 progress
+  transcriptMessage?: string;  // Status message during transcription
   // Analysis support (focus/motion/face)
   analysis?: ClipAnalysis;
   analysisStatus?: AnalysisStatus;

@@ -169,6 +169,28 @@
   background: var(--bg-hover, #333);
 }
 
+.btn-transcribe.btn-cancel {
+  background: rgba(255, 107, 107, 0.2);
+  border: 1px solid rgba(255, 107, 107, 0.4);
+  color: var(--accent-danger, #ff6b6b);
+}
+
+.btn-transcribe.btn-cancel:hover {
+  background: rgba(255, 107, 107, 0.3);
+}
+
+/* Transcription message */
+.transcript-message {
+  padding: 6px 12px;
+  background: rgba(74, 158, 255, 0.1);
+  border-bottom: 1px solid var(--border-color, #333);
+  font-size: 11px;
+  color: var(--accent-primary, #4a9eff);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Progress */
 .transcript-progress {
   height: 3px;
