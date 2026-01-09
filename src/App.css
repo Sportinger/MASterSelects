@@ -2115,6 +2115,66 @@ input[type="checkbox"] {
   position: relative;
 }
 
+/* New track drop zones - appear when dragging media */
+.new-track-drop-zone {
+  height: 36px;
+  margin-top: 4px;
+  border: 2px dashed rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: all 0.15s ease;
+}
+
+.new-track-drop-zone .drop-zone-label {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 500;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.new-track-drop-zone.video {
+  border-color: rgba(37, 99, 235, 0.4);
+}
+
+.new-track-drop-zone.audio {
+  border-color: rgba(22, 163, 74, 0.4);
+}
+
+.new-track-drop-zone.active,
+.new-track-drop-zone:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.new-track-drop-zone.video.active,
+.new-track-drop-zone.video:hover {
+  border-color: rgba(37, 99, 235, 0.8);
+  background: rgba(37, 99, 235, 0.15);
+}
+
+.new-track-drop-zone.audio.active,
+.new-track-drop-zone.audio:hover {
+  border-color: rgba(22, 163, 74, 0.8);
+  background: rgba(22, 163, 74, 0.15);
+}
+
+.new-track-drop-zone.active .drop-zone-label,
+.new-track-drop-zone:hover .drop-zone-label {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.new-track-drop-zone .timeline-clip-preview {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  border-radius: 3px;
+  pointer-events: none;
+}
+
 .clip-content {
   position: relative;
   z-index: 1;

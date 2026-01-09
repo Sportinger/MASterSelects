@@ -1866,6 +1866,95 @@ export function Timeline() {
     }
   }, []);
 
+  // Handle drag over "new track" drop zone
+  const handleNewTrackDragOver = useCallback(
+    (e: React.DragEvent, trackType: 'video' | 'audio') => {
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = 'copy';
+
+      if (timelineRef.current) {
+        const rect = timelineRef.current.getBoundingClientRect();
+        const x = e.clientX - rect.left + scrollX;
+        const startTime = pixelToTime(x);
+
+        setExternalDrag((prev) => ({
+          trackId: '__new_track__',
+          startTime,
+          x: e.clientX,
+          y: e.clientY,
+          duration: prev?.duration ?? dragDurationCacheRef.current?.duration ?? 5,
+          newTrackType: trackType,
+          isVideo: trackType === 'video',
+          isAudio: trackType === 'audio',
+        }));
+      }
+    },
+    [scrollX, pixelToTime]
+  );
+
+  // Handle drop on "new track" zone - creates new track and adds clip
+  const handleNewTrackDrop = useCallback(
+    async (e: React.DragEvent, trackType: 'video' | 'audio') => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const cachedDuration =
+        externalDrag?.duration ?? dragDurationCacheRef.current?.duration;
+
+      dragCounterRef.current = 0;
+      setExternalDrag(null);
+
+      // Create a new track first
+      const newTrackId = addTrack(trackType);
+      if (!newTrackId) return;
+
+      const rect = timelineRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      const x = e.clientX - rect.left + scrollX;
+      const startTime = Math.max(0, pixelToTime(x));
+
+      // Handle composition drag
+      const compositionId = e.dataTransfer.getData('application/x-composition-id');
+      if (compositionId) {
+        const mediaStore = useMediaStore.getState();
+        const comp = mediaStore.compositions.find((c) => c.id === compositionId);
+        if (comp) {
+          addCompClip(newTrackId, comp, startTime);
+          return;
+        }
+      }
+
+      // Handle media panel drag
+      const mediaFileId = e.dataTransfer.getData('application/x-media-file-id');
+      if (mediaFileId) {
+        const mediaStore = useMediaStore.getState();
+        const mediaFile = mediaStore.files.find((f) => f.id === mediaFileId);
+        if (mediaFile?.file) {
+          addClip(newTrackId, mediaFile.file, startTime, mediaFile.duration, mediaFileId);
+          return;
+        }
+      }
+
+      // Handle external file drop
+      if (e.dataTransfer.files.length > 0) {
+        const file = e.dataTransfer.files[0];
+        if (
+          file.type.startsWith('video/') ||
+          file.type.startsWith('audio/') ||
+          file.type.startsWith('image/')
+        ) {
+          const mediaStore = useMediaStore.getState();
+          const importedFile = await mediaStore.importFile(file);
+          const newMediaFileId = importedFile?.id;
+          addClip(newTrackId, file, startTime, cachedDuration, newMediaFileId);
+        }
+      }
+    },
+    [scrollX, pixelToTime, addTrack, addCompClip, addClip, externalDrag]
+  );
+
   // Handle external file drop on track
   const handleTrackDrop = useCallback(
     async (e: React.DragEvent, trackId: string) => {
@@ -2210,9 +2299,11 @@ export function Timeline() {
             );
           })}
 
+          {/* New audio track preview for linked video audio */}
           {externalDrag &&
             externalDrag.isVideo &&
-            externalDrag.audioTrackId === '__new_audio_track__' && (
+            externalDrag.audioTrackId === '__new_audio_track__' &&
+            externalDrag.newTrackType !== 'video' && (
               <div className="track-lane audio new-track-preview" style={{ height: 40 }}>
                 <div
                   className="timeline-clip-preview audio"
@@ -2227,6 +2318,65 @@ export function Timeline() {
                 </div>
               </div>
             )}
+
+          {/* "Drop to create new track" zones - always visible when dragging */}
+          {externalDrag && (
+            <>
+              {/* New Video Track drop zone */}
+              <div
+                className={`new-track-drop-zone video ${externalDrag.newTrackType === 'video' ? 'active' : ''}`}
+                onDragOver={(e) => handleNewTrackDragOver(e, 'video')}
+                onDragEnter={(e) => {
+                  e.preventDefault();
+                  dragCounterRef.current++;
+                }}
+                onDragLeave={handleTrackDragLeave}
+                onDrop={(e) => handleNewTrackDrop(e, 'video')}
+              >
+                <span className="drop-zone-label">+ Drop to create new Video Track</span>
+                {externalDrag.newTrackType === 'video' && (
+                  <div
+                    className="timeline-clip-preview video"
+                    style={{
+                      left: timeToPixel(externalDrag.startTime),
+                      width: timeToPixel(externalDrag.duration ?? 5),
+                    }}
+                  >
+                    <div className="clip-content">
+                      <span className="clip-name">New clip</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* New Audio Track drop zone */}
+              <div
+                className={`new-track-drop-zone audio ${externalDrag.newTrackType === 'audio' ? 'active' : ''}`}
+                onDragOver={(e) => handleNewTrackDragOver(e, 'audio')}
+                onDragEnter={(e) => {
+                  e.preventDefault();
+                  dragCounterRef.current++;
+                }}
+                onDragLeave={handleTrackDragLeave}
+                onDrop={(e) => handleNewTrackDrop(e, 'audio')}
+              >
+                <span className="drop-zone-label">+ Drop to create new Audio Track</span>
+                {externalDrag.newTrackType === 'audio' && (
+                  <div
+                    className="timeline-clip-preview audio"
+                    style={{
+                      left: timeToPixel(externalDrag.startTime),
+                      width: timeToPixel(externalDrag.duration ?? 5),
+                    }}
+                  >
+                    <div className="clip-content">
+                      <span className="clip-name">New clip</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
 
           {clipDrag?.isSnapping && clipDrag.snappedTime !== null && (
             <div className="snap-line" style={{ left: timeToPixel(clipDrag.snappedTime) }} />

@@ -26,6 +26,8 @@ export const createTrackSlice: SliceCreator<TrackActions> = (set, get) => ({
       // Audio: append at end (bottom of timeline)
       set({ tracks: [...tracks, newTrack] });
     }
+
+    return newTrack.id;
   },
 
   removeTrack: (id) => {

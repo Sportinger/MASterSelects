@@ -43,7 +43,9 @@ export interface ExternalDragState {
   y: number;
   audioTrackId?: string;  // Preview for linked audio clip
   isVideo?: boolean;      // Is the dragged file a video?
+  isAudio?: boolean;      // Is the dragged file audio-only?
   duration?: number;      // Actual duration of dragged file
+  newTrackType?: 'video' | 'audio' | null;  // If hovering over "new track" drop zone
 }
 
 // Context menu state for clip right-click

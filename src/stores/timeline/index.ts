@@ -516,6 +516,7 @@ export const useTimelineStore = create<TimelineStore>()(
                           type: 'video',
                           videoElement: video,
                           naturalDuration: video.duration,
+                          mediaFileId: serializedClip.mediaFileId, // Needed for multicam sync
                         },
                         isLoading: false,
                       }
@@ -539,6 +540,7 @@ export const useTimelineStore = create<TimelineStore>()(
                           type: 'audio',
                           audioElement: audio,
                           naturalDuration: audio.duration,
+                          mediaFileId: serializedClip.mediaFileId, // Needed for multicam sync
                         },
                         isLoading: false,
                       }

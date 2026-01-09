@@ -77,7 +77,7 @@ export interface TimelineState {
 
 // Track actions interface
 export interface TrackActions {
-  addTrack: (type: 'video' | 'audio') => void;
+  addTrack: (type: 'video' | 'audio') => string;
   removeTrack: (id: string) => void;
   setTrackMuted: (id: string, muted: boolean) => void;
   setTrackVisible: (id: string, visible: boolean) => void;
