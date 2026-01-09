@@ -22,7 +22,7 @@ import {
 } from '../utils/dockLayout';
 
 // Default layout configuration
-// 3-column layout: Media/Properties/AI Chat left, Preview center, Multi-Cam/Transcript/Analysis/Effects/Export right
+// 3-column layout: Media/Properties/AI Chat left, Preview center, Multi-Cam/Export right
 // Timeline at bottom
 const DEFAULT_LAYOUT: DockLayout = {
   root: {
@@ -66,7 +66,6 @@ const DEFAULT_LAYOUT: DockLayout = {
                 id: 'right-group',
                 panels: [
                   { id: 'multicam', type: 'multicam', title: 'Multi-Cam' },
-                  { id: 'effects', type: 'effects', title: 'Effects' },
                   { id: 'export', type: 'export', title: 'Export' },
                 ],
                 activeIndex: 0,
