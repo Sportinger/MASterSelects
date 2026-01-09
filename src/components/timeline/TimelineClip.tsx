@@ -5,6 +5,7 @@ import type { TimelineClipProps } from './types';
 import { THUMB_WIDTH } from './constants';
 import type { ClipAnalysis } from '../../types';
 import { useTimelineStore } from '../../stores/timeline';
+import { PickWhip } from './PickWhip';
 
 // Render waveform for audio clips using canvas for better performance
 const Waveform = memo(function Waveform({
@@ -356,6 +357,9 @@ function TimelineClipComponent({
   timeToPixel,
   pixelToTime,
   formatTime,
+  onPickWhipDragStart,
+  onPickWhipDragEnd,
+  onSetClipParent,
 }: TimelineClipProps) {
   const thumbnails = clip.thumbnails || [];
 
@@ -480,14 +484,19 @@ function TimelineClipComponent({
     clip.reversed ? 'reversed' : '',
     clip.transcriptStatus === 'ready' ? 'has-transcript' : '',
     clip.waveformGenerating ? 'generating-waveform' : '',
+    clip.parentClipId ? 'has-parent' : '',
   ]
     .filter(Boolean)
     .join(' ');
+
+  // Get parent clip name for tooltip
+  const parentClip = clip.parentClipId ? clips.find(c => c.id === clip.parentClipId) : null;
 
   return (
     <div
       className={clipClass}
       style={{ left, width }}
+      data-clip-id={clip.id}
       onMouseDown={onMouseDown}
       onContextMenu={onContextMenu}
     >
@@ -554,6 +563,15 @@ function TimelineClipComponent({
       )}
       <div className="clip-content">
         {clip.isLoading && <div className="clip-loading-spinner" />}
+        <PickWhip
+          clipId={clip.id}
+          clipName={clip.name}
+          parentClipId={clip.parentClipId}
+          parentClipName={parentClip?.name}
+          onSetParent={onSetClipParent}
+          onDragStart={onPickWhipDragStart}
+          onDragEnd={onPickWhipDragEnd}
+        />
         <span className="clip-name">{clip.name}</span>
         <span className="clip-duration">{formatTime(displayDuration)}</span>
       </div>

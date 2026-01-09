@@ -16,6 +16,7 @@ import { TimelineTrack } from './TimelineTrack';
 import { TimelineClip } from './TimelineClip';
 import { TimelineKeyframes } from './TimelineKeyframes';
 import { MulticamDialog } from './MulticamDialog';
+import { ParentChildLink } from './ParentChildLink';
 import { useContextMenuPosition } from '../../hooks/useContextMenuPosition';
 import {
   ALL_BLEND_MODES,
@@ -31,6 +32,7 @@ import type {
   ExternalDragState,
   ContextMenuState,
   MarqueeState,
+  PickWhipDragState,
 } from './types';
 
 export function Timeline() {
@@ -109,6 +111,7 @@ export function Timeline() {
     toggleWaveformsEnabled,
     generateWaveformForClip,
     setDuration,
+    setClipParent,
   } = useTimelineStore();
 
   const {
@@ -163,6 +166,9 @@ export function Timeline() {
   const [marquee, setMarquee] = useState<MarqueeState | null>(null);
   const marqueeRef = useRef(marquee);
   marqueeRef.current = marquee;
+
+  // Pick whip drag state for layer parenting
+  const [pickWhipDrag, setPickWhipDrag] = useState<PickWhipDragState | null>(null);
 
   // Performance: Create lookup maps for O(1) clip/track access
   const clipMap = useMemo(() => new Map(clips.map(c => [c.id, c])), [clips]);
@@ -2547,6 +2553,47 @@ export function Timeline() {
     [clips, selectedKeyframeIds, clipKeyframes, clipDrag, scrollX, selectKeyframe, moveKeyframe, updateKeyframe, timeToPixel, pixelToTime]
   );
 
+  // Pick whip drag handlers for layer parenting
+  const handlePickWhipDragStart = useCallback((clipId: string, startX: number, startY: number) => {
+    setPickWhipDrag({
+      sourceClipId: clipId,
+      startX,
+      startY,
+      currentX: startX,
+      currentY: startY,
+    });
+
+    const handleMouseMove = (e: MouseEvent) => {
+      setPickWhipDrag(prev => prev ? {
+        ...prev,
+        currentX: e.clientX,
+        currentY: e.clientY,
+      } : null);
+    };
+
+    const handleMouseUp = (e: MouseEvent) => {
+      // Find clip at drop position
+      const target = document.elementFromPoint(e.clientX, e.clientY);
+      const clipElement = target?.closest('.timeline-clip');
+      if (clipElement) {
+        const targetClipId = clipElement.getAttribute('data-clip-id');
+        if (targetClipId && targetClipId !== clipId) {
+          setClipParent(clipId, targetClipId);
+        }
+      }
+      setPickWhipDrag(null);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  }, [setClipParent]);
+
+  const handlePickWhipDragEnd = useCallback(() => {
+    setPickWhipDrag(null);
+  }, []);
+
   // Render a clip
   const renderClip = useCallback(
     (clip: TimelineClipType, trackId: string) => {
@@ -2613,6 +2660,9 @@ export function Timeline() {
           timeToPixel={timeToPixel}
           pixelToTime={pixelToTime}
           formatTime={formatTime}
+          onPickWhipDragStart={handlePickWhipDragStart}
+          onPickWhipDragEnd={handlePickWhipDragEnd}
+          onSetClipParent={setClipParent}
         />
       );
     },
@@ -2636,6 +2686,9 @@ export function Timeline() {
       pixelToTime,
       formatTime,
       tracks,
+      handlePickWhipDragStart,
+      handlePickWhipDragEnd,
+      setClipParent,
     ]
   );
 
@@ -2987,6 +3040,50 @@ export function Timeline() {
                 />
               )}
 
+              {/* Parent-child link lines overlay */}
+              <svg
+                className="parent-child-links-overlay"
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: '100%',
+                  pointerEvents: 'none',
+                  overflow: 'visible',
+                }}
+              >
+                {clips.filter(c => c.parentClipId).map(childClip => {
+                  const parentClip = clips.find(c => c.id === childClip.parentClipId);
+                  if (!parentClip) return null;
+
+                  // Calculate Y position for track
+                  const getTrackYPosition = (trackId: string): number => {
+                    let y = 24; // Offset for new track drop zone
+                    for (const track of tracks) {
+                      if (track.id === trackId) {
+                        return y + track.height / 2;
+                      }
+                      y += getExpandedTrackHeight(track.id, track.height);
+                    }
+                    return y;
+                  };
+
+                  return (
+                    <ParentChildLink
+                      key={childClip.id}
+                      childClip={childClip}
+                      parentClip={parentClip}
+                      tracks={tracks}
+                      zoom={zoom}
+                      scrollX={0} // Already in scrolled container
+                      trackHeaderWidth={0} // Already offset
+                      getTrackYPosition={getTrackYPosition}
+                    />
+                  );
+                })}
+              </svg>
+
 
             </div>{/* track-lanes-scroll */}
           </div>{/* timeline-tracks */}
@@ -3002,6 +3099,38 @@ export function Timeline() {
           <div className="playhead-line" />
         </div>
       </div>{/* timeline-body */}
+
+      {/* Pick whip drag line */}
+      {pickWhipDrag && (
+        <svg
+          className="pick-whip-drag-overlay"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            pointerEvents: 'none',
+            zIndex: 9999,
+          }}
+        >
+          <line
+            x1={pickWhipDrag.startX}
+            y1={pickWhipDrag.startY}
+            x2={pickWhipDrag.currentX}
+            y2={pickWhipDrag.currentY}
+            stroke="var(--accent)"
+            strokeWidth="2"
+            strokeDasharray="5 3"
+          />
+          <circle
+            cx={pickWhipDrag.currentX}
+            cy={pickWhipDrag.currentY}
+            r="6"
+            fill="var(--accent)"
+          />
+        </svg>
+      )}
 
       {contextMenu &&
         (() => {

@@ -113,6 +113,9 @@ export interface ClipActions {
   unlinkGroup: (clipId: string) => void;
   // Waveform generation
   generateWaveformForClip: (clipId: string) => Promise<void>;
+  // Parenting (pick whip)
+  setClipParent: (clipId: string, parentClipId: string | null) => void;
+  getClipChildren: (clipId: string) => TimelineClip[];
 }
 
 // Playback actions interface

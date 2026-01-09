@@ -190,6 +190,15 @@ export interface TimelineTrackProps {
   onUpdateBezierHandle: (keyframeId: string, handle: 'in' | 'out', position: BezierHandle) => void;
 }
 
+// Pick whip drag state for layer parenting
+export interface PickWhipDragState {
+  sourceClipId: string;
+  startX: number;
+  startY: number;
+  currentX: number;
+  currentY: number;
+}
+
 // Props for TimelineClip component
 export interface TimelineClipProps {
   clip: TimelineClip;
@@ -219,6 +228,10 @@ export interface TimelineClipProps {
   timeToPixel: (time: number) => number;
   pixelToTime: (pixel: number) => number;
   formatTime: (seconds: number) => string;
+  // Pick whip for layer parenting
+  onPickWhipDragStart: (clipId: string, startX: number, startY: number) => void;
+  onPickWhipDragEnd: () => void;
+  onSetClipParent: (clipId: string, parentClipId: string | null) => void;
 }
 
 // Props for TimelineKeyframes component

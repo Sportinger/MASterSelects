@@ -1144,4 +1144,44 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
       });
     }
   },
+
+  // Parenting (pick whip) - set a clip's parent for transform inheritance
+  setClipParent: (clipId: string, parentClipId: string | null) => {
+    const { clips } = get();
+
+    // Can't parent to self
+    if (parentClipId === clipId) {
+      console.warn('[Parenting] Cannot parent clip to itself');
+      return;
+    }
+
+    // Cycle detection: ensure parent chain doesn't lead back to this clip
+    if (parentClipId) {
+      const wouldCreateCycle = (checkId: string): boolean => {
+        const check = clips.find(c => c.id === checkId);
+        if (!check?.parentClipId) return false;
+        if (check.parentClipId === clipId) return true;
+        return wouldCreateCycle(check.parentClipId);
+      };
+
+      if (wouldCreateCycle(parentClipId)) {
+        console.warn('[Parenting] Cannot create circular parent reference');
+        return;
+      }
+    }
+
+    set({
+      clips: clips.map(c =>
+        c.id === clipId ? { ...c, parentClipId: parentClipId || undefined } : c
+      ),
+    });
+
+    console.log(`[Parenting] Set parent of ${clipId} to ${parentClipId || 'none'}`);
+  },
+
+  // Get all clips that have the given clip as their parent
+  getClipChildren: (clipId: string) => {
+    const { clips } = get();
+    return clips.filter(c => c.parentClipId === clipId);
+  },
 });

@@ -8,6 +8,7 @@ import {
   hasKeyframesForProperty,
   interpolateKeyframes
 } from '../../utils/keyframeInterpolation';
+import { composeTransforms } from '../../utils/transformComposition';
 
 export const createKeyframeSlice: SliceCreator<KeyframeActions> = (set, get) => ({
   addKeyframe: (clipId, property, value, time, easing = 'linear') => {
@@ -113,18 +114,31 @@ export const createKeyframeSlice: SliceCreator<KeyframeActions> = (set, get) => 
   },
 
   getInterpolatedTransform: (clipId, clipLocalTime) => {
-    const { clips, clipKeyframes } = get();
+    const { clips, clipKeyframes, playheadPosition } = get();
     const clip = clips.find(c => c.id === clipId);
     if (!clip) {
       return { ...DEFAULT_TRANSFORM };
     }
 
+    // Get this clip's own transform (with keyframe interpolation)
     const keyframes = clipKeyframes.get(clipId) || [];
-    if (keyframes.length === 0) {
-      return clip.transform;
+    const ownTransform = keyframes.length === 0
+      ? clip.transform
+      : getInterpolatedClipTransform(keyframes, clipLocalTime, clip.transform);
+
+    // If clip has a parent, compose with parent's transform
+    if (clip.parentClipId) {
+      const parentClip = clips.find(c => c.id === clip.parentClipId);
+      if (parentClip) {
+        // Calculate parent's local time based on current playhead position
+        const parentLocalTime = playheadPosition - parentClip.startTime;
+        // Recursively get parent's composed transform (handles nested parenting)
+        const parentTransform = get().getInterpolatedTransform(clip.parentClipId, parentLocalTime);
+        return composeTransforms(parentTransform, ownTransform);
+      }
     }
 
-    return getInterpolatedClipTransform(keyframes, clipLocalTime, clip.transform);
+    return ownTransform;
   },
 
   getInterpolatedEffects: (clipId, clipLocalTime) => {
