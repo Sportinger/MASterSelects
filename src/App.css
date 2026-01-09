@@ -1509,6 +1509,31 @@ input[type="checkbox"] {
   text-align: center;
 }
 
+.duration-display {
+  cursor: pointer;
+  padding: 1px 4px;
+  border-radius: 3px;
+  transition: background 0.15s;
+}
+
+.duration-display:hover {
+  background: var(--accent-primary);
+  color: white;
+}
+
+.duration-input {
+  font-family: monospace;
+  font-size: 13px;
+  width: 70px;
+  padding: 1px 4px;
+  border: 1px solid var(--accent-primary);
+  border-radius: 3px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  text-align: center;
+  outline: none;
+}
+
 .timeline-zoom {
   display: flex;
   align-items: center;

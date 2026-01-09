@@ -374,7 +374,7 @@ export const useTimelineStore = create<TimelineStore>()(
 
       // Get serializable timeline state for saving to composition
       getSerializableState: (): CompositionTimelineData => {
-        const { tracks, clips, playheadPosition, duration, zoom, scrollX, inPoint, outPoint, loopPlayback, clipKeyframes } = get();
+        const { tracks, clips, playheadPosition, duration, durationLocked, zoom, scrollX, inPoint, outPoint, loopPlayback, clipKeyframes } = get();
 
         // Convert clips to serializable format (without DOM elements)
         const mediaStore = useMediaStore.getState();
@@ -429,6 +429,7 @@ export const useTimelineStore = create<TimelineStore>()(
           clips: serializableClips,
           playheadPosition,
           duration,
+          durationLocked: durationLocked || undefined,  // Only save if true
           zoom,
           scrollX,
           inPoint,
@@ -454,6 +455,7 @@ export const useTimelineStore = create<TimelineStore>()(
             clips: [],
             playheadPosition: 0,
             duration: 60,
+            durationLocked: false,
             zoom: 50,
             scrollX: 0,
             inPoint: null,
@@ -470,6 +472,7 @@ export const useTimelineStore = create<TimelineStore>()(
           clips: [], // We'll restore clips separately
           playheadPosition: data.playheadPosition,
           duration: data.duration,
+          durationLocked: data.durationLocked || false,
           zoom: data.zoom,
           scrollX: data.scrollX,
           inPoint: data.inPoint,

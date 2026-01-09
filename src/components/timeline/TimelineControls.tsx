@@ -1,6 +1,6 @@
 // TimelineControls component - Playback controls and toolbar
 
-import { memo } from 'react';
+import { memo, useState, useRef, useEffect } from 'react';
 import type { TimelineControlsProps } from './types';
 
 function TimelineControlsComponent({
@@ -33,8 +33,46 @@ function TimelineControlsComponent({
   onToggleWaveforms,
   onAddVideoTrack,
   onAddAudioTrack,
+  onSetDuration,
   formatTime,
+  parseTime,
 }: TimelineControlsProps) {
+  const [isEditingDuration, setIsEditingDuration] = useState(false);
+  const [durationInputValue, setDurationInputValue] = useState('');
+  const durationInputRef = useRef<HTMLInputElement>(null);
+
+  // Focus input when editing starts
+  useEffect(() => {
+    if (isEditingDuration && durationInputRef.current) {
+      durationInputRef.current.focus();
+      durationInputRef.current.select();
+    }
+  }, [isEditingDuration]);
+
+  const handleDurationClick = () => {
+    setDurationInputValue(formatTime(duration));
+    setIsEditingDuration(true);
+  };
+
+  const handleDurationSubmit = () => {
+    const newDuration = parseTime(durationInputValue);
+    if (newDuration !== null && newDuration > 0) {
+      onSetDuration(newDuration);
+    }
+    setIsEditingDuration(false);
+  };
+
+  const handleDurationKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleDurationSubmit();
+    } else if (e.key === 'Escape') {
+      setIsEditingDuration(false);
+    }
+  };
+
+  const handleDurationBlur = () => {
+    handleDurationSubmit();
+  };
   return (
     <div className="timeline-toolbar">
       <div className="timeline-controls">
@@ -56,7 +94,26 @@ function TimelineControlsComponent({
         </button>
       </div>
       <div className="timeline-time">
-        {formatTime(playheadPosition)} / {formatTime(duration)}
+        {formatTime(playheadPosition)} /{' '}
+        {isEditingDuration ? (
+          <input
+            ref={durationInputRef}
+            type="text"
+            className="duration-input"
+            value={durationInputValue}
+            onChange={(e) => setDurationInputValue(e.target.value)}
+            onKeyDown={handleDurationKeyDown}
+            onBlur={handleDurationBlur}
+          />
+        ) : (
+          <span
+            className="duration-display"
+            onClick={handleDurationClick}
+            title="Click to edit composition duration"
+          >
+            {formatTime(duration)}
+          </span>
+        )}
       </div>
       <div className="timeline-zoom">
         <button className="btn btn-sm" onClick={() => onSetZoom(zoom - 10)}>

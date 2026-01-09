@@ -106,7 +106,9 @@ export interface TimelineControlsProps {
   onToggleWaveforms: () => void;
   onAddVideoTrack: () => void;
   onAddAudioTrack: () => void;
+  onSetDuration: (duration: number) => void;
   formatTime: (seconds: number) => string;
+  parseTime: (timeStr: string) => number | null;
 }
 
 // Props for TimelineHeader component
