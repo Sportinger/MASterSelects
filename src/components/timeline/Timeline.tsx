@@ -2059,71 +2059,74 @@ export function Timeline() {
         formatTime={formatTime}
       />
 
-      <div className="timeline-body">
-        <div className="track-headers">
+      <div className="timeline-body" onWheel={handleWheel}>
+        <div className="timeline-header-row">
           <div className="ruler-header">Time</div>
-          {tracks.map((track) => {
-            const isDimmed =
-              (track.type === 'video' && anyVideoSolo && !track.solo) ||
-              (track.type === 'audio' && anyAudioSolo && !track.solo);
-            const isExpanded = isTrackExpanded(track.id);
-            const dynamicHeight = getExpandedTrackHeight(track.id, track.height);
-
-            return (
-              <TimelineHeader
-                key={track.id}
-                track={track}
-                isDimmed={isDimmed}
-                isExpanded={isExpanded}
-                dynamicHeight={dynamicHeight}
-                hasKeyframes={trackHasKeyframes(track.id)}
-                selectedClipId={selectedClipId}
-                clips={clips}
-                onToggleExpand={() => toggleTrackExpanded(track.id)}
-                onToggleSolo={() =>
-                  useTimelineStore.getState().setTrackSolo(track.id, !track.solo)
-                }
-                onToggleMuted={() =>
-                  useTimelineStore.getState().setTrackMuted(track.id, !track.muted)
-                }
-                onToggleVisible={() =>
-                  useTimelineStore.getState().setTrackVisible(track.id, !track.visible)
-                }
-                onWheel={(e) => handleTrackHeaderWheel(e, track.id)}
-                isTrackPropertyGroupExpanded={isTrackPropertyGroupExpanded}
-                toggleTrackPropertyGroupExpanded={toggleTrackPropertyGroupExpanded}
-                getClipKeyframes={getClipKeyframes}
-              />
-            );
-          })}
+          <div className="time-ruler-wrapper">
+            <TimelineRuler
+              duration={duration}
+              zoom={zoom}
+              scrollX={scrollX}
+              onRulerMouseDown={handleRulerMouseDown}
+              formatTime={formatTime}
+            />
+          </div>
         </div>
+        <div className="timeline-content-row">
+          <div className="track-headers">
+            {tracks.map((track) => {
+              const isDimmed =
+                (track.type === 'video' && anyVideoSolo && !track.solo) ||
+                (track.type === 'audio' && anyAudioSolo && !track.solo);
+              const isExpanded = isTrackExpanded(track.id);
+              const dynamicHeight = getExpandedTrackHeight(track.id, track.height);
 
-        <div
-          ref={(el) => {
-            (timelineRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
-            (trackLanesRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
-          }}
-          className={`timeline-tracks ${clipDrag ? 'dragging-clip' : ''}`}
-          onWheel={handleWheel}
-          style={{ transform: `translateX(-${scrollX}px)` }}
-        >
-          <TimelineRuler
-            duration={duration}
-            zoom={zoom}
-            scrollX={scrollX}
-            onRulerMouseDown={handleRulerMouseDown}
-            formatTime={formatTime}
-          />
+              return (
+                <TimelineHeader
+                  key={track.id}
+                  track={track}
+                  isDimmed={isDimmed}
+                  isExpanded={isExpanded}
+                  dynamicHeight={dynamicHeight}
+                  hasKeyframes={trackHasKeyframes(track.id)}
+                  selectedClipId={selectedClipId}
+                  clips={clips}
+                  onToggleExpand={() => toggleTrackExpanded(track.id)}
+                  onToggleSolo={() =>
+                    useTimelineStore.getState().setTrackSolo(track.id, !track.solo)
+                  }
+                  onToggleMuted={() =>
+                    useTimelineStore.getState().setTrackMuted(track.id, !track.muted)
+                  }
+                  onToggleVisible={() =>
+                    useTimelineStore.getState().setTrackVisible(track.id, !track.visible)
+                  }
+                  onWheel={(e) => handleTrackHeaderWheel(e, track.id)}
+                  isTrackPropertyGroupExpanded={isTrackPropertyGroupExpanded}
+                  toggleTrackPropertyGroupExpanded={toggleTrackPropertyGroupExpanded}
+                  getClipKeyframes={getClipKeyframes}
+                />
+              );
+            })}
+          </div>
 
-          {tracks.map((track) => {
-            const isDimmed =
-              (track.type === 'video' && anyVideoSolo && !track.solo) ||
-              (track.type === 'audio' && anyAudioSolo && !track.solo);
-            const isExpanded = isTrackExpanded(track.id);
-            const dynamicHeight = getExpandedTrackHeight(track.id, track.height);
+          <div
+            ref={(el) => {
+              (timelineRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+              (trackLanesRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+            }}
+            className={`timeline-tracks ${clipDrag ? 'dragging-clip' : ''}`}
+          >
+            <div className="track-lanes-scroll" style={{ transform: `translateX(-${scrollX}px)` }}>
+              {tracks.map((track) => {
+                const isDimmed =
+                  (track.type === 'video' && anyVideoSolo && !track.solo) ||
+                  (track.type === 'audio' && anyAudioSolo && !track.solo);
+                const isExpanded = isTrackExpanded(track.id);
+                const dynamicHeight = getExpandedTrackHeight(track.id, track.height);
 
-            return (
-              <TimelineTrack
+                return (
+                  <TimelineTrack
                 key={track.id}
                 track={track}
                 clips={clips}
@@ -2259,16 +2262,18 @@ export function Timeline() {
             </div>
           )}
 
-          <div
-            className="playhead"
-            style={{ left: timeToPixel(playheadPosition) }}
-            onMouseDown={handlePlayheadMouseDown}
-          >
-            <div className="playhead-head" />
-            <div className="playhead-line" />
-          </div>
-        </div>
-      </div>
+              <div
+                className="playhead"
+                style={{ left: timeToPixel(playheadPosition) }}
+                onMouseDown={handlePlayheadMouseDown}
+              >
+                <div className="playhead-head" />
+                <div className="playhead-line" />
+              </div>
+            </div>{/* track-lanes-scroll */}
+          </div>{/* timeline-tracks */}
+        </div>{/* timeline-content-row */}
+      </div>{/* timeline-body */}
 
       {contextMenu &&
         (() => {

@@ -6,6 +6,7 @@ import type { TimelineRulerProps } from './types';
 function TimelineRulerComponent({
   duration,
   zoom,
+  scrollX,
   onRulerMouseDown,
   formatTime,
 }: TimelineRulerProps) {
@@ -39,7 +40,7 @@ function TimelineRulerComponent({
   return (
     <div
       className="time-ruler"
-      style={{ width }}
+      style={{ width, transform: `translateX(-${scrollX}px)` }}
       onMouseDown={onRulerMouseDown}
     >
       {markers}
