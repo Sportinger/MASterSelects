@@ -212,8 +212,8 @@ class AudioSync {
         continue;
       }
 
-      // Calculate max offset in samples (30 seconds)
-      const maxOffsetSamples = Math.floor(30 * masterFp.sampleRate);
+      // Calculate max offset in samples (10 seconds - sufficient for most multicam)
+      const maxOffsetSamples = Math.floor(10 * masterFp.sampleRate);
 
       // Perform cross-correlation
       const result = normalizedCrossCorrelate(

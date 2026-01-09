@@ -107,7 +107,7 @@ class AudioAnalyzer {
    */
   async generateFingerprint(
     mediaFileId: string,
-    targetSampleRate: number = 8000,
+    targetSampleRate: number = 2000,  // Reduced from 8kHz for faster correlation
     maxDurationSeconds: number = 30
   ): Promise<AudioFingerprint | null> {
     const audioBuffer = await this.extractAudioBuffer(mediaFileId);
