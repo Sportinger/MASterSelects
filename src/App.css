@@ -1546,6 +1546,7 @@ input[type="checkbox"] {
   flex: 1;
   overflow-x: hidden;
   overflow-y: auto;
+  position: relative;
 }
 
 /* Sticky header row - spans full width */

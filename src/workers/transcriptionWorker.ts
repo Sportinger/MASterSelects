@@ -92,22 +92,31 @@ async function loadModel(
   const langName = language === 'en' ? 'English' : 'multilingual';
   onProgress(0, `Lade Whisper Model (${langName})...`);
 
-  transcriber = await pipeline(
-    'automatic-speech-recognition',
-    modelName,
-    {
-      progress_callback: (data: any) => {
-        if (data.status === 'progress' && data.progress) {
-          onProgress(data.progress, `Model laden: ${Math.round(data.progress)}%`);
-        }
-      },
-      revision: 'main',
-    }
-  );
+  try {
+    transcriber = await pipeline(
+      'automatic-speech-recognition',
+      modelName,
+      {
+        progress_callback: (data: any) => {
+          if (data.status === 'progress' && data.progress) {
+            onProgress(data.progress, `Model laden: ${Math.round(data.progress)}%`);
+          }
+        },
+        revision: 'main',
+      }
+    );
 
-  loadedModel = modelName;
-  onProgress(100, 'Model geladen');
-  return transcriber;
+    loadedModel = modelName;
+    onProgress(100, 'Model geladen');
+    return transcriber;
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    // Check for common error patterns
+    if (errorMsg.includes('<!doctype') || errorMsg.includes('Unexpected token')) {
+      throw new Error('Model download failed - CORS/network error. Please check your internet connection and refresh the page.');
+    }
+    throw new Error(`Failed to load Whisper model: ${errorMsg}`);
+  }
 }
 
 // Process audio and stream results
