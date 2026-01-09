@@ -223,7 +223,10 @@ export interface TimelineKeyframesProps {
     easing: string;
   }>;
   onSelectKeyframe: (keyframeId: string, addToSelection: boolean) => void;
+  onMoveKeyframe: (keyframeId: string, newTime: number) => void;
+  onUpdateKeyframe: (keyframeId: string, updates: { easing?: string }) => void;
   timeToPixel: (time: number) => number;
+  pixelToTime: (pixel: number) => number;
 }
 
 // Waveform props

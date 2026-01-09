@@ -3279,6 +3279,52 @@ input[type="checkbox"] {
   box-shadow: 0 0 8px #ef4444;
 }
 
+.keyframe-diamond.dragging {
+  background: #22d3ee;
+  box-shadow: 0 0 10px #22d3ee;
+  transform: translateX(calc(-50% - 3px)) rotate(45deg) translateY(-50%) scale(1.3);
+}
+
+/* Keyframe context menu */
+.keyframe-context-menu {
+  background: var(--panel-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 4px 0;
+  min-width: 140px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.keyframe-context-menu .context-menu-title {
+  padding: 6px 12px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 4px;
+}
+
+.keyframe-context-menu .context-menu-item {
+  padding: 6px 12px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+}
+
+.keyframe-context-menu .context-menu-item:hover {
+  background: var(--hover-bg);
+}
+
+.keyframe-context-menu .context-menu-item.active {
+  color: #f59e0b;
+}
+
+.keyframe-context-menu .context-menu-item .checkmark {
+  color: #22c55e;
+  font-size: 14px;
+}
+
 /* ========== EXPANDABLE CLIP PROPERTIES (Timeline) ========== */
 .clip-expand-arrow {
   cursor: pointer;

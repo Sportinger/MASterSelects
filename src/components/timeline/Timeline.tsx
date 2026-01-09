@@ -93,6 +93,8 @@ export function Timeline() {
     trackHasKeyframes,
     clipKeyframes,
     addKeyframe,
+    moveKeyframe,
+    updateKeyframe,
     setPropertyValue,
     thumbnailsEnabled,
     waveformsEnabled,
@@ -1498,7 +1500,9 @@ export function Timeline() {
         target.closest('.playhead') ||
         target.closest('.in-out-marker') ||
         target.closest('.trim-handle') ||
-        target.closest('.track-header')
+        target.closest('.track-header') ||
+        target.closest('.keyframe-diamond') ||
+        target.closest('.keyframe-track-row')
       ) {
         return;
       }
@@ -2405,11 +2409,14 @@ export function Timeline() {
           selectedKeyframeIds={selectedKeyframeIds}
           getClipKeyframes={getClipKeyframes}
           onSelectKeyframe={selectKeyframe}
+          onMoveKeyframe={moveKeyframe}
+          onUpdateKeyframe={updateKeyframe}
           timeToPixel={timeToPixel}
+          pixelToTime={pixelToTime}
         />
       );
     },
-    [clips, selectedKeyframeIds, getClipKeyframes, selectKeyframe, timeToPixel]
+    [clips, selectedKeyframeIds, getClipKeyframes, selectKeyframe, moveKeyframe, updateKeyframe, timeToPixel, pixelToTime]
   );
 
   // Render a clip
