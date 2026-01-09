@@ -2374,10 +2374,14 @@ export function Timeline() {
 
         setZoom(newZoom);
         setScrollX(newScrollX);
+      } else if (e.shiftKey) {
+        // Shift+scroll = horizontal scroll (use deltaY since mouse wheel is vertical)
+        e.preventDefault();
+        setScrollX(Math.max(0, scrollX + e.deltaY));
       } else {
-        // Handle horizontal scroll (e.g., shift+scroll or trackpad horizontal)
+        // Handle horizontal scroll (e.g., trackpad horizontal gesture)
         if (e.deltaX !== 0) {
-          setScrollX(scrollX + e.deltaX);
+          setScrollX(Math.max(0, scrollX + e.deltaX));
         }
         // Vertical scroll is handled natively by the parent timeline-body container
       }
