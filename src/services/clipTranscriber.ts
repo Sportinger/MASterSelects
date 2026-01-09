@@ -61,7 +61,14 @@ export async function transcribeClip(clipId: string, language: string = 'de'): P
 
   try {
     // Extract audio on main thread (AudioContext not available in workers)
-    const audioBuffer = await extractAudioBuffer(clip.file);
+    // Only extract the portion between inPoint and outPoint (the trimmed clip region)
+    const inPoint = clip.inPoint || 0;
+    const outPoint = clip.outPoint || clip.duration;
+    const clipDuration = outPoint - inPoint;
+
+    console.log(`[Transcribe] Extracting audio from ${inPoint.toFixed(1)}s to ${outPoint.toFixed(1)}s (${clipDuration.toFixed(1)}s)`);
+
+    const audioBuffer = await extractAudioBuffer(clip.file, inPoint, outPoint);
     const audioData = await resampleAudio(audioBuffer, 16000);
     const audioDuration = audioBuffer.duration;
 
@@ -72,8 +79,10 @@ export async function transcribeClip(clipId: string, language: string = 'de'): P
       message: 'Starting worker...',
     });
 
-    // Run transcription in worker
-    const words = await runWorkerTranscription(clipId, audioData, language, audioDuration);
+    // Run transcription in worker, passing inPoint for timestamp offset
+    // Whisper returns timestamps starting at 0 (beginning of extracted audio)
+    // The worker handler will offset them so they match the original source file
+    const words = await runWorkerTranscription(clipId, audioData, language, audioDuration, inPoint);
 
     // Complete
     updateClipTranscript(clipId, {
@@ -100,15 +109,25 @@ export async function transcribeClip(clipId: string, language: string = 'de'): P
 
 /**
  * Run transcription in Web Worker
+ * @param inPointOffset - Offset to add to word timestamps (for trimmed clips)
  */
 function runWorkerTranscription(
   clipId: string,
   audioData: Float32Array,
   language: string,
-  audioDuration: number
+  audioDuration: number,
+  inPointOffset: number = 0
 ): Promise<TranscriptWord[]> {
   return new Promise((resolve, reject) => {
     const w = getWorker();
+
+    // Helper to offset word timestamps
+    const offsetWords = (words: TranscriptWord[]): TranscriptWord[] =>
+      words.map(word => ({
+        ...word,
+        start: word.start + inPointOffset,
+        end: word.end + inPointOffset,
+      }));
 
     const handleMessage = (event: MessageEvent) => {
       const { type, progress, message, words, error } = event.data;
@@ -119,8 +138,9 @@ function runWorkerTranscription(
           break;
 
         case 'words':
+          // Offset partial results too
           updateClipTranscript(clipId, {
-            words,
+            words: offsetWords(words),
             message: `Transcribed ${words.length} words`,
           });
           break;
@@ -128,7 +148,8 @@ function runWorkerTranscription(
         case 'complete':
           w.removeEventListener('message', handleMessage);
           w.removeEventListener('error', handleError);
-          resolve(words);
+          // Offset final words before returning
+          resolve(offsetWords(words));
           break;
 
         case 'error':
@@ -185,14 +206,53 @@ function updateClipTranscript(
 }
 
 /**
- * Extract audio buffer from a media file
+ * Extract audio buffer from a media file, optionally slicing to a time range
+ * @param file - The media file to extract audio from
+ * @param startTime - Start time in seconds (optional, defaults to 0)
+ * @param endTime - End time in seconds (optional, defaults to full duration)
  */
-async function extractAudioBuffer(file: File): Promise<AudioBuffer> {
+async function extractAudioBuffer(
+  file: File,
+  startTime?: number,
+  endTime?: number
+): Promise<AudioBuffer> {
   const audioContext = new AudioContext();
   const arrayBuffer = await file.arrayBuffer();
-  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+  const fullBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+  // If no time range specified, return full buffer
+  if (startTime === undefined && endTime === undefined) {
+    audioContext.close();
+    return fullBuffer;
+  }
+
+  // Calculate sample range
+  const sampleRate = fullBuffer.sampleRate;
+  const startSample = Math.floor((startTime || 0) * sampleRate);
+  const endSample = Math.min(
+    Math.ceil((endTime || fullBuffer.duration) * sampleRate),
+    fullBuffer.length
+  );
+  const sliceLength = endSample - startSample;
+
+  // Create new buffer with sliced audio
+  const slicedBuffer = audioContext.createBuffer(
+    fullBuffer.numberOfChannels,
+    sliceLength,
+    sampleRate
+  );
+
+  // Copy each channel's data
+  for (let channel = 0; channel < fullBuffer.numberOfChannels; channel++) {
+    const sourceData = fullBuffer.getChannelData(channel);
+    const destData = slicedBuffer.getChannelData(channel);
+    for (let i = 0; i < sliceLength; i++) {
+      destData[i] = sourceData[startSample + i];
+    }
+  }
+
   audioContext.close();
-  return audioBuffer;
+  return slicedBuffer;
 }
 
 /**

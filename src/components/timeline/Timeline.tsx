@@ -2037,29 +2037,9 @@ export function Timeline() {
       e.preventDefault();
       e.stopPropagation();
 
-      const isMediaPanelDrag = e.dataTransfer.types.includes('application/x-media-file-id');
-      const isFileDrag = e.dataTransfer.types.includes('Files');
-
-      // Check if dragged content is audio-only
-      const audioExtensions = ['wav', 'mp3', 'ogg', 'flac', 'aac', 'm4a', 'wma', 'aiff', 'opus'];
-      let isDraggingAudio = false;
-
-      if (isMediaPanelDrag) {
-        const mediaFileId = e.dataTransfer.getData('application/x-media-file-id');
-        if (mediaFileId) {
-          const mediaStore = useMediaStore.getState();
-          const mediaFile = mediaStore.files.find((f) => f.id === mediaFileId);
-          const fileExt = mediaFile?.file?.name?.split('.').pop()?.toLowerCase() || '';
-          if (mediaFile?.file?.type?.startsWith('audio/') || audioExtensions.includes(fileExt)) {
-            isDraggingAudio = true;
-          }
-        }
-      } else if (isFileDrag && e.dataTransfer.items.length > 0) {
-        const item = e.dataTransfer.items[0];
-        if (item.type.startsWith('audio/')) {
-          isDraggingAudio = true;
-        }
-      }
+      // Use existing externalDrag state to know if dragging audio
+      // (getData() doesn't work during dragover, only during drop)
+      const isDraggingAudio = externalDrag?.isAudio ?? false;
 
       // Audio files can only go on audio track zone
       if (isDraggingAudio && trackType === 'video') {
@@ -2087,12 +2067,13 @@ export function Timeline() {
           y: e.clientY,
           duration: prev?.duration ?? dragDurationCacheRef.current?.duration ?? 5,
           newTrackType: trackType,
-          isVideo: trackType === 'video',
-          isAudio: trackType === 'audio',
+          // Preserve the actual file type from previous state
+          isVideo: prev?.isVideo ?? (trackType === 'video'),
+          isAudio: prev?.isAudio ?? (trackType === 'audio'),
         }));
       }
     },
-    [scrollX, pixelToTime]
+    [scrollX, pixelToTime, externalDrag]
   );
 
   // Handle drop on "new track" zone - creates new track and adds clip
