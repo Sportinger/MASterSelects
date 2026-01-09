@@ -249,6 +249,15 @@ export const useTimelineStore = create<TimelineStore>()(
           return { startTime: Math.max(0, desiredStartTime), forcingOverlap: false };
         }
 
+        console.log('[Resistance] Overlap detected!', {
+          movingClip: movingClip?.name,
+          overlappingWith: overlappingClip.name,
+          trackId,
+          desiredStartTime,
+          overlappingClipStart: overlappingClip.startTime,
+          overlappingClipEnd: overlappingClip.startTime + overlappingClip.duration,
+        });
+
         // There's an overlap - apply resistance
         const overlappingEnd = overlappingClip.startTime + overlappingClip.duration;
 
@@ -262,23 +271,31 @@ export const useTimelineStore = create<TimelineStore>()(
         if (enteringFromLeft) {
           // User approaching from left - their clip end is past the other clip's start
           const penetrationDepth = desiredEndTime - overlappingClip.startTime;
+          console.log('[Resistance] From LEFT, penetration:', penetrationDepth, 'threshold:', OVERLAP_RESISTANCE_SECONDS);
 
           if (penetrationDepth < OVERLAP_RESISTANCE_SECONDS) {
             // Within resistance zone - snap to edge (clip end at other clip's start)
-            return { startTime: Math.max(0, overlappingClip.startTime - duration), forcingOverlap: false };
+            const snappedStart = Math.max(0, overlappingClip.startTime - duration);
+            console.log('[Resistance] RESISTING! Snapping to:', snappedStart);
+            return { startTime: snappedStart, forcingOverlap: false };
           } else {
             // User has broken through resistance - allow overlap
+            console.log('[Resistance] BREAKTHROUGH! Allowing overlap');
             return { startTime: Math.max(0, desiredStartTime), forcingOverlap: true };
           }
         } else {
           // User approaching from right - their clip start is before the other clip's end
           const penetrationDepth = overlappingEnd - desiredStartTime;
+          console.log('[Resistance] From RIGHT, penetration:', penetrationDepth, 'threshold:', OVERLAP_RESISTANCE_SECONDS);
 
           if (penetrationDepth < OVERLAP_RESISTANCE_SECONDS) {
             // Within resistance zone - snap to edge (clip start at other clip's end)
-            return { startTime: Math.max(0, overlappingEnd), forcingOverlap: false };
+            const snappedStart = Math.max(0, overlappingEnd);
+            console.log('[Resistance] RESISTING! Snapping to:', snappedStart);
+            return { startTime: snappedStart, forcingOverlap: false };
           } else {
             // User has broken through resistance - allow overlap
+            console.log('[Resistance] BREAKTHROUGH! Allowing overlap');
             return { startTime: Math.max(0, desiredStartTime), forcingOverlap: true };
           }
         }
