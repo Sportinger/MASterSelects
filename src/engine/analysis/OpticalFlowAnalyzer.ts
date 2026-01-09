@@ -198,11 +198,12 @@ export class OpticalFlowAnalyzer {
     });
 
     // Grayscale textures (current and previous frame)
+    // Need COPY_SRC to copy to pyramid level 0
     for (let i = 0; i < 2; i++) {
       this.grayscaleTextures.push(this.device.createTexture({
         size: [ANALYSIS_WIDTH, ANALYSIS_HEIGHT],
         format: 'r32float',
-        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING,
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING | GPUTextureUsage.COPY_SRC,
       }));
     }
 
@@ -214,6 +215,7 @@ export class OpticalFlowAnalyzer {
     });
 
     // Pyramid textures for each frame
+    // Level 0 needs COPY_DST (destination of copy from grayscale)
     for (let frame = 0; frame < 2; frame++) {
       const pyramid: GPUTexture[] = [];
       let w = ANALYSIS_WIDTH;
@@ -222,7 +224,8 @@ export class OpticalFlowAnalyzer {
         pyramid.push(this.device.createTexture({
           size: [w, h],
           format: 'r32float',
-          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING,
+          usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING |
+                 (level === 0 ? GPUTextureUsage.COPY_DST : 0),
         }));
         w = Math.max(1, Math.floor(w / 2));
         h = Math.max(1, Math.floor(h / 2));
