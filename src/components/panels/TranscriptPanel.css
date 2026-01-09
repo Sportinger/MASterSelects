@@ -241,14 +241,14 @@
 /* Words container */
 .transcript-words {
   line-height: 1.8;
-  word-wrap: break-word;
-  overflow-wrap: break-word;
+  word-break: normal;
+  overflow-wrap: normal;
   white-space: normal;
 }
 
 /* Individual word styling */
 .transcript-word {
-  display: inline;
+  display: inline-block;
   padding: 2px 3px;
   margin: 1px;
   border-radius: 3px;
@@ -256,6 +256,7 @@
   color: var(--text-primary, #e0e0e0);
   cursor: pointer;
   transition: background 0.1s ease, color 0.1s ease;
+  white-space: nowrap;
 }
 
 .transcript-word:hover {
