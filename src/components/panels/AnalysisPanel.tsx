@@ -2,10 +2,11 @@
 
 import { useCallback, useMemo } from 'react';
 import { useTimelineStore } from '../../stores/timeline';
+import type { FrameAnalysisData } from '../../types';
 import './AnalysisPanel.css';
 
 export function AnalysisPanel() {
-  const { clips, selectedClipIds } = useTimelineStore();
+  const { clips, selectedClipIds, playheadPosition } = useTimelineStore();
 
   // Get first selected clip ID
   const selectedClipId = selectedClipIds.size > 0 ? [...selectedClipIds][0] : null;
@@ -53,6 +54,37 @@ export function AnalysisPanel() {
       frameCount: frames.length,
     };
   }, [analysis]);
+
+  // Calculate real-time values at current playhead position
+  const currentValues = useMemo((): FrameAnalysisData | null => {
+    if (!analysis?.frames.length || !selectedClip) return null;
+
+    // Check if playhead is within this clip's time range
+    const clipStart = selectedClip.startTime;
+    const clipEnd = clipStart + (selectedClip.outPoint - selectedClip.inPoint);
+
+    if (playheadPosition < clipStart || playheadPosition > clipEnd) {
+      return null;
+    }
+
+    // Calculate the source time at the playhead
+    const timeInClip = playheadPosition - clipStart;
+    const sourceTime = selectedClip.inPoint + timeInClip;
+
+    // Find the closest frame in the analysis
+    let closestFrame = analysis.frames[0];
+    let closestDistance = Math.abs(closestFrame.timestamp - sourceTime);
+
+    for (const frame of analysis.frames) {
+      const distance = Math.abs(frame.timestamp - sourceTime);
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestFrame = frame;
+      }
+    }
+
+    return closestFrame;
+  }, [analysis, selectedClip, playheadPosition]);
 
   // Handle analyze button click
   const handleAnalyze = useCallback(async () => {
@@ -134,6 +166,66 @@ export function AnalysisPanel() {
           </span>
         )}
       </div>
+
+      {/* Real-time values at playhead */}
+      {(analysisStatus === 'ready' || analysisStatus === 'analyzing') && currentValues && (
+        <div className="analysis-realtime">
+          <h3>Current Values</h3>
+          <div className="realtime-grid">
+            <div className="realtime-item focus">
+              <span className="realtime-label">Focus</span>
+              <div className="realtime-bar-container">
+                <div
+                  className="realtime-bar"
+                  style={{ width: `${Math.round(currentValues.focus * 100)}%` }}
+                />
+              </div>
+              <span className="realtime-value">{Math.round(currentValues.focus * 100)}%</span>
+            </div>
+            <div className="realtime-item motion">
+              <span className="realtime-label">Global Motion</span>
+              <div className="realtime-bar-container">
+                <div
+                  className="realtime-bar"
+                  style={{ width: `${Math.round((currentValues.globalMotion ?? currentValues.motion) * 100)}%` }}
+                />
+              </div>
+              <span className="realtime-value">{Math.round((currentValues.globalMotion ?? currentValues.motion) * 100)}%</span>
+            </div>
+            <div className="realtime-item local-motion">
+              <span className="realtime-label">Local Motion</span>
+              <div className="realtime-bar-container">
+                <div
+                  className="realtime-bar"
+                  style={{ width: `${Math.round((currentValues.localMotion ?? 0) * 100)}%` }}
+                />
+              </div>
+              <span className="realtime-value">{Math.round((currentValues.localMotion ?? 0) * 100)}%</span>
+            </div>
+            {currentValues.faceCount > 0 && (
+              <div className="realtime-item faces">
+                <span className="realtime-label">Faces</span>
+                <span className="realtime-value face-count">{currentValues.faceCount}</span>
+              </div>
+            )}
+            {currentValues.isSceneCut && (
+              <div className="realtime-item scene-cut">
+                <span className="scene-cut-badge">Scene Cut</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Playhead outside clip indicator */}
+      {(analysisStatus === 'ready' || analysisStatus === 'analyzing') && analysis?.frames.length && !currentValues && (
+        <div className="analysis-realtime analysis-outside">
+          <h3>Current Values</h3>
+          <div className="realtime-placeholder">
+            <span>Move playhead over clip to see values</span>
+          </div>
+        </div>
+      )}
 
       {/* Actions */}
       <div className="analysis-actions">
