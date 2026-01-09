@@ -4,6 +4,13 @@
 import { useTimelineStore } from '../stores/timeline';
 import { triggerTimelineSave } from '../stores/mediaStore';
 import { projectDB } from './projectDB';
+import { engine } from '../engine/WebGPUEngine';
+import {
+  OpticalFlowAnalyzer,
+  getOpticalFlowAnalyzer,
+  resetOpticalFlowAnalyzer,
+  type MotionResult,
+} from '../engine/analysis/OpticalFlowAnalyzer';
 import type { ClipAnalysis, FrameAnalysisData, AnalysisStatus } from '../types';
 
 // Analysis sample interval in milliseconds
@@ -14,15 +21,9 @@ let isAnalyzing = false;
 let shouldCancel = false;
 let currentClipId: string | null = null;
 
-/**
- * Motion analysis result with global vs local distinction
- */
-interface MotionResult {
-  total: number;        // Overall motion 0-1
-  global: number;       // Camera/scene motion 0-1 (uniform change across frame)
-  local: number;        // Object motion 0-1 (localized changes)
-  isSceneCut: boolean;  // True if likely a scene cut (>60% change)
-}
+// GPU optical flow analyzer instance
+let flowAnalyzer: OpticalFlowAnalyzer | null = null;
+let useGPUAnalysis = true; // Will be set to false if GPU init fails
 
 /**
  * Analyze motion between two frames using grid-based analysis
@@ -174,6 +175,46 @@ function detectFaceCount(_frame: ImageData): number {
 }
 
 /**
+ * Initialize GPU optical flow analyzer
+ */
+async function initGPUAnalyzer(): Promise<boolean> {
+  if (flowAnalyzer) return true;
+
+  try {
+    const device = engine.getDevice();
+    if (!device) {
+      console.warn('[ClipAnalyzer] WebGPU device not available, falling back to CPU');
+      useGPUAnalysis = false;
+      return false;
+    }
+
+    flowAnalyzer = await getOpticalFlowAnalyzer(device);
+    console.log('[ClipAnalyzer] GPU optical flow analyzer initialized');
+    return true;
+  } catch (error) {
+    console.warn('[ClipAnalyzer] Failed to init GPU analyzer, falling back to CPU:', error);
+    useGPUAnalysis = false;
+    return false;
+  }
+}
+
+/**
+ * Analyze motion using GPU optical flow
+ */
+async function analyzeMotionGPU(bitmap: ImageBitmap): Promise<MotionResult> {
+  if (!flowAnalyzer) {
+    return { total: 0, global: 0, local: 0, isSceneCut: false };
+  }
+
+  try {
+    return await flowAnalyzer.analyzeFrame(bitmap);
+  } catch (error) {
+    console.warn('[ClipAnalyzer] GPU motion analysis failed:', error);
+    return { total: 0, global: 0, local: 0, isSceneCut: false };
+  }
+}
+
+/**
  * Extract a frame from video at specific timestamp
  */
 async function extractFrame(
@@ -307,11 +348,21 @@ export async function analyzeClip(clipId: string): Promise<void> {
       setTimeout(() => reject(new Error('Video load timeout')), 30000);
     });
 
-    // Create canvas for frame extraction (lower res for speed)
+    // Try to initialize GPU optical flow analyzer
+    const gpuAvailable = useGPUAnalysis && await initGPUAnalyzer();
+    if (gpuAvailable) {
+      console.log('[ClipAnalyzer] Using GPU optical flow analysis');
+      resetOpticalFlowAnalyzer(); // Reset state for new clip
+    } else {
+      console.log('[ClipAnalyzer] Using CPU motion analysis (fallback)');
+    }
+
+    // Create canvas for frame extraction
     const canvas = document.createElement('canvas');
-    canvas.width = 320;
-    canvas.height = 180;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    // GPU uses 160x90, CPU uses 320x180
+    canvas.width = gpuAvailable ? 160 : 320;
+    canvas.height = gpuAvailable ? 90 : 180;
+    const ctx = canvas.getContext('2d', { willReadFrequently: !gpuAvailable });
 
     if (!ctx) {
       throw new Error('Could not get canvas context');
@@ -343,9 +394,28 @@ export async function analyzeClip(clipId: string): Promise<void> {
       const relativeTime = (i * SAMPLE_INTERVAL_MS) / 1000;
       const absoluteTime = analysisStartTime + relativeTime;
 
+      // Extract frame
       const frame = await extractFrame(video, absoluteTime, canvas, ctx);
 
-      const motionResult = analyzeMotion(frame, previousFrame);
+      // Analyze motion using GPU or CPU
+      let motionResult: MotionResult;
+      const analysisStart = performance.now();
+
+      if (gpuAvailable) {
+        // GPU path: create ImageBitmap and use optical flow
+        const bitmap = await createImageBitmap(canvas);
+        motionResult = await analyzeMotionGPU(bitmap);
+        bitmap.close();
+      } else {
+        // CPU fallback: use grid-based analysis
+        motionResult = analyzeMotion(frame, previousFrame);
+      }
+
+      const analysisTime = performance.now() - analysisStart;
+      if (i === 0) {
+        console.log(`[ClipAnalyzer] First frame analysis took ${analysisTime.toFixed(1)}ms (${gpuAvailable ? 'GPU' : 'CPU'})`);
+      }
+
       const focus = analyzeSharpness(frame);
       const faceCount = detectFaceCount(frame);
 

@@ -38,7 +38,7 @@ const DEFAULT_LAYOUT: DockLayout = {
               { id: 'ai-chat', type: 'ai-chat', title: 'AI Chat' },
               { id: 'preview', type: 'preview', title: 'Preview' },
             ],
-            activeIndex: 1, // Default to Preview tab
+            activeIndex: 0, // Default to AI Chat tab
           },
           {
             kind: 'tab-group',

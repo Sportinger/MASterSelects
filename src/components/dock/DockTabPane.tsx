@@ -38,6 +38,10 @@ export function DockTabPane({ group }: DockTabPaneProps) {
   const [draggedCompIndex, setDraggedCompIndex] = useState<number | null>(null);
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
 
+  // Middle mouse drag scrolling for tabs
+  const [isMiddleDragging, setIsMiddleDragging] = useState(false);
+  const middleDragStartRef = useRef<{ x: number; scrollLeft: number } | null>(null);
+
   const activePanel = group.panels[group.activeIndex];
   const isDropTarget = dragState.dropTarget?.groupId === group.id;
   const dropPosition = dragState.dropTarget?.position;
@@ -290,6 +294,48 @@ export function DockTabPane({ group }: DockTabPaneProps) {
     return () => tabBar.removeEventListener('wheel', handleWheel);
   }, [activePanel, layout.panelZoom, setPanelZoom]);
 
+  // Middle mouse drag to scroll tabs horizontally (like Blender)
+  const handleTabBarMouseDown = useCallback((e: React.MouseEvent) => {
+    // Only handle middle mouse button
+    if (e.button !== 1) return;
+    e.preventDefault();
+
+    const tabBar = tabBarRef.current;
+    if (!tabBar) return;
+
+    setIsMiddleDragging(true);
+    middleDragStartRef.current = {
+      x: e.clientX,
+      scrollLeft: tabBar.scrollLeft,
+    };
+  }, []);
+
+  // Global mouse move/up for middle drag scrolling
+  useEffect(() => {
+    if (!isMiddleDragging) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const tabBar = tabBarRef.current;
+      if (!tabBar || !middleDragStartRef.current) return;
+
+      const deltaX = e.clientX - middleDragStartRef.current.x;
+      tabBar.scrollLeft = middleDragStartRef.current.scrollLeft - deltaX;
+    };
+
+    const handleMouseUp = () => {
+      setIsMiddleDragging(false);
+      middleDragStartRef.current = null;
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isMiddleDragging]);
+
   return (
     <div
       ref={containerRef}
@@ -297,8 +343,13 @@ export function DockTabPane({ group }: DockTabPaneProps) {
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
     >
-      {/* Tab bar - Ctrl+wheel here to zoom panel */}
-      <div ref={tabBarRef} className="dock-tab-bar" title="Ctrl+Scroll to zoom | Hold to drag">
+      {/* Tab bar - Ctrl+wheel here to zoom panel, middle mouse to scroll */}
+      <div
+        ref={tabBarRef}
+        className={`dock-tab-bar ${isMiddleDragging ? 'middle-dragging' : ''}`}
+        title="Ctrl+Scroll to zoom | Hold to drag | Middle-click drag to scroll"
+        onMouseDown={handleTabBarMouseDown}
+      >
         {/* For timeline panels, show drag handle + composition tabs */}
         {hasTimelinePanel && openCompositions.length > 0 ? (
           <>

@@ -102,6 +102,17 @@
   flex-shrink: 0;
   overflow-x: auto;
   overflow-y: hidden;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+
+.dock-tab-bar::-webkit-scrollbar {
+  display: none; /* Chrome/Safari - hide scrollbar but keep functionality */
+}
+
+.dock-tab-bar.middle-dragging {
+  cursor: grabbing;
+  user-select: none;
 }
 
 /* Drag handle for repositioning panels */
@@ -143,10 +154,6 @@
 
 .dock-tab-handle.hold-fade {
   animation: holdGlowFade 500ms ease-out forwards;
-}
-
-.dock-tab-bar::-webkit-scrollbar {
-  height: 2px;
 }
 
 .dock-tab {
