@@ -212,9 +212,36 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
     }
 
     const renderFrame = () => {
-      // Evaluate composition at current playhead position (synced with main timeline)
-      const currentTime = useTimelineStore.getState().playheadPosition;
-      const evalLayers = compositionRenderer.evaluateAtTime(compositionId, currentTime);
+      const mainPlayhead = useTimelineStore.getState().playheadPosition;
+      const mainClips = useTimelineStore.getState().clips;
+
+      // Check if this composition is nested inside the active timeline
+      // If so, calculate the internal time based on where the clip is placed
+      let internalTime = mainPlayhead;
+
+      const nestedClip = mainClips.find(c =>
+        c.isComposition && c.compositionId === compositionId
+      );
+
+      if (nestedClip) {
+        // This composition is nested in the active timeline
+        const clipStart = nestedClip.startTime;
+        const clipEnd = clipStart + nestedClip.duration;
+        const clipInPoint = nestedClip.inPoint || 0;
+
+        if (mainPlayhead >= clipStart && mainPlayhead < clipEnd) {
+          // Playhead is within this clip - calculate internal time
+          internalTime = (mainPlayhead - clipStart) + clipInPoint;
+        } else if (mainPlayhead < clipStart) {
+          // Before the clip starts - show beginning
+          internalTime = clipInPoint;
+        } else {
+          // After the clip ends - show end frame
+          internalTime = clipInPoint + nestedClip.duration;
+        }
+      }
+
+      const evalLayers = compositionRenderer.evaluateAtTime(compositionId, internalTime);
 
       if (evalLayers.length > 0) {
         renderToPreviewCanvas(panelId, evalLayers as Layer[]);
