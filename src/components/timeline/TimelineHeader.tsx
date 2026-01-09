@@ -298,7 +298,7 @@ function TimelineHeaderComponent({
   isExpanded,
   dynamicHeight,
   hasKeyframes,
-  selectedClipId,
+  selectedClipIds,
   clips,
   onToggleExpand,
   onToggleSolo,
@@ -309,9 +309,9 @@ function TimelineHeaderComponent({
   toggleTrackPropertyGroupExpanded,
   getClipKeyframes,
 }: TimelineHeaderProps) {
-  // Get the selected clip in this track
+  // Get the first selected clip in this track
   const trackClips = clips.filter((c) => c.trackId === track.id);
-  const selectedTrackClip = trackClips.find((c) => c.id === selectedClipId);
+  const selectedTrackClip = trackClips.find((c) => selectedClipIds.has(c.id));
 
   return (
     <div

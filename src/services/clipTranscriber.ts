@@ -50,6 +50,8 @@ export async function transcribeClip(clipId: string, language: string = 'de'): P
   isTranscribing = true;
   currentClipId = clipId;
 
+  console.log(`[Transcript] Starting transcription for ${clip.name}...`);
+
   // Update status to transcribing
   updateClipTranscript(clipId, {
     status: 'transcribing',
@@ -81,7 +83,7 @@ export async function transcribeClip(clipId: string, language: string = 'de'): P
       message: undefined,
     });
     triggerTimelineSave();
-    console.log('[Transcribe] Done:', words.length, 'words');
+    console.log(`[Transcript] Complete: ${words.length} words for ${clip.name}`);
 
   } catch (error) {
     console.error('[Transcribe] Failed:', error);

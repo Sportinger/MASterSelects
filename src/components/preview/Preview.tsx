@@ -141,7 +141,9 @@ function StatsOverlay({ stats, resolution, expanded, onToggle }: {
 export function Preview() {
   const { canvasRef, isEngineReady } = useEngine();
   const { engineStats, outputResolution, layers, selectedLayerId, selectLayer } = useMixerStore();
-  const { clips, selectedClipId, selectClip, updateClipTransform, maskEditMode } = useTimelineStore();
+  const { clips, selectedClipIds, selectClip, updateClipTransform, maskEditMode } = useTimelineStore();
+  // Get first selected clip for preview
+  const selectedClipId = selectedClipIds.size > 0 ? [...selectedClipIds][0] : null;
   const containerRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 1920, height: 1080 });
@@ -419,7 +421,7 @@ export function Preview() {
     });
 
     return () => cancelAnimationFrame(animId);
-  }, [editMode, layers, selectedLayerId, selectedClipId, clips, canvasSize, calculateLayerBounds, isDragging, dragLayerId]);
+  }, [editMode, layers, selectedLayerId, selectedClipIds, clips, canvasSize, calculateLayerBounds, isDragging, dragLayerId]);
 
   // Find layer at mouse position
   const findLayerAtPosition = useCallback((x: number, y: number): Layer | null => {

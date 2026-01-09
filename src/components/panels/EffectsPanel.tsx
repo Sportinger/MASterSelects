@@ -120,9 +120,10 @@ export function EffectsPanel() {
     useMixerStore();
 
   // Timeline store (for timeline clips)
-  const { clips, selectedClipId, addClipEffect, removeClipEffect, updateClipEffect, updateClipTransform, setPropertyValue, getInterpolatedEffects, playheadPosition } = useTimelineStore();
+  const { clips, selectedClipIds, addClipEffect, removeClipEffect, updateClipEffect, updateClipTransform, setPropertyValue, getInterpolatedEffects, playheadPosition } = useTimelineStore();
 
-  // Check if a timeline clip is selected first
+  // Check if a timeline clip is selected first (use first selected for effects panel)
+  const selectedClipId = selectedClipIds.size > 0 ? [...selectedClipIds][0] : null;
   const selectedClip = clips.find((c) => c.id === selectedClipId);
   const selectedLayer = layers.find((l) => l?.id === selectedLayerId);
 

@@ -150,8 +150,9 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
             // Check again in case toggle was turned off while waiting
             if (!get().thumbnailsEnabled) return;
 
+            console.log(`[Thumbnails] Starting generation for ${file.name}...`);
             const thumbnails = await generateThumbnails(video, naturalDuration);
-            console.log(`[Timeline] Generated ${thumbnails.length} thumbnails for ${file.name}`);
+            console.log(`[Thumbnails] Complete: ${thumbnails.length} thumbnails for ${file.name}`);
 
             // Update clip with thumbnails
             const currentClips = get().clips;
@@ -186,7 +187,9 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
               // Check again before expensive operation
               if (!get().waveformsEnabled) return;
 
+              console.log(`[Waveform] Starting generation for ${file.name}...`);
               const audioWaveform = await generateWaveform(file);
+              console.log(`[Waveform] Complete: ${audioWaveform.length} samples for ${file.name}`);
               const currentClips = get().clips;
               set({
                 clips: currentClips.map(c => c.id === audioClipId ? { ...c, waveform: audioWaveform } : c)
@@ -247,9 +250,11 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
       let waveform: number[] = [];
       if (get().waveformsEnabled) {
         try {
+          console.log(`[Waveform] Starting generation for ${file.name}...`);
           waveform = await generateWaveform(file);
+          console.log(`[Waveform] Complete: ${waveform.length} samples for ${file.name}`);
         } catch (e) {
-          console.warn('Failed to generate waveform:', e);
+          console.warn('[Waveform] Failed:', e);
         }
       }
 
@@ -564,7 +569,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
     invalidateCache();
   },
 
-  moveClip: (id, newStartTime, newTrackId, skipLinked = false) => {
+  moveClip: (id, newStartTime, newTrackId, skipLinked = false, skipGroup = false) => {
     const { clips, tracks, updateDuration, getSnappedPosition, findNonOverlappingPosition, invalidateCache } = get();
     const movingClip = clips.find(c => c.id === id);
     if (!movingClip) return;
@@ -599,7 +604,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
     // Calculate time delta to apply to linked clips
     const timeDelta = finalStartTime - movingClip.startTime;
 
-    // For linked clip, also find non-overlapping position
+    // For linked clip (1:1 video-audio pair), also find non-overlapping position
     const linkedClip = clips.find(c => c.id === movingClip.linkedClipId || c.linkedClipId === id);
     let linkedFinalTime = linkedClip ? linkedClip.startTime + timeDelta : 0;
     if (linkedClip && !skipLinked) {
@@ -611,6 +616,11 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
       );
     }
 
+    // For linked group (multicam), find all clips in the group
+    const groupClips = !skipGroup && movingClip.linkedGroupId
+      ? clips.filter(c => c.linkedGroupId === movingClip.linkedGroupId && c.id !== id)
+      : [];
+
     set({
       clips: clips.map(c => {
         // Move the primary clip
@@ -621,12 +631,25 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
             trackId: targetTrackId,
           };
         }
-        // Also move linked clip (keep it in sync) - unless skipLinked is true
+        // Also move linked clip (1:1 video-audio pair) - unless skipLinked is true
         if (!skipLinked && (c.id === movingClip.linkedClipId || c.linkedClipId === id)) {
           return {
             ...c,
             startTime: Math.max(0, linkedFinalTime),
             // Keep linked clip on its own track (don't change track)
+          };
+        }
+        // Move group clips (multicam) - unless skipGroup is true (Alt+drag)
+        if (!skipGroup && groupClips.some(gc => gc.id === c.id)) {
+          const groupClipNewTime = findNonOverlappingPosition(
+            c.id,
+            c.startTime + timeDelta,
+            c.trackId,
+            c.duration
+          );
+          return {
+            ...c,
+            startTime: Math.max(0, groupClipNewTime),
           };
         }
         return c;
@@ -736,7 +759,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
 
     set({
       clips: newClips,
-      selectedClipId: secondClip.id, // Select the second clip after split
+      selectedClipIds: new Set([secondClip.id]), // Select the second clip after split
     });
 
     updateDuration();
@@ -746,7 +769,9 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
 
   // Split the clip under the playhead (or selected clip if playhead is on it)
   splitClipAtPlayhead: () => {
-    const { clips, playheadPosition, selectedClipId, splitClip } = get();
+    const { clips, playheadPosition, selectedClipIds, splitClip } = get();
+    // Get first selected clip ID for checking if it's at playhead
+    const selectedClipId = selectedClipIds.size > 0 ? [...selectedClipIds][0] : null;
 
     // Find clips at the current playhead position
     const clipsAtPlayhead = clips.filter(c =>
@@ -863,5 +888,66 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
       ),
     });
     invalidateCache();
+  },
+
+  // Create a linked group from selected clips (multicam sync)
+  createLinkedGroup: (clipIds, offsets) => {
+    const { clips, invalidateCache } = get();
+    const groupId = `multicam-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+
+    // Find the earliest start time among selected clips to use as anchor
+    const selectedClips = clips.filter(c => clipIds.includes(c.id));
+    if (selectedClips.length === 0) return;
+
+    // Find clip with 0 offset (master) and use its start time as reference
+    let masterStartTime = selectedClips[0].startTime;
+    for (const clipId of clipIds) {
+      const offset = offsets.get(clipId);
+      if (offset === 0) {
+        const masterClip = clips.find(c => c.id === clipId);
+        if (masterClip) {
+          masterStartTime = masterClip.startTime;
+          break;
+        }
+      }
+    }
+
+    set({
+      clips: clips.map(c => {
+        if (!clipIds.includes(c.id)) return c;
+
+        const offset = offsets.get(c.id) || 0;
+        const offsetSeconds = offset / 1000; // Convert ms to seconds
+
+        return {
+          ...c,
+          linkedGroupId: groupId,
+          // Adjust start time based on audio sync offset
+          startTime: Math.max(0, masterStartTime - offsetSeconds),
+        };
+      }),
+    });
+
+    invalidateCache();
+    console.log(`[Multicam] Created linked group ${groupId} with ${clipIds.length} clips`);
+  },
+
+  // Remove a clip from its linked group (unlink multicam)
+  unlinkGroup: (clipId) => {
+    const { clips, invalidateCache } = get();
+    const clip = clips.find(c => c.id === clipId);
+    if (!clip?.linkedGroupId) return;
+
+    const groupId = clip.linkedGroupId;
+
+    // Remove linkedGroupId from all clips in the group
+    set({
+      clips: clips.map(c =>
+        c.linkedGroupId === groupId ? { ...c, linkedGroupId: undefined } : c
+      ),
+    });
+
+    invalidateCache();
+    console.log(`[Multicam] Unlinked group ${groupId}`);
   },
 });

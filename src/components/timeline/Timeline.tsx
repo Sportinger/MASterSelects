@@ -38,7 +38,7 @@ export function Timeline() {
     zoom,
     scrollX,
     isPlaying,
-    selectedClipId,
+    selectedClipIds,
     inPoint,
     outPoint,
     addTrack,
@@ -48,6 +48,11 @@ export function Timeline() {
     trimClip,
     removeClip,
     selectClip,
+    addClipToSelection,
+    removeClipFromSelection,
+    clearClipSelection,
+    createLinkedGroup,
+    unlinkGroup,
     setPlayheadPosition,
     setZoom,
     setScrollX,
@@ -136,6 +141,9 @@ export function Timeline() {
   // Transcript markers visibility toggle
   const [showTranscriptMarkers, setShowTranscriptMarkers] = useState(true);
   const dragDurationCacheRef = useRef<{ url: string; duration: number } | null>(null);
+
+  // Multicam dialog state
+  const [multicamDialogOpen, setMulticamDialogOpen] = useState(false);
 
   // Performance: Create lookup maps for O(1) clip/track access
   const clipMap = useMemo(() => new Map(clips.map(c => [c.id, c])), [clips]);
@@ -242,11 +250,12 @@ export function Timeline() {
         return;
       }
 
-      // Delete/Backspace: remove selected clip from timeline
+      // Delete/Backspace: remove selected clips from timeline
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
-        if (selectedClipId) {
-          removeClip(selectedClipId);
+        if (selectedClipIds.size > 0) {
+          // Remove all selected clips
+          [...selectedClipIds].forEach(clipId => removeClip(clipId));
         }
         return;
       }
@@ -265,8 +274,10 @@ export function Timeline() {
         (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '_')
       ) {
         e.preventDefault();
-        if (selectedClipId) {
-          const clip = clipMap.get(selectedClipId);
+        // Apply to first selected clip
+        const firstSelectedId = selectedClipIds.size > 0 ? [...selectedClipIds][0] : null;
+        if (firstSelectedId) {
+          const clip = clipMap.get(firstSelectedId);
           if (clip) {
             const currentMode = clip.transform.blendMode;
             const currentIndex = ALL_BLEND_MODES.indexOf(currentMode);
@@ -275,7 +286,10 @@ export function Timeline() {
               (currentIndex + direction + ALL_BLEND_MODES.length) %
               ALL_BLEND_MODES.length;
             const nextMode = ALL_BLEND_MODES[nextIndex];
-            updateClipTransform(selectedClipId, { blendMode: nextMode });
+            // Apply to all selected clips
+            [...selectedClipIds].forEach(clipId => {
+              updateClipTransform(clipId, { blendMode: nextMode });
+            });
           }
         }
         return;
@@ -314,7 +328,7 @@ export function Timeline() {
     setOutPointAtPlayhead,
     clearInOut,
     toggleLoopPlayback,
-    selectedClipId,
+    selectedClipIds,
     removeClip,
     splitClipAtPlayhead,
     clipMap,
@@ -356,14 +370,18 @@ export function Timeline() {
     (e: React.MouseEvent, clipId: string) => {
       e.preventDefault();
       e.stopPropagation();
-      selectClip(clipId);
+      // If right-clicking on an unselected clip, select only that one
+      // If right-clicking on a selected clip, keep the current multi-selection
+      if (!selectedClipIds.has(clipId)) {
+        selectClip(clipId);
+      }
       setContextMenu({
         x: e.clientX,
         y: e.clientY,
         clipId,
       });
     },
-    [selectClip]
+    [selectClip, selectedClipIds]
   );
 
   // Get the media file for a clip (helper function)
@@ -1487,11 +1505,21 @@ export function Timeline() {
       const clip = clipMap.get(clipId);
       if (!clip) return;
 
+      // Shift+Click: Toggle selection (add/remove from multi-selection)
+      if (e.shiftKey) {
+        selectClip(clipId, true); // addToSelection = true
+        return; // Don't start drag on shift+click
+      }
+
+      // If clip is not selected, select only this clip
+      // If clip is already selected (part of multi-selection), keep selection
+      if (!selectedClipIds.has(clipId)) {
+        selectClip(clipId);
+      }
+
       const clipElement = e.currentTarget as HTMLElement;
       const clipRect = clipElement.getBoundingClientRect();
       const grabOffsetX = e.clientX - clipRect.left;
-
-      selectClip(clipId);
 
       const initialDrag: ClipDragState = {
         clipId,
@@ -1502,6 +1530,7 @@ export function Timeline() {
         currentTrackId: clip.trackId,
         snappedTime: null,
         isSnapping: false,
+        altKeyPressed: e.altKey, // Capture Alt state for independent drag
       };
       setClipDrag(initialDrag);
       clipDragRef.current = initialDrag;
@@ -1538,6 +1567,7 @@ export function Timeline() {
           currentTrackId: newTrackId,
           snappedTime: snapped ? snappedTime : null,
           isSnapping: snapped,
+          altKeyPressed: moveEvent.altKey, // Update Alt state dynamically
         };
         setClipDrag(newDrag);
         clipDragRef.current = newDrag;
@@ -1549,7 +1579,8 @@ export function Timeline() {
           const rect = timelineRef.current.getBoundingClientRect();
           const x = upEvent.clientX - rect.left + scrollX - drag.grabOffsetX;
           const newStartTime = Math.max(0, pixelToTime(x));
-          moveClip(drag.clipId, newStartTime, drag.currentTrackId);
+          // Pass skipGroup (altKeyPressed) to moveClip for independent drag
+          moveClip(drag.clipId, newStartTime, drag.currentTrackId, false, drag.altKeyPressed);
         }
         setClipDrag(null);
         clipDragRef.current = null;
@@ -1560,7 +1591,7 @@ export function Timeline() {
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
     },
-    [clipMap, tracks, scrollX, pixelToTime, selectClip, getSnappedPosition, moveClip]
+    [clipMap, tracks, scrollX, pixelToTime, selectClip, selectedClipIds, getSnappedPosition, moveClip]
   );
 
   // Handle trim start
@@ -1971,7 +2002,8 @@ export function Timeline() {
           track={track}
           tracks={tracks}
           clips={clips}
-          isSelected={selectedClipId === clip.id}
+          isSelected={selectedClipIds.has(clip.id)}
+          isInLinkedGroup={!!clip.linkedGroupId}
           isDragging={isDragging}
           isTrimming={isTrimming}
           isLinkedToDragging={!!isLinkedToDragging}
@@ -1999,7 +2031,7 @@ export function Timeline() {
       trackMap,
       clipMap,
       clips,
-      selectedClipId,
+      selectedClipIds,
       clipDrag,
       clipTrim,
       zoom,
@@ -2097,7 +2129,7 @@ export function Timeline() {
                   isExpanded={isExpanded}
                   dynamicHeight={dynamicHeight}
                   hasKeyframes={trackHasKeyframes(track.id)}
-                  selectedClipId={selectedClipId}
+                  selectedClipIds={selectedClipIds}
                   clips={clips}
                   onToggleExpand={() => toggleTrackExpanded(track.id)}
                   onToggleSolo={() =>
@@ -2146,7 +2178,7 @@ export function Timeline() {
                   externalDrag?.trackId === track.id ||
                   externalDrag?.audioTrackId === track.id
                 }
-                selectedClipId={selectedClipId}
+                selectedClipIds={selectedClipIds}
                 clipDrag={clipDrag}
                 clipTrim={clipTrim}
                 externalDrag={externalDrag}

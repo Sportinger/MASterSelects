@@ -814,6 +814,8 @@ export const useMediaStore = create<MediaState>()(
             return;
           }
 
+          console.log(`[Proxy] Starting generation for ${mediaFile.name}...`);
+
           // If no proxy folder is set and File System Access API is supported, ask user to pick one
           // We show the folder picker directly (user can cancel if they don't want to pick)
           if (fileSystemService.isSupported() && !fileSystemService.hasProxyFolder()) {
@@ -918,7 +920,7 @@ export const useMediaStore = create<MediaState>()(
                     : f
                 ),
               });
-              console.log('[Proxy] Completed for:', mediaFile.name);
+              console.log(`[Proxy] Complete: ${result.frameCount} frames for ${mediaFile.name}`);
             } else if (!controller.cancelled) {
               setProxyStatus(mediaFileId, 'error');
             }

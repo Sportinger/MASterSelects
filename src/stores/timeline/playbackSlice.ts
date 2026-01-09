@@ -107,6 +107,8 @@ export const createPlaybackSlice: SliceCreator<PlaybackAndRamPreviewActions> = (
     // Don't start if RAM Preview is disabled or already running
     if (!ramPreviewEnabled || isRamPreviewing) return;
 
+    console.log('[RAM Preview] Starting generation...');
+
     // Determine range to preview (use In/Out or clips extent)
     const start = inPoint ?? 0;
     const end = outPoint ?? (clips.length > 0
@@ -358,6 +360,9 @@ export const createPlaybackSlice: SliceCreator<PlaybackAndRamPreviewActions> = (
           ramPreviewRange: { start, end },
           ramPreviewProgress: null
         });
+        console.log(`[RAM Preview] Complete: ${totalFrames} frames cached (${start.toFixed(1)}s - ${end.toFixed(1)}s)`);
+      } else {
+        console.log('[RAM Preview] Cancelled');
       }
     } catch (error) {
       console.error('[RAM Preview] Error:', error);

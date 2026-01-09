@@ -132,6 +132,7 @@ function TimelineClipComponent({
   track,
   clips,
   isSelected,
+  isInLinkedGroup,
   isDragging,
   isTrimming,
   isLinkedToDragging,
@@ -251,6 +252,7 @@ function TimelineClipComponent({
   const clipClass = [
     'timeline-clip',
     isSelected ? 'selected' : '',
+    isInLinkedGroup ? 'linked-group' : '',
     isDragging ? 'dragging' : '',
     isLinkedToDragging ? 'linked-dragging' : '',
     isTrimming ? 'trimming' : '',

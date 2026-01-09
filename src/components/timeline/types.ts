@@ -12,6 +12,7 @@ export interface ClipDragState {
   currentTrackId: string;
   snappedTime: number | null;  // Snapped position (if snapping)
   isSnapping: boolean;         // Whether currently snapping
+  altKeyPressed: boolean;      // If true, skip linked group movement (independent drag)
 }
 
 // Clip trim state
@@ -102,7 +103,7 @@ export interface TimelineHeaderProps {
   isExpanded: boolean;
   dynamicHeight: number;
   hasKeyframes: boolean;
-  selectedClipId: string | null;
+  selectedClipIds: Set<string>;
   clips: TimelineClip[];
   onToggleExpand: () => void;
   onToggleSolo: () => void;
@@ -131,7 +132,7 @@ export interface TimelineTrackProps {
   dynamicHeight: number;
   isDragTarget: boolean;
   isExternalDragTarget: boolean;
-  selectedClipId: string | null;
+  selectedClipIds: Set<string>;
   clipDrag: ClipDragState | null;
   clipTrim: ClipTrimState | null;
   externalDrag: ExternalDragState | null;
@@ -169,6 +170,7 @@ export interface TimelineClipProps {
   tracks: TimelineTrack[];
   clips: TimelineClip[];
   isSelected: boolean;
+  isInLinkedGroup: boolean;  // True if clip has linkedGroupId (multicam)
   isDragging: boolean;
   isTrimming: boolean;
   isLinkedToDragging: boolean;

@@ -5,7 +5,10 @@ import { useTimelineStore } from '../../stores/timeline';
 import './AnalysisPanel.css';
 
 export function AnalysisPanel() {
-  const { clips, selectedClipId } = useTimelineStore();
+  const { clips, selectedClipIds } = useTimelineStore();
+
+  // Get first selected clip ID
+  const selectedClipId = selectedClipIds.size > 0 ? [...selectedClipIds][0] : null;
 
   // Get selected clip
   const selectedClip = useMemo(() => {

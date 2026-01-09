@@ -474,7 +474,7 @@ function MaskItem({ clipId, mask, isActive, onSelect }: MaskItemProps) {
 export function ClipPropertiesPanel() {
   const {
     clips,
-    selectedClipId,
+    selectedClipIds,
     setPropertyValue,
     playheadPosition,
     getInterpolatedTransform,
@@ -486,6 +486,8 @@ export function ClipPropertiesPanel() {
     setMaskEditMode,
     updateClipTransform,
   } = useTimelineStore();
+  // Get first selected clip for properties panel
+  const selectedClipId = selectedClipIds.size > 0 ? [...selectedClipIds][0] : null;
   const selectedClip = clips.find(c => c.id === selectedClipId);
   const [showMaskMenu, setShowMaskMenu] = useState(false);
 

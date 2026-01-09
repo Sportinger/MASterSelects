@@ -238,7 +238,7 @@ function TimelineTrackComponent({
   dynamicHeight,
   isDragTarget,
   isExternalDragTarget,
-  selectedClipId,
+  selectedClipIds,
   clipDrag,
   externalDrag,
   onDrop,
@@ -253,7 +253,7 @@ function TimelineTrackComponent({
 }: TimelineTrackProps) {
   // Get clips belonging to this track
   const trackClips = clips.filter((c) => c.trackId === track.id);
-  const selectedTrackClip = trackClips.find((c) => c.id === selectedClipId);
+  const selectedTrackClip = trackClips.find((c) => selectedClipIds.has(c.id));
 
   return (
     <div

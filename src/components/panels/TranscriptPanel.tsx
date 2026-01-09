@@ -119,10 +119,13 @@ export function TranscriptPanel() {
   // Timeline store
   const {
     clips,
-    selectedClipId,
+    selectedClipIds,
     playheadPosition,
     setPlayheadPosition,
   } = useTimelineStore();
+
+  // Get first selected clip ID
+  const selectedClipId = selectedClipIds.size > 0 ? [...selectedClipIds][0] : null;
 
   // Get selected clip or first clip with transcript
   const selectedClip = useMemo(() => {

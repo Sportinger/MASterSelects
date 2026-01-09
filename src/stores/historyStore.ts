@@ -13,7 +13,7 @@ interface StateSnapshot {
   timeline: {
     clips: any[];
     tracks: any[];
-    selectedClipId: string | null;
+    selectedClipIds: string[];
     zoom: number;
     scrollX: number;
   };
@@ -144,7 +144,7 @@ function createSnapshot(label: string): StateSnapshot {
     timeline: {
       clips: deepClone(timeline.clips || []),
       tracks: deepClone(timeline.tracks || []),
-      selectedClipId: timeline.selectedClipId || null,
+      selectedClipIds: timeline.selectedClipIds ? [...timeline.selectedClipIds] : [],
       zoom: timeline.zoom || 50,
       scrollX: timeline.scrollX || 0,
     },
@@ -178,7 +178,7 @@ function applySnapshot(snapshot: StateSnapshot) {
     setTimelineState({
       clips: deepClone(snapshot.timeline.clips),
       tracks: deepClone(snapshot.timeline.tracks),
-      selectedClipId: snapshot.timeline.selectedClipId,
+      selectedClipIds: new Set(snapshot.timeline.selectedClipIds || []),
       zoom: snapshot.timeline.zoom,
       scrollX: snapshot.timeline.scrollX,
     });

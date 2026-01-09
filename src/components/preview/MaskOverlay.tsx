@@ -90,7 +90,7 @@ export function MaskOverlay({ canvasWidth, canvasHeight }: MaskOverlayProps) {
 
   const {
     clips,
-    selectedClipId,
+    selectedClipIds,
     maskEditMode,
     activeMaskId,
     selectedVertexIds,
@@ -104,6 +104,8 @@ export function MaskOverlay({ canvasWidth, canvasHeight }: MaskOverlayProps) {
     setActiveMask,
   } = useTimelineStore();
 
+  // Get first selected clip for mask editing
+  const selectedClipId = selectedClipIds.size > 0 ? [...selectedClipIds][0] : null;
   const selectedClip = clips.find(c => c.id === selectedClipId);
   const activeMask = selectedClip?.masks?.find(m => m.id === activeMaskId);
 
