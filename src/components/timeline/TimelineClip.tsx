@@ -162,6 +162,11 @@ function TimelineClipComponent({
     clip.file?.type?.startsWith('audio/') ||
     audioExtensions.includes(fileExt);
 
+  // Debug: log if audio clip has thumbnails (shouldn't happen)
+  if (isAudioClip && thumbnails.length > 0) {
+    console.warn(`[TimelineClip] Audio clip "${clip.name}" has ${thumbnails.length} thumbnails - this shouldn't happen!`);
+  }
+
   const isGeneratingProxy = proxyStatus === 'generating';
   const hasProxy = proxyStatus === 'ready';
 
