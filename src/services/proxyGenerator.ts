@@ -48,11 +48,8 @@ interface MP4File {
   getTrackById: (id: number) => any;
 }
 
-// ProxyFrame type is used internally by workers but kept for documentation
-type _ProxyFrame = {
-  frameIndex: number;
-  blob: Blob;
-}; void (_ProxyFrame);
+// ProxyFrame documents the data format used by encoding workers:
+// { frameIndex: number, blob: Blob }
 
 interface GeneratorResult {
   frameCount: number;
@@ -105,8 +102,6 @@ class ProxyGeneratorGPU {
   private isCancelled = false;
 
   private resolveGeneration: ((result: GeneratorResult | null) => void) | null = null;
-  // Note: rejectGeneration is stored for potential future error handling
-  private _rejectGeneration: ((error: Error) => void) | null = null;
 
   constructor() {
     this.initWorkers();
@@ -182,9 +177,8 @@ class ProxyGeneratorGPU {
     this.decodedFrames.clear();
     this.frameTimestamps = [];
 
-    return new Promise(async (resolve, reject) => {
+    return new Promise(async (resolve, _reject) => {
       this.resolveGeneration = resolve;
-      this._rejectGeneration = reject;
 
       try {
         // Check for WebCodecs support
@@ -221,7 +215,7 @@ class ProxyGeneratorGPU {
 
       } catch (error) {
         console.error('[ProxyGen] Generation failed:', error);
-        reject(error);
+        _reject(error);
       }
     });
   }
@@ -229,7 +223,7 @@ class ProxyGeneratorGPU {
   private async loadWithMP4Box(file: File): Promise<boolean> {
     return new Promise(async (resolve) => {
       this.mp4File = MP4Box.createFile();
-      const mp4File = this.mp4File;
+      const mp4File = this.mp4File!;
 
       mp4File.onReady = (info: { videoTracks: MP4VideoTrack[] }) => {
         if (info.videoTracks.length === 0) {

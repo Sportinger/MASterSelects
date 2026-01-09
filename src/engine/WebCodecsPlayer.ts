@@ -81,8 +81,6 @@ export class WebCodecsPlayer {
   private onError?: (error: Error) => void;
 
   // Stream mode (MediaStreamTrackProcessor)
-  // Note: useStreamMode is set but only used as a flag for cleanup/destroy
-  private _useStreamMode = false;
   private streamReader: ReadableStreamDefaultReader<VideoFrame> | null = null;
   private streamActive = false;
 
@@ -92,7 +90,6 @@ export class WebCodecsPlayer {
     this.onReady = options.onReady;
     this.onError = options.onError;
     this.useSimpleMode = options.useSimpleMode ?? false;
-    this._useStreamMode = options.useStreamMode ?? false;
   }
 
   // Stream mode: Use captureStream + MediaStreamTrackProcessor for best performance
@@ -102,7 +99,6 @@ export class WebCodecsPlayer {
       throw new Error('MediaStreamTrackProcessor not supported');
     }
 
-    this._useStreamMode = true;
     this.isAttachedToExternal = true;
     this.videoElement = video;
     this.width = video.videoWidth;
@@ -328,7 +324,7 @@ export class WebCodecsPlayer {
       }, 10000);
 
       this.mp4File = MP4Box.createFile();
-      const mp4File = this.mp4File;
+      const mp4File = this.mp4File!;
 
       mp4File.onReady = (info) => {
         console.log(`[WebCodecs] MP4 onReady: ${info.videoTracks.length} video tracks`);
@@ -732,7 +728,6 @@ export class WebCodecsPlayer {
     }
 
     this.isAttachedToExternal = false;
-    this._useStreamMode = false;
 
     // Full mode cleanup
     if (this.decoder) {
