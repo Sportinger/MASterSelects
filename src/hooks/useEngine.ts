@@ -4,6 +4,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { engine } from '../engine/WebGPUEngine';
 import { useMixerStore } from '../stores/mixerStore';
 import { useTimelineStore } from '../stores/timeline';
+import { useSettingsStore } from '../stores/settingsStore';
 import type { ClipMask, MaskVertex } from '../types';
 import { generateMaskTexture } from '../utils/maskRenderer';
 
@@ -49,6 +50,43 @@ export function useEngine() {
     if (isEngineReady && canvasRef.current) {
       engine.setPreviewCanvas(canvasRef.current);
     }
+  }, [isEngineReady]);
+
+  // Update engine resolution when outputResolution or previewQuality changes
+  useEffect(() => {
+    if (!isEngineReady) return;
+
+    const updateResolution = () => {
+      const { outputResolution } = useMixerStore.getState();
+      const { previewQuality } = useSettingsStore.getState();
+
+      // Apply preview quality scaling to base resolution
+      const scaledWidth = Math.round(outputResolution.width * previewQuality);
+      const scaledHeight = Math.round(outputResolution.height * previewQuality);
+
+      engine.setResolution(scaledWidth, scaledHeight);
+      console.log(`[Engine] Resolution set to ${scaledWidth}×${scaledHeight} (${previewQuality * 100}% of ${outputResolution.width}×${outputResolution.height})`);
+    };
+
+    // Initial update
+    updateResolution();
+
+    // Subscribe to outputResolution changes
+    const unsubscribeMixer = useMixerStore.subscribe(
+      (state) => state.outputResolution,
+      () => updateResolution()
+    );
+
+    // Subscribe to previewQuality changes
+    const unsubscribeSettings = useSettingsStore.subscribe(
+      (state) => state.previewQuality,
+      () => updateResolution()
+    );
+
+    return () => {
+      unsubscribeMixer();
+      unsubscribeSettings();
+    };
   }, [isEngineReady]);
 
   // Track mask changes and update engine mask textures

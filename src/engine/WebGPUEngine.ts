@@ -1214,9 +1214,19 @@ export class WebGPUEngine {
   }
 
   setResolution(width: number, height: number): void {
+    // Skip if resolution hasn't changed
+    if (this.outputWidth === width && this.outputHeight === height) return;
+
     this.outputWidth = width;
     this.outputHeight = height;
     this.createPingPongTextures();
+
+    // Clear caches since they contain frames at old resolution
+    if (this.scrubbingCache) {
+      this.scrubbingCache.clearCompositeCache();
+      this.scrubbingCache.clearScrubbingCache();
+      console.log(`[Engine] Caches cleared for resolution change to ${width}×${height}`);
+    }
   }
 
   getDevice(): GPUDevice | null {

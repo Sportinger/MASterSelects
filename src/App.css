@@ -193,6 +193,13 @@ input, textarea {
   margin-left: 24px;
 }
 
+.menu-option .menu-hint {
+  color: var(--text-muted);
+  font-size: 10px;
+  margin-left: auto;
+  padding-left: 12px;
+}
+
 .menu-option.checked {
   color: var(--accent);
 }
@@ -1539,6 +1546,196 @@ input, textarea {
 
 .properties-tab-content.masks-tab .section-header-with-button {
   margin-bottom: 8px;
+}
+
+/* Transcript Tab (embedded in PropertiesPanel) */
+.properties-tab-content.transcript-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.transcript-tab-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.transcript-progress-bar {
+  height: 4px;
+  background: var(--bg-tertiary);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.transcript-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+.transcript-progress-text {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.transcript-search-input {
+  width: 100%;
+  padding: 6px 10px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.transcript-content-embedded {
+  flex: 1;
+  min-height: 100px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 8px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+}
+
+.transcript-empty-state {
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-align: center;
+  padding: 20px;
+}
+
+.transcript-words-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  line-height: 1.6;
+}
+
+.transcript-word-inline {
+  cursor: pointer;
+  padding: 1px 2px;
+  border-radius: 2px;
+  font-size: 12px;
+  transition: background 0.15s;
+}
+
+.transcript-word-inline:hover {
+  background: var(--bg-hover);
+}
+
+.transcript-word-inline.active {
+  background: var(--accent);
+  color: var(--bg-primary);
+}
+
+.transcript-word-inline.highlighted {
+  background: rgba(255, 200, 0, 0.3);
+}
+
+.transcript-status-bar {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+/* Analysis Tab (embedded in PropertiesPanel) */
+.properties-tab-content.analysis-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.analysis-tab-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.analysis-progress-bar {
+  height: 4px;
+  background: var(--bg-tertiary);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.analysis-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+.analysis-progress-text {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.analysis-realtime-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.analysis-metric {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.analysis-metric .metric-label {
+  width: 60px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.analysis-metric .metric-bar {
+  flex: 1;
+  height: 8px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.analysis-metric .metric-fill {
+  height: 100%;
+  transition: width 0.15s ease;
+}
+
+.analysis-metric .metric-fill.focus {
+  background: #4ade80;
+}
+
+.analysis-metric .metric-fill.motion {
+  background: #60a5fa;
+}
+
+.analysis-metric .metric-value {
+  width: 40px;
+  font-size: 11px;
+  text-align: right;
+}
+
+.analysis-stats-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.analysis-stats-grid .stat-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+}
+
+.analysis-stats-grid .stat-row span:first-child {
+  color: var(--text-secondary);
+}
+
+.analysis-empty-state {
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-align: center;
+  padding: 20px;
 }
 
 /* Clip type badge in header */

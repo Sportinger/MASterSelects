@@ -6,7 +6,7 @@ import { useMixerStore } from '../../stores/mixerStore';
 import { useDockStore } from '../../stores/dockStore';
 import { PANEL_CONFIGS, type PanelType } from '../../types/dock';
 import { useMediaStore } from '../../stores/mediaStore';
-import { useSettingsStore } from '../../stores/settingsStore';
+import { useSettingsStore, type PreviewQuality } from '../../stores/settingsStore';
 import { useMIDI } from '../../hooks/useMIDI';
 import { SettingsDialog } from './SettingsDialog';
 import type { StoredProject } from '../../services/projectDB';
@@ -35,7 +35,7 @@ export function Toolbar() {
     isLoading,
   } = useMediaStore();
   const { isSupported: midiSupported, isEnabled: midiEnabled, enableMIDI, disableMIDI, devices } = useMIDI();
-  const { isSettingsOpen, openSettings, closeSettings } = useSettingsStore();
+  const { isSettingsOpen, openSettings, closeSettings, previewQuality, setPreviewQuality } = useSettingsStore();
 
   const [openMenu, setOpenMenu] = useState<MenuId>(null);
   const [projects, setProjects] = useState<StoredProject[]>([]);
@@ -299,6 +299,23 @@ export function Toolbar() {
                     onClick={() => { setResolution(w, h); closeMenu(); }}
                   >
                     <span>{outputResolution.width === w && outputResolution.height === h ? '✓ ' : '   '}{label}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="menu-submenu">
+                <span className="menu-label">Preview Quality</span>
+                {([
+                  { value: 1 as PreviewQuality, label: 'Full (100%)', desc: '1920×1080' },
+                  { value: 0.5 as PreviewQuality, label: 'Half (50%)', desc: '960×540 - 4× faster' },
+                  { value: 0.25 as PreviewQuality, label: 'Quarter (25%)', desc: '480×270 - 16× faster' },
+                ]).map(({ value, label, desc }) => (
+                  <button
+                    key={value}
+                    className={`menu-option ${previewQuality === value ? 'checked' : ''}`}
+                    onClick={() => { setPreviewQuality(value); closeMenu(); }}
+                  >
+                    <span>{previewQuality === value ? '✓ ' : '   '}{label}</span>
+                    <span className="menu-hint">{desc}</span>
                   </button>
                 ))}
               </div>
