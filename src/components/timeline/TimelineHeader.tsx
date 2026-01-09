@@ -120,6 +120,22 @@ function PropertyRow({
     return 0.1;
   };
 
+  // Get default value for property
+  const getDefaultValue = () => {
+    if (prop === 'opacity') return 1;
+    if (prop.startsWith('scale')) return 1;
+    if (prop.startsWith('rotation')) return 0;
+    if (prop.startsWith('position')) return 0;
+    return 0;
+  };
+
+  // Reset to default value (right-click)
+  const handleRightClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!isWithinClip) return;
+    setPropertyValue(clipId, prop as AnimatableProperty, getDefaultValue());
+  };
+
   // Handle value scrubbing (left-click drag)
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return; // Left click only
@@ -197,8 +213,8 @@ function PropertyRow({
       <span
         className="property-value"
         onMouseDown={handleMouseDown}
-        onContextMenu={(e) => e.preventDefault()}
-        title="Drag to scrub (Shift+Alt for slow)"
+        onContextMenu={handleRightClick}
+        title="Drag to scrub, Right-click to reset"
       >
         {isWithinClip ? formatValue(currentValue, prop) : '—'}
       </span>
