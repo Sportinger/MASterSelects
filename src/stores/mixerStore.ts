@@ -832,6 +832,14 @@ function getDefaultEffectParams(type: string): Record<string, number | boolean |
       return { amount: 0.01, angle: 0 };
     case 'levels':
       return { inputBlack: 0, inputWhite: 1, gamma: 1, outputBlack: 0, outputWhite: 1 };
+    // Audio effects
+    case 'audio-eq':
+      return {
+        band31: 0, band62: 0, band125: 0, band250: 0, band500: 0,
+        band1k: 0, band2k: 0, band4k: 0, band8k: 0, band16k: 0
+      };
+    case 'audio-volume':
+      return { volume: 1 };
     default:
       return {};
   }

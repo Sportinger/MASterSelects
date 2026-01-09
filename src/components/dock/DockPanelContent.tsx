@@ -2,7 +2,7 @@
 
 import type { DockPanel, PreviewPanelData } from '../../types/dock';
 import { Preview } from '../preview';
-import { EffectsPanel, ClipPropertiesPanel, LayerPanel, MediaPanel, MultiCamPanel, TranscriptPanel, AnalysisPanel, AIChatPanel } from '../panels';
+import { EffectsPanel, ClipPropertiesPanel, LayerPanel, MediaPanel, MultiCamPanel, TranscriptPanel, AnalysisPanel, AudioPanel, AIChatPanel } from '../panels';
 import { ExportPanel } from '../export';
 import { Timeline } from '../timeline';
 
@@ -33,6 +33,8 @@ export function DockPanelContent({ panel }: DockPanelContentProps) {
       return <TranscriptPanel />;
     case 'analysis':
       return <AnalysisPanel />;
+    case 'audio':
+      return <AudioPanel />;
     case 'ai-chat':
       return <AIChatPanel />;
     default:
