@@ -155,9 +155,12 @@ function TimelineClipComponent({
 }: TimelineClipProps) {
   const thumbnails = clip.thumbnails || [];
 
-  // Determine if this is an audio clip (check source type or file type as fallback)
+  // Determine if this is an audio clip (check source type, MIME type, or extension as fallback)
+  const audioExtensions = ['wav', 'mp3', 'ogg', 'flac', 'aac', 'm4a', 'wma', 'aiff', 'opus'];
+  const fileExt = clip.file?.name?.split('.').pop()?.toLowerCase() || '';
   const isAudioClip = clip.source?.type === 'audio' ||
-    (!clip.source?.type && clip.file?.type?.startsWith('audio/'));
+    clip.file?.type?.startsWith('audio/') ||
+    audioExtensions.includes(fileExt);
 
   const isGeneratingProxy = proxyStatus === 'generating';
   const hasProxy = proxyStatus === 'ready';
