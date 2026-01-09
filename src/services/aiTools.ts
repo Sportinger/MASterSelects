@@ -430,6 +430,35 @@ export const AI_TOOLS = [
       },
     },
   },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'cutRangesFromClip',
+      description: 'Cut out multiple time ranges from a clip. This is the preferred way to remove multiple sections (like all low-focus parts). It handles clip ID changes automatically by processing from end to start.',
+      parameters: {
+        type: 'object',
+        properties: {
+          clipId: {
+            type: 'string',
+            description: 'The ID of the clip to edit',
+          },
+          ranges: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                timelineStart: { type: 'number', description: 'Start time on timeline (seconds)' },
+                timelineEnd: { type: 'number', description: 'End time on timeline (seconds)' },
+              },
+              required: ['timelineStart', 'timelineEnd'],
+            },
+            description: 'Array of time ranges to cut out (in timeline time). Use the timelineStart/timelineEnd values from findLowQualitySections.',
+          },
+        },
+        required: ['clipId', 'ranges'],
+      },
+    },
+  },
 ];
 
 // ============ TOOL HANDLERS ============
@@ -656,6 +685,96 @@ export async function executeAITool(toolName: string, args: Record<string, unkno
         return {
           success: true,
           data: { deleted, notFound, deletedCount: deleted.length },
+        };
+      }
+
+      case 'cutRangesFromClip': {
+        const clipId = args.clipId as string;
+        const ranges = args.ranges as Array<{ timelineStart: number; timelineEnd: number }>;
+
+        // Get initial clip info
+        const initialClip = timelineStore.clips.find(c => c.id === clipId);
+        if (!initialClip) {
+          return { success: false, error: `Clip not found: ${clipId}` };
+        }
+
+        const trackId = initialClip.trackId;
+        const results: Array<{ range: { start: number; end: number }; status: string }> = [];
+
+        // Sort ranges from END to START (so we don't shift positions)
+        const sortedRanges = [...ranges].sort((a, b) => b.timelineStart - a.timelineStart);
+
+        for (const range of sortedRanges) {
+          const { timelineStart, timelineEnd } = range;
+
+          // Find the clip that currently contains this range
+          // (clip IDs change after splits, so we need to find by position)
+          const currentClips = useTimelineStore.getState().clips;
+          const targetClip = currentClips.find(c =>
+            c.trackId === trackId &&
+            c.startTime <= timelineStart &&
+            c.startTime + c.duration >= timelineEnd
+          );
+
+          if (!targetClip) {
+            results.push({ range: { start: timelineStart, end: timelineEnd }, status: 'skipped - no clip at this position' });
+            continue;
+          }
+
+          const clipStart = targetClip.startTime;
+          const clipEnd = targetClip.startTime + targetClip.duration;
+
+          try {
+            // Split at the end of the range (if not at clip boundary)
+            if (timelineEnd < clipEnd - 0.01) {
+              timelineStore.splitClip(targetClip.id, timelineEnd);
+            }
+
+            // Find the clip again (it may have changed after the split)
+            const clipsAfterEndSplit = useTimelineStore.getState().clips;
+            const clipForStartSplit = clipsAfterEndSplit.find(c =>
+              c.trackId === trackId &&
+              c.startTime <= timelineStart &&
+              c.startTime + c.duration >= timelineStart + 0.01
+            );
+
+            if (!clipForStartSplit) {
+              results.push({ range: { start: timelineStart, end: timelineEnd }, status: 'error - lost clip after end split' });
+              continue;
+            }
+
+            // Split at the start of the range (if not at clip boundary)
+            if (timelineStart > clipForStartSplit.startTime + 0.01) {
+              timelineStore.splitClip(clipForStartSplit.id, timelineStart);
+            }
+
+            // Find and delete the middle clip (the unwanted section)
+            const clipsAfterSplits = useTimelineStore.getState().clips;
+            const clipToDelete = clipsAfterSplits.find(c =>
+              c.trackId === trackId &&
+              Math.abs(c.startTime - timelineStart) < 0.1
+            );
+
+            if (clipToDelete) {
+              timelineStore.removeClip(clipToDelete.id);
+              results.push({ range: { start: timelineStart, end: timelineEnd }, status: 'removed' });
+            } else {
+              results.push({ range: { start: timelineStart, end: timelineEnd }, status: 'error - could not find section to delete' });
+            }
+          } catch (err) {
+            results.push({ range: { start: timelineStart, end: timelineEnd }, status: `error: ${err}` });
+          }
+        }
+
+        const removedCount = results.filter(r => r.status === 'removed').length;
+        return {
+          success: true,
+          data: {
+            originalClipId: clipId,
+            rangesProcessed: ranges.length,
+            rangesRemoved: removedCount,
+            results,
+          },
         };
       }
 
