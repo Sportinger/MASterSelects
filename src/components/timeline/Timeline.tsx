@@ -2255,6 +2255,35 @@ export function Timeline() {
             className={`timeline-tracks ${clipDrag ? 'dragging-clip' : ''}`}
           >
             <div className="track-lanes-scroll" style={{ transform: `translateX(-${scrollX}px)` }}>
+              {/* New Video Track drop zone - at TOP above video tracks */}
+              {externalDrag && (
+                <div
+                  className={`new-track-drop-zone video ${externalDrag.newTrackType === 'video' ? 'active' : ''}`}
+                  onDragOver={(e) => handleNewTrackDragOver(e, 'video')}
+                  onDragEnter={(e) => {
+                    e.preventDefault();
+                    dragCounterRef.current++;
+                  }}
+                  onDragLeave={handleTrackDragLeave}
+                  onDrop={(e) => handleNewTrackDrop(e, 'video')}
+                >
+                  <span className="drop-zone-label">+ Drop to create new Video Track</span>
+                  {externalDrag.newTrackType === 'video' && (
+                    <div
+                      className="timeline-clip-preview video"
+                      style={{
+                        left: timeToPixel(externalDrag.startTime),
+                        width: timeToPixel(externalDrag.duration ?? 5),
+                      }}
+                    >
+                      <div className="clip-content">
+                        <span className="clip-name">New clip</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {tracks.map((track) => {
                 const isDimmed =
                   (track.type === 'video' && anyVideoSolo && !track.solo) ||
@@ -2319,63 +2348,33 @@ export function Timeline() {
               </div>
             )}
 
-          {/* "Drop to create new track" zones - always visible when dragging */}
+          {/* New Audio Track drop zone - at BOTTOM below audio tracks */}
           {externalDrag && (
-            <>
-              {/* New Video Track drop zone */}
-              <div
-                className={`new-track-drop-zone video ${externalDrag.newTrackType === 'video' ? 'active' : ''}`}
-                onDragOver={(e) => handleNewTrackDragOver(e, 'video')}
-                onDragEnter={(e) => {
-                  e.preventDefault();
-                  dragCounterRef.current++;
-                }}
-                onDragLeave={handleTrackDragLeave}
-                onDrop={(e) => handleNewTrackDrop(e, 'video')}
-              >
-                <span className="drop-zone-label">+ Drop to create new Video Track</span>
-                {externalDrag.newTrackType === 'video' && (
-                  <div
-                    className="timeline-clip-preview video"
-                    style={{
-                      left: timeToPixel(externalDrag.startTime),
-                      width: timeToPixel(externalDrag.duration ?? 5),
-                    }}
-                  >
-                    <div className="clip-content">
-                      <span className="clip-name">New clip</span>
-                    </div>
+            <div
+              className={`new-track-drop-zone audio ${externalDrag.newTrackType === 'audio' ? 'active' : ''}`}
+              onDragOver={(e) => handleNewTrackDragOver(e, 'audio')}
+              onDragEnter={(e) => {
+                e.preventDefault();
+                dragCounterRef.current++;
+              }}
+              onDragLeave={handleTrackDragLeave}
+              onDrop={(e) => handleNewTrackDrop(e, 'audio')}
+            >
+              <span className="drop-zone-label">+ Drop to create new Audio Track</span>
+              {externalDrag.newTrackType === 'audio' && (
+                <div
+                  className="timeline-clip-preview audio"
+                  style={{
+                    left: timeToPixel(externalDrag.startTime),
+                    width: timeToPixel(externalDrag.duration ?? 5),
+                  }}
+                >
+                  <div className="clip-content">
+                    <span className="clip-name">New clip</span>
                   </div>
-                )}
-              </div>
-
-              {/* New Audio Track drop zone */}
-              <div
-                className={`new-track-drop-zone audio ${externalDrag.newTrackType === 'audio' ? 'active' : ''}`}
-                onDragOver={(e) => handleNewTrackDragOver(e, 'audio')}
-                onDragEnter={(e) => {
-                  e.preventDefault();
-                  dragCounterRef.current++;
-                }}
-                onDragLeave={handleTrackDragLeave}
-                onDrop={(e) => handleNewTrackDrop(e, 'audio')}
-              >
-                <span className="drop-zone-label">+ Drop to create new Audio Track</span>
-                {externalDrag.newTrackType === 'audio' && (
-                  <div
-                    className="timeline-clip-preview audio"
-                    style={{
-                      left: timeToPixel(externalDrag.startTime),
-                      width: timeToPixel(externalDrag.duration ?? 5),
-                    }}
-                  >
-                    <div className="clip-content">
-                      <span className="clip-name">New clip</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </>
+                </div>
+              )}
+            </div>
           )}
 
           {clipDrag?.isSnapping && clipDrag.snappedTime !== null && (
