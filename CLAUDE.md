@@ -7,6 +7,11 @@
 git add . && git commit -m "description" && git push
 ```
 
+**Documentation: FEATURES.md pflegen!**
+- Bei jedem Commit mit neuen/geänderten Features: `FEATURES.md` aktualisieren
+- Falls ein bestehendes Feature auffällt, das noch nicht dokumentiert ist: hinzufügen
+- Das Feature-Handbuch dient als vollständige Referenz aller App-Funktionen
+
 ## Quick Start
 
 ```bash
