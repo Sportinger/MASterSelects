@@ -401,8 +401,6 @@ export class OpticalFlowAnalyzer {
     let w = ANALYSIS_WIDTH;
     let h = ANALYSIS_HEIGHT;
     for (let level = 1; level < PYRAMID_LEVELS; level++) {
-      const srcW = w;
-      const srcH = h;
       w = Math.max(1, Math.floor(w / 2));
       h = Math.max(1, Math.floor(h / 2));
 
@@ -614,7 +612,6 @@ export class OpticalFlowAnalyzer {
   private classifyMotion(stats: FlowStats): MotionResult {
     // Normalize motion magnitude (typical range 0-20 pixels/frame → 0-1)
     const normalizedMean = Math.min(1, stats.meanMagnitude / 10);
-    const normalizedMax = Math.min(1, stats.maxMagnitude / 20);
 
     // Scene cut detection: sudden high motion across most of the frame
     const isSceneCut = stats.meanMagnitude > SCENE_CUT_THRESHOLD &&
