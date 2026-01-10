@@ -1,7 +1,6 @@
 // ParentChildLink component - Visual connection line between parent and child clips
 // Renders a dashed line from child clip to parent clip in the timeline
 
-import { memo, useMemo } from 'react';
 import type { TimelineClip, TimelineTrack } from '../../types';
 
 interface ParentChildLinkProps {
@@ -14,7 +13,8 @@ interface ParentChildLinkProps {
   getTrackYPosition: (trackId: string) => number;
 }
 
-function ParentChildLinkComponent({
+// Not memoized - needs to update in realtime when clips move
+export function ParentChildLink({
   childClip,
   parentClip,
   tracks: _tracks,
@@ -23,21 +23,15 @@ function ParentChildLinkComponent({
   trackHeaderWidth,
   getTrackYPosition,
 }: ParentChildLinkProps) {
-  // Calculate positions
-  const positions = useMemo(() => {
-    // Child position (start of clip)
-    const childX = trackHeaderWidth + (childClip.startTime * zoom) - scrollX;
-    const childY = getTrackYPosition(childClip.trackId);
+  // Calculate positions directly (no useMemo to ensure realtime updates)
+  // Child position (start of clip)
+  const childX = trackHeaderWidth + (childClip.startTime * zoom) - scrollX;
+  const childY = getTrackYPosition(childClip.trackId);
 
-    // Parent position (center of clip for better visibility)
-    const parentCenterTime = parentClip.startTime + parentClip.duration / 2;
-    const parentX = trackHeaderWidth + (parentCenterTime * zoom) - scrollX;
-    const parentY = getTrackYPosition(parentClip.trackId);
-
-    return { childX, childY, parentX, parentY };
-  }, [childClip, parentClip, zoom, scrollX, trackHeaderWidth, getTrackYPosition]);
-
-  const { childX, childY, parentX, parentY } = positions;
+  // Parent position (center of clip for better visibility)
+  const parentCenterTime = parentClip.startTime + parentClip.duration / 2;
+  const parentX = trackHeaderWidth + (parentCenterTime * zoom) - scrollX;
+  const parentY = getTrackYPosition(parentClip.trackId);
 
   // Don't render if both are off-screen
   if (childX < -100 && parentX < -100) return null;
@@ -76,5 +70,3 @@ function ParentChildLinkComponent({
     </g>
   );
 }
-
-export const ParentChildLink = memo(ParentChildLinkComponent);

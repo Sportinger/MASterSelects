@@ -2735,37 +2735,39 @@ input[type="checkbox"] {
 
 /* Parent-child link connection lines */
 .parent-child-link {
-  stroke: var(--accent);
+  stroke: #e5c07b;
   stroke-width: 1.5;
   stroke-dasharray: 4 2;
-  opacity: 0.6;
+  opacity: 0.7;
   fill: none;
 }
 
 .parent-child-link-endpoint {
-  fill: var(--accent);
-  opacity: 0.8;
+  fill: #e5c07b;
+  opacity: 0.9;
 }
 
 .parent-child-link-start {
-  fill: var(--accent);
-  opacity: 0.6;
+  fill: #e5c07b;
+  opacity: 0.7;
 }
 
 .parent-child-link-group:hover .parent-child-link {
   opacity: 1;
   stroke-width: 2;
+  stroke: #f0d090;
 }
 
 .parent-child-link-group:hover .parent-child-link-endpoint,
 .parent-child-link-group:hover .parent-child-link-start {
   opacity: 1;
+  fill: #f0d090;
 }
 
 /* Clip with parent indicator */
 .timeline-clip.has-parent {
-  border-color: var(--accent) !important;
-  box-shadow: 0 0 6px rgba(var(--accent-rgb, 96, 165, 250), 0.3);
+  border-color: #e5c07b !important;
+  box-shadow: 0 0 6px rgba(229, 192, 123, 0.3);
 }
 
 .timeline-clip.has-parent::after {
@@ -2775,7 +2777,7 @@ input[type="checkbox"] {
   top: 0;
   width: 3px;
   height: 100%;
-  background: var(--accent);
+  background: #e5c07b;
   opacity: 0.6;
 }
 

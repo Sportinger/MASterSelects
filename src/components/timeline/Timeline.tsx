@@ -3216,6 +3216,31 @@ export function Timeline() {
                   const parentClip = clips.find(c => c.id === childClip.parentClipId);
                   if (!parentClip) return null;
 
+                  // Apply drag offset for real-time updates during drag
+                  let adjustedChildClip = childClip;
+                  let adjustedParentClip = parentClip;
+
+                  if (clipDrag) {
+                    const rawPixelX = clipDrag.currentX
+                      ? clipDrag.currentX -
+                        (timelineRef.current?.getBoundingClientRect().left || 0) +
+                        scrollX -
+                        clipDrag.grabOffsetX
+                      : 0;
+                    const tempStartTime =
+                      clipDrag.snappedTime ??
+                      (clipDrag.currentX ? Math.max(0, rawPixelX / zoom) : null);
+
+                    if (tempStartTime !== null) {
+                      if (clipDrag.clipId === childClip.id) {
+                        adjustedChildClip = { ...childClip, startTime: tempStartTime, trackId: clipDrag.currentTrackId };
+                      }
+                      if (clipDrag.clipId === parentClip.id) {
+                        adjustedParentClip = { ...parentClip, startTime: tempStartTime, trackId: clipDrag.currentTrackId };
+                      }
+                    }
+                  }
+
                   // Calculate Y position for track
                   const getTrackYPosition = (trackId: string): number => {
                     let y = 24; // Offset for new track drop zone
@@ -3231,8 +3256,8 @@ export function Timeline() {
                   return (
                     <ParentChildLink
                       key={childClip.id}
-                      childClip={childClip}
-                      parentClip={parentClip}
+                      childClip={adjustedChildClip}
+                      parentClip={adjustedParentClip}
                       tracks={tracks}
                       zoom={zoom}
                       scrollX={0} // Already in scrolled container
