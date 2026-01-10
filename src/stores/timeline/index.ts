@@ -698,8 +698,10 @@ export const useTimelineStore = create<TimelineStore>()(
             video.muted = true;
             video.playsInline = true;
             video.preload = 'auto';
+            video.crossOrigin = 'anonymous';
 
-            video.addEventListener('canplaythrough', () => {
+            video.addEventListener('canplaythrough', async () => {
+              // First set up the basic video source
               set(state => ({
                 clips: state.clips.map(c =>
                   c.id === clip.id
@@ -716,6 +718,44 @@ export const useTimelineStore = create<TimelineStore>()(
                     : c
                 ),
               }));
+
+              // Try to initialize WebCodecsPlayer for hardware-accelerated decoding
+              const hasWebCodecs = 'VideoDecoder' in window && 'VideoFrame' in window;
+              if (hasWebCodecs) {
+                try {
+                  const { WebCodecsPlayer } = await import('../../engine/WebCodecsPlayer');
+                  console.log(`[Timeline] Initializing WebCodecsPlayer for restored clip ${clip.name}...`);
+
+                  const webCodecsPlayer = new WebCodecsPlayer({
+                    loop: false,
+                    useSimpleMode: true, // Use VideoFrame from HTMLVideoElement (more compatible)
+                    onError: (error) => {
+                      console.warn('[Timeline] WebCodecs error:', error.message);
+                    },
+                  });
+
+                  // Attach to existing video element
+                  webCodecsPlayer.attachToVideoElement(video);
+                  console.log(`[Timeline] WebCodecsPlayer ready for restored clip ${clip.name}`);
+
+                  // Update clip source with webCodecsPlayer
+                  set(state => ({
+                    clips: state.clips.map(c =>
+                      c.id === clip.id && c.source?.type === 'video'
+                        ? {
+                            ...c,
+                            source: {
+                              ...c.source,
+                              webCodecsPlayer,
+                            },
+                          }
+                        : c
+                    ),
+                  }));
+                } catch (err) {
+                  console.warn('[Timeline] WebCodecsPlayer init failed for restored clip, using HTMLVideoElement:', err);
+                }
+              }
             }, { once: true });
           } else if (type === 'audio') {
             // Audio clips - create audio element (works for both pure audio files and linked audio from video)
