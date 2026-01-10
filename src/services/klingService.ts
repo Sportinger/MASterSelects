@@ -263,14 +263,23 @@ class KlingService {
       body: body ? JSON.stringify(body) : undefined,
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Kling API error: ${response.status} - ${errorText}`);
+    const responseText = await response.text();
+    let result: ApiResponse<T>;
+
+    try {
+      result = JSON.parse(responseText) as ApiResponse<T>;
+    } catch {
+      console.error('[KlingService] Failed to parse response:', responseText);
+      throw new Error(`Kling API error: ${response.status} - Invalid JSON response`);
     }
 
-    const result = await response.json() as ApiResponse<T>;
+    if (!response.ok) {
+      console.error('[KlingService] API error:', result);
+      throw new Error(`Kling API error: ${response.status} - ${result.message || responseText}`);
+    }
 
     if (result.code !== 0) {
+      console.error('[KlingService] API returned error code:', result);
       throw new Error(`Kling API error: ${result.message}`);
     }
 
@@ -313,11 +322,17 @@ class KlingService {
       mode: params.mode,
     };
 
+    // Strip data URL prefix if present (API expects raw base64)
+    const stripDataUrlPrefix = (dataUrl: string): string => {
+      const match = dataUrl.match(/^data:[^;]+;base64,(.+)$/);
+      return match ? match[1] : dataUrl;
+    };
+
     if (params.startImageUrl) {
-      body.image = params.startImageUrl;
+      body.image = stripDataUrlPrefix(params.startImageUrl);
     }
     if (params.endImageUrl) {
-      body.image_tail = params.endImageUrl;
+      body.image_tail = stripDataUrlPrefix(params.endImageUrl);
     }
     if (params.negativePrompt) {
       body.negative_prompt = params.negativePrompt;
@@ -325,6 +340,15 @@ class KlingService {
     if (params.cfgScale !== undefined) {
       body.cfg_scale = params.cfgScale;
     }
+
+    console.log('[KlingService] Creating image-to-video task:', {
+      model_name: body.model_name,
+      duration: body.duration,
+      mode: body.mode,
+      hasImage: !!body.image,
+      hasImageTail: !!body.image_tail,
+      imageLength: typeof body.image === 'string' ? body.image.length : 0,
+    });
 
     const result = await this.request<CreateTaskResponse>(
       '/v1/videos/image2video',

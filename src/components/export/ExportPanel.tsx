@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { FrameExporter, downloadBlob } from '../../engine/FrameExporter';
 import type { ExportProgress } from '../../engine/FrameExporter';
+import { AudioExportPipeline } from '../../engine/audio';
 import { useTimelineStore } from '../../stores/timeline';
 import { useMediaStore } from '../../stores/mediaStore';
 import { useMixerStore } from '../../stores/mixerStore';
@@ -124,6 +125,69 @@ export function ExportPanel() {
     setExporter(null);
   }, [exporter]);
 
+  // Handle audio-only export
+  const handleExportAudioOnly = useCallback(async () => {
+    if (isExporting) return;
+
+    setIsExporting(true);
+    setError(null);
+    setProgress({
+      phase: 'audio',
+      currentFrame: 0,
+      totalFrames: 0,
+      percent: 0,
+      estimatedTimeRemaining: 0,
+      currentTime: startTime,
+      audioPhase: 'extracting',
+      audioPercent: 0,
+    });
+
+    const audioPipeline = new AudioExportPipeline({
+      sampleRate: audioSampleRate,
+      bitrate: audioBitrate,
+      normalize: normalizeAudio,
+    });
+
+    try {
+      const audioResult = await audioPipeline.exportAudio(
+        startTime,
+        endTime,
+        (audioProgress) => {
+          setProgress({
+            phase: 'audio',
+            currentFrame: 0,
+            totalFrames: 0,
+            percent: audioProgress.percent,
+            estimatedTimeRemaining: 0,
+            currentTime: endTime,
+            audioPhase: audioProgress.phase,
+            audioPercent: audioProgress.percent,
+          });
+        }
+      );
+
+      if (audioResult && audioResult.chunks.length > 0) {
+        // Convert AAC chunks to a downloadable file
+        // For standalone audio, we need to create an audio container
+        const audioBlobs: Blob[] = [];
+        for (const chunk of audioResult.chunks) {
+          const buffer = new ArrayBuffer(chunk.byteLength);
+          chunk.copyTo(buffer);
+          audioBlobs.push(new Blob([buffer]));
+        }
+        const audioBlob = new Blob(audioBlobs, { type: 'audio/aac' });
+        downloadBlob(audioBlob, `${filename}.aac`);
+      } else {
+        setError('No audio clips found in the selected range');
+      }
+    } catch (e) {
+      console.error('[ExportPanel] Audio export failed:', e);
+      setError(e instanceof Error ? e.message : 'Audio export failed');
+    } finally {
+      setIsExporting(false);
+    }
+  }, [startTime, endTime, filename, isExporting, audioSampleRate, audioBitrate, normalizeAudio]);
+
   // Handle render current frame
   const handleRenderFrame = useCallback(async () => {
     try {
@@ -222,6 +286,35 @@ export function ExportPanel() {
     <div className="export-panel">
       <div className="panel-header">
         <h3>Export</h3>
+      </div>
+
+      {/* Action Buttons - Always visible at top */}
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', padding: '0 12px' }}>
+        <button
+          className="btn"
+          onClick={handleRenderFrame}
+          style={{ flex: 1 }}
+          disabled={isExporting}
+        >
+          Render Frame
+        </button>
+        <button
+          className="btn export-start-btn"
+          onClick={handleExport}
+          disabled={isExporting || endTime <= startTime}
+          style={{ flex: 1 }}
+        >
+          Export Video
+        </button>
+        <button
+          className="btn"
+          onClick={handleExportAudioOnly}
+          disabled={isExporting || endTime <= startTime || !includeAudio}
+          style={{ flex: 1 }}
+          title={!includeAudio ? 'Enable "Include Audio" first' : ''}
+        >
+          Export Audio
+        </button>
       </div>
 
       {!isExporting ? (
@@ -459,24 +552,6 @@ export function ExportPanel() {
           </div>
 
           {error && <div className="export-error">{error}</div>}
-
-          <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
-            <button
-              className="btn"
-              onClick={handleRenderFrame}
-              style={{ flex: 1 }}
-            >
-              Render Current Frame
-            </button>
-            <button
-              className="btn export-start-btn"
-              onClick={handleExport}
-              disabled={endTime <= startTime}
-              style={{ flex: 1 }}
-            >
-              Export Video
-            </button>
-          </div>
         </div>
       ) : (
         <div className="export-progress-container">
