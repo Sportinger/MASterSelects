@@ -21,6 +21,7 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
     openai: false,
     assemblyai: false,
     deepgram: false,
+    kling: false,
   });
 
   const handleSave = useCallback(() => {
@@ -185,6 +186,39 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
               <a
                 className="api-key-link"
                 href="https://console.deepgram.com/signup"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Get API Key →
+              </a>
+            </div>
+          </div>
+
+          {/* AI Video Generation */}
+          <div className="settings-section">
+            <h3>AI Video Generation</h3>
+
+            {/* Kling */}
+            <div className="api-key-row">
+              <label>Kling AI API Key</label>
+              <div className="api-key-input">
+                <input
+                  type={showKeys.kling ? 'text' : 'password'}
+                  value={localKeys.kling}
+                  onChange={(e) => handleKeyChange('kling', e.target.value)}
+                  placeholder="Enter API key..."
+                />
+                <button
+                  className="toggle-visibility"
+                  onClick={() => toggleShowKey('kling')}
+                  title={showKeys.kling ? 'Hide' : 'Show'}
+                >
+                  {showKeys.kling ? '🙈' : '👁'}
+                </button>
+              </div>
+              <a
+                className="api-key-link"
+                href="https://app.klingai.com/global/dev/document-api"
                 target="_blank"
                 rel="noopener noreferrer"
               >

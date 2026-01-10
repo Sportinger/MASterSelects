@@ -75,7 +75,7 @@ Resolume-style visual feedback:
 
 ## Available Panels
 
-MASterSelects has 8 dockable panel types:
+MASterSelects has 9 dockable panel types:
 
 | Panel | Purpose |
 |-------|---------|
@@ -86,6 +86,7 @@ MASterSelects has 8 dockable panel types:
 | **Export** | Render settings and progress |
 | **Multicam** | Camera sync and EDL |
 | **AI Chat** | GPT-powered editing assistant |
+| **AI Video** | AI video generation (Kling) |
 | **Slots** | Layer slot management |
 
 ### Preview Panel
@@ -132,6 +133,14 @@ See [Properties Panel](#properties-panel) section below for details.
 - Model/provider selector
 - Context-aware editing commands
 - 50+ available tools
+
+### AI Video Panel
+- Text-to-video generation
+- Image-to-video animation
+- Kling AI integration
+- Model/duration/aspect ratio selection
+- CFG scale and camera controls
+- Generation queue with status
 
 ### Slots Panel
 - Layer slot grid

@@ -3,7 +3,7 @@
 
 import type { DockPanel, PreviewPanelData } from '../../types/dock';
 import { Preview } from '../preview';
-import { PropertiesPanel, LayerPanel, MediaPanel, MultiCamPanel, AIChatPanel } from '../panels';
+import { PropertiesPanel, LayerPanel, MediaPanel, MultiCamPanel, AIChatPanel, AIVideoPanel } from '../panels';
 import { ExportPanel } from '../export';
 import { Timeline } from '../timeline';
 
@@ -30,6 +30,8 @@ export function DockPanelContent({ panel }: DockPanelContentProps) {
       return <MultiCamPanel />;
     case 'ai-chat':
       return <AIChatPanel />;
+    case 'ai-video':
+      return <AIVideoPanel />;
     default:
       return <div className="panel-placeholder">Unknown panel: {panel.type}</div>;
   }

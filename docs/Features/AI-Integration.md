@@ -9,6 +9,7 @@ GPT-powered editing with 50+ tools, transcription, and multicam EDL generation.
 ## Table of Contents
 
 - [AI Chat Panel](#ai-chat-panel)
+- [AI Video Panel](#ai-video-panel)
 - [AI Editor Tools](#ai-editor-tools)
 - [Transcription](#transcription)
 - [Multicam EDL](#multicam-edl)
@@ -43,6 +44,61 @@ When enabled (default):
 - Includes timeline context in prompts
 - 50+ editing tools available
 - AI can manipulate timeline directly
+
+---
+
+## AI Video Panel
+
+### Location
+- Tab next to AI Chat in dock panels
+- View menu → AI Video
+
+### Supported Services
+Currently supports **Kling AI** for video generation.
+
+### Generation Modes
+
+#### Text-to-Video
+Generate video from text prompts:
+- Describe the scene, subjects, and actions
+- Select aspect ratio (16:9, 9:16, 1:1)
+- Control camera movement
+
+#### Image-to-Video
+Animate images:
+- Upload start frame (required)
+- Optional end frame for guided animation
+- Video morphs between frames
+
+### Parameters
+
+| Parameter | Options | Description |
+|-----------|---------|-------------|
+| **Model** | v1.0, v1.5, v1.6, v2.0, v2.1 | Newer models have better quality |
+| **Duration** | 5s, 10s | Video length |
+| **Aspect Ratio** | 16:9, 9:16, 1:1 | Output dimensions |
+| **Quality** | Standard, Professional | Pro is slower but higher quality |
+| **CFG Scale** | 0.0-1.0 | Prompt adherence strength |
+| **Camera** | None, Down&Back, Forward&Up, etc. | Camera movement presets |
+| **Negative Prompt** | Text | What to avoid in generation |
+
+### Generation Queue
+- Jobs appear in queue with status
+- Status: Queued → Processing → Done/Failed
+- Download generated videos directly
+- Remove jobs from queue
+
+### API Authentication
+Kling uses JWT authentication. Get your API key from:
+[Kling AI Developer Portal](https://app.klingai.com/global/dev/document-api)
+
+### Task-Based Workflow
+```
+1. Submit generation request
+2. Receive task ID
+3. Poll for status (every 5 seconds)
+4. Download video when complete
+```
 
 ---
 
@@ -243,8 +299,11 @@ Settings dialog → API Keys:
 - AssemblyAI key
 - Deepgram key
 
+Settings dialog → AI Video Generation:
+- Kling AI API key (for text-to-video, image-to-video)
+
 ### Storage
-Keys stored in browser localStorage (encrypted for Claude).
+Keys stored in browser localStorage.
 
 ---
 
@@ -277,4 +336,4 @@ Keys stored in browser localStorage (encrypted for Claude).
 
 ---
 
-*Source: `src/components/panels/AIChatPanel.tsx`, `src/services/aiTools.ts`, `src/services/claudeService.ts`*
+*Source: `src/components/panels/AIChatPanel.tsx`, `src/components/panels/AIVideoPanel.tsx`, `src/services/aiTools.ts`, `src/services/claudeService.ts`, `src/services/klingService.ts`*
