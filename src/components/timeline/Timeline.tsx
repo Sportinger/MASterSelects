@@ -666,6 +666,10 @@ export function Timeline() {
   // Track which clips are currently active (to detect clip changes)
   const activeClipIdsRef = useRef<string>('');
 
+  // Throttle layer sync during playback to reduce CPU load
+  const lastLayerSyncRef = useRef<number>(0);
+  const LAYER_SYNC_INTERVAL = 100; // Only do full layer sync every 100ms during playback
+
   // Track current proxy frames for each clip (for smooth proxy playback)
   const proxyFramesRef = useRef<
     Map<string, { frameIndex: number; image: HTMLImageElement }>
@@ -742,17 +746,26 @@ export function Timeline() {
         );
       });
 
-    // Note: We removed the early return optimization here to allow real-time
-    // effect/property changes during playback. The layer sync below will
-    // detect if effects have actually changed and skip unnecessary updates.
+    // During playback, throttle the heavy layer sync work to reduce CPU load
+    // Only do full sync every LAYER_SYNC_INTERVAL ms, but always ensure videos are playing
+    const now = performance.now();
+    const timeSinceLastSync = now - lastLayerSyncRef.current;
+    const clipsChanged = activeClipIdsRef.current !== ('playing:' + currentActiveIds);
 
     if (isPlaying) {
+      // Always ensure videos are playing (this is cheap)
       clipsAtTime.forEach((clip) => {
         if (clip.source?.videoElement?.paused) {
           clip.source.videoElement.play().catch(() => {});
         }
       });
       activeClipIdsRef.current = 'playing:' + currentActiveIds;
+
+      // Skip heavy layer sync if within throttle interval AND clips haven't changed
+      if (timeSinceLastSync < LAYER_SYNC_INTERVAL && !clipsChanged) {
+        return;
+      }
+      lastLayerSyncRef.current = now;
     } else {
       activeClipIdsRef.current = '';
     }
@@ -1476,11 +1489,14 @@ export function Timeline() {
   }, [isPlaying, isDraggingPlayhead, playheadPosition, clips]);
 
   // Playback loop - using requestAnimationFrame for smooth playback
+  // Throttles React state updates to reduce re-renders while maintaining smooth playback
   useEffect(() => {
     if (!isPlaying) return;
 
     let rafId: number;
     let lastTime = performance.now();
+    let lastStateUpdate = 0;
+    const STATE_UPDATE_INTERVAL = 50; // Update React state every 50ms (20fps for UI)
 
     const getActiveVideoClip = () => {
       const state = useTimelineStore.getState();
@@ -1531,7 +1547,16 @@ export function Timeline() {
         }
       }
 
-      setPlayheadPosition(newPosition);
+      // Throttle React state updates to reduce re-renders
+      // This keeps UI responsive while allowing smooth internal tracking
+      if (currentTime - lastStateUpdate >= STATE_UPDATE_INTERVAL) {
+        setPlayheadPosition(newPosition);
+        lastStateUpdate = currentTime;
+      } else {
+        // Still update the store directly for internal use, but batch it
+        useTimelineStore.setState({ playheadPosition: newPosition });
+      }
+
       rafId = requestAnimationFrame(updatePlayhead);
     };
 
