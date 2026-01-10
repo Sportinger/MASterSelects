@@ -347,10 +347,11 @@ interface VolumeTabProps {
 }
 
 function VolumeTab({ clipId, effects }: VolumeTabProps) {
-  const { setPropertyValue, getInterpolatedEffects, playheadPosition, clips, addClipEffect } = useTimelineStore();
+  const { setPropertyValue, getInterpolatedEffects, playheadPosition, clips, addClipEffect, setClipPreservesPitch } = useTimelineStore();
   const clip = clips.find(c => c.id === clipId);
   const clipLocalTime = clip ? playheadPosition - clip.startTime : 0;
   const interpolatedEffects = getInterpolatedEffects(clipId, clipLocalTime);
+  const preservesPitch = clip?.preservesPitch !== false; // default true
 
   // Auto-add audio effects if they don't exist
   useEffect(() => {
@@ -402,6 +403,24 @@ function VolumeTab({ clipId, effects }: VolumeTabProps) {
           <input type="range" min="0" max="2" step="0.01" value={volume}
             onChange={(e) => handleVolumeChange(parseFloat(e.target.value))} />
           <span className="value">{Math.round(volume * 100)}%</span>
+        </div>
+      </div>
+
+      {/* Pitch Preservation Section */}
+      <div className="properties-section">
+        <div className="section-header-row">
+          <h4>Speed Settings</h4>
+        </div>
+        <div className="control-row checkbox-row">
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={preservesPitch}
+              onChange={(e) => setClipPreservesPitch(clipId, e.target.checked)}
+            />
+            <span>Keep Pitch</span>
+          </label>
+          <span className="hint">When speed changes, maintain original pitch</span>
         </div>
       </div>
 

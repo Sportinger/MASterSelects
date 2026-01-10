@@ -1214,4 +1214,14 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
     const { clips } = get();
     return clips.filter(c => c.parentClipId === clipId);
   },
+
+  // Set clip preservesPitch property (for audio pitch correction when speed changes)
+  setClipPreservesPitch: (clipId: string, preservesPitch: boolean) => {
+    const { clips } = get();
+    set({
+      clips: clips.map(c =>
+        c.id === clipId ? { ...c, preservesPitch } : c
+      ),
+    });
+  },
 });

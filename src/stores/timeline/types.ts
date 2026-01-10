@@ -119,6 +119,8 @@ export interface ClipActions {
   // Parenting (pick whip)
   setClipParent: (clipId: string, parentClipId: string | null) => void;
   getClipChildren: (clipId: string) => TimelineClip[];
+  // Audio pitch preservation
+  setClipPreservesPitch: (clipId: string, preservesPitch: boolean) => void;
 }
 
 // Playback actions interface

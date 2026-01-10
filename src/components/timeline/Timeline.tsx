@@ -1291,7 +1291,18 @@ export function Timeline() {
 
       if (clip?.source?.audioElement) {
         const audio = clip.source.audioElement;
-        const clipTime = playheadPosition - clip.startTime + clip.inPoint;
+        const clipLocalTime = playheadPosition - clip.startTime;
+
+        // Get current speed for this clip (accounts for keyframes)
+        const currentSpeed = getInterpolatedSpeed(clip.id, clipLocalTime);
+        const absSpeed = Math.abs(currentSpeed);
+
+        // Calculate source time using speed integration
+        const sourceTime = getSourceTimeForClip(clip.id, clipLocalTime);
+        const initialSpeed = getInterpolatedSpeed(clip.id, 0);
+        const startPoint = initialSpeed >= 0 ? clip.inPoint : clip.outPoint;
+        const clipTime = Math.max(clip.inPoint, Math.min(clip.outPoint, startPoint + sourceTime));
+
         const timeDiff = audio.currentTime - clipTime;
 
         // Track drift for stats
@@ -1302,7 +1313,19 @@ export function Timeline() {
         const effectivelyMuted = isAudioTrackMuted(track);
         audio.muted = effectivelyMuted;
 
-        const shouldPlay = isPlaying && !effectivelyMuted && !isDraggingPlayhead;
+        // Set playback rate for speed effect (use absolute value, negative speed not supported for audio)
+        const targetRate = absSpeed > 0.1 ? absSpeed : 1; // Clamp to reasonable range
+        if (Math.abs(audio.playbackRate - targetRate) > 0.01) {
+          audio.playbackRate = Math.max(0.25, Math.min(4, targetRate)); // Browser limit: 0.25-4x
+        }
+
+        // Set preservesPitch based on clip setting (default true)
+        const shouldPreservePitch = clip.preservesPitch !== false;
+        if ((audio as HTMLAudioElement & { preservesPitch?: boolean }).preservesPitch !== shouldPreservePitch) {
+          (audio as HTMLAudioElement & { preservesPitch?: boolean }).preservesPitch = shouldPreservePitch;
+        }
+
+        const shouldPlay = isPlaying && !effectivelyMuted && !isDraggingPlayhead && absSpeed > 0.1;
 
         if (shouldPlay) {
           // Sync audio if drifted more than 100ms

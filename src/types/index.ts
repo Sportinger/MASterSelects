@@ -230,6 +230,7 @@ export interface TimelineClip {
   isLoading?: boolean;    // True while media is being loaded
   reversed?: boolean;     // True if clip plays in reverse
   speed?: number;         // Playback speed (default 1.0, 0.5 = half speed, -1.0 = reverse)
+  preservesPitch?: boolean;  // Keep pitch when speed changes (default true)
   // Nested composition support
   isComposition?: boolean;  // True if this clip is a nested composition
   compositionId?: string;   // ID of the nested composition
@@ -303,6 +304,7 @@ export interface SerializableClip {
   // Playback
   reversed?: boolean;
   speed?: number;         // Playback speed (default 1.0)
+  preservesPitch?: boolean;  // Keep pitch when speed changes (default true)
 }
 
 // Serializable timeline data for composition storage
