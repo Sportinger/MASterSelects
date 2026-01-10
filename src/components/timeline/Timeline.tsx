@@ -117,6 +117,7 @@ export function Timeline() {
     setClipParent,
     setTrackParent,
     getSourceTimeForClip,
+    getInterpolatedSpeed,
   } = useTimelineStore();
 
   const {
