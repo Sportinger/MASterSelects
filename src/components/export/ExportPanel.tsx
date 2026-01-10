@@ -5,11 +5,22 @@ import { FrameExporter, downloadBlob } from '../../engine/FrameExporter';
 import type { ExportProgress } from '../../engine/FrameExporter';
 import { useTimelineStore } from '../../stores/timeline';
 import { useMediaStore } from '../../stores/mediaStore';
+import { useMixerStore } from '../../stores/mixerStore';
 import { engine } from '../../engine/WebGPUEngine';
+
+// Composition resolution presets
+const COMP_RESOLUTIONS = [
+  { w: 1920, h: 1080, label: '1920×1080 (1080p)' },
+  { w: 1280, h: 720, label: '1280×720 (720p)' },
+  { w: 3840, h: 2160, label: '3840×2160 (4K)' },
+  { w: 1920, h: 1200, label: '1920×1200 (16:10)' },
+  { w: 1024, h: 768, label: '1024×768 (4:3)' },
+];
 
 export function ExportPanel() {
   const { duration, inPoint, outPoint, playheadPosition } = useTimelineStore();
   const { getActiveComposition } = useMediaStore();
+  const { outputResolution, setResolution } = useMixerStore();
   const composition = getActiveComposition();
 
   // Export settings
@@ -201,6 +212,31 @@ export function ExportPanel() {
 
       {!isExporting ? (
         <div className="export-form">
+          {/* Composition Resolution */}
+          <div className="export-section">
+            <div className="export-section-header">Composition</div>
+            <div className="control-row">
+              <label>Resolution</label>
+              <select
+                value={`${outputResolution.width}x${outputResolution.height}`}
+                onChange={(e) => {
+                  const [w, h] = e.target.value.split('x').map(Number);
+                  setResolution(w, h);
+                }}
+              >
+                {COMP_RESOLUTIONS.map(({ w, h, label }) => (
+                  <option key={`${w}x${h}`} value={`${w}x${h}`}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Export Settings */}
+          <div className="export-section">
+            <div className="export-section-header">Export</div>
+
           {/* Filename */}
           <div className="control-row">
             <label>Filename</label>
@@ -346,6 +382,7 @@ export function ExportPanel() {
             >
               Export Video
             </button>
+          </div>
           </div>
         </div>
       ) : (

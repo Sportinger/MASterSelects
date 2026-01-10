@@ -15,7 +15,7 @@ type MenuId = 'file' | 'edit' | 'view' | 'output' | 'window' | null;
 
 export function Toolbar() {
   const { isEngineReady, createOutputWindow } = useEngine();
-  const { outputResolution, setResolution, setPlaying, outputWindows } = useMixerStore();
+  const { setPlaying, outputWindows } = useMixerStore();
 
   // Auto-start playback when engine is ready
   useEffect(() => {
@@ -284,24 +284,6 @@ export function Toolbar() {
                 <span>New Output Window</span>
               </button>
               <div className="menu-separator" />
-              <div className="menu-submenu">
-                <span className="menu-label">Resolution</span>
-                {[
-                  { w: 1920, h: 1080, label: '1920×1080 (1080p)' },
-                  { w: 1280, h: 720, label: '1280×720 (720p)' },
-                  { w: 3840, h: 2160, label: '3840×2160 (4K)' },
-                  { w: 1920, h: 1200, label: '1920×1200 (16:10)' },
-                  { w: 1024, h: 768, label: '1024×768 (4:3)' },
-                ].map(({ w, h, label }) => (
-                  <button
-                    key={`${w}x${h}`}
-                    className={`menu-option ${outputResolution.width === w && outputResolution.height === h ? 'checked' : ''}`}
-                    onClick={() => { setResolution(w, h); closeMenu(); }}
-                  >
-                    <span>{outputResolution.width === w && outputResolution.height === h ? '✓ ' : '   '}{label}</span>
-                  </button>
-                ))}
-              </div>
               <div className="menu-submenu">
                 <span className="menu-label">Preview Quality</span>
                 {([

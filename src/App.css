@@ -1226,6 +1226,23 @@ input, textarea {
   gap: 12px;
 }
 
+.export-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.export-section-header {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 4px;
+}
+
 .export-panel .control-row {
   display: flex;
   align-items: center;
