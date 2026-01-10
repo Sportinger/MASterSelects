@@ -78,11 +78,46 @@ Each EQ band can be animated:
 
 ### Properties Panel - Volume Tab
 When an audio clip is selected, the Properties panel shows the Volume tab:
-- **Volume slider**: -60dB to +12dB (with keyframe toggle)
+- **Volume slider**: 0-200% (with keyframe toggle)
+- **Keep Pitch checkbox**: Maintain original pitch when speed changes (default on)
 - **10 vertical EQ sliders**: One per frequency band
 - **Reset button**: Flattens all bands to 0dB
 - **Keyframe toggles**: Per parameter for animation
 - EQ effect is automatically added on first use
+
+See [UI Panels - Properties Panel](./UI-Panels.md#properties-panel) for details.
+
+---
+
+## Speed and Pitch
+
+### Speed Effect on Audio
+Audio clips respect the clip's speed property (set on linked video or directly):
+- **Range**: 0.25x to 4x (browser limitation)
+- **Playback rate**: Audio plays at the same speed as video
+- **Sync**: Uses speed integration for keyframe-accurate timing
+
+### Pitch Preservation
+The `preservesPitch` property controls pitch behavior during speed changes:
+
+| Setting | Behavior | Use Case |
+|---------|----------|----------|
+| **Keep Pitch ON** (default) | Maintains original pitch | Speech, music |
+| **Keep Pitch OFF** | Pitch shifts with speed | Chipmunk effect, slowed audio |
+
+```typescript
+interface TimelineClip {
+  speed?: number;           // Playback speed (default 1.0)
+  preservesPitch?: boolean; // Keep pitch when speed changes (default true)
+}
+```
+
+### Implementation
+Uses Web Audio API's `playbackRate` and `preservesPitch` properties:
+```typescript
+audio.playbackRate = currentSpeed;  // 0.25 to 4.0
+audio.preservesPitch = clip.preservesPitch !== false;
+```
 
 See [UI Panels - Properties Panel](./UI-Panels.md#properties-panel) for details.
 
@@ -270,7 +305,8 @@ interface EditDecision {
 - Audio compression/dynamics
 - Reverb/delay effects
 - Audio meters/spectrum display
-- Audio export with effects
+- **Audio export** (currently video-only export)
+- Audio export with speed/pitch changes
 - Loudness normalization
 - Noise reduction
 - Real-time effect preview
