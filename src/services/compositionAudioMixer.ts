@@ -114,9 +114,9 @@ class CompositionAudioMixerService {
       // Find the source file
       let file: File | undefined;
 
-      // Check if clip has source with file
-      if ('source' in clip && clip.source?.file) {
-        file = clip.source.file;
+      // Check if clip has file directly (TimelineClip has file property)
+      if ('file' in clip && clip.file) {
+        file = clip.file;
       } else {
         // Look up in media files
         const mediaFile = files.find(f => f.name === clip.name || f.id === (clip as any).mediaFileId);
@@ -141,7 +141,6 @@ class CompositionAudioMixerService {
         // Calculate what portion of the audio to use based on in/out points
         const inPoint = clip.inPoint || 0;
         const outPoint = clip.outPoint || extractedBuffer.duration;
-        const clipDuration = outPoint - inPoint;
 
         // Create a trimmed buffer if needed
         let processedBuffer = extractedBuffer;

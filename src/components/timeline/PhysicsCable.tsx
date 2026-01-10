@@ -74,7 +74,7 @@ export function PhysicsCable({
       const endpointVelY = (startVelY + endVelY) / 2;
 
       const dx = targetX - physics.cx;
-      const dy = targetY - physics.cy;
+      const _dy = targetY - physics.cy;
 
       // Natural sag based on distance
       const distance = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2));

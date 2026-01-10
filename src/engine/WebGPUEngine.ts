@@ -1366,10 +1366,16 @@ export class WebGPUEngine {
           writeView,
           readView,
           nestedPingView,
-          nestedPongView
+          nestedPongView,
+          width,
+          height
         );
-        readView = result.outputView;
-        writeView = result.outputView === nestedPingView ? nestedPongView : nestedPingView;
+        if (result.swapped) {
+          // Adjust for effect swaps
+          const tempView = readView;
+          readView = writeView;
+          writeView = tempView;
+        }
       } else {
         // Swap buffers
         const temp = readView;

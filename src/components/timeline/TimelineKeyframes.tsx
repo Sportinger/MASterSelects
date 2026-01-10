@@ -1,6 +1,6 @@
 // TimelineKeyframes component - Keyframe diamonds/handles with drag support
 
-import { memo, useMemo, useState, useEffect, useCallback } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import type { TimelineKeyframesProps } from './types';
 import type { EasingType, AnimatableProperty } from '../../types';

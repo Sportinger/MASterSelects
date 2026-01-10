@@ -519,7 +519,8 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
 
         // Load media element async
         const type = serializedClip.sourceType;
-        const fileUrl = URL.createObjectURL(mediaFile.file);
+        const mediaFileRef = mediaFile.file!;  // Capture reference for use in callbacks
+        const fileUrl = URL.createObjectURL(mediaFileRef);
 
         if (type === 'video') {
           const video = document.createElement('video');
@@ -543,7 +544,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
             if (hasWebCodecs) {
               try {
                 const { WebCodecsPlayer } = await import('../../engine/WebCodecsPlayer');
-                console.log(`[Nested Comp] Initializing WebCodecsPlayer for ${mediaFile.file.name}...`);
+                console.log(`[Nested Comp] Initializing WebCodecsPlayer for ${mediaFileRef.name}...`);
 
                 const webCodecsPlayer = new WebCodecsPlayer({
                   loop: false,
@@ -554,7 +555,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
                 });
 
                 webCodecsPlayer.attachToVideoElement(video);
-                console.log(`[Nested Comp] WebCodecsPlayer ready for ${mediaFile.file.name}`);
+                console.log(`[Nested Comp] WebCodecsPlayer ready for ${mediaFileRef.name}`);
 
                 // Update nested clip source with webCodecsPlayer
                 nestedClip.source = {
@@ -678,7 +679,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
           const compClipCurrent = get().clips.find(c => c.id === clipId);
 
           if (compClipCurrent && audioTrackId) {
-            const hasAudio = mixdownResult && mixdownResult.hasAudio;
+            const hasAudio = !!(mixdownResult && mixdownResult.hasAudio);
 
             // Create audio element - either from mixdown or silent placeholder
             let mixdownAudio: HTMLAudioElement | undefined;

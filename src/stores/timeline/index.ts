@@ -638,7 +638,8 @@ export const useTimelineStore = create<TimelineStore>()(
 
                   // Load media element
                   const nestedType = nestedSerializedClip.sourceType;
-                  const nestedFileUrl = URL.createObjectURL(nestedMediaFile.file);
+                  const nestedFileRef = nestedMediaFile.file!;  // Capture for use in callbacks
+                  const nestedFileUrl = URL.createObjectURL(nestedFileRef);
 
                   if (nestedType === 'video') {
                     const video = document.createElement('video');
@@ -662,7 +663,7 @@ export const useTimelineStore = create<TimelineStore>()(
                       if (hasWebCodecs) {
                         try {
                           const { WebCodecsPlayer } = await import('../../engine/WebCodecsPlayer');
-                          console.log(`[Nested Comp Load] Initializing WebCodecsPlayer for ${nestedMediaFile.file.name}...`);
+                          console.log(`[Nested Comp Load] Initializing WebCodecsPlayer for ${nestedFileRef.name}...`);
 
                           const webCodecsPlayer = new WebCodecsPlayer({
                             loop: false,
@@ -673,7 +674,7 @@ export const useTimelineStore = create<TimelineStore>()(
                           });
 
                           webCodecsPlayer.attachToVideoElement(video);
-                          console.log(`[Nested Comp Load] WebCodecsPlayer ready for ${nestedMediaFile.file.name}`);
+                          console.log(`[Nested Comp Load] WebCodecsPlayer ready for ${nestedFileRef.name}`);
 
                           // Update nested clip source with webCodecsPlayer
                           nestedClip.source = {

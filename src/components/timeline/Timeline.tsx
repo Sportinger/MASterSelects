@@ -732,20 +732,6 @@ export function Timeline() {
       .sort()
       .join(',');
 
-    const mediaStoreState = useMediaStore.getState();
-    const hasActiveProxies =
-      mediaStoreState.proxyEnabled &&
-      clipsAtTime.some((clip) => {
-        const mediaFile = mediaStoreState.files.find(
-          (f) => f.id === clip.source?.mediaFileId || f.name === clip.name
-        );
-        return (
-          mediaFile?.proxyStatus === 'ready' ||
-          (mediaFile?.proxyStatus === 'generating' &&
-            (mediaFile?.proxyProgress || 0) > 0)
-        );
-      });
-
     // During playback, throttle the heavy layer sync work to reduce CPU load
     // Only do full sync every LAYER_SYNC_INTERVAL ms, but always ensure videos are playing
     const now = performance.now();
@@ -909,101 +895,6 @@ export function Timeline() {
       }
 
       return layers;
-    };
-
-    const getVideoFromClip = (
-      clip: (typeof clips)[0],
-      clipTime: number
-    ): {
-      video: HTMLVideoElement | null;
-      webCodecsPlayer: import('../../engine/WebCodecsPlayer').WebCodecsPlayer | null;
-      transform: (typeof clip)['transform'];
-      effects: Effect[];
-    } => {
-      const interpolatedTransform = getInterpolatedTransform(clip.id, clipTime);
-      const interpolatedEffects = getInterpolatedEffects(clip.id, clipTime);
-
-      if (clip.isComposition && clip.nestedClips && clip.nestedClips.length > 0) {
-        const nestedTime = clipTime;
-        const nestedVideoTracks = (clip.nestedTracks || []).filter(
-          (t) => t.type === 'video' && t.visible
-        );
-
-        for (const nestedTrack of nestedVideoTracks) {
-          const nestedClip = clip.nestedClips.find(
-            (nc) =>
-              nc.trackId === nestedTrack.id &&
-              nestedTime >= nc.startTime &&
-              nestedTime < nc.startTime + nc.duration &&
-              nc.source?.videoElement
-          );
-
-          if (nestedClip?.source?.videoElement) {
-            const nestedLocalTime = nestedTime - nestedClip.startTime;
-            const nestedClipTime = nestedClip.reversed
-              ? nestedClip.outPoint - nestedLocalTime
-              : nestedLocalTime + nestedClip.inPoint;
-            const video = nestedClip.source.videoElement;
-            const webCodecsPlayer = nestedClip.source.webCodecsPlayer || null;
-
-            const timeDiff = Math.abs(video.currentTime - nestedClipTime);
-            if (timeDiff > 0.05) {
-              video.currentTime = nestedClipTime;
-            }
-
-            if (isPlaying && video.paused) {
-              video.play().catch(() => {});
-            } else if (!isPlaying && !video.paused) {
-              video.pause();
-            }
-
-            // Combine nested clip transform with parent composition transform
-            const nestedTransform = nestedClip.transform || {};
-            const combinedTransform = {
-              position: {
-                x: (interpolatedTransform.position?.x || 0) + (nestedTransform.position?.x || 0),
-                y: (interpolatedTransform.position?.y || 0) + (nestedTransform.position?.y || 0),
-              },
-              scale: {
-                x: (interpolatedTransform.scale?.x ?? 1) * (nestedTransform.scale?.x ?? 1),
-                y: (interpolatedTransform.scale?.y ?? 1) * (nestedTransform.scale?.y ?? 1),
-              },
-              rotation: {
-                z: (interpolatedTransform.rotation?.z || 0) + (nestedTransform.rotation?.z || 0),
-              },
-              anchor: nestedTransform.anchor || interpolatedTransform.anchor,
-              opacity: (interpolatedTransform.opacity ?? 1) * (nestedTransform.opacity ?? 1),
-              blendMode: interpolatedTransform.blendMode || nestedTransform.blendMode || 'normal',
-            };
-
-            // Combine effects from both parent and nested clip
-            const combinedEffects = [
-              ...(nestedClip.effects || []),
-              ...interpolatedEffects,
-            ];
-
-            return {
-              video,
-              webCodecsPlayer,
-              transform: combinedTransform,
-              effects: combinedEffects,
-            };
-          }
-        }
-        return {
-          video: null,
-          webCodecsPlayer: null,
-          transform: interpolatedTransform,
-          effects: interpolatedEffects,
-        };
-      }
-
-      return {
-        video: clip.source?.videoElement || null,
-        webCodecsPlayer: clip.source?.webCodecsPlayer || null,
-        transform: interpolatedTransform,
-        effects: interpolatedEffects,
-      };
     };
 
     videoTracks.forEach((track, layerIndex) => {
@@ -1630,7 +1521,7 @@ export function Timeline() {
     const lookaheadPosition = playheadPosition + LOOKAHEAD_TIME;
 
     // Helper to preload a video element - seeks and forces buffering
-    const preloadVideo = (video: HTMLVideoElement, targetTime: number, clipName: string) => {
+    const preloadVideo = (video: HTMLVideoElement, targetTime: number, _clipName: string) => {
       const timeDiff = Math.abs(video.currentTime - targetTime);
 
       // Only preload if significantly different (avoid repeated preloading)
