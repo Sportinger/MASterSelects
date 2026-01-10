@@ -1467,15 +1467,9 @@ export function Timeline() {
       const effectiveEnd = op !== null ? op : dur;
       const effectiveStart = ip !== null ? ip : 0;
 
-      const activeClip = getActiveVideoClip();
-      let newPosition: number;
-
-      if (activeClip?.source?.videoElement) {
-        const video = activeClip.source.videoElement;
-        newPosition = activeClip.startTime + video.currentTime - activeClip.inPoint;
-      } else {
-        newPosition = state.playheadPosition + 0.066;
-      }
+      // Playhead always moves at constant speed (independent of clip speed)
+      // The video frame shown is calculated based on playhead position and speed in the render loop
+      let newPosition = state.playheadPosition + 0.066;
 
       if (newPosition >= effectiveEnd) {
         if (lp) {
