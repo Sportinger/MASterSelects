@@ -727,6 +727,7 @@ export function Timeline() {
         (c) =>
           c.source?.type === 'video' ||
           c.source?.type === 'image' ||
+          c.source?.type === 'text' ||
           c.isComposition
       )
       .map((c) => c.id)
@@ -1304,6 +1305,57 @@ export function Timeline() {
               imageElement: img,
             },
             effects: imageInterpolatedEffects,
+            position: { x: transform.position.x, y: transform.position.y, z: transform.position.z },
+            scale: { x: transform.scale.x, y: transform.scale.y },
+            rotation: {
+              x: (transform.rotation.x * Math.PI) / 180,
+              y: (transform.rotation.y * Math.PI) / 180,
+              z: (transform.rotation.z * Math.PI) / 180,
+            },
+          };
+          layersChanged = true;
+        }
+      } else if (clip?.source?.textCanvas) {
+        // Text clip handling
+        const textCanvas = clip.source.textCanvas;
+        const textClipLocalTime = playheadPosition - clip.startTime;
+        const transform = getInterpolatedTransform(clip.id, textClipLocalTime);
+        const textInterpolatedEffects = getInterpolatedEffects(
+          clip.id,
+          textClipLocalTime
+        );
+        const trackVisible = isVideoTrackVisible(track);
+        const needsUpdate =
+          !layer ||
+          layer.visible !== trackVisible ||
+          layer.source?.textCanvas !== textCanvas ||
+          layer.opacity !== transform.opacity ||
+          layer.blendMode !== transform.blendMode ||
+          layer.position.x !== transform.position.x ||
+          layer.position.y !== transform.position.y ||
+          layer.position.z !== transform.position.z ||
+          layer.scale.x !== transform.scale.x ||
+          layer.scale.y !== transform.scale.y ||
+          (layer.rotation as { z?: number })?.z !==
+            (transform.rotation.z * Math.PI) / 180 ||
+          (layer.rotation as { x?: number })?.x !==
+            (transform.rotation.x * Math.PI) / 180 ||
+          (layer.rotation as { y?: number })?.y !==
+            (transform.rotation.y * Math.PI) / 180 ||
+          effectsChanged(layer.effects, textInterpolatedEffects);
+
+        if (needsUpdate) {
+          newLayers[layerIndex] = {
+            id: `timeline_layer_${layerIndex}`,
+            name: clip.name,
+            visible: trackVisible,
+            opacity: transform.opacity,
+            blendMode: transform.blendMode,
+            source: {
+              type: 'text',
+              textCanvas: textCanvas,
+            },
+            effects: textInterpolatedEffects,
             position: { x: transform.position.x, y: transform.position.y, z: transform.position.z },
             scale: { x: transform.scale.x, y: transform.scale.y },
             rotation: {
