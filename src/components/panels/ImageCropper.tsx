@@ -79,34 +79,45 @@ export function ImageCropper({
   }, [offset, scale, onCropChange]);
 
   // Calculate image transform style
+  // Note: CSS object-fit: cover already makes image cover the container at scale=1
   const getImageStyle = useCallback(() => {
     if (!imageUrl || !imageDimensions.width) return {};
 
+    // At scale=1, image covers container (object-fit: cover handles this)
+    // scale > 1 means zooming in further
+
+    // Calculate how much the image overflows the container when scaled
     const containerAspect = aspectRatio.width / aspectRatio.height;
     const imageAspect = imageDimensions.width / imageDimensions.height;
 
-    // Calculate base scale to cover the container
-    let baseScale: number;
+    // Determine overflow based on which dimension is "excess" after cover
+    let overflowX = 0;
+    let overflowY = 0;
+
     if (imageAspect > containerAspect) {
-      // Image is wider - fit height, overflow width
-      baseScale = 1;
+      // Image is wider than container - horizontal overflow
+      // At scale=1, overflow is (imageAspect/containerAspect - 1) * 50%
+      const baseOverflow = (imageAspect / containerAspect - 1) * 50;
+      overflowX = baseOverflow * scale;
     } else {
-      // Image is taller - fit width, overflow height
-      baseScale = containerAspect / imageAspect;
+      // Image is taller than container - vertical overflow
+      const baseOverflow = (containerAspect / imageAspect - 1) * 50;
+      overflowY = baseOverflow * scale;
     }
 
-    const totalScale = baseScale * scale;
+    // Additional overflow from zooming beyond cover
+    if (scale > 1) {
+      const zoomOverflow = (scale - 1) * 50;
+      overflowX += zoomOverflow;
+      overflowY += zoomOverflow;
+    }
 
-    // Calculate max offset based on overflow
-    const overflowX = Math.max(0, (totalScale * 100 - 100) / 2);
-    const overflowY = Math.max(0, (totalScale * (100 / imageAspect * containerAspect) - 100) / 2);
-
-    // Clamp offsets
-    const clampedX = Math.max(-overflowX, Math.min(overflowX, offset.x * overflowX));
-    const clampedY = Math.max(-overflowY, Math.min(overflowY, offset.y * overflowY));
+    // Apply offset within overflow bounds
+    const translateX = offset.x * overflowX;
+    const translateY = offset.y * overflowY;
 
     return {
-      transform: `translate(${clampedX}%, ${clampedY}%) scale(${totalScale})`,
+      transform: `translate(${translateX}%, ${translateY}%) scale(${scale})`,
       transformOrigin: 'center center',
     };
   }, [imageUrl, imageDimensions, aspectRatio, offset, scale]);
@@ -224,10 +235,11 @@ export function ImageCropper({
                 className="fit-image"
                 onClick={(e) => {
                   e.stopPropagation();
-                  setOffset({ x: 0, y: 0 });
+                  // Reset to minimum scale that covers the box (no black)
                   setScale(1);
+                  setOffset({ x: 0, y: 0 });
                 }}
-                title="Fit image"
+                title="Fit to cover"
               >
                 ⊡
               </button>
