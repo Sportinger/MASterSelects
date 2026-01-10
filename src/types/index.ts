@@ -229,6 +229,7 @@ export interface TimelineClip {
   effects: Effect[];      // Effects applied to this clip
   isLoading?: boolean;    // True while media is being loaded
   reversed?: boolean;     // True if clip plays in reverse
+  speed?: number;         // Playback speed (default 1.0, 0.5 = half speed, -1.0 = reverse)
   // Nested composition support
   isComposition?: boolean;  // True if this clip is a nested composition
   compositionId?: string;   // ID of the nested composition
@@ -301,6 +302,7 @@ export interface SerializableClip {
   analysisStatus?: AnalysisStatus;
   // Playback
   reversed?: boolean;
+  speed?: number;         // Playback speed (default 1.0)
 }
 
 // Serializable timeline data for composition storage
@@ -329,6 +331,7 @@ export interface BezierHandle {
 // Transform properties that can be animated
 export type TransformProperty =
   | 'opacity'
+  | 'speed'
   | 'position.x' | 'position.y' | 'position.z'
   | 'scale.x' | 'scale.y'
   | 'rotation.x' | 'rotation.y' | 'rotation.z';

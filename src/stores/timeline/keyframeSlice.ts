@@ -9,6 +9,7 @@ import {
   interpolateKeyframes
 } from '../../utils/keyframeInterpolation';
 import { composeTransforms } from '../../utils/transformComposition';
+import { calculateSourceTime, getSpeedAtTime } from '../../utils/speedIntegration';
 
 export const createKeyframeSlice: SliceCreator<KeyframeActions> = (set, get) => ({
   addKeyframe: (clipId, property, value, time, easing = 'linear') => {
@@ -184,6 +185,38 @@ export const createKeyframeSlice: SliceCreator<KeyframeActions> = (set, get) => 
 
       return { ...effect, params: newParams };
     });
+  },
+
+  getInterpolatedSpeed: (clipId, clipLocalTime) => {
+    const { clips, clipKeyframes } = get();
+    const clip = clips.find(c => c.id === clipId);
+    if (!clip) return 1;
+
+    const keyframes = clipKeyframes.get(clipId) || [];
+    const defaultSpeed = clip.speed ?? 1;
+
+    return getSpeedAtTime(keyframes, clipLocalTime, defaultSpeed);
+  },
+
+  getSourceTimeForClip: (clipId, clipLocalTime) => {
+    const { clips, clipKeyframes } = get();
+    const clip = clips.find(c => c.id === clipId);
+    if (!clip) return clipLocalTime;
+
+    const keyframes = clipKeyframes.get(clipId) || [];
+    const defaultSpeed = clip.speed ?? 1;
+
+    // If no speed keyframes, use simple multiplication
+    const speedKeyframes = keyframes.filter(k => k.property === 'speed');
+    if (speedKeyframes.length === 0 && defaultSpeed === 1) {
+      return clipLocalTime;
+    }
+
+    // Calculate integrated source time
+    const sourceTime = calculateSourceTime(keyframes, clipLocalTime, defaultSpeed);
+
+    // Handle negative source time (reverse playback)
+    return sourceTime;
   },
 
   hasKeyframes: (clipId, property) => {

@@ -2507,7 +2507,7 @@ input[type="checkbox"] {
 .timeline-tracks {
   flex: 1;
   position: relative;
-  overflow-x: auto;
+  overflow-x: hidden; /* Hidden - using TimelineNavigator instead */
   overflow-y: visible;
 }
 
@@ -3362,6 +3362,96 @@ input[type="checkbox"] {
   height: 100%;
   background: var(--danger);
   margin-top: -2px;
+}
+
+/* Timeline Navigator - Horizontal scrollbar with zoom handles */
+.timeline-navigator {
+  height: 20px;
+  background: var(--bg-primary);
+  border-top: 1px solid var(--border-color);
+  padding: 4px 150px 4px 150px; /* Same padding as track headers */
+  flex-shrink: 0;
+}
+
+.timeline-navigator-track {
+  height: 100%;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  position: relative;
+  cursor: pointer;
+}
+
+.timeline-navigator-thumb {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: background 0.1s;
+}
+
+.timeline-navigator-thumb:hover {
+  background: #3a3a3a;
+}
+
+.timeline-navigator-thumb.dragging {
+  cursor: grabbing;
+  background: #444;
+}
+
+.timeline-navigator-handle {
+  width: 8px;
+  height: 100%;
+  cursor: ew-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+
+.timeline-navigator-handle:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.timeline-navigator-handle-left {
+  border-radius: 4px 0 0 4px;
+}
+
+.timeline-navigator-handle-right {
+  border-radius: 0 4px 4px 0;
+}
+
+.timeline-navigator-handle::before {
+  content: '';
+  width: 2px;
+  height: 8px;
+  background: var(--text-secondary);
+  border-radius: 1px;
+}
+
+.timeline-navigator-grip {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.timeline-navigator-grip::before,
+.timeline-navigator-grip::after {
+  content: '';
+  width: 2px;
+  height: 6px;
+  background: var(--text-secondary);
+  border-radius: 1px;
+  opacity: 0.5;
 }
 
 /* Snap indicator line */

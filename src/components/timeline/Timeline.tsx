@@ -19,6 +19,7 @@ import { TimelineKeyframes } from './TimelineKeyframes';
 import { MulticamDialog } from './MulticamDialog';
 import { ParentChildLink } from './ParentChildLink';
 import { PhysicsCable } from './PhysicsCable';
+import { TimelineNavigator } from './TimelineNavigator';
 import { useContextMenuPosition } from '../../hooks/useContextMenuPosition';
 import {
   ALL_BLEND_MODES,
@@ -3318,6 +3319,18 @@ export function Timeline() {
           <div className="playhead-line" />
         </div>
       </div>{/* timeline-body */}
+
+      {/* Timeline Navigator - horizontal scrollbar with zoom handles */}
+      <TimelineNavigator
+        duration={duration}
+        scrollX={scrollX}
+        zoom={zoom}
+        viewportWidth={timelineBodyRef.current?.querySelector('.track-lanes-scroll')?.parentElement?.clientWidth ?? 800}
+        minZoom={MIN_ZOOM}
+        maxZoom={MAX_ZOOM}
+        onScrollChange={setScrollX}
+        onZoomChange={handleSetZoom}
+      />
 
       {/* Pick whip drag line - physics cable (clip parenting) */}
       {pickWhipDrag && (
