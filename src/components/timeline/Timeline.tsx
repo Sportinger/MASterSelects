@@ -777,6 +777,7 @@ export function Timeline() {
       clipTime: number
     ): {
       video: HTMLVideoElement | null;
+      webCodecsPlayer: import('../../engine/WebCodecsPlayer').WebCodecsPlayer | null;
       transform: (typeof clip)['transform'];
       effects: Effect[];
     } => {
@@ -804,6 +805,7 @@ export function Timeline() {
               ? nestedClip.outPoint - nestedLocalTime
               : nestedLocalTime + nestedClip.inPoint;
             const video = nestedClip.source.videoElement;
+            const webCodecsPlayer = nestedClip.source.webCodecsPlayer || null;
 
             const timeDiff = Math.abs(video.currentTime - nestedClipTime);
             if (timeDiff > 0.05) {
@@ -818,6 +820,7 @@ export function Timeline() {
 
             return {
               video,
+              webCodecsPlayer,
               transform: interpolatedTransform,
               effects: interpolatedEffects,
             };
@@ -825,6 +828,7 @@ export function Timeline() {
         }
         return {
           video: null,
+          webCodecsPlayer: null,
           transform: interpolatedTransform,
           effects: interpolatedEffects,
         };
@@ -832,6 +836,7 @@ export function Timeline() {
 
       return {
         video: clip.source?.videoElement || null,
+        webCodecsPlayer: clip.source?.webCodecsPlayer || null,
         transform: interpolatedTransform,
         effects: interpolatedEffects,
       };
