@@ -132,7 +132,7 @@ class CompositionAudioMixerService {
 
       try {
         // Extract audio from the file
-        const extractedBuffer = await audioExtractor.extractFromFile(file);
+        const extractedBuffer = await audioExtractor.extractAudio(file, clip.id);
         if (!extractedBuffer) {
           console.warn(`[CompositionAudioMixer] Failed to extract audio from ${clip.name}`);
           continue;
