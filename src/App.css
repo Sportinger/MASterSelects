@@ -1245,38 +1245,19 @@ input, textarea {
 
 .info-icon-wrapper {
   position: relative;
-  display: inline-block;
-  margin-left: 6px;
-  vertical-align: middle;
+  margin-left: 4px;
 }
 
 .info-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px !important;
-  height: 14px !important;
-  max-width: 14px;
-  max-height: 14px;
-  min-width: 14px;
-  min-height: 14px;
-  padding: 0;
-  margin: 0;
-  font-size: 10px;
-  font-weight: bold;
-  font-style: normal;
-  font-family: Arial, sans-serif;
-  color: #aaa;
-  background: #3a3a3a;
-  border-radius: 50%;
+  font-size: 11px;
+  font-style: italic;
+  font-family: Georgia, serif;
+  color: #666;
   cursor: pointer;
-  box-sizing: content-box;
-  line-height: 1;
 }
 
 .info-icon:hover {
-  background: #4a4a4a;
-  color: #ccc;
+  color: #999;
 }
 
 .info-tooltip {

@@ -226,7 +226,7 @@ export function ExportPanel() {
                     className="info-icon"
                     onClick={() => setShowResolutionInfo(!showResolutionInfo)}
                   >
-                    ?
+                    i
                   </span>
                   {showResolutionInfo && (
                     <div className="info-tooltip">
