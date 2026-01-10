@@ -34,7 +34,6 @@ export function ImageCropper({
 }: ImageCropperProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
   // Crop state
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -112,38 +111,53 @@ export function ImageCropper({
     };
   }, [imageUrl, imageDimensions, aspectRatio, offset, scale]);
 
-  // Handle mouse down for drag
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (disabled || !imageUrl) return;
-    e.preventDefault();
-    setIsDragging(true);
-    setDragStart({ x: e.clientX, y: e.clientY });
-  }, [disabled, imageUrl]);
+  // Handle pointer lock for infinite dragging
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
 
-  // Handle mouse move for drag
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!isDragging || !containerRef.current) return;
+    const handlePointerLockChange = () => {
+      const isLocked = document.pointerLockElement === container;
+      setIsDragging(isLocked);
+    };
 
-    const rect = containerRef.current.getBoundingClientRect();
-    const deltaX = (e.clientX - dragStart.x) / rect.width;
-    const deltaY = (e.clientY - dragStart.y) / rect.height;
+    const handleMouseMove = (e: MouseEvent) => {
+      if (document.pointerLockElement !== container) return;
 
-    setOffset(prev => ({
-      x: Math.max(-1, Math.min(1, prev.x + deltaX * 2)),
-      y: Math.max(-1, Math.min(1, prev.y + deltaY * 2)),
-    }));
+      const rect = container.getBoundingClientRect();
+      // Use movementX/Y for infinite movement
+      const deltaX = e.movementX / rect.width;
+      const deltaY = e.movementY / rect.height;
 
-    setDragStart({ x: e.clientX, y: e.clientY });
-  }, [isDragging, dragStart]);
+      setOffset(prev => ({
+        x: Math.max(-1, Math.min(1, prev.x + deltaX * 2)),
+        y: Math.max(-1, Math.min(1, prev.y + deltaY * 2)),
+      }));
+    };
 
-  // Handle mouse up
-  const handleMouseUp = useCallback(() => {
-    setIsDragging(false);
+    document.addEventListener('pointerlockchange', handlePointerLockChange);
+    document.addEventListener('mousemove', handleMouseMove);
+
+    return () => {
+      document.removeEventListener('pointerlockchange', handlePointerLockChange);
+      document.removeEventListener('mousemove', handleMouseMove);
+    };
   }, []);
 
-  // Handle mouse leave
-  const handleMouseLeave = useCallback(() => {
-    setIsDragging(false);
+  // Handle mouse down for drag - request pointer lock
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (disabled || !imageUrl) return;
+    if (e.button !== 0) return; // Only left click
+
+    e.preventDefault();
+    containerRef.current?.requestPointerLock();
+  }, [disabled, imageUrl]);
+
+  // Handle mouse up - release pointer lock
+  const handleMouseUp = useCallback(() => {
+    if (document.pointerLockElement) {
+      document.exitPointerLock();
+    }
   }, []);
 
   // Handle wheel for zoom - use native event to properly prevent scroll
@@ -190,9 +204,7 @@ export function ImageCropper({
         className={`image-cropper ${imageUrl ? 'has-image' : ''} ${isDragging ? 'dragging' : ''}`}
         style={{ aspectRatio: `${aspectRatio.width} / ${aspectRatio.height}` }}
         onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseLeave}
         onDragOver={handleDragOver}
         onDrop={onDrop}
         onClick={handleClick}
