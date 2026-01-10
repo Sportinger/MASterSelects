@@ -1250,24 +1250,24 @@ input, textarea {
 }
 
 .info-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-  min-width: 14px;
-  min-height: 14px;
-  margin-left: 6px;
-  font-size: 9px;
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  line-height: 12px;
+  margin-left: 5px;
+  font-size: 8px;
   font-weight: 600;
   font-style: italic;
   font-family: serif;
+  text-align: center;
   color: #888;
   background: #444;
   border: none;
   border-radius: 50%;
   cursor: pointer;
   transition: all 0.15s;
+  flex-shrink: 0;
+  aspect-ratio: 1;
 }
 
 .info-icon:hover {
