@@ -848,7 +848,7 @@ export function Timeline() {
 
       if (clip?.isComposition && clip.nestedClips && clip.nestedClips.length > 0) {
         const clipTime = playheadPosition - clip.startTime + clip.inPoint;
-        const { video, transform, effects } = getVideoFromClip(clip, clipTime);
+        const { video, webCodecsPlayer, transform, effects } = getVideoFromClip(clip, clipTime);
 
         if (video) {
           const trackVisible = isVideoTrackVisible(track);
@@ -856,6 +856,7 @@ export function Timeline() {
             !layer ||
             layer.visible !== trackVisible ||
             layer.source?.videoElement !== video ||
+            layer.source?.webCodecsPlayer !== webCodecsPlayer ||
             layer.opacity !== transform.opacity ||
             layer.blendMode !== transform.blendMode ||
             layer.position.x !== transform.position.x ||
@@ -880,6 +881,7 @@ export function Timeline() {
               source: {
                 type: 'video',
                 videoElement: video,
+                webCodecsPlayer: webCodecsPlayer || undefined, // Pass through WebCodecsPlayer for nested compositions
               },
               effects: effects,
               position: { x: transform.position.x, y: transform.position.y, z: transform.position.z },
