@@ -53,6 +53,10 @@ When enabled (default):
 - Tab next to AI Chat in dock panels
 - View menu → AI Video
 
+### Panel Tabs
+- **AI Video**: Generation interface
+- **History**: List of all generated videos
+
 ### Supported Services
 Currently supports **Kling AI** for video generation.
 
@@ -66,7 +70,8 @@ Generate video from text prompts:
 
 #### Image-to-Video
 Animate images:
-- Upload start frame (required)
+- Drag & drop or click to upload start/end frames
+- **Use Current Frame** button captures timeline preview
 - Optional end frame for guided animation
 - Video morphs between frames
 
@@ -82,22 +87,41 @@ Animate images:
 | **Camera** | None, Down&Back, Forward&Up, etc. | Camera movement presets |
 | **Negative Prompt** | Text | What to avoid in generation |
 
+### Timeline Integration
+- **Add to Timeline** checkbox (enabled by default)
+- Videos auto-import to "KlingAI" folder in Media Panel
+- Clips placed on empty or new video track at playhead
+- Videos with audio get linked audio clips
+
 ### Generation Queue
 - Jobs appear in queue with status
 - Status: Queued → Processing → Done/Failed
 - Download generated videos directly
 - Remove jobs from queue
 
+### History Tab
+- Persistent list of all generated videos
+- Video thumbnails with play/pause
+- Draggable to timeline
+- "In Timeline" badge for added clips
+- "+ Timeline" button to add manually
+
 ### API Authentication
-Kling uses JWT authentication. Get your API key from:
-[Kling AI Developer Portal](https://app.klingai.com/global/dev/document-api)
+Kling uses Access Key + Secret Key for JWT authentication:
+1. Get credentials from [Kling AI Developer Portal](https://app.klingai.com/global/dev/document-api)
+2. Enter Access Key (AK) in Settings
+3. Enter Secret Key (SK) in Settings
+4. JWT tokens are generated automatically with 30-minute caching
 
 ### Task-Based Workflow
 ```
 1. Submit generation request
 2. Receive task ID
 3. Poll for status (every 5 seconds)
-4. Download video when complete
+4. On completion:
+   - Import video to KlingAI folder
+   - Optionally add clip to timeline
+   - Add to history for later access
 ```
 
 ---

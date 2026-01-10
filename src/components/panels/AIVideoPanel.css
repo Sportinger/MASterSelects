@@ -44,6 +44,37 @@
   border-color: var(--accent);
 }
 
+/* Panel Sub-tabs */
+.panel-tabs {
+  display: flex;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.panel-tab {
+  flex: 1;
+  padding: 10px 16px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.panel-tab:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.panel-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
 /* Empty / No API Key State */
 .ai-video-empty {
   flex: 1;
@@ -205,6 +236,29 @@
   background: rgba(239, 68, 68, 0.8);
 }
 
+/* Use Current Frame Button */
+.btn-use-current {
+  padding: 6px 10px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-use-current:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.btn-use-current:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Input Groups */
 .input-group {
   display: flex;
@@ -307,6 +361,34 @@
   background: var(--accent);
   border-radius: 50%;
   cursor: pointer;
+}
+
+/* Timeline Option Checkbox */
+.timeline-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.timeline-option:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.timeline-option input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.timeline-option span {
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 
 /* Generate Button */
@@ -508,4 +590,194 @@
   background: var(--accent);
   border-color: var(--accent);
   color: white;
+}
+
+/* History Tab */
+.ai-video-history {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.history-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  text-align: center;
+}
+
+.history-empty p {
+  color: var(--text-primary);
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+.history-empty span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.history-item {
+  display: flex;
+  gap: 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px;
+  cursor: grab;
+  transition: all 0.15s;
+}
+
+.history-item:hover {
+  border-color: var(--accent);
+}
+
+.history-item:active {
+  cursor: grabbing;
+}
+
+.history-preview {
+  position: relative;
+  width: 120px;
+  height: 68px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #000;
+}
+
+.history-preview video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  cursor: pointer;
+}
+
+.history-preview-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+}
+
+.play-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 32px;
+  height: 32px;
+  background: rgba(0, 0, 0, 0.7);
+  border: none;
+  border-radius: 50%;
+  color: white;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.8;
+  transition: all 0.15s;
+}
+
+.play-overlay:hover {
+  opacity: 1;
+  background: var(--accent);
+}
+
+.history-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.history-prompt {
+  font-size: 12px;
+  color: var(--text-primary);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.history-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 10px;
+}
+
+.history-type {
+  background: var(--bg-secondary);
+  padding: 2px 6px;
+  border-radius: 3px;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.history-date {
+  color: var(--text-secondary);
+}
+
+.history-added {
+  color: #22c55e;
+  font-weight: 500;
+}
+
+.history-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: auto;
+}
+
+.btn-add-timeline {
+  padding: 4px 8px;
+  background: var(--accent);
+  border: none;
+  border-radius: 3px;
+  color: white;
+  font-size: 10px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btn-add-timeline:hover {
+  background: var(--accent-hover);
+}
+
+.btn-remove-history {
+  width: 20px;
+  height: 20px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-remove-history:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: #ef4444;
+  color: #ef4444;
 }
