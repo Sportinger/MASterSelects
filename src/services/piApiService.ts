@@ -270,27 +270,34 @@ class PiApiService {
     return new Blob([array], { type: mimeType });
   }
 
-  // Upload image using file.io (supports CORS)
-  private async uploadToFileIO(dataUrl: string): Promise<string> {
+  // Upload image using catbox.moe litterbox (temporary file host, supports CORS)
+  private async uploadToLitterbox(dataUrl: string): Promise<string> {
     const blob = this.dataUrlToBlob(dataUrl);
     const formData = new FormData();
-    formData.append('file', blob, 'image.jpg');
+    formData.append('reqtype', 'fileupload');
+    formData.append('time', '1h'); // File expires in 1 hour (enough for video generation)
+    formData.append('fileToUpload', blob, 'image.jpg');
 
-    console.log('[PiAPI] Uploading image to file.io, size:', Math.round(blob.size / 1024), 'KB');
+    console.log('[PiAPI] Uploading image to litterbox.catbox.moe, size:', Math.round(blob.size / 1024), 'KB');
 
-    const response = await fetch('https://file.io', {
+    const response = await fetch('https://litterbox.catbox.moe/resources/internals/api.php', {
       method: 'POST',
       body: formData,
     });
 
-    const result = await response.json();
-    console.log('[PiAPI] file.io response:', result);
-
-    if (!result.success) {
-      throw new Error(result.message || 'file.io upload failed');
+    if (!response.ok) {
+      throw new Error(`Litterbox upload failed: ${response.status}`);
     }
 
-    return result.link;
+    // Litterbox returns the URL as plain text
+    const url = await response.text();
+    console.log('[PiAPI] Litterbox response:', url);
+
+    if (!url.startsWith('http')) {
+      throw new Error(url || 'Litterbox upload failed');
+    }
+
+    return url.trim();
   }
 
   // Upload image to PiAPI's ephemeral resource endpoint via CORS proxy
@@ -349,19 +356,12 @@ class PiApiService {
 
   // Main upload method - tries multiple services
   private async uploadImage(dataUrl: string): Promise<string> {
-    // Try file.io first (most reliable for browser uploads)
+    // Try litterbox.catbox.moe first (free, supports CORS, 1 hour expiry)
     try {
-      return await this.uploadToFileIO(dataUrl);
+      return await this.uploadToLitterbox(dataUrl);
     } catch (err) {
-      console.warn('[PiAPI] file.io upload failed, trying CORS proxy:', err);
-    }
-
-    // Fallback to PiAPI via CORS proxy
-    try {
-      return await this.uploadToPiApiViaProxy(dataUrl);
-    } catch (err) {
-      console.error('[PiAPI] All upload methods failed:', err);
-      throw new Error('Failed to upload image. Please try again or use text-to-video instead.');
+      console.warn('[PiAPI] Litterbox upload failed:', err);
+      throw new Error('Failed to upload image: ' + (err instanceof Error ? err.message : 'Unknown error'));
     }
   }
 

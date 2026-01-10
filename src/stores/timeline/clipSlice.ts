@@ -637,122 +637,237 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
         ),
       });
 
+      // Always create a linked audio clip for compositions (even if no audio)
       // Import dynamically to avoid circular dependencies
       import('../../services/compositionAudioMixer').then(async ({ compositionAudioMixer }) => {
         try {
           console.log(`[Nested Comp] Generating audio mixdown for ${composition.name}...`);
           const mixdownResult = await compositionAudioMixer.mixdownComposition(composition.id);
 
-          if (mixdownResult && mixdownResult.hasAudio) {
-            // Create audio element for playback
-            const mixdownAudio = compositionAudioMixer.createAudioElement(mixdownResult.buffer);
-            mixdownAudio.preload = 'auto';
+          // Find an audio track to place the linked audio clip
+          const currentState = get();
+          const audioTracks = currentState.tracks.filter(t => t.type === 'audio');
+          let audioTrackId: string | null = null;
 
-            // Find an audio track to place the linked audio clip
-            const currentState = get();
-            const audioTracks = currentState.tracks.filter(t => t.type === 'audio');
-            let audioTrackId: string | null = null;
-
-            if (audioTracks.length > 0) {
-              // Use the first audio track
-              audioTrackId = audioTracks[0].id;
-            } else {
-              // Create a new audio track
-              const newTrackId = `track-${Date.now()}-audio`;
-              const newTrack: TimelineTrack = {
-                id: newTrackId,
-                name: 'Audio 1',
-                type: 'audio',
-                height: 60,
-                muted: false,
-                visible: true,
-                solo: false,
-              };
-              set({ tracks: [...currentState.tracks, newTrack] });
-              audioTrackId = newTrackId;
-              console.log(`[Nested Comp] Created new audio track for ${composition.name}`);
-            }
-
-            // Create a linked audio clip with the mixdown
-            const audioClipId = `clip-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-audio`;
-            const compClipCurrent = get().clips.find(c => c.id === clipId);
-
-            if (compClipCurrent && audioTrackId) {
-              const audioClip: TimelineClip = {
-                id: audioClipId,
-                trackId: audioTrackId,
-                name: `${composition.name} (Audio)`,
-                file: new File([], `${composition.name}-audio.wav`),
-                startTime: compClipCurrent.startTime,
-                duration: compClipCurrent.duration,
-                inPoint: 0,
-                outPoint: mixdownResult.duration,
-                source: {
-                  type: 'audio',
-                  audioElement: mixdownAudio,
-                  naturalDuration: mixdownResult.duration,
-                },
-                linkedClipId: clipId, // Link to the video comp clip
-                waveform: mixdownResult.waveform,
-                transform: { ...DEFAULT_TRANSFORM },
-                effects: [],
-                isLoading: false,
-                isComposition: true, // Mark as composition audio
-                compositionId: composition.id,
-                mixdownBuffer: mixdownResult.buffer,
-              };
-
-              // Update the video comp clip to link to the audio clip and add both
-              const clipsAfter = get().clips;
-              set({
-                clips: [
-                  ...clipsAfter.map(c =>
-                    c.id === clipId
-                      ? {
-                          ...c,
-                          linkedClipId: audioClipId,
-                          mixdownGenerating: false,
-                          hasMixdownAudio: true,
-                        }
-                      : c
-                  ),
-                  audioClip,
-                ],
-              });
-              console.log(`[Nested Comp] Audio mixdown complete for ${composition.name}: created linked audio clip with ${mixdownResult.waveform.length} waveform samples`);
-            }
+          if (audioTracks.length > 0) {
+            // Use the first audio track
+            audioTrackId = audioTracks[0].id;
           } else {
-            // No audio in nested comp
+            // Create a new audio track
+            const newTrackId = `track-${Date.now()}-audio`;
+            const newTrack: TimelineTrack = {
+              id: newTrackId,
+              name: 'Audio 1',
+              type: 'audio',
+              height: 60,
+              muted: false,
+              visible: true,
+              solo: false,
+            };
+            set({ tracks: [...currentState.tracks, newTrack] });
+            audioTrackId = newTrackId;
+            console.log(`[Nested Comp] Created new audio track for ${composition.name}`);
+          }
+
+          // Create a linked audio clip (with or without actual audio content)
+          const audioClipId = `clip-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-audio`;
+          const compClipCurrent = get().clips.find(c => c.id === clipId);
+
+          if (compClipCurrent && audioTrackId) {
+            const hasAudio = mixdownResult && mixdownResult.hasAudio;
+
+            // Create audio element - either from mixdown or silent placeholder
+            let mixdownAudio: HTMLAudioElement | undefined;
+            let waveform: number[] = [];
+            let mixdownBuffer: AudioBuffer | undefined;
+
+            if (hasAudio && mixdownResult) {
+              mixdownAudio = compositionAudioMixer.createAudioElement(mixdownResult.buffer);
+              mixdownAudio.preload = 'auto';
+              waveform = mixdownResult.waveform;
+              mixdownBuffer = mixdownResult.buffer;
+            } else {
+              // Create silent audio element for empty comp
+              mixdownAudio = document.createElement('audio');
+              // Generate flat waveform (silence)
+              waveform = new Array(Math.max(1, Math.floor(composition.duration * 50))).fill(0);
+            }
+
+            const audioClip: TimelineClip = {
+              id: audioClipId,
+              trackId: audioTrackId,
+              name: `${composition.name} (Audio)`,
+              file: new File([], `${composition.name}-audio.wav`),
+              startTime: compClipCurrent.startTime,
+              duration: compClipCurrent.duration,
+              inPoint: 0,
+              outPoint: hasAudio && mixdownResult ? mixdownResult.duration : composition.duration,
+              source: {
+                type: 'audio',
+                audioElement: mixdownAudio,
+                naturalDuration: hasAudio && mixdownResult ? mixdownResult.duration : composition.duration,
+              },
+              linkedClipId: clipId, // Link to the video comp clip
+              waveform,
+              transform: { ...DEFAULT_TRANSFORM },
+              effects: [],
+              isLoading: false,
+              isComposition: true, // Mark as composition audio
+              compositionId: composition.id,
+              mixdownBuffer,
+            };
+
+            // Update the video comp clip to link to the audio clip and add both
             const clipsAfter = get().clips;
             set({
-              clips: clipsAfter.map(c =>
-                c.id === clipId
-                  ? { ...c, mixdownGenerating: false, hasMixdownAudio: false }
-                  : c
-              ),
+              clips: [
+                ...clipsAfter.map(c =>
+                  c.id === clipId
+                    ? {
+                        ...c,
+                        linkedClipId: audioClipId,
+                        mixdownGenerating: false,
+                        hasMixdownAudio: hasAudio,
+                      }
+                    : c
+                ),
+                audioClip,
+              ],
             });
-            console.log(`[Nested Comp] No audio found in ${composition.name}`);
+            console.log(`[Nested Comp] Created linked audio clip for ${composition.name} (hasAudio: ${hasAudio})`);
           }
         } catch (e) {
           console.error('[Nested Comp] Failed to generate audio mixdown:', e);
-          const clipsAfter = get().clips;
-          set({
-            clips: clipsAfter.map(c =>
-              c.id === clipId
-                ? { ...c, mixdownGenerating: false, hasMixdownAudio: false }
-                : c
-            ),
-          });
+          // Still create an empty linked audio clip on error
+          const currentState = get();
+          const audioTracks = currentState.tracks.filter(t => t.type === 'audio');
+          let audioTrackId: string | null = audioTracks.length > 0 ? audioTracks[0].id : null;
+
+          if (!audioTrackId) {
+            const newTrackId = `track-${Date.now()}-audio`;
+            const newTrack: TimelineTrack = {
+              id: newTrackId,
+              name: 'Audio 1',
+              type: 'audio',
+              height: 60,
+              muted: false,
+              visible: true,
+              solo: false,
+            };
+            set({ tracks: [...currentState.tracks, newTrack] });
+            audioTrackId = newTrackId;
+          }
+
+          const audioClipId = `clip-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-audio`;
+          const compClipCurrent = get().clips.find(c => c.id === clipId);
+
+          if (compClipCurrent && audioTrackId) {
+            const audioClip: TimelineClip = {
+              id: audioClipId,
+              trackId: audioTrackId,
+              name: `${composition.name} (Audio)`,
+              file: new File([], `${composition.name}-audio.wav`),
+              startTime: compClipCurrent.startTime,
+              duration: compClipCurrent.duration,
+              inPoint: 0,
+              outPoint: composition.duration,
+              source: {
+                type: 'audio',
+                audioElement: document.createElement('audio'),
+                naturalDuration: composition.duration,
+              },
+              linkedClipId: clipId,
+              waveform: new Array(Math.max(1, Math.floor(composition.duration * 50))).fill(0),
+              transform: { ...DEFAULT_TRANSFORM },
+              effects: [],
+              isLoading: false,
+              isComposition: true,
+              compositionId: composition.id,
+            };
+
+            const clipsAfter = get().clips;
+            set({
+              clips: [
+                ...clipsAfter.map(c =>
+                  c.id === clipId
+                    ? { ...c, linkedClipId: audioClipId, mixdownGenerating: false, hasMixdownAudio: false }
+                    : c
+                ),
+                audioClip,
+              ],
+            });
+            console.log(`[Nested Comp] Created empty linked audio clip for ${composition.name} (error fallback)`);
+          }
         }
       });
     } else {
-      // No timeline data - just mark as loaded
-      const currentClips = get().clips;
-      set({
-        clips: currentClips.map(c =>
-          c.id === clipId ? { ...c, isLoading: false } : c
-        ),
-      });
+      // No timeline data - still create linked audio clip for consistency
+      const currentState = get();
+      const audioTracks = currentState.tracks.filter(t => t.type === 'audio');
+      let audioTrackId: string | null = audioTracks.length > 0 ? audioTracks[0].id : null;
+
+      if (!audioTrackId) {
+        const newTrackId = `track-${Date.now()}-audio`;
+        const newTrack: TimelineTrack = {
+          id: newTrackId,
+          name: 'Audio 1',
+          type: 'audio',
+          height: 60,
+          muted: false,
+          visible: true,
+          solo: false,
+        };
+        set({ tracks: [...currentState.tracks, newTrack] });
+        audioTrackId = newTrackId;
+      }
+
+      const audioClipId = `clip-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-audio`;
+      const compClipCurrent = currentState.clips.find(c => c.id === clipId);
+
+      if (compClipCurrent && audioTrackId) {
+        const audioClip: TimelineClip = {
+          id: audioClipId,
+          trackId: audioTrackId,
+          name: `${composition.name} (Audio)`,
+          file: new File([], `${composition.name}-audio.wav`),
+          startTime: compClipCurrent.startTime,
+          duration: compClipCurrent.duration,
+          inPoint: 0,
+          outPoint: composition.duration,
+          source: {
+            type: 'audio',
+            audioElement: document.createElement('audio'),
+            naturalDuration: composition.duration,
+          },
+          linkedClipId: clipId,
+          waveform: new Array(Math.max(1, Math.floor(composition.duration * 50))).fill(0),
+          transform: { ...DEFAULT_TRANSFORM },
+          effects: [],
+          isLoading: false,
+          isComposition: true,
+          compositionId: composition.id,
+        };
+
+        set({
+          clips: [
+            ...currentState.clips.map(c =>
+              c.id === clipId
+                ? { ...c, linkedClipId: audioClipId, isLoading: false, hasMixdownAudio: false }
+                : c
+            ),
+            audioClip,
+          ],
+        });
+        console.log(`[Nested Comp] Created empty linked audio clip for ${composition.name} (no timeline data)`);
+      } else {
+        // Fallback - just mark as loaded
+        const currentClips = get().clips;
+        set({
+          clips: currentClips.map(c =>
+            c.id === clipId ? { ...c, isLoading: false } : c
+          ),
+        });
+      }
     }
 
     get().invalidateCache();
