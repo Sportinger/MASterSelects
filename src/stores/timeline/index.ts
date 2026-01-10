@@ -533,7 +533,7 @@ export const useTimelineStore = create<TimelineStore>()(
                 }));
 
                 // Regenerate audio mixdown in background
-                import('../services/compositionAudioMixer').then(async ({ compositionAudioMixer }) => {
+                import('../../services/compositionAudioMixer').then(async ({ compositionAudioMixer }) => {
                   try {
                     console.log(`[loadState] Regenerating audio mixdown for ${composition.name}...`);
                     const mixdownResult = await compositionAudioMixer.mixdownComposition(composition.id);
