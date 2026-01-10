@@ -20,12 +20,18 @@ export const KLING_DURATIONS = [
   { value: 10, label: '10 seconds' },
 ] as const;
 
-// Aspect ratio options
+// Aspect ratio options with dimensions
 export const KLING_ASPECT_RATIOS = [
-  { value: '16:9', label: '16:9 (Landscape)' },
-  { value: '9:16', label: '9:16 (Portrait)' },
-  { value: '1:1', label: '1:1 (Square)' },
+  { value: '16:9', label: '16:9 (Landscape)', width: 16, height: 9 },
+  { value: '9:16', label: '9:16 (Portrait)', width: 9, height: 16 },
+  { value: '1:1', label: '1:1 (Square)', width: 1, height: 1 },
 ] as const;
+
+// Get aspect ratio dimensions
+export function getAspectRatioDimensions(aspectRatio: string): { width: number; height: number } {
+  const ar = KLING_ASPECT_RATIOS.find(a => a.value === aspectRatio);
+  return ar ? { width: ar.width, height: ar.height } : { width: 16, height: 9 };
+}
 
 // Generation mode options
 export const KLING_MODES = [

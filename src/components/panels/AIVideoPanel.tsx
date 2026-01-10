@@ -489,37 +489,32 @@ export function AIVideoPanel() {
 
   return (
     <div className="ai-video-panel">
-      {/* Header */}
-      <div className="ai-video-header">
-        <h2>AI Video</h2>
-        <div className="ai-video-controls">
-          <select
-            className="service-select"
-            value={service}
-            onChange={(e) => setService(e.target.value)}
-            disabled={isGenerating}
+      {/* Sub-tabs with service dropdown */}
+      <div className="panel-tabs-row">
+        <div className="panel-tabs">
+          <button
+            className={`panel-tab ${activeTab === 'generate' ? 'active' : ''}`}
+            onClick={() => setActiveTab('generate')}
           >
-            {AI_SERVICES.map(s => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
+            AI Video
+          </button>
+          <button
+            className={`panel-tab ${activeTab === 'history' ? 'active' : ''}`}
+            onClick={() => setActiveTab('history')}
+          >
+            History ({history.length})
+          </button>
         </div>
-      </div>
-
-      {/* Sub-tabs */}
-      <div className="panel-tabs">
-        <button
-          className={`panel-tab ${activeTab === 'generate' ? 'active' : ''}`}
-          onClick={() => setActiveTab('generate')}
+        <select
+          className="service-select"
+          value={service}
+          onChange={(e) => setService(e.target.value)}
+          disabled={isGenerating}
         >
-          AI Video
-        </button>
-        <button
-          className={`panel-tab ${activeTab === 'history' ? 'active' : ''}`}
-          onClick={() => setActiveTab('history')}
-        >
-          History ({history.length})
-        </button>
+          {AI_SERVICES.map(s => (
+            <option key={s.id} value={s.id}>{s.name}</option>
+          ))}
+        </select>
       </div>
 
       {/* Content */}
