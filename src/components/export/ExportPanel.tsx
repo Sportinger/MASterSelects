@@ -38,8 +38,17 @@ export function ExportPanel() {
 
   // Check WebCodecs support
   const [isSupported, setIsSupported] = useState(true);
+  const [isAudioSupported, setIsAudioSupported] = useState(true);
   useEffect(() => {
     setIsSupported(FrameExporter.isSupported());
+    // Check audio encoder support
+    AudioExportPipeline.isSupported().then(supported => {
+      setIsAudioSupported(supported);
+      if (!supported) {
+        setIncludeAudio(false);
+        console.warn('[ExportPanel] AAC audio encoding not supported in this browser');
+      }
+    });
   }, []);
 
   // Compute actual start/end based on In/Out markers
@@ -291,9 +300,9 @@ export function ExportPanel() {
         <button
           className="btn"
           onClick={handleExportAudioOnly}
-          disabled={isExporting || endTime <= startTime || !includeAudio}
+          disabled={isExporting || endTime <= startTime || !isAudioSupported}
           style={{ flex: 1 }}
-          title={!includeAudio ? 'Enable "Include Audio" first' : ''}
+          title={!isAudioSupported ? 'AAC encoding not supported in this browser' : ''}
         >
           Export Audio
         </button>
@@ -424,9 +433,15 @@ export function ExportPanel() {
                   type="checkbox"
                   checked={includeAudio}
                   onChange={(e) => setIncludeAudio(e.target.checked)}
+                  disabled={!isAudioSupported}
                 />
                 Include Audio (AAC)
               </label>
+              {!isAudioSupported && (
+                <span style={{ color: 'var(--warning)', fontSize: '11px', marginLeft: '8px' }}>
+                  Not supported in this browser
+                </span>
+              )}
             </div>
 
             {includeAudio && (
