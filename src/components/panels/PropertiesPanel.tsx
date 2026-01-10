@@ -1,9 +1,9 @@
 // Unified Properties Panel - Transform, Effects, Masks in one panel with sub-tabs
 // Also handles Audio clips with Volume and EQ
 
-import { useRef, useCallback, useState, useEffect } from 'react';
+import { useRef, useCallback, useState, useEffect, useMemo } from 'react';
 import { useTimelineStore } from '../../stores/timeline';
-import type { BlendMode, AnimatableProperty, MaskMode, ClipMask, EffectType } from '../../types';
+import type { BlendMode, AnimatableProperty, MaskMode, ClipMask, EffectType, TranscriptWord, FrameAnalysisData } from '../../types';
 import { createEffectProperty } from '../../types';
 import { EQ_FREQUENCIES } from '../../services/audioManager';
 
@@ -205,7 +205,7 @@ function DraggableNumber({ value, onChange, defaultValue, sensitivity = 2, decim
 // ============================================
 // TAB TYPE
 // ============================================
-type PropertiesTab = 'transform' | 'effects' | 'masks' | 'volume';
+type PropertiesTab = 'transform' | 'effects' | 'masks' | 'volume' | 'transcript' | 'analysis';
 
 // ============================================
 // TRANSFORM TAB
@@ -773,6 +773,311 @@ function MasksTab({ clipId, masks }: MasksTabProps) {
 }
 
 // ============================================
+// TRANSCRIPT TAB
+// ============================================
+
+const LANGUAGES = [
+  { code: 'de', name: 'Deutsch' },
+  { code: 'en', name: 'English' },
+  { code: 'es', name: 'Español' },
+  { code: 'fr', name: 'Français' },
+  { code: 'it', name: 'Italiano' },
+  { code: 'pt', name: 'Português' },
+];
+
+function formatTimeShort(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+interface TranscriptTabProps {
+  clipId: string;
+  transcript: TranscriptWord[];
+  transcriptStatus: 'none' | 'transcribing' | 'ready' | 'error';
+  transcriptProgress: number;
+  clipStartTime: number;
+  inPoint: number;
+}
+
+function TranscriptTab({ clipId, transcript, transcriptStatus, transcriptProgress, clipStartTime, inPoint }: TranscriptTabProps) {
+  const { setPlayheadPosition, playheadPosition } = useTimelineStore();
+  const [language, setLanguage] = useState(() => localStorage.getItem('transcriptLanguage') || 'de');
+  const [searchQuery, setSearchQuery] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Calculate clip-local time for word matching
+  const clipLocalTime = playheadPosition - clipStartTime + inPoint;
+
+  // Find current word based on playhead position
+  const currentWordId = useMemo(() => {
+    if (clipLocalTime < 0 || transcript.length === 0) return null;
+    for (const word of transcript) {
+      if (clipLocalTime >= word.start && clipLocalTime <= word.end) {
+        return word.id;
+      }
+    }
+    return null;
+  }, [transcript, clipLocalTime]);
+
+  // Filter words by search query
+  const filteredWords = useMemo(() => {
+    if (!searchQuery.trim()) return transcript;
+    const query = searchQuery.toLowerCase();
+    return transcript.filter(w => w.text.toLowerCase().includes(query));
+  }, [transcript, searchQuery]);
+
+  const handleWordClick = useCallback((sourceTime: number) => {
+    const timelinePosition = clipStartTime + (sourceTime - inPoint);
+    setPlayheadPosition(Math.max(0, timelinePosition));
+  }, [clipStartTime, inPoint, setPlayheadPosition]);
+
+  const handleTranscribe = useCallback(async () => {
+    const { transcribeClip } = await import('../../services/clipTranscriber');
+    await transcribeClip(clipId, language);
+  }, [clipId, language]);
+
+  const handleCancel = useCallback(async () => {
+    const { cancelTranscription } = await import('../../services/clipTranscriber');
+    cancelTranscription();
+  }, []);
+
+  const handleDelete = useCallback(async () => {
+    const { clearClipTranscript } = await import('../../services/clipTranscriber');
+    clearClipTranscript(clipId);
+  }, [clipId]);
+
+  const handleLanguageChange = useCallback((newLanguage: string) => {
+    setLanguage(newLanguage);
+    localStorage.setItem('transcriptLanguage', newLanguage);
+  }, []);
+
+  return (
+    <div className="properties-tab-content transcript-tab">
+      {/* Language and actions */}
+      <div className="properties-section">
+        <div className="control-row">
+          <label>Language</label>
+          <select value={language} onChange={(e) => handleLanguageChange(e.target.value)}
+            disabled={transcriptStatus === 'transcribing'}>
+            {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.name}</option>)}
+          </select>
+        </div>
+        <div className="transcript-tab-actions">
+          {transcriptStatus !== 'ready' && transcriptStatus !== 'transcribing' && (
+            <button className="btn btn-sm" onClick={handleTranscribe}>Transcribe</button>
+          )}
+          {transcriptStatus === 'transcribing' && (
+            <button className="btn btn-sm btn-danger" onClick={handleCancel}>Cancel</button>
+          )}
+          {transcriptStatus === 'ready' && (
+            <>
+              <button className="btn btn-sm" onClick={handleTranscribe}>Re-transcribe</button>
+              <button className="btn btn-sm btn-danger" onClick={handleDelete}>Delete</button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Progress */}
+      {transcriptStatus === 'transcribing' && (
+        <div className="properties-section">
+          <div className="transcript-progress-bar">
+            <div className="transcript-progress-fill" style={{ width: `${transcriptProgress}%` }} />
+          </div>
+          <span className="transcript-progress-text">{transcriptProgress}%</span>
+        </div>
+      )}
+
+      {/* Search */}
+      {transcript.length > 0 && (
+        <div className="properties-section">
+          <input type="text" placeholder="Search transcript..." value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)} className="transcript-search-input" />
+        </div>
+      )}
+
+      {/* Transcript content */}
+      <div className="transcript-content-embedded" ref={containerRef}>
+        {transcript.length === 0 ? (
+          <div className="transcript-empty-state">
+            {transcriptStatus === 'transcribing' ? 'Transcribing...' : 'No transcript. Click "Transcribe" to generate.'}
+          </div>
+        ) : (
+          <div className="transcript-words-flow">
+            {filteredWords.map(word => (
+              <span
+                key={word.id}
+                className={`transcript-word-inline ${word.id === currentWordId ? 'active' : ''} ${searchQuery && word.text.toLowerCase().includes(searchQuery.toLowerCase()) ? 'highlighted' : ''}`}
+                onClick={() => handleWordClick(word.start)}
+                title={formatTimeShort(word.start)}
+              >
+                {word.text}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Status */}
+      {transcriptStatus === 'ready' && (
+        <div className="transcript-status-bar">
+          {transcript.length} words
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// ANALYSIS TAB
+// ============================================
+
+interface AnalysisTabProps {
+  clipId: string;
+  analysis: { frames: FrameAnalysisData[] } | undefined;
+  analysisStatus: 'none' | 'analyzing' | 'ready' | 'error';
+  analysisProgress: number;
+  clipStartTime: number;
+  inPoint: number;
+  outPoint: number;
+}
+
+function AnalysisTab({ clipId, analysis, analysisStatus, analysisProgress, clipStartTime, inPoint, outPoint }: AnalysisTabProps) {
+  const { playheadPosition } = useTimelineStore();
+
+  // Calculate current values at playhead
+  const currentValues = useMemo((): FrameAnalysisData | null => {
+    if (!analysis?.frames.length) return null;
+
+    const clipEnd = clipStartTime + (outPoint - inPoint);
+    if (playheadPosition < clipStartTime || playheadPosition > clipEnd) return null;
+
+    const timeInClip = playheadPosition - clipStartTime;
+    const sourceTime = inPoint + timeInClip;
+
+    let closestFrame = analysis.frames[0];
+    let closestDistance = Math.abs(closestFrame.timestamp - sourceTime);
+
+    for (const frame of analysis.frames) {
+      const distance = Math.abs(frame.timestamp - sourceTime);
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestFrame = frame;
+      }
+    }
+    return closestFrame;
+  }, [analysis, clipStartTime, inPoint, outPoint, playheadPosition]);
+
+  // Stats summary
+  const stats = useMemo(() => {
+    if (!analysis?.frames.length) return null;
+    const frames = analysis.frames;
+    return {
+      avgFocus: Math.round(frames.reduce((s, f) => s + f.focus, 0) / frames.length * 100),
+      avgMotion: Math.round(frames.reduce((s, f) => s + f.motion, 0) / frames.length * 100),
+      maxFocus: Math.round(Math.max(...frames.map(f => f.focus)) * 100),
+      maxMotion: Math.round(Math.max(...frames.map(f => f.motion)) * 100),
+      totalFaces: frames.reduce((s, f) => s + f.faceCount, 0),
+      frameCount: frames.length,
+    };
+  }, [analysis]);
+
+  const handleAnalyze = useCallback(async () => {
+    const { analyzeClip } = await import('../../services/clipAnalyzer');
+    await analyzeClip(clipId);
+  }, [clipId]);
+
+  const handleCancel = useCallback(async () => {
+    const { cancelAnalysis } = await import('../../services/clipAnalyzer');
+    cancelAnalysis();
+  }, []);
+
+  const handleClear = useCallback(async () => {
+    const { clearClipAnalysis } = await import('../../services/clipAnalyzer');
+    clearClipAnalysis(clipId);
+  }, [clipId]);
+
+  return (
+    <div className="properties-tab-content analysis-tab">
+      {/* Actions */}
+      <div className="properties-section">
+        <div className="analysis-tab-actions">
+          {analysisStatus !== 'ready' && analysisStatus !== 'analyzing' && (
+            <button className="btn btn-sm" onClick={handleAnalyze}>Analyze Clip</button>
+          )}
+          {analysisStatus === 'analyzing' && (
+            <button className="btn btn-sm btn-danger" onClick={handleCancel}>Cancel</button>
+          )}
+          {analysisStatus === 'ready' && (
+            <>
+              <button className="btn btn-sm" onClick={handleAnalyze}>Re-analyze</button>
+              <button className="btn btn-sm btn-danger" onClick={handleClear}>Clear</button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Progress */}
+      {analysisStatus === 'analyzing' && (
+        <div className="properties-section">
+          <div className="analysis-progress-bar">
+            <div className="analysis-progress-fill" style={{ width: `${analysisProgress}%` }} />
+          </div>
+          <span className="analysis-progress-text">{analysisProgress}%</span>
+        </div>
+      )}
+
+      {/* Current values at playhead */}
+      {currentValues && (
+        <div className="properties-section">
+          <h4>Current Frame</h4>
+          <div className="analysis-realtime-grid">
+            <div className="analysis-metric">
+              <span className="metric-label">Focus</span>
+              <div className="metric-bar"><div className="metric-fill focus" style={{ width: `${Math.round(currentValues.focus * 100)}%` }} /></div>
+              <span className="metric-value">{Math.round(currentValues.focus * 100)}%</span>
+            </div>
+            <div className="analysis-metric">
+              <span className="metric-label">Motion</span>
+              <div className="metric-bar"><div className="metric-fill motion" style={{ width: `${Math.round(currentValues.motion * 100)}%` }} /></div>
+              <span className="metric-value">{Math.round(currentValues.motion * 100)}%</span>
+            </div>
+            {currentValues.faceCount > 0 && (
+              <div className="analysis-metric">
+                <span className="metric-label">Faces</span>
+                <span className="metric-value">{currentValues.faceCount}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Stats summary */}
+      {stats && (
+        <div className="properties-section">
+          <h4>Summary ({stats.frameCount} frames)</h4>
+          <div className="analysis-stats-grid">
+            <div className="stat-row"><span>Avg Focus:</span><span>{stats.avgFocus}%</span></div>
+            <div className="stat-row"><span>Peak Focus:</span><span>{stats.maxFocus}%</span></div>
+            <div className="stat-row"><span>Avg Motion:</span><span>{stats.avgMotion}%</span></div>
+            <div className="stat-row"><span>Peak Motion:</span><span>{stats.maxMotion}%</span></div>
+            <div className="stat-row"><span>Total Faces:</span><span>{stats.totalFaces}</span></div>
+          </div>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {analysisStatus !== 'ready' && analysisStatus !== 'analyzing' && (
+        <div className="analysis-empty-state">
+          Click "Analyze Clip" to detect focus, motion, and faces.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================
 // MAIN PANEL
 // ============================================
 export function PropertiesPanel() {
@@ -824,6 +1129,9 @@ export function PropertiesPanel() {
             <button className={`tab-btn ${activeTab === 'effects' ? 'active' : ''}`} onClick={() => setActiveTab('effects')}>
               Effects {visualEffects.length > 0 && <span className="badge">{visualEffects.length}</span>}
             </button>
+            <button className={`tab-btn ${activeTab === 'transcript' ? 'active' : ''}`} onClick={() => setActiveTab('transcript')}>
+              Transcript {selectedClip.transcript && selectedClip.transcript.length > 0 && <span className="badge">{selectedClip.transcript.length}</span>}
+            </button>
           </>
         ) : (
           <>
@@ -834,6 +1142,12 @@ export function PropertiesPanel() {
             <button className={`tab-btn ${activeTab === 'masks' ? 'active' : ''}`} onClick={() => setActiveTab('masks')}>
               Masks {selectedClip.masks && selectedClip.masks.length > 0 && <span className="badge">{selectedClip.masks.length}</span>}
             </button>
+            <button className={`tab-btn ${activeTab === 'transcript' ? 'active' : ''}`} onClick={() => setActiveTab('transcript')}>
+              Transcript {selectedClip.transcript && selectedClip.transcript.length > 0 && <span className="badge">{selectedClip.transcript.length}</span>}
+            </button>
+            <button className={`tab-btn ${activeTab === 'analysis' ? 'active' : ''}`} onClick={() => setActiveTab('analysis')}>
+              Analysis {selectedClip.analysisStatus === 'ready' && <span className="badge">✓</span>}
+            </button>
           </>
         )}
       </div>
@@ -843,6 +1157,27 @@ export function PropertiesPanel() {
         {activeTab === 'volume' && isAudioClip && <VolumeTab clipId={selectedClip.id} effects={selectedClip.effects || []} />}
         {activeTab === 'effects' && <EffectsTab clipId={selectedClip.id} effects={selectedClip.effects || []} />}
         {activeTab === 'masks' && !isAudioClip && <MasksTab clipId={selectedClip.id} masks={selectedClip.masks} />}
+        {activeTab === 'transcript' && (
+          <TranscriptTab
+            clipId={selectedClip.id}
+            transcript={selectedClip.transcript || []}
+            transcriptStatus={selectedClip.transcriptStatus || 'none'}
+            transcriptProgress={selectedClip.transcriptProgress || 0}
+            clipStartTime={selectedClip.startTime}
+            inPoint={selectedClip.inPoint}
+          />
+        )}
+        {activeTab === 'analysis' && !isAudioClip && (
+          <AnalysisTab
+            clipId={selectedClip.id}
+            analysis={selectedClip.analysis}
+            analysisStatus={selectedClip.analysisStatus || 'none'}
+            analysisProgress={selectedClip.analysisProgress || 0}
+            clipStartTime={selectedClip.startTime}
+            inPoint={selectedClip.inPoint}
+            outPoint={selectedClip.outPoint}
+          />
+        )}
       </div>
     </div>
   );

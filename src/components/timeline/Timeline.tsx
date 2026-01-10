@@ -112,6 +112,7 @@ export function Timeline() {
     generateWaveformForClip,
     setDuration,
     setClipParent,
+    setTrackParent,
   } = useTimelineStore();
 
   const {
@@ -167,8 +168,11 @@ export function Timeline() {
   const marqueeRef = useRef(marquee);
   marqueeRef.current = marquee;
 
-  // Pick whip drag state for layer parenting
+  // Pick whip drag state for clip parenting
   const [pickWhipDrag, setPickWhipDrag] = useState<PickWhipDragState | null>(null);
+
+  // Pick whip drag state for track/layer parenting
+  const [trackPickWhipDrag, setTrackPickWhipDrag] = useState<PickWhipDragState | null>(null);
 
   // Performance: Create lookup maps for O(1) clip/track access
   const clipMap = useMemo(() => new Map(clips.map(c => [c.id, c])), [clips]);
@@ -2594,6 +2598,49 @@ export function Timeline() {
     setPickWhipDrag(null);
   }, []);
 
+  // Track pick whip drag handlers for layer parenting
+  const handleTrackPickWhipDragStart = useCallback((trackId: string, startX: number, startY: number) => {
+    setTrackPickWhipDrag({
+      sourceClipId: trackId, // Using clipId field to store trackId
+      startX,
+      startY,
+      currentX: startX,
+      currentY: startY,
+    });
+
+    const handleMouseMove = (e: MouseEvent) => {
+      setTrackPickWhipDrag(prev => prev ? {
+        ...prev,
+        currentX: e.clientX,
+        currentY: e.clientY,
+      } : null);
+    };
+
+    const handleMouseUp = (e: MouseEvent) => {
+      // Find track header at drop position
+      const target = document.elementFromPoint(e.clientX, e.clientY);
+      const trackHeader = target?.closest('.track-header');
+      if (trackHeader) {
+        // Find the track-pick-whip with data-track-id inside the header
+        const pickWhip = trackHeader.querySelector('.track-pick-whip');
+        const targetTrackId = pickWhip?.getAttribute('data-track-id');
+        if (targetTrackId && targetTrackId !== trackId) {
+          setTrackParent(trackId, targetTrackId);
+        }
+      }
+      setTrackPickWhipDrag(null);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  }, [setTrackParent]);
+
+  const handleTrackPickWhipDragEnd = useCallback(() => {
+    setTrackPickWhipDrag(null);
+  }, []);
+
   // Render a clip
   const renderClip = useCallback(
     (clip: TimelineClipType, trackId: string) => {
@@ -2772,6 +2819,7 @@ export function Timeline() {
                 <TimelineHeader
                   key={track.id}
                   track={track}
+                  tracks={tracks}
                   isDimmed={isDimmed}
                   isExpanded={isExpanded}
                   dynamicHeight={dynamicHeight}
@@ -2802,6 +2850,9 @@ export function Timeline() {
                   setPropertyValue={setPropertyValue}
                   expandedCurveProperties={expandedCurveProperties}
                   onToggleCurveExpanded={toggleCurveExpanded}
+                  onSetTrackParent={setTrackParent}
+                  onTrackPickWhipDragStart={handleTrackPickWhipDragStart}
+                  onTrackPickWhipDragEnd={handleTrackPickWhipDragEnd}
                 />
               );
             })}

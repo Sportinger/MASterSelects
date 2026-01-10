@@ -116,4 +116,38 @@ export const createTrackSlice: SliceCreator<TrackActions> = (set, get) => ({
       });
     }
   },
+
+  // Track parenting (layer linking) - like After Effects layer parenting
+  setTrackParent: (trackId, parentTrackId) => {
+    const { tracks } = get();
+
+    // Can't parent to self
+    if (parentTrackId === trackId) return;
+
+    // Cycle detection: parent can't be a child/grandchild of this track
+    if (parentTrackId) {
+      const wouldCreateCycle = (checkId: string): boolean => {
+        const check = tracks.find(t => t.id === checkId);
+        if (!check?.parentTrackId) return false;
+        if (check.parentTrackId === trackId) return true;
+        return wouldCreateCycle(check.parentTrackId);
+      };
+
+      if (wouldCreateCycle(parentTrackId)) {
+        console.warn('Cannot create circular track parent reference');
+        return;
+      }
+    }
+
+    set({
+      tracks: tracks.map(t =>
+        t.id === trackId ? { ...t, parentTrackId: parentTrackId || undefined } : t
+      ),
+    });
+  },
+
+  getTrackChildren: (trackId) => {
+    const { tracks } = get();
+    return tracks.filter(t => t.parentTrackId === trackId);
+  },
 });

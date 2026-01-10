@@ -92,6 +92,9 @@ export interface TrackActions {
   setTrackSolo: (id: string, solo: boolean) => void;
   setTrackHeight: (id: string, height: number) => void;
   scaleTracksOfType: (type: 'video' | 'audio', delta: number) => void;
+  // Track parenting (layer linking)
+  setTrackParent: (trackId: string, parentTrackId: string | null) => void;
+  getTrackChildren: (trackId: string) => TimelineTrack[];
 }
 
 // Clip actions interface

@@ -249,6 +249,7 @@ export interface TimelineTrack {
   muted: boolean;
   visible: boolean;
   solo: boolean;
+  parentTrackId?: string;  // ID of parent track for layer parenting (like AE parenting)
 }
 
 export interface TimelineState {

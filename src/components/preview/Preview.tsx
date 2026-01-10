@@ -6,6 +6,7 @@ import { useMixerStore } from '../../stores/mixerStore';
 import { useTimelineStore } from '../../stores/timeline';
 import { useMediaStore } from '../../stores/mediaStore';
 import { useDockStore } from '../../stores/dockStore';
+import { useSettingsStore, type PreviewQuality } from '../../stores/settingsStore';
 import { MaskOverlay } from './MaskOverlay';
 import { compositionRenderer } from '../../services/compositionRenderer';
 import type { Layer, EngineStats } from '../../types';
@@ -152,6 +153,7 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
   const { clips, selectedClipIds, selectClip, updateClipTransform, maskEditMode } = useTimelineStore();
   const { compositions, activeCompositionId } = useMediaStore();
   const { addPreviewPanel, updatePanelData, closePanelById } = useDockStore();
+  const { previewQuality, setPreviewQuality } = useSettingsStore();
 
   // Get first selected clip for preview
   const selectedClipId = selectedClipIds.size > 0 ? [...selectedClipIds][0] : null;
@@ -309,6 +311,28 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
   const [selectorOpen, setSelectorOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
+
+  // Quality selector state
+  const [qualityOpen, setQualityOpen] = useState(false);
+  const qualityDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    if (!selectorOpen && !qualityOpen) return;
+
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (selectorOpen && dropdownRef.current && !dropdownRef.current.contains(target)) {
+        setSelectorOpen(false);
+      }
+      if (qualityOpen && qualityDropdownRef.current && !qualityDropdownRef.current.contains(target)) {
+        setQualityOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [selectorOpen, qualityOpen]);
 
   // Adjust dropdown position when opened to stay within viewport
   useEffect(() => {
@@ -864,6 +888,42 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
           Drag: Move Layer | Shift+Scroll: Zoom | Alt+Drag: Pan
         </div>
       )}
+
+      {/* Bottom-left controls */}
+      <div className="preview-controls-bottom">
+        <div className="preview-quality-dropdown-wrapper" ref={qualityDropdownRef}>
+          <button
+            className="preview-quality-dropdown-btn"
+            onClick={() => setQualityOpen(!qualityOpen)}
+            title="Preview quality (affects performance)"
+          >
+            <span className="preview-quality-label">
+              {previewQuality === 1 ? 'Full' : previewQuality === 0.5 ? 'Half' : 'Quarter'}
+            </span>
+            <span className="preview-comp-arrow">▼</span>
+          </button>
+          {qualityOpen && (
+            <div className="preview-quality-dropdown">
+              {([
+                { value: 1 as PreviewQuality, label: 'Full', desc: '100%' },
+                { value: 0.5 as PreviewQuality, label: 'Half', desc: '50%' },
+                { value: 0.25 as PreviewQuality, label: 'Quarter', desc: '25%' },
+              ]).map(({ value, label, desc }) => (
+                <button
+                  key={value}
+                  className={`preview-quality-option ${previewQuality === value ? 'active' : ''}`}
+                  onClick={() => {
+                    setPreviewQuality(value);
+                    setQualityOpen(false);
+                  }}
+                >
+                  {label} <span className="preview-quality-desc">{desc}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -119,6 +119,7 @@ export interface TimelineControlsProps {
 // Props for TimelineHeader component
 export interface TimelineHeaderProps {
   track: TimelineTrack;
+  tracks: TimelineTrack[];  // All tracks for parenting target selection
   isDimmed: boolean;
   isExpanded: boolean;
   dynamicHeight: number;
@@ -151,6 +152,10 @@ export interface TimelineHeaderProps {
   // Curve editor
   expandedCurveProperties: Map<string, Set<AnimatableProperty>>;
   onToggleCurveExpanded: (trackId: string, property: AnimatableProperty) => void;
+  // Track parenting (layer linking)
+  onSetTrackParent: (trackId: string, parentTrackId: string | null) => void;
+  onTrackPickWhipDragStart: (trackId: string, startX: number, startY: number) => void;
+  onTrackPickWhipDragEnd: () => void;
 }
 
 // Props for TimelineTrack component
