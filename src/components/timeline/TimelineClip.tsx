@@ -573,6 +573,25 @@ function TimelineClipComponent({
           />
         </div>
       )}
+      {/* Nested composition mixdown waveform - shown overlaid on thumbnails */}
+      {clip.isComposition && clip.mixdownWaveform && clip.mixdownWaveform.length > 0 && (
+        <div className="clip-mixdown-waveform">
+          <Waveform
+            waveform={clip.mixdownWaveform}
+            width={width}
+            height={Math.min(30, Math.max(16, track.height / 3))}
+            inPoint={displayInPoint}
+            outPoint={displayOutPoint}
+            naturalDuration={clip.duration}
+          />
+        </div>
+      )}
+      {/* Nested composition mixdown generating indicator */}
+      {clip.isComposition && clip.mixdownGenerating && (
+        <div className="clip-mixdown-indicator">
+          <span>Generating audio...</span>
+        </div>
+      )}
       {/* Thumbnail filmstrip - only for non-audio clips */}
       {thumbnails.length > 0 && !isAudioClip && (
         <div className="clip-thumbnails">

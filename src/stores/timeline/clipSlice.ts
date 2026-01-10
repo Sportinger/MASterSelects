@@ -627,6 +627,67 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
           }
         }, 500);
       }
+
+      // Generate audio mixdown for nested composition
+      // Mark as generating first
+      const clipsBefore = get().clips;
+      set({
+        clips: clipsBefore.map(c =>
+          c.id === clipId ? { ...c, mixdownGenerating: true } : c
+        ),
+      });
+
+      // Import dynamically to avoid circular dependencies
+      import('../../services/compositionAudioMixer').then(async ({ compositionAudioMixer }) => {
+        try {
+          console.log(`[Nested Comp] Generating audio mixdown for ${composition.name}...`);
+          const mixdownResult = await compositionAudioMixer.mixdownComposition(composition.id);
+
+          if (mixdownResult && mixdownResult.hasAudio) {
+            // Create audio element for playback
+            const mixdownAudio = compositionAudioMixer.createAudioElement(mixdownResult.buffer);
+            mixdownAudio.preload = 'auto';
+
+            const clipsAfter = get().clips;
+            set({
+              clips: clipsAfter.map(c =>
+                c.id === clipId
+                  ? {
+                      ...c,
+                      mixdownAudio,
+                      mixdownWaveform: mixdownResult.waveform,
+                      mixdownBuffer: mixdownResult.buffer,
+                      mixdownGenerating: false,
+                      hasMixdownAudio: true,
+                    }
+                  : c
+              ),
+            });
+            console.log(`[Nested Comp] Audio mixdown complete for ${composition.name}: ${mixdownResult.waveform.length} waveform samples`);
+          } else {
+            // No audio in nested comp
+            const clipsAfter = get().clips;
+            set({
+              clips: clipsAfter.map(c =>
+                c.id === clipId
+                  ? { ...c, mixdownGenerating: false, hasMixdownAudio: false }
+                  : c
+              ),
+            });
+            console.log(`[Nested Comp] No audio found in ${composition.name}`);
+          }
+        } catch (e) {
+          console.error('[Nested Comp] Failed to generate audio mixdown:', e);
+          const clipsAfter = get().clips;
+          set({
+            clips: clipsAfter.map(c =>
+              c.id === clipId
+                ? { ...c, mixdownGenerating: false, hasMixdownAudio: false }
+                : c
+            ),
+          });
+        }
+      });
     } else {
       // No timeline data - just mark as loaded
       const currentClips = get().clips;

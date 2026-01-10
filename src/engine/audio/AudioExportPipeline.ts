@@ -167,6 +167,14 @@ export class AudioExportPipeline {
         return false;
       }
 
+      // Nested composition with mixdown audio
+      if (clip.isComposition && clip.mixdownBuffer && clip.hasMixdownAudio) {
+        // Check track is not muted (nested comps are on video tracks)
+        const track = tracks.find(t => t.id === clip.trackId);
+        if (track && !track.visible) return false;
+        return true;
+      }
+
       // Check if clip has audio source
       if (!clip.source?.audioElement && !clip.source?.videoElement) {
         return false;
@@ -211,7 +219,11 @@ export class AudioExportPipeline {
       try {
         let buffer: AudioBuffer;
 
-        if (clip.source?.audioElement) {
+        // Nested composition with pre-mixed audio buffer
+        if (clip.isComposition && clip.mixdownBuffer) {
+          buffer = clip.mixdownBuffer;
+          console.log(`[AudioExportPipeline] Using mixdown buffer for nested comp ${clip.name}`);
+        } else if (clip.source?.audioElement) {
           // Extract from audio element
           buffer = await this.extractor.extractFromElement(
             clip.source.audioElement,

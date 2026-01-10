@@ -1383,6 +1383,59 @@ export function Timeline() {
           clip.source.audioElement.pause();
         }
       }
+      // Also pause nested composition mixdown audio
+      if (clip.mixdownAudio) {
+        const isAtPlayhead = clipsAtTime.some((c) => c.id === clip.id);
+        if (!isAtPlayhead && !clip.mixdownAudio.paused) {
+          clip.mixdownAudio.pause();
+        }
+      }
+    });
+
+    // Play nested composition mixdown audio for clips at playhead
+    clipsAtTime.forEach((clip) => {
+      if (clip.isComposition && clip.mixdownAudio && clip.hasMixdownAudio) {
+        const audio = clip.mixdownAudio;
+        const clipLocalTime = playheadPosition - clip.startTime;
+        const clipTime = Math.max(0, Math.min(clip.duration, clipLocalTime));
+
+        // Find the track this clip is on
+        const track = videoTracks.find(t => t.id === clip.trackId);
+        const effectivelyMuted = track ? !isVideoTrackVisible(track) : false;
+        audio.muted = effectivelyMuted;
+
+        const timeDiff = audio.currentTime - clipTime;
+
+        // Track drift for stats
+        if (Math.abs(timeDiff) > maxAudioDrift) {
+          maxAudioDrift = Math.abs(timeDiff);
+        }
+
+        const shouldPlay = isPlaying && !effectivelyMuted && !isDraggingPlayhead;
+
+        if (shouldPlay) {
+          // Only sync audio on significant drift to avoid pops
+          if (Math.abs(timeDiff) > 0.2) {
+            audio.currentTime = clipTime;
+          }
+
+          // Ensure audio is playing
+          if (audio.paused) {
+            audio.currentTime = clipTime;
+            audio.play().catch((err) => {
+              console.warn('[Nested Comp Audio] Failed to play:', err.message);
+            });
+          }
+
+          if (!audio.paused && !effectivelyMuted) {
+            audioPlayingCount++;
+          }
+        } else {
+          if (!audio.paused) {
+            audio.pause();
+          }
+        }
+      }
     });
 
     // Update audio status for stats display

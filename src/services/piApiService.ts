@@ -252,31 +252,60 @@ class PiApiService {
     return !!this.apiKey;
   }
 
-  // Upload image to ImgBB (free image hosting with CORS support)
-  private async uploadToImgBB(dataUrl: string): Promise<string> {
-    // Extract base64 data without prefix
-    const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
-
-    // ImgBB free API (no key required for anonymous uploads)
-    const formData = new FormData();
-    formData.append('image', base64);
-
-    console.log('[PiAPI] Uploading image to ImgBB...');
-
-    const response = await fetch('https://api.imgbb.com/1/upload?key=d36eb6591370ae7f9089d85875571358', {
-      method: 'POST',
-      body: formData,
-    });
-
-    const result = await response.json();
-
-    if (!result.success) {
-      console.error('[PiAPI] ImgBB upload error:', result);
-      throw new Error('Failed to upload image: ' + (result.error?.message || 'Unknown error'));
+  // Upload image to PiAPI's ephemeral resource endpoint
+  private async uploadToPiApi(dataUrl: string): Promise<string> {
+    if (!this.hasApiKey()) {
+      throw new Error('PiAPI key not set');
     }
 
-    console.log('[PiAPI] Image uploaded:', result.data.url);
-    return result.data.url;
+    // Extract base64 data and determine file type
+    let fileData = dataUrl;
+    let fileName = 'image.jpg';
+
+    const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+    if (match) {
+      const mimeType = match[1];
+      fileData = match[2];
+      if (mimeType.includes('png')) {
+        fileName = 'image.png';
+      } else if (mimeType.includes('webp')) {
+        fileName = 'image.webp';
+      }
+    }
+
+    console.log('[PiAPI] Uploading image to PiAPI ephemeral storage, size:', Math.round(fileData.length / 1024), 'KB');
+
+    try {
+      const response = await fetch(UPLOAD_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': this.apiKey,
+        },
+        body: JSON.stringify({
+          file_name: fileName,
+          file_data: fileData,
+        }),
+      });
+
+      const result = await response.json();
+      console.log('[PiAPI] Upload response:', result);
+
+      if (!response.ok || (result.code && result.code !== 200)) {
+        throw new Error(result.message || `Upload failed: ${response.status}`);
+      }
+
+      const url = result.data?.url || result.url;
+      if (!url) {
+        throw new Error('No URL returned from upload');
+      }
+
+      console.log('[PiAPI] Image uploaded successfully:', url);
+      return url;
+    } catch (err) {
+      console.error('[PiAPI] Upload error:', err);
+      throw new Error('Failed to upload image: ' + (err instanceof Error ? err.message : 'Unknown error'));
+    }
   }
 
   // Compress image to reduce size for inline base64 (max ~1MB target)
@@ -550,21 +579,23 @@ class PiApiService {
   }
 
   async createImageToVideo(params: ImageToVideoParams): Promise<string> {
-    // Upload images to get URLs (PiAPI requires hosted URLs, not base64)
+    // Upload images to PiAPI's ephemeral storage to get URLs
     let imageUrl: string | undefined;
     let imageTailUrl: string | undefined;
 
     if (params.startImageUrl) {
+      console.log('[PiAPI] Compressing and uploading start image...');
       const compressed = await this.compressImage(params.startImageUrl);
-      imageUrl = await this.uploadToImgBB(compressed);
+      imageUrl = await this.uploadToPiApi(compressed);
     }
 
     if (params.endImageUrl) {
+      console.log('[PiAPI] Compressing and uploading end image...');
       const compressed = await this.compressImage(params.endImageUrl);
-      imageTailUrl = await this.uploadToImgBB(compressed);
+      imageTailUrl = await this.uploadToPiApi(compressed);
     }
 
-    console.log('[PiAPI] Creating image-to-video with hosted URLs:', { imageUrl, imageTailUrl });
+    console.log('[PiAPI] Creating image-to-video with uploaded URLs:', { imageUrl, imageTailUrl });
 
     const body = this.buildRequestBody(
       params.provider,

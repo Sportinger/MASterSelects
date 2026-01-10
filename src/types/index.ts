@@ -236,6 +236,12 @@ export interface TimelineClip {
   compositionId?: string;   // ID of the nested composition
   nestedClips?: TimelineClip[];  // Loaded clips from the nested composition
   nestedTracks?: TimelineTrack[];  // Tracks from the nested composition
+  // Nested composition audio mixdown
+  mixdownAudio?: HTMLAudioElement;  // Audio element for playing nested comp audio
+  mixdownWaveform?: number[];  // Waveform of the nested comp audio mixdown
+  mixdownBuffer?: AudioBuffer;  // Raw audio buffer for export
+  mixdownGenerating?: boolean;  // True while mixdown is being generated
+  hasMixdownAudio?: boolean;  // True if nested comp has audio
   // Mask support
   masks?: ClipMask[];     // Array of masks applied to this clip
   // Transcript support

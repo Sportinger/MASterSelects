@@ -82,6 +82,48 @@ export async function generateWaveform(
   }
 }
 
+// Generate waveform data from an already decoded AudioBuffer
+// Synchronous version for use with pre-decoded buffers (e.g., composition mixdowns)
+export function generateWaveformFromBuffer(
+  audioBuffer: AudioBuffer,
+  samplesPerSecond: number = 50
+): number[] {
+  try {
+    const channelData = audioBuffer.getChannelData(0); // Use first channel
+    const duration = audioBuffer.duration;
+
+    // Calculate samples based on duration
+    const sampleCount = Math.max(200, Math.min(10000, Math.floor(duration * samplesPerSecond)));
+    const blockSize = Math.floor(channelData.length / sampleCount);
+
+    const samples: number[] = [];
+
+    for (let i = 0; i < sampleCount; i++) {
+      const start = i * blockSize;
+      const end = Math.min(start + blockSize, channelData.length);
+
+      // Use peak value for better visual representation
+      let peak = 0;
+      for (let j = start; j < end; j++) {
+        const abs = Math.abs(channelData[j]);
+        if (abs > peak) peak = abs;
+      }
+
+      samples.push(peak);
+    }
+
+    // Normalize to 0-1 range
+    const max = Math.max(...samples);
+    if (max > 0) {
+      return samples.map(s => s / max);
+    }
+    return samples;
+  } catch (e) {
+    console.warn('Failed to generate waveform from buffer:', e);
+    return [];
+  }
+}
+
 // Generate thumbnail filmstrip from video
 export async function generateThumbnails(video: HTMLVideoElement, duration: number, count: number = 10): Promise<string[]> {
   const thumbnails: string[] = [];
