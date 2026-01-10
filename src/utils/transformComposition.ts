@@ -5,7 +5,13 @@ import type { ClipTransform } from '../types';
 
 /**
  * Composes parent and child transforms.
- * - Position: Child position is relative to parent, rotated by parent rotation
+ *
+ * In our rendering pipeline:
+ * - Shader applies scale to UV BEFORE position
+ * - Position is an absolute offset applied AFTER scale
+ * - So child position should NOT be multiplied by parent scale
+ *
+ * - Position: Parent position + rotated child position
  * - Scale: Child scale is multiplied by parent scale
  * - Rotation: Child rotation is added to parent rotation
  * - Opacity: Child opacity is multiplied by parent opacity
@@ -14,10 +20,12 @@ export function composeTransforms(
   parent: ClipTransform,
   child: ClipTransform
 ): ClipTransform {
-  // Convert parent Z rotation to radians
+  // Convert parent Z rotation to radians for position rotation
   const parentRotZ = (parent.rotation.z * Math.PI) / 180;
 
   // Rotate child position by parent's Z rotation
+  // Note: We DON'T multiply by parent scale because in our shader,
+  // scale is applied to UV space, not position space
   const rotatedX = child.position.x * Math.cos(parentRotZ) - child.position.y * Math.sin(parentRotZ);
   const rotatedY = child.position.x * Math.sin(parentRotZ) + child.position.y * Math.cos(parentRotZ);
 
@@ -28,10 +36,11 @@ export function composeTransforms(
     // Child's blend mode takes precedence
     blendMode: child.blendMode,
 
-    // Position: Parent position + rotated child position (scaled by parent scale)
+    // Position: Parent position + rotated child position
+    // No scale multiplication - shader handles scale separately in UV space
     position: {
-      x: parent.position.x + rotatedX * parent.scale.x,
-      y: parent.position.y + rotatedY * parent.scale.y,
+      x: parent.position.x + rotatedX,
+      y: parent.position.y + rotatedY,
       z: parent.position.z + child.position.z,
     },
 
