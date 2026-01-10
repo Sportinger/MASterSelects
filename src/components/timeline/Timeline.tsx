@@ -118,6 +118,7 @@ export function Timeline() {
   const {
     getActiveComposition,
     getOpenCompositions,
+    openComposition,
     proxyEnabled,
     setProxyEnabled,
     files: mediaFiles,
@@ -1993,6 +1994,24 @@ export function Timeline() {
     [clipMap, tracks, scrollX, pixelToTime, selectClip, selectedClipIds, getSnappedPosition, getPositionWithResistance, moveClip]
   );
 
+  // Handle double-click on clip - open composition if it's a nested comp
+  const handleClipDoubleClick = useCallback(
+    (e: React.MouseEvent, clipId: string) => {
+      e.stopPropagation();
+      e.preventDefault();
+
+      const clip = clipMap.get(clipId);
+      if (!clip) return;
+
+      // If this clip is a composition, open it
+      if (clip.isComposition && clip.compositionId) {
+        console.log('[Timeline] Double-click on composition clip, opening:', clip.compositionId);
+        openComposition(clip.compositionId);
+      }
+    },
+    [clipMap, openComposition]
+  );
+
   // Handle trim start
   const handleTrimStart = useCallback(
     (e: React.MouseEvent, clipId: string, edge: 'left' | 'right') => {
@@ -2701,6 +2720,7 @@ export function Timeline() {
           proxyProgress={mediaFile?.proxyProgress || 0}
           showTranscriptMarkers={showTranscriptMarkers}
           onMouseDown={(e) => handleClipMouseDown(e, clip.id)}
+          onDoubleClick={(e) => handleClipDoubleClick(e, clip.id)}
           onContextMenu={(e) => handleClipContextMenu(e, clip.id)}
           onTrimStart={(e, edge) => handleTrimStart(e, clip.id, edge)}
           hasKeyframes={hasKeyframes}
@@ -2726,6 +2746,7 @@ export function Timeline() {
       mediaFiles,
       showTranscriptMarkers,
       handleClipMouseDown,
+      handleClipDoubleClick,
       handleClipContextMenu,
       handleTrimStart,
       hasKeyframes,

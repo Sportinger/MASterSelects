@@ -368,6 +368,7 @@ function TimelineClipComponent({
   proxyProgress,
   showTranscriptMarkers,
   onMouseDown,
+  onDoubleClick,
   onContextMenu,
   onTrimStart,
   hasKeyframes,
@@ -523,6 +524,7 @@ function TimelineClipComponent({
       style={{ left, width }}
       data-clip-id={clip.id}
       onMouseDown={onMouseDown}
+      onDoubleClick={onDoubleClick}
       onContextMenu={onContextMenu}
     >
       {/* Proxy progress bar */}

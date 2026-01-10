@@ -227,6 +227,7 @@ export interface TimelineClipProps {
   proxyProgress: number;
   showTranscriptMarkers: boolean;
   onMouseDown: (e: React.MouseEvent) => void;
+  onDoubleClick: (e: React.MouseEvent) => void;
   onContextMenu: (e: React.MouseEvent) => void;
   onTrimStart: (e: React.MouseEvent, edge: 'left' | 'right') => void;
   hasKeyframes: (clipId: string, property?: AnimatableProperty) => boolean;
