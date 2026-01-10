@@ -2463,6 +2463,16 @@ input[type="checkbox"] {
   color: #e5c07b;
 }
 
+.track-pick-whip.has-children {
+  opacity: 0.8;
+  color: #98c379;
+}
+
+.track-pick-whip.has-parent.has-children {
+  opacity: 1;
+  color: #e5c07b;
+}
+
 .track-pick-whip-icon {
   width: 14px;
   height: 14px;

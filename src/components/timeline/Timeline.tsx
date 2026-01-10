@@ -3319,7 +3319,7 @@ export function Timeline() {
         </div>
       </div>{/* timeline-body */}
 
-      {/* Pick whip drag line - physics cable */}
+      {/* Pick whip drag line - physics cable (clip parenting) */}
       {pickWhipDrag && (
         <svg
           className="pick-whip-drag-overlay"
@@ -3338,6 +3338,30 @@ export function Timeline() {
             startY={pickWhipDrag.startY}
             endX={pickWhipDrag.currentX}
             endY={pickWhipDrag.currentY}
+            isPreview={true}
+          />
+        </svg>
+      )}
+
+      {/* Track pick whip drag line - physics cable (layer parenting) */}
+      {trackPickWhipDrag && (
+        <svg
+          className="pick-whip-drag-overlay"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            pointerEvents: 'none',
+            zIndex: 9999,
+          }}
+        >
+          <PhysicsCable
+            startX={trackPickWhipDrag.startX}
+            startY={trackPickWhipDrag.startY}
+            endX={trackPickWhipDrag.currentX}
+            endY={trackPickWhipDrag.currentY}
             isPreview={true}
           />
         </svg>

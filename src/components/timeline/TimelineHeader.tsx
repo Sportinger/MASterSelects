@@ -485,6 +485,35 @@ function TimelineHeaderComponent({
   const parentTrack = track.parentTrackId ? tracks.find(t => t.id === track.parentTrackId) : null;
   const hasParent = !!track.parentTrackId;
 
+  // Find child tracks (tracks that have this track as their parent)
+  const childTracks = useMemo(() =>
+    tracks.filter(t => t.parentTrackId === track.id),
+    [tracks, track.id]
+  );
+  const hasChildren = childTracks.length > 0;
+
+  // Build tooltip text for pickwhip
+  const pickWhipTooltip = useMemo(() => {
+    const lines: string[] = [];
+
+    if (hasParent) {
+      lines.push(`Parent: ${parentTrack?.name || track.parentTrackId}`);
+    }
+
+    if (hasChildren) {
+      const childNames = childTracks.map(c => c.name).join(', ');
+      lines.push(`Children: ${childNames}`);
+    }
+
+    if (hasParent) {
+      lines.push('Click to unparent, drag to reparent');
+    } else {
+      lines.push(`Drag to parent "${track.name}" to another layer`);
+    }
+
+    return lines.join('\n');
+  }, [hasParent, hasChildren, parentTrack, childTracks, track.name, track.parentTrackId]);
+
   const handlePickWhipMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -576,16 +605,12 @@ function TimelineHeaderComponent({
           {track.type === 'video' && (
             <div
               ref={pickWhipRef}
-              className={`track-pick-whip ${isPickWhipDragging ? 'dragging' : ''} ${hasParent ? 'has-parent' : ''}`}
+              className={`track-pick-whip ${isPickWhipDragging ? 'dragging' : ''} ${hasParent ? 'has-parent' : ''} ${hasChildren ? 'has-children' : ''}`}
               data-track-id={track.id}
               onMouseDown={handlePickWhipMouseDown}
               onMouseUp={handlePickWhipMouseUp}
               onClick={handlePickWhipClick}
-              title={
-                hasParent
-                  ? `Parented to: ${parentTrack?.name || track.parentTrackId}\nClick to unparent, or drag to new parent`
-                  : `Drag to parent layer "${track.name}" to another layer`
-              }
+              title={pickWhipTooltip}
             >
               <svg viewBox="0 0 16 16" width="14" height="14" className="track-pick-whip-icon">
                 {hasParent ? (
