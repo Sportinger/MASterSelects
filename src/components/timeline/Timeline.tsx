@@ -3,7 +3,7 @@
 
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { useTimelineStore } from '../../stores/timeline';
-import type { AnimatableProperty, Effect, TimelineClip as TimelineClipType } from '../../types';
+import type { AnimatableProperty, Effect, TimelineClip as TimelineClipType, Layer, NestedCompositionData } from '../../types';
 import { useMediaStore } from '../../stores/mediaStore';
 import { useMixerStore } from '../../stores/mixerStore';
 import { engine } from '../../engine/WebGPUEngine';
@@ -797,6 +797,120 @@ export function Timeline() {
       return false;
     };
 
+    // Build Layer objects from nested clips for pre-rendering
+    const buildNestedLayers = (
+      clip: (typeof clips)[0],
+      clipTime: number
+    ): Layer[] => {
+      if (!clip.nestedClips || !clip.nestedTracks) return [];
+
+      const nestedVideoTracks = clip.nestedTracks.filter(
+        (t) => t.type === 'video' && t.visible
+      );
+
+      const layers: Layer[] = [];
+
+      for (let i = nestedVideoTracks.length - 1; i >= 0; i--) {
+        const nestedTrack = nestedVideoTracks[i];
+        const nestedClip = clip.nestedClips.find(
+          (nc) =>
+            nc.trackId === nestedTrack.id &&
+            clipTime >= nc.startTime &&
+            clipTime < nc.startTime + nc.duration
+        );
+
+        if (!nestedClip) continue;
+
+        const nestedLocalTime = clipTime - nestedClip.startTime;
+        const nestedClipTime = nestedClip.reversed
+          ? nestedClip.outPoint - nestedLocalTime
+          : nestedLocalTime + nestedClip.inPoint;
+
+        // Update video currentTime
+        if (nestedClip.source?.videoElement) {
+          const video = nestedClip.source.videoElement;
+          const timeDiff = Math.abs(video.currentTime - nestedClipTime);
+          if (timeDiff > 0.05) {
+            video.currentTime = nestedClipTime;
+          }
+          if (isPlaying && video.paused) {
+            video.play().catch(() => {});
+          } else if (!isPlaying && !video.paused) {
+            video.pause();
+          }
+        }
+
+        // Build layer from nested clip
+        const transform = nestedClip.transform || {
+          position: { x: 0, y: 0, z: 0 },
+          scale: { x: 1, y: 1 },
+          rotation: { x: 0, y: 0, z: 0 },
+          anchor: { x: 0.5, y: 0.5 },
+          opacity: 1,
+          blendMode: 'normal' as const,
+        };
+
+        if (nestedClip.source?.videoElement) {
+          layers.push({
+            id: `nested-layer-${nestedClip.id}`,
+            name: nestedClip.name,
+            visible: true,
+            opacity: transform.opacity ?? 1,
+            blendMode: transform.blendMode || 'normal',
+            source: {
+              type: 'video',
+              videoElement: nestedClip.source.videoElement,
+              webCodecsPlayer: nestedClip.source.webCodecsPlayer,
+            },
+            effects: nestedClip.effects || [],
+            position: {
+              x: transform.position?.x || 0,
+              y: transform.position?.y || 0,
+              z: transform.position?.z || 0,
+            },
+            scale: {
+              x: transform.scale?.x ?? 1,
+              y: transform.scale?.y ?? 1,
+            },
+            rotation: {
+              x: ((transform.rotation?.x || 0) * Math.PI) / 180,
+              y: ((transform.rotation?.y || 0) * Math.PI) / 180,
+              z: ((transform.rotation?.z || 0) * Math.PI) / 180,
+            },
+          });
+        } else if (nestedClip.source?.imageElement) {
+          layers.push({
+            id: `nested-layer-${nestedClip.id}`,
+            name: nestedClip.name,
+            visible: true,
+            opacity: transform.opacity ?? 1,
+            blendMode: transform.blendMode || 'normal',
+            source: {
+              type: 'image',
+              imageElement: nestedClip.source.imageElement,
+            },
+            effects: nestedClip.effects || [],
+            position: {
+              x: transform.position?.x || 0,
+              y: transform.position?.y || 0,
+              z: transform.position?.z || 0,
+            },
+            scale: {
+              x: transform.scale?.x ?? 1,
+              y: transform.scale?.y ?? 1,
+            },
+            rotation: {
+              x: ((transform.rotation?.x || 0) * Math.PI) / 180,
+              y: ((transform.rotation?.y || 0) * Math.PI) / 180,
+              z: ((transform.rotation?.z || 0) * Math.PI) / 180,
+            },
+          });
+        }
+      }
+
+      return layers;
+    };
+
     const getVideoFromClip = (
       clip: (typeof clips)[0],
       clipTime: number
@@ -898,52 +1012,52 @@ export function Timeline() {
 
       if (clip?.isComposition && clip.nestedClips && clip.nestedClips.length > 0) {
         const clipTime = playheadPosition - clip.startTime + clip.inPoint;
-        const { video, webCodecsPlayer, transform, effects } = getVideoFromClip(clip, clipTime);
 
-        if (video) {
+        // Build all nested layers for pre-rendering
+        const nestedLayers = buildNestedLayers(clip, clipTime);
+
+        // Get parent clip transform
+        const interpolatedTransform = getInterpolatedTransform(clip.id, clipTime);
+        const interpolatedEffects = getInterpolatedEffects(clip.id, clipTime);
+
+        // Get composition dimensions from mediaStore
+        const mediaStore = useMediaStore.getState();
+        const composition = mediaStore.compositions.find(c => c.id === clip.compositionId);
+        const compWidth = composition?.width || 1920;
+        const compHeight = composition?.height || 1080;
+
+        if (nestedLayers.length > 0) {
           const trackVisible = isVideoTrackVisible(track);
-          const needsUpdate =
-            !layer ||
-            layer.visible !== trackVisible ||
-            layer.source?.videoElement !== video ||
-            layer.source?.webCodecsPlayer !== webCodecsPlayer ||
-            layer.opacity !== transform.opacity ||
-            layer.blendMode !== transform.blendMode ||
-            layer.position.x !== transform.position.x ||
-            layer.position.y !== transform.position.y ||
-            layer.scale.x !== transform.scale.x ||
-            layer.scale.y !== transform.scale.y ||
-            (layer.rotation as { z?: number })?.z !==
-              (transform.rotation.z * Math.PI) / 180 ||
-            (layer.rotation as { x?: number })?.x !==
-              (transform.rotation.x * Math.PI) / 180 ||
-            (layer.rotation as { y?: number })?.y !==
-              (transform.rotation.y * Math.PI) / 180 ||
-            effectsChanged(layer.effects, effects);
 
-          if (needsUpdate) {
-            newLayers[layerIndex] = {
-              id: `timeline_layer_${layerIndex}`,
-              name: clip.name,
-              visible: trackVisible,
-              opacity: transform.opacity,
-              blendMode: transform.blendMode,
-              source: {
-                type: 'video',
-                videoElement: video,
-                webCodecsPlayer: webCodecsPlayer || undefined, // Pass through WebCodecsPlayer for nested compositions
-              },
-              effects: effects,
-              position: { x: transform.position.x, y: transform.position.y, z: transform.position.z },
-              scale: { x: transform.scale.x, y: transform.scale.y },
-              rotation: {
-                x: (transform.rotation.x * Math.PI) / 180,
-                y: (transform.rotation.y * Math.PI) / 180,
-                z: (transform.rotation.z * Math.PI) / 180,
-              },
-            };
-            layersChanged = true;
-          }
+          // Build nestedComposition data for pre-rendering
+          const nestedCompData: NestedCompositionData = {
+            compositionId: clip.compositionId || clip.id,
+            layers: nestedLayers,
+            width: compWidth,
+            height: compHeight,
+          };
+
+          // Always update nested composition layers (they change with time)
+          newLayers[layerIndex] = {
+            id: `timeline_layer_${layerIndex}`,
+            name: clip.name,
+            visible: trackVisible,
+            opacity: interpolatedTransform.opacity,
+            blendMode: interpolatedTransform.blendMode,
+            source: {
+              type: 'video', // Will be pre-rendered to texture
+              nestedComposition: nestedCompData,
+            },
+            effects: interpolatedEffects,
+            position: { x: interpolatedTransform.position.x, y: interpolatedTransform.position.y, z: interpolatedTransform.position.z },
+            scale: { x: interpolatedTransform.scale.x, y: interpolatedTransform.scale.y },
+            rotation: {
+              x: (interpolatedTransform.rotation.x * Math.PI) / 180,
+              y: (interpolatedTransform.rotation.y * Math.PI) / 180,
+              z: (interpolatedTransform.rotation.z * Math.PI) / 180,
+            },
+          };
+          layersChanged = true;
         } else {
           if (layer?.source) {
             newLayers[layerIndex] = undefined as unknown as (typeof newLayers)[0];

@@ -73,6 +73,16 @@ export interface LayerSource {
   // WebCodecs support for hardware-accelerated video decode
   webCodecsPlayer?: import('../engine/WebCodecsPlayer').WebCodecsPlayer;
   videoFrame?: VideoFrame;
+  // Nested composition support - pre-rendered layers from nested comp
+  nestedComposition?: NestedCompositionData;
+}
+
+// Data for pre-rendering nested compositions
+export interface NestedCompositionData {
+  compositionId: string;
+  layers: Layer[];  // Layers from the nested composition to be pre-rendered
+  width: number;
+  height: number;
 }
 
 export interface Effect {

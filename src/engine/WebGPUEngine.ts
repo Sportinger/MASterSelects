@@ -135,6 +135,10 @@ export class WebGPUEngine {
   // Batched uniform buffer updates
   private pendingUniformUpdates: Array<{buffer: GPUBuffer; data: Float32Array}> = [];
 
+  // Nested composition pre-render textures
+  // Map of compositionId -> {texture, view} for pre-rendered nested compositions
+  private nestedCompTextures: Map<string, { texture: GPUTexture; view: GPUTextureView }> = new Map();
+
   constructor() {
     this.context = new WebGPUContext();
     this.videoFrameManager = new VideoFrameManager();
@@ -742,9 +746,46 @@ export class WebGPUEngine {
             sourceWidth: img.naturalWidth,
             sourceHeight: img.naturalHeight,
           });
+          continue;
+        }
+      }
+
+      // Nested compositions - will be pre-rendered below
+      if (layer.source.nestedComposition) {
+        const nestedComp = layer.source.nestedComposition;
+        // Mark for pre-rendering - actual texture will be created in pre-render pass
+        this.layerRenderData.push({
+          layer,
+          isVideo: false,
+          externalTexture: null,
+          textureView: null, // Will be set after pre-render
+          sourceWidth: nestedComp.width,
+          sourceHeight: nestedComp.height,
+        });
+      }
+    }
+
+    // Pre-render nested compositions (must happen before main compositing)
+    // Need to create command encoder early for pre-rendering
+    const preRenderCommandEncoder = device.createCommandEncoder();
+    for (const data of this.layerRenderData) {
+      if (data.layer.source?.nestedComposition) {
+        const nestedComp = data.layer.source.nestedComposition;
+        const preRenderedView = this.preRenderNestedComposition(
+          nestedComp.compositionId,
+          nestedComp.layers,
+          nestedComp.width,
+          nestedComp.height,
+          preRenderCommandEncoder
+        );
+        if (preRenderedView) {
+          data.textureView = preRenderedView;
         }
       }
     }
+    // Submit pre-render commands
+    device.queue.submit([preRenderCommandEncoder.finish()]);
+
     this.profileData.importTexture = performance.now() - t1;
 
     // Update video flag for frame rate limiting
@@ -1117,6 +1158,257 @@ export class WebGPUEngine {
     this.outputPipeline!.renderToCanvas(commandEncoder, canvasContext, outputBindGroup);
 
     device.queue.submit([commandEncoder.finish()]);
+  }
+
+  /**
+   * Pre-render a nested composition to an offscreen texture
+   * Returns the texture view to be used as the source for the parent layer
+   */
+  preRenderNestedComposition(
+    compositionId: string,
+    nestedLayers: Layer[],
+    width: number,
+    height: number,
+    commandEncoder: GPUCommandEncoder
+  ): GPUTextureView | null {
+    const device = this.context.getDevice();
+    if (!device || !this.compositorPipeline || !this.sampler) return null;
+
+    // Get or create offscreen texture for this composition
+    let compTexture = this.nestedCompTextures.get(compositionId);
+    if (!compTexture || compTexture.texture.width !== width || compTexture.texture.height !== height) {
+      // Clean up old texture if it exists
+      if (compTexture) {
+        compTexture.texture.destroy();
+      }
+
+      // Create new texture
+      const texture = device.createTexture({
+        size: { width, height },
+        format: 'rgba8unorm',
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
+      });
+      const view = texture.createView();
+      compTexture = { texture, view };
+      this.nestedCompTextures.set(compositionId, compTexture);
+    }
+
+    // Create temporary ping-pong textures for nested comp rendering
+    const nestedPingTexture = device.createTexture({
+      size: { width, height },
+      format: 'rgba8unorm',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    });
+    const nestedPongTexture = device.createTexture({
+      size: { width, height },
+      format: 'rgba8unorm',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    });
+    const nestedPingView = nestedPingTexture.createView();
+    const nestedPongView = nestedPongTexture.createView();
+
+    // Prepare layer data for nested composition (reverse order: lower slots render on top)
+    const nestedLayerData: LayerRenderData[] = [];
+    for (let i = nestedLayers.length - 1; i >= 0; i--) {
+      const layer = nestedLayers[i];
+      if (!layer || !layer.visible || !layer.source || layer.opacity === 0) continue;
+
+      // Try WebCodecs VideoFrame first
+      if (layer.source.webCodecsPlayer) {
+        const frame = layer.source.webCodecsPlayer.getCurrentFrame();
+        if (frame) {
+          const extTex = this.textureManager?.importVideoTexture(frame);
+          if (extTex) {
+            nestedLayerData.push({
+              layer,
+              isVideo: true,
+              externalTexture: extTex,
+              textureView: null,
+              sourceWidth: frame.displayWidth,
+              sourceHeight: frame.displayHeight,
+            });
+            continue;
+          }
+        }
+      }
+
+      // HTMLVideoElement
+      if (layer.source.videoElement) {
+        const video = layer.source.videoElement;
+        if (video.readyState >= 2) {
+          const extTex = this.textureManager?.importVideoTexture(video);
+          if (extTex) {
+            nestedLayerData.push({
+              layer,
+              isVideo: true,
+              externalTexture: extTex,
+              textureView: null,
+              sourceWidth: video.videoWidth,
+              sourceHeight: video.videoHeight,
+            });
+            continue;
+          }
+        }
+      }
+
+      // Images
+      if (layer.source.imageElement) {
+        const img = layer.source.imageElement;
+        let texture = this.textureManager?.getCachedImageTexture(img);
+        if (!texture) {
+          texture = this.textureManager?.createImageTexture(img) ?? undefined;
+        }
+        if (texture) {
+          const imageView = this.textureManager!.getImageView(texture);
+          nestedLayerData.push({
+            layer,
+            isVideo: false,
+            externalTexture: null,
+            textureView: imageView,
+            sourceWidth: img.naturalWidth,
+            sourceHeight: img.naturalHeight,
+          });
+        }
+      }
+    }
+
+    // If no layers to render, return black texture
+    if (nestedLayerData.length === 0) {
+      // Clear the output texture to black
+      const clearPass = commandEncoder.beginRenderPass({
+        colorAttachments: [{
+          view: compTexture.view,
+          clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          loadOp: 'clear',
+          storeOp: 'store',
+        }],
+      });
+      clearPass.end();
+      nestedPingTexture.destroy();
+      nestedPongTexture.destroy();
+      return compTexture.view;
+    }
+
+    // Ping-pong compositing for nested layers
+    let readView = nestedPingView;
+    let writeView = nestedPongView;
+
+    // Clear first buffer
+    const clearPass = commandEncoder.beginRenderPass({
+      colorAttachments: [{
+        view: readView,
+        clearValue: { r: 0, g: 0, b: 0, a: 1 },
+        loadOp: 'clear',
+        storeOp: 'store',
+      }],
+    });
+    clearPass.end();
+
+    // Composite each nested layer
+    const nestedOutputAspect = width / height;
+    for (let i = 0; i < nestedLayerData.length; i++) {
+      const data = nestedLayerData[i];
+      const layer = data.layer;
+
+      const uniformBuffer = this.compositorPipeline!.getOrCreateUniformBuffer(`nested-${compositionId}-${layer.id}`);
+      const sourceAspect = data.sourceWidth / data.sourceHeight;
+
+      // Get mask texture view (use white mask if none)
+      const hasMask = this.maskTextureManager?.hasMaskTexture(layer.id) ?? false;
+      const maskTextureView = this.maskTextureManager?.getMaskTextureView(layer.id) ??
+                             this.maskTextureManager?.getWhiteMaskView()!;
+
+      this.compositorPipeline!.updateLayerUniforms(layer, sourceAspect, nestedOutputAspect, hasMask, uniformBuffer);
+
+      let pipeline: GPURenderPipeline;
+      let bindGroup: GPUBindGroup;
+
+      if (data.isVideo && data.externalTexture) {
+        pipeline = this.compositorPipeline!.getExternalCompositePipeline()!;
+        bindGroup = this.compositorPipeline!.createExternalCompositeBindGroup(
+          this.sampler!,
+          readView,
+          data.externalTexture,
+          uniformBuffer,
+          maskTextureView
+        );
+      } else if (data.textureView) {
+        pipeline = this.compositorPipeline!.getCompositePipeline()!;
+        bindGroup = this.compositorPipeline!.createCompositeBindGroup(
+          this.sampler!,
+          readView,
+          data.textureView,
+          uniformBuffer,
+          maskTextureView
+        );
+      } else {
+        continue;
+      }
+
+      const compositePass = commandEncoder.beginRenderPass({
+        colorAttachments: [{
+          view: writeView,
+          loadOp: 'clear',
+          storeOp: 'store',
+        }],
+      });
+      compositePass.setPipeline(pipeline);
+      compositePass.setBindGroup(0, bindGroup);
+      compositePass.draw(6);
+      compositePass.end();
+
+      // Apply effects
+      if (layer.effects && layer.effects.length > 0 && this.effectsPipeline) {
+        const result = this.effectsPipeline.applyEffects(
+          commandEncoder,
+          layer.effects,
+          this.sampler!,
+          writeView,
+          readView,
+          nestedPingView,
+          nestedPongView
+        );
+        readView = result.outputView;
+        writeView = result.outputView === nestedPingView ? nestedPongView : nestedPingView;
+      } else {
+        // Swap buffers
+        const temp = readView;
+        readView = writeView;
+        writeView = temp;
+      }
+    }
+
+    // Copy final result to the composition texture
+    const copyPass = commandEncoder.beginRenderPass({
+      colorAttachments: [{
+        view: compTexture.view,
+        loadOp: 'clear',
+        storeOp: 'store',
+      }],
+    });
+    // Use output pipeline to copy from readView to compTexture
+    const copyBindGroup = this.outputPipeline!.getOutputBindGroup(this.sampler!, readView, true);
+    copyPass.setPipeline(this.outputPipeline!.getOutputPipeline()!);
+    copyPass.setBindGroup(0, copyBindGroup);
+    copyPass.draw(6);
+    copyPass.end();
+
+    // Clean up temporary textures
+    nestedPingTexture.destroy();
+    nestedPongTexture.destroy();
+
+    return compTexture.view;
+  }
+
+  /**
+   * Clean up nested composition textures
+   */
+  cleanupNestedCompTexture(compositionId: string): void {
+    const compTexture = this.nestedCompTextures.get(compositionId);
+    if (compTexture) {
+      compTexture.texture.destroy();
+      this.nestedCompTextures.delete(compositionId);
+    }
   }
 
   private updateStats(): void {
