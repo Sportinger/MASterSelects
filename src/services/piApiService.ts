@@ -4,6 +4,8 @@
 
 const BASE_URL = 'https://api.piapi.ai';
 const UPLOAD_URL = 'https://upload.theapi.app/api/ephemeral_resource';
+// CORS proxy for browser-based uploads (PiAPI doesn't set CORS headers)
+const CORS_PROXY = 'https://corsproxy.io/?';
 const MODELS_CACHE_KEY = 'piapi-video-models';
 const MODELS_CACHE_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours
 
@@ -252,8 +254,47 @@ class PiApiService {
     return !!this.apiKey;
   }
 
-  // Upload image to PiAPI's ephemeral resource endpoint
-  private async uploadToPiApi(dataUrl: string): Promise<string> {
+  // Convert data URL to Blob
+  private dataUrlToBlob(dataUrl: string): Blob {
+    const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+    if (!match) {
+      throw new Error('Invalid data URL');
+    }
+    const mimeType = match[1];
+    const base64 = match[2];
+    const binary = atob(base64);
+    const array = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      array[i] = binary.charCodeAt(i);
+    }
+    return new Blob([array], { type: mimeType });
+  }
+
+  // Upload image using file.io (supports CORS)
+  private async uploadToFileIO(dataUrl: string): Promise<string> {
+    const blob = this.dataUrlToBlob(dataUrl);
+    const formData = new FormData();
+    formData.append('file', blob, 'image.jpg');
+
+    console.log('[PiAPI] Uploading image to file.io, size:', Math.round(blob.size / 1024), 'KB');
+
+    const response = await fetch('https://file.io', {
+      method: 'POST',
+      body: formData,
+    });
+
+    const result = await response.json();
+    console.log('[PiAPI] file.io response:', result);
+
+    if (!result.success) {
+      throw new Error(result.message || 'file.io upload failed');
+    }
+
+    return result.link;
+  }
+
+  // Upload image to PiAPI's ephemeral resource endpoint via CORS proxy
+  private async uploadToPiApiViaProxy(dataUrl: string): Promise<string> {
     if (!this.hasApiKey()) {
       throw new Error('PiAPI key not set');
     }
@@ -273,38 +314,54 @@ class PiApiService {
       }
     }
 
-    console.log('[PiAPI] Uploading image to PiAPI ephemeral storage, size:', Math.round(fileData.length / 1024), 'KB');
+    console.log('[PiAPI] Uploading image via CORS proxy, size:', Math.round(fileData.length / 1024), 'KB');
 
+    // Use CORS proxy since PiAPI doesn't set CORS headers for browser requests
+    const proxiedUrl = CORS_PROXY + encodeURIComponent(UPLOAD_URL);
+
+    const response = await fetch(proxiedUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': this.apiKey,
+      },
+      body: JSON.stringify({
+        file_name: fileName,
+        file_data: fileData,
+      }),
+    });
+
+    const result = await response.json();
+    console.log('[PiAPI] Upload response:', result);
+
+    if (!response.ok || (result.code && result.code !== 200)) {
+      throw new Error(result.message || `Upload failed: ${response.status}`);
+    }
+
+    const url = result.data?.url || result.url;
+    if (!url) {
+      throw new Error('No URL returned from upload');
+    }
+
+    console.log('[PiAPI] Image uploaded successfully:', url);
+    return url;
+  }
+
+  // Main upload method - tries multiple services
+  private async uploadImage(dataUrl: string): Promise<string> {
+    // Try file.io first (most reliable for browser uploads)
     try {
-      const response = await fetch(UPLOAD_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': this.apiKey,
-        },
-        body: JSON.stringify({
-          file_name: fileName,
-          file_data: fileData,
-        }),
-      });
-
-      const result = await response.json();
-      console.log('[PiAPI] Upload response:', result);
-
-      if (!response.ok || (result.code && result.code !== 200)) {
-        throw new Error(result.message || `Upload failed: ${response.status}`);
-      }
-
-      const url = result.data?.url || result.url;
-      if (!url) {
-        throw new Error('No URL returned from upload');
-      }
-
-      console.log('[PiAPI] Image uploaded successfully:', url);
-      return url;
+      return await this.uploadToFileIO(dataUrl);
     } catch (err) {
-      console.error('[PiAPI] Upload error:', err);
-      throw new Error('Failed to upload image: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      console.warn('[PiAPI] file.io upload failed, trying CORS proxy:', err);
+    }
+
+    // Fallback to PiAPI via CORS proxy
+    try {
+      return await this.uploadToPiApiViaProxy(dataUrl);
+    } catch (err) {
+      console.error('[PiAPI] All upload methods failed:', err);
+      throw new Error('Failed to upload image. Please try again or use text-to-video instead.');
     }
   }
 
@@ -344,53 +401,6 @@ class PiApiService {
       img.onerror = () => reject(new Error('Failed to load image'));
       img.src = dataUrl;
     });
-  }
-
-  // Upload image and get URL (required for video generation)
-  async uploadImage(base64Data: string): Promise<string> {
-    if (!this.hasApiKey()) {
-      throw new Error('PiAPI key not set');
-    }
-
-    // Strip data URL prefix if present
-    let fileData = base64Data;
-    let fileName = 'image.png';
-
-    const match = base64Data.match(/^data:([^;]+);base64,(.+)$/);
-    if (match) {
-      const mimeType = match[1];
-      fileData = match[2];
-      // Determine extension from mime type
-      if (mimeType.includes('jpeg') || mimeType.includes('jpg')) {
-        fileName = 'image.jpg';
-      } else if (mimeType.includes('webp')) {
-        fileName = 'image.webp';
-      }
-    }
-
-    console.log('[PiAPI] Uploading image, size:', Math.round(fileData.length / 1024), 'KB');
-
-    const response = await fetch(UPLOAD_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': this.apiKey,
-      },
-      body: JSON.stringify({
-        file_name: fileName,
-        file_data: fileData,
-      }),
-    });
-
-    const result = await response.json();
-
-    if (!response.ok || result.code !== 200) {
-      console.error('[PiAPI] Upload error:', result);
-      throw new Error(`Failed to upload image: ${result.message || response.status}`);
-    }
-
-    console.log('[PiAPI] Image uploaded:', result.data?.url);
-    return result.data?.url;
   }
 
   private async request<T = PiApiResponse>(
@@ -579,20 +589,20 @@ class PiApiService {
   }
 
   async createImageToVideo(params: ImageToVideoParams): Promise<string> {
-    // Upload images to PiAPI's ephemeral storage to get URLs
+    // Upload images to get hosted URLs (PiAPI requires URLs, not base64)
     let imageUrl: string | undefined;
     let imageTailUrl: string | undefined;
 
     if (params.startImageUrl) {
       console.log('[PiAPI] Compressing and uploading start image...');
       const compressed = await this.compressImage(params.startImageUrl);
-      imageUrl = await this.uploadToPiApi(compressed);
+      imageUrl = await this.uploadImage(compressed);
     }
 
     if (params.endImageUrl) {
       console.log('[PiAPI] Compressing and uploading end image...');
       const compressed = await this.compressImage(params.endImageUrl);
-      imageTailUrl = await this.uploadToPiApi(compressed);
+      imageTailUrl = await this.uploadImage(compressed);
     }
 
     console.log('[PiAPI] Creating image-to-video with uploaded URLs:', { imageUrl, imageTailUrl });

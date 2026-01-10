@@ -1,6 +1,6 @@
 // Clip-related actions slice
 
-import type { TimelineClip, Effect, EffectType } from '../../types';
+import type { TimelineClip, TimelineTrack, Effect, EffectType } from '../../types';
 import type { ClipActions, SliceCreator, Composition } from './types';
 import { useMediaStore } from '../mediaStore';
 import { DEFAULT_TRANSFORM } from './constants';
@@ -648,22 +648,79 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
             const mixdownAudio = compositionAudioMixer.createAudioElement(mixdownResult.buffer);
             mixdownAudio.preload = 'auto';
 
-            const clipsAfter = get().clips;
-            set({
-              clips: clipsAfter.map(c =>
-                c.id === clipId
-                  ? {
-                      ...c,
-                      mixdownAudio,
-                      mixdownWaveform: mixdownResult.waveform,
-                      mixdownBuffer: mixdownResult.buffer,
-                      mixdownGenerating: false,
-                      hasMixdownAudio: true,
-                    }
-                  : c
-              ),
-            });
-            console.log(`[Nested Comp] Audio mixdown complete for ${composition.name}: ${mixdownResult.waveform.length} waveform samples`);
+            // Find an audio track to place the linked audio clip
+            const currentState = get();
+            const audioTracks = currentState.tracks.filter(t => t.type === 'audio');
+            let audioTrackId: string | null = null;
+
+            if (audioTracks.length > 0) {
+              // Use the first audio track
+              audioTrackId = audioTracks[0].id;
+            } else {
+              // Create a new audio track
+              const newTrackId = `track-${Date.now()}-audio`;
+              const newTrack: TimelineTrack = {
+                id: newTrackId,
+                name: 'Audio 1',
+                type: 'audio',
+                height: 60,
+                muted: false,
+                visible: true,
+                solo: false,
+              };
+              set({ tracks: [...currentState.tracks, newTrack] });
+              audioTrackId = newTrackId;
+              console.log(`[Nested Comp] Created new audio track for ${composition.name}`);
+            }
+
+            // Create a linked audio clip with the mixdown
+            const audioClipId = `clip-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-audio`;
+            const compClipCurrent = get().clips.find(c => c.id === clipId);
+
+            if (compClipCurrent && audioTrackId) {
+              const audioClip: TimelineClip = {
+                id: audioClipId,
+                trackId: audioTrackId,
+                name: `${composition.name} (Audio)`,
+                file: new File([], `${composition.name}-audio.wav`),
+                startTime: compClipCurrent.startTime,
+                duration: compClipCurrent.duration,
+                inPoint: 0,
+                outPoint: mixdownResult.duration,
+                source: {
+                  type: 'audio',
+                  audioElement: mixdownAudio,
+                  naturalDuration: mixdownResult.duration,
+                },
+                linkedClipId: clipId, // Link to the video comp clip
+                waveform: mixdownResult.waveform,
+                transform: { ...DEFAULT_TRANSFORM },
+                effects: [],
+                isLoading: false,
+                isComposition: true, // Mark as composition audio
+                compositionId: composition.id,
+                mixdownBuffer: mixdownResult.buffer,
+              };
+
+              // Update the video comp clip to link to the audio clip and add both
+              const clipsAfter = get().clips;
+              set({
+                clips: [
+                  ...clipsAfter.map(c =>
+                    c.id === clipId
+                      ? {
+                          ...c,
+                          linkedClipId: audioClipId,
+                          mixdownGenerating: false,
+                          hasMixdownAudio: true,
+                        }
+                      : c
+                  ),
+                  audioClip,
+                ],
+              });
+              console.log(`[Nested Comp] Audio mixdown complete for ${composition.name}: created linked audio clip with ${mixdownResult.waveform.length} waveform samples`);
+            }
           } else {
             // No audio in nested comp
             const clipsAfter = get().clips;
