@@ -749,10 +749,12 @@ export class WebGPUEngine {
     // Update video flag for frame rate limiting
     this.hasActiveVideo = this.layerRenderData.some(d => d.isVideo);
 
-    // Early exit if nothing to render
+    // Early exit if nothing to render - clear all canvases to black
     if (this.layerRenderData.length === 0) {
+      const commandEncoder = device.createCommandEncoder();
+
+      // Clear main preview context
       if (this.previewContext) {
-        const commandEncoder = device.createCommandEncoder();
         const pass = commandEncoder.beginRenderPass({
           colorAttachments: [{
             view: this.previewContext.getCurrentTexture().createView(),
@@ -762,8 +764,22 @@ export class WebGPUEngine {
           }],
         });
         pass.end();
-        device.queue.submit([commandEncoder.finish()]);
       }
+
+      // Clear all registered preview canvases (from Preview components)
+      for (const previewCtx of this.previewCanvases.values()) {
+        const pass = commandEncoder.beginRenderPass({
+          colorAttachments: [{
+            view: previewCtx.getCurrentTexture().createView(),
+            clearValue: { r: 0, g: 0, b: 0, a: 1 },
+            loadOp: 'clear',
+            storeOp: 'store',
+          }],
+        });
+        pass.end();
+      }
+
+      device.queue.submit([commandEncoder.finish()]);
       this.lastLayerCount = 0;
       return;
     }
