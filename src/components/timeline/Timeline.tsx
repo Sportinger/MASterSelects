@@ -843,11 +843,36 @@ export function Timeline() {
               video.pause();
             }
 
+            // Combine nested clip transform with parent composition transform
+            const nestedTransform = nestedClip.transform || {};
+            const combinedTransform = {
+              position: {
+                x: (interpolatedTransform.position?.x || 0) + (nestedTransform.position?.x || 0),
+                y: (interpolatedTransform.position?.y || 0) + (nestedTransform.position?.y || 0),
+              },
+              scale: {
+                x: (interpolatedTransform.scale?.x ?? 1) * (nestedTransform.scale?.x ?? 1),
+                y: (interpolatedTransform.scale?.y ?? 1) * (nestedTransform.scale?.y ?? 1),
+              },
+              rotation: {
+                z: (interpolatedTransform.rotation?.z || 0) + (nestedTransform.rotation?.z || 0),
+              },
+              anchor: nestedTransform.anchor || interpolatedTransform.anchor,
+              opacity: (interpolatedTransform.opacity ?? 1) * (nestedTransform.opacity ?? 1),
+              blendMode: interpolatedTransform.blendMode || nestedTransform.blendMode || 'normal',
+            };
+
+            // Combine effects from both parent and nested clip
+            const combinedEffects = [
+              ...(nestedClip.effects || []),
+              ...interpolatedEffects,
+            ];
+
             return {
               video,
               webCodecsPlayer,
-              transform: interpolatedTransform,
-              effects: interpolatedEffects,
+              transform: combinedTransform,
+              effects: combinedEffects,
             };
           }
         }
