@@ -216,7 +216,15 @@ export function ExportPanel() {
           <div className="export-section">
             <div className="export-section-header">Composition</div>
             <div className="control-row">
-              <label>Resolution</label>
+              <label>
+                Resolution
+                <span
+                  className="info-icon"
+                  title="Sets the canvas size for preview and rendering. Affects GPU buffer size and default export dimensions. Use lower resolution for better performance on complex compositions."
+                >
+                  i
+                </span>
+              </label>
               <select
                 value={`${outputResolution.width}x${outputResolution.height}`}
                 onChange={(e) => {

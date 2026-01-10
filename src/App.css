@@ -1243,6 +1243,31 @@ input, textarea {
   margin-bottom: 4px;
 }
 
+.info-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  margin-left: 4px;
+  font-size: 9px;
+  font-weight: 600;
+  font-style: italic;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+  cursor: help;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+
+.info-icon:hover {
+  opacity: 1;
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 .export-panel .control-row {
   display: flex;
   align-items: center;
