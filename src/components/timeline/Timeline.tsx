@@ -1335,8 +1335,8 @@ export function Timeline() {
         const shouldPlay = isPlaying && !effectivelyMuted && !isDraggingPlayhead && absSpeed > 0.1;
 
         if (shouldPlay) {
-          // Sync audio if drifted more than 100ms
-          if (Math.abs(timeDiff) > 0.1) {
+          // Sync audio if drifted more than 50ms (tighter sync for smoother playback)
+          if (Math.abs(timeDiff) > 0.05) {
             audio.currentTime = clipTime;
           }
 
@@ -1472,11 +1472,12 @@ export function Timeline() {
     }
   }, [isPlaying, isDraggingPlayhead, playheadPosition, clips]);
 
-  // Playback loop
+  // Playback loop - using requestAnimationFrame for smooth playback
   useEffect(() => {
     if (!isPlaying) return;
 
-    let intervalId: ReturnType<typeof setInterval>;
+    let rafId: number;
+    let lastTime = performance.now();
 
     const getActiveVideoClip = () => {
       const state = useTimelineStore.getState();
@@ -1493,7 +1494,14 @@ export function Timeline() {
       return null;
     };
 
-    const updatePlayhead = () => {
+    const updatePlayhead = (currentTime: number) => {
+      // Calculate actual elapsed time for smooth playback
+      const deltaTime = (currentTime - lastTime) / 1000; // Convert to seconds
+      lastTime = currentTime;
+
+      // Cap delta to prevent huge jumps if tab was inactive
+      const cappedDelta = Math.min(deltaTime, 0.1);
+
       const state = useTimelineStore.getState();
       const { duration: dur, inPoint: ip, outPoint: op, loopPlayback: lp, pause: ps } = state;
       const effectiveEnd = op !== null ? op : dur;
@@ -1501,7 +1509,7 @@ export function Timeline() {
 
       // Playhead always moves at constant speed (independent of clip speed)
       // The video frame shown is calculated based on playhead position and speed in the render loop
-      let newPosition = state.playheadPosition + 0.066;
+      let newPosition = state.playheadPosition + cappedDelta;
 
       if (newPosition >= effectiveEnd) {
         if (lp) {
@@ -1521,11 +1529,12 @@ export function Timeline() {
       }
 
       setPlayheadPosition(newPosition);
+      rafId = requestAnimationFrame(updatePlayhead);
     };
 
-    intervalId = setInterval(updatePlayhead, 66);
+    rafId = requestAnimationFrame(updatePlayhead);
 
-    return () => clearInterval(intervalId);
+    return () => cancelAnimationFrame(rafId);
   }, [isPlaying, setPlayheadPosition]);
 
   // Handle shift+mousewheel on track header to resize height
