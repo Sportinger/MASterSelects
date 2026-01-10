@@ -449,8 +449,12 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
 
     const clipId = `clip-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
+    // Use timeline duration if available, otherwise fall back to composition duration
+    // This ensures the nested clip matches the timeline duration the user set
+    const compDuration = composition.timelineData?.duration ?? composition.duration;
+
     // Find non-overlapping position
-    const finalStartTime = findNonOverlappingPosition(clipId, startTime, trackId, composition.duration);
+    const finalStartTime = findNonOverlappingPosition(clipId, startTime, trackId, compDuration);
 
     // Create placeholder clip immediately (will be updated with nested content)
     const compClip: TimelineClip = {
@@ -459,12 +463,12 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
       name: composition.name,
       file: new File([], composition.name), // Placeholder file
       startTime: finalStartTime,
-      duration: composition.duration,
+      duration: compDuration,
       inPoint: 0,
-      outPoint: composition.duration,
+      outPoint: compDuration,
       source: {
         type: 'video', // Comp clips are treated as video
-        naturalDuration: composition.duration,
+        naturalDuration: compDuration,
       },
       transform: { ...DEFAULT_TRANSFORM },
       effects: [],
@@ -614,7 +618,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
           const video = firstVideoClip.source?.videoElement;
           if (video && video.readyState >= 2) {
             try {
-              const thumbnails = await generateThumbnails(video, composition.duration);
+              const thumbnails = await generateThumbnails(video, compDuration);
               const updatedClips = get().clips;
               set({
                 clips: updatedClips.map(c =>
@@ -690,7 +694,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
               // Create silent audio element for empty comp
               mixdownAudio = document.createElement('audio');
               // Generate flat waveform (silence)
-              waveform = new Array(Math.max(1, Math.floor(composition.duration * 50))).fill(0);
+              waveform = new Array(Math.max(1, Math.floor(compDuration * 50))).fill(0);
             }
 
             const audioClip: TimelineClip = {
@@ -701,11 +705,11 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
               startTime: compClipCurrent.startTime,
               duration: compClipCurrent.duration,
               inPoint: 0,
-              outPoint: hasAudio && mixdownResult ? mixdownResult.duration : composition.duration,
+              outPoint: hasAudio && mixdownResult ? mixdownResult.duration : compDuration,
               source: {
                 type: 'audio',
                 audioElement: mixdownAudio,
-                naturalDuration: hasAudio && mixdownResult ? mixdownResult.duration : composition.duration,
+                naturalDuration: hasAudio && mixdownResult ? mixdownResult.duration : compDuration,
               },
               linkedClipId: clipId, // Link to the video comp clip
               waveform,
@@ -770,14 +774,14 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
               startTime: compClipCurrent.startTime,
               duration: compClipCurrent.duration,
               inPoint: 0,
-              outPoint: composition.duration,
+              outPoint: compDuration,
               source: {
                 type: 'audio',
                 audioElement: document.createElement('audio'),
-                naturalDuration: composition.duration,
+                naturalDuration: compDuration,
               },
               linkedClipId: clipId,
-              waveform: new Array(Math.max(1, Math.floor(composition.duration * 50))).fill(0),
+              waveform: new Array(Math.max(1, Math.floor(compDuration * 50))).fill(0),
               transform: { ...DEFAULT_TRANSFORM },
               effects: [],
               isLoading: false,
@@ -833,14 +837,14 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
           startTime: compClipCurrent.startTime,
           duration: compClipCurrent.duration,
           inPoint: 0,
-          outPoint: composition.duration,
+          outPoint: compDuration,
           source: {
             type: 'audio',
             audioElement: document.createElement('audio'),
-            naturalDuration: composition.duration,
+            naturalDuration: compDuration,
           },
           linkedClipId: clipId,
-          waveform: new Array(Math.max(1, Math.floor(composition.duration * 50))).fill(0),
+          waveform: new Array(Math.max(1, Math.floor(compDuration * 50))).fill(0),
           transform: { ...DEFAULT_TRANSFORM },
           effects: [],
           isLoading: false,
