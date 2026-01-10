@@ -1321,6 +1321,72 @@ export function Timeline() {
     isAudioTrackMuted,
   ]);
 
+  // Preload upcoming video clips - seek videos a few seconds before playhead hits them
+  // This prevents stuttering when playback transitions to a new clip
+  useEffect(() => {
+    if (!isPlaying || isDraggingPlayhead) return;
+
+    const LOOKAHEAD_TIME = 2.0; // Look 2 seconds ahead
+    const lookaheadPosition = playheadPosition + LOOKAHEAD_TIME;
+
+    // Find clips that will start playing soon (not currently playing, but will be soon)
+    const upcomingClips = clips.filter(clip => {
+      // Clip starts after current position but within lookahead window
+      const startsInLookahead = clip.startTime > playheadPosition && clip.startTime <= lookaheadPosition;
+      // Has a video element to preload
+      const hasVideo = clip.source?.videoElement;
+      return startsInLookahead && hasVideo;
+    });
+
+    // Pre-seek upcoming regular clips
+    for (const clip of upcomingClips) {
+      if (clip.source?.videoElement) {
+        const video = clip.source.videoElement;
+        const targetTime = clip.inPoint;
+        const timeDiff = Math.abs(video.currentTime - targetTime);
+
+        // Only seek if significantly different (avoid micro-seeks)
+        if (timeDiff > 0.1) {
+          video.currentTime = targetTime;
+          // console.log(`[Preload] Pre-seeking ${clip.name} to ${targetTime.toFixed(2)}s`);
+        }
+      }
+    }
+
+    // Also preload nested composition clips
+    const upcomingNestedClips = clips.filter(clip => {
+      const startsInLookahead = clip.startTime > playheadPosition && clip.startTime <= lookaheadPosition;
+      const hasNestedClips = clip.isComposition && clip.nestedClips && clip.nestedClips.length > 0;
+      return startsInLookahead && hasNestedClips;
+    });
+
+    for (const compClip of upcomingNestedClips) {
+      if (!compClip.nestedClips) continue;
+
+      // Find the nested video clip that would play at the start of this comp clip
+      const compStartTime = compClip.inPoint; // Time within the composition
+
+      for (const nestedClip of compClip.nestedClips) {
+        if (!nestedClip.source?.videoElement) continue;
+
+        // Check if this nested clip would be playing at comp start
+        if (compStartTime >= nestedClip.startTime && compStartTime < nestedClip.startTime + nestedClip.duration) {
+          const video = nestedClip.source.videoElement;
+          const nestedLocalTime = compStartTime - nestedClip.startTime;
+          const targetTime = nestedClip.reversed
+            ? nestedClip.outPoint - nestedLocalTime
+            : nestedLocalTime + nestedClip.inPoint;
+
+          const timeDiff = Math.abs(video.currentTime - targetTime);
+          if (timeDiff > 0.1) {
+            video.currentTime = Math.max(0, targetTime);
+            // console.log(`[Preload] Pre-seeking nested ${nestedClip.name} to ${targetTime.toFixed(2)}s`);
+          }
+        }
+      }
+    }
+  }, [isPlaying, isDraggingPlayhead, playheadPosition, clips]);
+
   // Playback loop
   useEffect(() => {
     if (!isPlaying) return;
