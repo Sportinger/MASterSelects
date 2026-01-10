@@ -1094,7 +1094,7 @@ function AnalysisTab({ clipId, analysis, analysisStatus, analysisProgress, clipS
 // MAIN PANEL
 // ============================================
 export function PropertiesPanel() {
-  const { clips, tracks, selectedClipIds, playheadPosition, getInterpolatedTransform } = useTimelineStore();
+  const { clips, tracks, selectedClipIds, playheadPosition, getInterpolatedTransform, getInterpolatedSpeed } = useTimelineStore();
   const [activeTab, setActiveTab] = useState<PropertiesTab>('transform');
   const [lastClipId, setLastClipId] = useState<string | null>(null);
 
@@ -1129,6 +1129,7 @@ export function PropertiesPanel() {
 
   const clipLocalTime = playheadPosition - selectedClip.startTime;
   const transform = getInterpolatedTransform(selectedClip.id, clipLocalTime);
+  const interpolatedSpeed = getInterpolatedSpeed(selectedClip.id, clipLocalTime);
 
   // Count non-audio effects for badge
   const visualEffects = (selectedClip.effects || []).filter(e => e.type !== 'audio-volume' && e.type !== 'audio-eq');
@@ -1166,7 +1167,7 @@ export function PropertiesPanel() {
       </div>
 
       <div className="properties-content">
-        {activeTab === 'transform' && !isAudioClip && <TransformTab clipId={selectedClip.id} transform={transform} speed={selectedClip.speed} />}
+        {activeTab === 'transform' && !isAudioClip && <TransformTab clipId={selectedClip.id} transform={transform} speed={interpolatedSpeed} />}
         {activeTab === 'volume' && isAudioClip && <VolumeTab clipId={selectedClip.id} effects={selectedClip.effects || []} />}
         {activeTab === 'effects' && <EffectsTab clipId={selectedClip.id} effects={selectedClip.effects || []} />}
         {activeTab === 'masks' && !isAudioClip && <MasksTab clipId={selectedClip.id} masks={selectedClip.masks} />}
