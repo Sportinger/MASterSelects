@@ -55,7 +55,7 @@ function StatsOverlay({ stats, resolution, expanded, onToggle }: {
         {stats.drops.lastSecond > 0 && (
           <span style={{ color: '#f44', marginLeft: 6 }}>▼{stats.drops.lastSecond}</span>
         )}
-        {stats.audio.status !== 'silent' && (
+        {stats.audio?.status && stats.audio.status !== 'silent' && (
           <span style={{
             marginLeft: 6,
             color: stats.audio.status === 'sync' ? '#4f4'
@@ -155,37 +155,39 @@ function StatsOverlay({ stats, resolution, expanded, onToggle }: {
       </div>
 
       {/* Audio Status Section */}
-      <div className="stats-section">
-        <div className="stats-label">Audio</div>
-        <div className="stats-row">
-          <span>Status</span>
-          <span style={{
-            color: stats.audio.status === 'sync' ? '#4f4'
-              : stats.audio.status === 'drift' ? '#ff4'
-              : stats.audio.status === 'error' ? '#f44'
-              : '#888'
-          }}>
-            {stats.audio.status === 'sync' ? '● Sync'
-              : stats.audio.status === 'drift' ? '◐ Drift'
-              : stats.audio.status === 'error' ? '✕ Error'
-              : '○ Silent'}
-          </span>
-        </div>
-        {stats.audio.playing > 0 && (
+      {stats.audio && (
+        <div className="stats-section">
+          <div className="stats-label">Audio</div>
           <div className="stats-row">
-            <span>Playing</span>
-            <span>{stats.audio.playing} track{stats.audio.playing !== 1 ? 's' : ''}</span>
-          </div>
-        )}
-        {stats.audio.drift > 0 && (
-          <div className="stats-row">
-            <span>Drift</span>
-            <span style={{ color: stats.audio.drift > 100 ? '#f44' : stats.audio.drift > 50 ? '#ff4' : '#aaa' }}>
-              {stats.audio.drift}ms
+            <span>Status</span>
+            <span style={{
+              color: stats.audio.status === 'sync' ? '#4f4'
+                : stats.audio.status === 'drift' ? '#ff4'
+                : stats.audio.status === 'error' ? '#f44'
+                : '#888'
+            }}>
+              {stats.audio.status === 'sync' ? '● Sync'
+                : stats.audio.status === 'drift' ? '◐ Drift'
+                : stats.audio.status === 'error' ? '✕ Error'
+                : '○ Silent'}
             </span>
           </div>
-        )}
-      </div>
+          {stats.audio.playing > 0 && (
+            <div className="stats-row">
+              <span>Playing</span>
+              <span>{stats.audio.playing} track{stats.audio.playing !== 1 ? 's' : ''}</span>
+            </div>
+          )}
+          {stats.audio.drift > 0 && (
+            <div className="stats-row">
+              <span>Drift</span>
+              <span style={{ color: stats.audio.drift > 100 ? '#f44' : stats.audio.drift > 50 ? '#ff4' : '#aaa' }}>
+                {stats.audio.drift}ms
+              </span>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
