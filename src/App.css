@@ -2424,13 +2424,48 @@ input[type="checkbox"] {
 
 .track-controls {
   display: flex;
-  flex-direction: column;
-  gap: 1px;
+  flex-direction: row;
+  align-items: center;
+  gap: 2px;
   margin-left: auto;
   position: absolute;
   right: 4px;
   top: 50%;
   transform: translateY(-50%);
+}
+
+/* Track pick whip for layer parenting */
+.track-pick-whip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  cursor: grab;
+  opacity: 0.5;
+  transition: opacity 0.15s, transform 0.15s;
+  color: #e5c07b;
+}
+
+.track-pick-whip:hover {
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+.track-pick-whip.dragging {
+  cursor: grabbing;
+  opacity: 1;
+  transform: scale(1.2);
+}
+
+.track-pick-whip.has-parent {
+  opacity: 1;
+  color: #e5c07b;
+}
+
+.track-pick-whip-icon {
+  width: 14px;
+  height: 14px;
 }
 
 .btn-icon {
