@@ -14,6 +14,8 @@ interface APIKeys {
   openai: string;
   assemblyai: string;
   deepgram: string;
+  piapi: string;  // PiAPI key for AI video generation (Kling, Luma, etc.)
+  // Legacy Kling keys (deprecated, use piapi instead)
   klingAccessKey: string;
   klingSecretKey: string;
 }
@@ -53,6 +55,7 @@ export const useSettingsStore = create<SettingsState>()(
         openai: '',
         assemblyai: '',
         deepgram: '',
+        piapi: '',
         klingAccessKey: '',
         klingSecretKey: '',
       },

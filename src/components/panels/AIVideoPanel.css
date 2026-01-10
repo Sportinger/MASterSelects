@@ -45,6 +45,7 @@
   border-bottom-color: var(--accent);
 }
 
+.provider-select,
 .service-select {
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
@@ -56,8 +57,16 @@
   flex-shrink: 0;
 }
 
+.provider-select:hover,
 .service-select:hover {
   border-color: var(--accent);
+}
+
+.no-key-hint {
+  display: block;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
 }
 
 /* Empty / No API Key State */

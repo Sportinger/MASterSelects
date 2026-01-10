@@ -21,6 +21,7 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
     openai: false,
     assemblyai: false,
     deepgram: false,
+    piapi: false,
     klingAccessKey: false,
     klingSecretKey: false,
   });
@@ -199,54 +200,34 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
           <div className="settings-section">
             <h3>AI Video Generation</h3>
             <p className="settings-hint">
-              Kling uses Access Key + Secret Key for JWT authentication.
+              PiAPI provides access to multiple AI video models (Kling, Luma, Hailuo, etc.)
             </p>
 
-            {/* Kling Access Key */}
+            {/* PiAPI Key */}
             <div className="api-key-row">
-              <label>Kling Access Key (AK)</label>
+              <label>PiAPI API Key</label>
               <div className="api-key-input">
                 <input
-                  type={showKeys.klingAccessKey ? 'text' : 'password'}
-                  value={localKeys.klingAccessKey}
-                  onChange={(e) => handleKeyChange('klingAccessKey', e.target.value)}
-                  placeholder="Enter Access Key..."
+                  type={showKeys.piapi ? 'text' : 'password'}
+                  value={localKeys.piapi}
+                  onChange={(e) => handleKeyChange('piapi', e.target.value)}
+                  placeholder="Enter PiAPI key..."
                 />
                 <button
                   className="toggle-visibility"
-                  onClick={() => toggleShowKey('klingAccessKey')}
-                  title={showKeys.klingAccessKey ? 'Hide' : 'Show'}
+                  onClick={() => toggleShowKey('piapi')}
+                  title={showKeys.piapi ? 'Hide' : 'Show'}
                 >
-                  {showKeys.klingAccessKey ? '🙈' : '👁'}
-                </button>
-              </div>
-            </div>
-
-            {/* Kling Secret Key */}
-            <div className="api-key-row">
-              <label>Kling Secret Key (SK)</label>
-              <div className="api-key-input">
-                <input
-                  type={showKeys.klingSecretKey ? 'text' : 'password'}
-                  value={localKeys.klingSecretKey}
-                  onChange={(e) => handleKeyChange('klingSecretKey', e.target.value)}
-                  placeholder="Enter Secret Key..."
-                />
-                <button
-                  className="toggle-visibility"
-                  onClick={() => toggleShowKey('klingSecretKey')}
-                  title={showKeys.klingSecretKey ? 'Hide' : 'Show'}
-                >
-                  {showKeys.klingSecretKey ? '🙈' : '👁'}
+                  {showKeys.piapi ? '🙈' : '👁'}
                 </button>
               </div>
               <a
                 className="api-key-link"
-                href="https://app.klingai.com/global/dev/document-api"
+                href="https://piapi.ai/workspace"
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                Get API Keys →
+                Get API Key (free credits on signup) →
               </a>
             </div>
           </div>

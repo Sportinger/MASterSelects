@@ -1,4 +1,4 @@
-// AI Video Panel - AI video generation using Kling API
+// AI Video Panel - AI video generation using PiAPI (Kling, Luma, Hailuo, etc.)
 // Supports text-to-video and image-to-video generation with timeline integration
 
 import { useState, useCallback, useRef, useEffect } from 'react';
@@ -6,25 +6,17 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { useMediaStore } from '../../stores/mediaStore';
 import { useTimelineStore } from '../../stores/timeline';
 import {
-  klingService,
-  KLING_MODELS,
-  KLING_DURATIONS,
-  KLING_ASPECT_RATIOS,
-  KLING_MODES,
-  KLING_CAMERA_CONTROLS,
-  getAspectRatioDimensions,
-  calculateCreditCost,
-  type KlingTask,
+  piApiService,
+  getVideoProviders,
+  getProvider,
+  calculateCost,
+  type VideoProvider,
+  type VideoTask,
   type TextToVideoParams,
   type ImageToVideoParams,
-} from '../../services/klingService';
+} from '../../services/piApiService';
 import { ImageCropper, exportCroppedImage, type CropData } from './ImageCropper';
 import './AIVideoPanel.css';
-
-// Available AI video services
-const AI_SERVICES = [
-  { id: 'kling', name: 'Kling AI' },
-] as const;
 
 type GenerationType = 'text-to-video' | 'image-to-video';
 type PanelTab = 'generate' | 'history';
@@ -32,8 +24,10 @@ type PanelTab = 'generate' | 'history';
 interface GenerationJob {
   id: string;
   type: GenerationType;
+  provider: string;
+  version: string;
   prompt: string;
-  status: KlingTask['status'];
+  status: VideoTask['status'];
   progress?: number;
   videoUrl?: string;
   thumbnailUrl?: string;
@@ -45,7 +39,7 @@ interface GenerationJob {
 }
 
 // Store history in localStorage
-const HISTORY_KEY = 'kling-generation-history';
+const HISTORY_KEY = 'piapi-generation-history';
 
 function loadHistory(): GenerationJob[] {
   try {
@@ -72,12 +66,12 @@ function saveHistory(history: GenerationJob[]) {
   }
 }
 
-// Get or create KlingAI folder in media panel
-function getOrCreateKlingFolder(): string {
+// Get or create AI Video folder in media panel
+function getOrCreateAIVideoFolder(): string {
   const { folders, createFolder } = useMediaStore.getState();
-  const existing = folders.find(f => f.name === 'KlingAI');
+  const existing = folders.find(f => f.name === 'AI Video');
   if (existing) return existing.id;
-  const newFolder = createFolder('KlingAI');
+  const newFolder = createFolder('AI Video');
   return newFolder.id;
 }
 
@@ -122,17 +116,27 @@ async function downloadVideoAsFile(url: string, filename: string): Promise<File 
   }
 }
 
+// Get aspect ratio dimensions from string
+function getAspectRatioDimensions(aspectRatio: string): { width: number; height: number } {
+  const [w, h] = aspectRatio.split(':').map(Number);
+  return { width: w || 16, height: h || 9 };
+}
+
 export function AIVideoPanel() {
   const { apiKeys, openSettings } = useSettingsStore();
-  const { importFile, folders, files } = useMediaStore();
+  const { importFile } = useMediaStore();
   const { tracks, addClip, createTrack } = useTimelineStore();
 
   // Panel tab state
   const [activeTab, setActiveTab] = useState<PanelTab>('generate');
 
-  // Service and model selection
-  const [service, setService] = useState<string>('kling');
-  const [model, setModel] = useState<string>(KLING_MODELS[0].id); // Default to latest (v2.6)
+  // Provider and model selection
+  const [providers] = useState<VideoProvider[]>(() => getVideoProviders());
+  const [selectedProvider, setSelectedProvider] = useState<string>(providers[0]?.id || 'kling');
+  const [selectedVersion, setSelectedVersion] = useState<string>(providers[0]?.versions[0] || '2.6');
+
+  // Get current provider config
+  const currentProvider = getProvider(selectedProvider) || providers[0];
 
   // Generation type (default to image-to-video)
   const [generationType, setGenerationType] = useState<GenerationType>('image-to-video');
@@ -144,13 +148,10 @@ export function AIVideoPanel() {
   const [aspectRatio, setAspectRatio] = useState<string>('16:9');
   const [mode, setMode] = useState<string>('std');
   const [cfgScale, setCfgScale] = useState<number>(0.5);
-  const [cameraControl, setCameraControl] = useState<string>('');
 
   // Image-to-video specific
-  const [startImage, setStartImage] = useState<File | null>(null);
   const [startImagePreview, setStartImagePreview] = useState<string | null>(null);
   const [startCropData, setStartCropData] = useState<CropData>({ offsetX: 0, offsetY: 0, scale: 1 });
-  const [endImage, setEndImage] = useState<File | null>(null);
   const [endImagePreview, setEndImagePreview] = useState<string | null>(null);
   const [endCropData, setEndCropData] = useState<CropData>({ offsetX: 0, offsetY: 0, scale: 1 });
 
@@ -171,14 +172,30 @@ export function AIVideoPanel() {
   const videoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
 
   // Check if API credentials are available
-  const hasApiKey = !!apiKeys.klingAccessKey && !!apiKeys.klingSecretKey;
+  const hasApiKey = !!apiKeys.piapi;
 
-  // Set credentials when they change
+  // Set API key when it changes
   useEffect(() => {
-    if (apiKeys.klingAccessKey && apiKeys.klingSecretKey) {
-      klingService.setCredentials(apiKeys.klingAccessKey, apiKeys.klingSecretKey);
+    if (apiKeys.piapi) {
+      piApiService.setApiKey(apiKeys.piapi);
     }
-  }, [apiKeys.klingAccessKey, apiKeys.klingSecretKey]);
+  }, [apiKeys.piapi]);
+
+  // Update version when provider changes
+  useEffect(() => {
+    const provider = getProvider(selectedProvider);
+    if (provider && !provider.versions.includes(selectedVersion)) {
+      setSelectedVersion(provider.versions[0]);
+    }
+    // Reset mode if not supported
+    if (provider && !provider.supportedModes.includes(mode)) {
+      setMode(provider.supportedModes[0]);
+    }
+    // Reset duration if not supported
+    if (provider && !provider.supportedDurations.includes(duration)) {
+      setDuration(provider.supportedDurations[0]);
+    }
+  }, [selectedProvider, selectedVersion, mode, duration]);
 
   // Save history when it changes
   useEffect(() => {
@@ -191,7 +208,6 @@ export function AIVideoPanel() {
     e.stopPropagation();
     const file = e.dataTransfer.files[0];
     if (file && file.type.startsWith('image/')) {
-      setStartImage(file);
       const reader = new FileReader();
       reader.onload = () => setStartImagePreview(reader.result as string);
       reader.readAsDataURL(file);
@@ -204,7 +220,6 @@ export function AIVideoPanel() {
     e.stopPropagation();
     const file = e.dataTransfer.files[0];
     if (file && file.type.startsWith('image/')) {
-      setEndImage(file);
       const reader = new FileReader();
       reader.onload = () => setEndImagePreview(reader.result as string);
       reader.readAsDataURL(file);
@@ -219,7 +234,6 @@ export function AIVideoPanel() {
     input.onchange = (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (file && file.type.startsWith('image/')) {
-        setStartImage(file);
         const reader = new FileReader();
         reader.onload = () => setStartImagePreview(reader.result as string);
         reader.readAsDataURL(file);
@@ -236,7 +250,6 @@ export function AIVideoPanel() {
     input.onchange = (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (file && file.type.startsWith('image/')) {
-        setEndImage(file);
         const reader = new FileReader();
         reader.onload = () => setEndImagePreview(reader.result as string);
         reader.readAsDataURL(file);
@@ -247,14 +260,12 @@ export function AIVideoPanel() {
 
   // Clear start image
   const clearStartImage = useCallback(() => {
-    setStartImage(null);
     setStartImagePreview(null);
     setStartCropData({ offsetX: 0, offsetY: 0, scale: 1 });
   }, []);
 
   // Clear end image
   const clearEndImage = useCallback(() => {
-    setEndImage(null);
     setEndImagePreview(null);
     setEndCropData({ offsetX: 0, offsetY: 0, scale: 1 });
   }, []);
@@ -264,9 +275,6 @@ export function AIVideoPanel() {
     const dataUrl = await captureCurrentFrame();
     if (dataUrl) {
       setStartImagePreview(dataUrl);
-      const response = await fetch(dataUrl);
-      const blob = await response.blob();
-      setStartImage(new File([blob], `frame-${Date.now()}.png`, { type: 'image/png' }));
       setStartCropData({ offsetX: 0, offsetY: 0, scale: 1 });
     }
   }, []);
@@ -276,9 +284,6 @@ export function AIVideoPanel() {
     const dataUrl = await captureCurrentFrame();
     if (dataUrl) {
       setEndImagePreview(dataUrl);
-      const response = await fetch(dataUrl);
-      const blob = await response.blob();
-      setEndImage(new File([blob], `frame-${Date.now()}.png`, { type: 'image/png' }));
       setEndCropData({ offsetX: 0, offsetY: 0, scale: 1 });
     }
   }, []);
@@ -297,20 +302,20 @@ export function AIVideoPanel() {
 
     try {
       // Download video file
-      const filename = `kling_${job.id.slice(0, 8)}_${Date.now()}.mp4`;
+      const filename = `${job.provider}_${job.id.slice(0, 8)}_${Date.now()}.mp4`;
       const file = await downloadVideoAsFile(job.videoUrl, filename);
       if (!file) {
         console.error('Failed to download video');
         return;
       }
 
-      // Get or create KlingAI folder
-      const folderId = getOrCreateKlingFolder();
+      // Get or create AI Video folder
+      const folderId = getOrCreateAIVideoFolder();
 
       // Import to media panel
       const mediaFile = await importFile(file);
 
-      // Move to KlingAI folder
+      // Move to AI Video folder
       useMediaStore.getState().moveToFolder([mediaFile.id], folderId);
 
       console.log('[AIVideo] Imported video to media panel:', mediaFile.name);
@@ -368,37 +373,41 @@ export function AIVideoPanel() {
 
       if (generationType === 'text-to-video') {
         const params: TextToVideoParams = {
+          provider: selectedProvider,
+          version: selectedVersion,
           prompt: prompt.trim(),
           negativePrompt: negativePrompt.trim() || undefined,
-          model,
           duration,
           aspectRatio,
           mode,
           cfgScale,
-          cameraControl: cameraControl || undefined,
         };
 
-        taskId = await klingService.createTextToVideo(params);
+        taskId = await piApiService.createTextToVideo(params);
       } else {
         // Image-to-video - use cropped images
         const params: ImageToVideoParams = {
+          provider: selectedProvider,
+          version: selectedVersion,
           prompt: prompt.trim(),
           negativePrompt: negativePrompt.trim() || undefined,
-          model,
           duration,
+          aspectRatio,
           mode,
           cfgScale,
           startImageUrl: startImagePreview ? await getCroppedImageUrl(startImagePreview, startCropData) : undefined,
           endImageUrl: endImagePreview ? await getCroppedImageUrl(endImagePreview, endCropData) : undefined,
         };
 
-        taskId = await klingService.createImageToVideo(params);
+        taskId = await piApiService.createImageToVideo(params);
       }
 
       // Add job to list
       const job: GenerationJob = {
         id: taskId,
         type: generationType,
+        provider: selectedProvider,
+        version: selectedVersion,
         prompt: prompt.trim(),
         status: 'pending',
         createdAt: new Date(),
@@ -407,7 +416,7 @@ export function AIVideoPanel() {
       setJobs(prev => [job, ...prev]);
 
       // Poll for completion
-      klingService.pollTaskUntilComplete(taskId, (task) => {
+      piApiService.pollTaskUntilComplete(taskId, (task) => {
         setJobs(prev => prev.map(j =>
           j.id === taskId
             ? {
@@ -450,9 +459,9 @@ export function AIVideoPanel() {
       setIsGenerating(false);
     }
   }, [
-    prompt, negativePrompt, model, duration, aspectRatio, mode, cfgScale,
-    cameraControl, generationType, startImage, endImage, isGenerating,
-    importVideoToProject,
+    prompt, negativePrompt, selectedProvider, selectedVersion, duration, aspectRatio, mode, cfgScale,
+    generationType, startImagePreview, startCropData, endImagePreview, endCropData, isGenerating,
+    importVideoToProject, getCroppedImageUrl,
   ]);
 
   // Remove job from list
@@ -488,7 +497,7 @@ export function AIVideoPanel() {
   const handleHistoryDragStart = useCallback((e: React.DragEvent, job: GenerationJob) => {
     if (!job.videoUrl) return;
     e.dataTransfer.setData('text/plain', job.videoUrl);
-    e.dataTransfer.setData('application/x-kling-video', JSON.stringify({
+    e.dataTransfer.setData('application/x-ai-video', JSON.stringify({
       id: job.id,
       prompt: job.prompt,
       videoUrl: job.videoUrl,
@@ -502,17 +511,20 @@ export function AIVideoPanel() {
     await importVideoToProject({ ...job });
   }, [importVideoToProject]);
 
+  // Calculate current cost
+  const currentCost = calculateCost(selectedProvider, mode, duration);
+
   // Render empty state if no API credentials
   if (!hasApiKey) {
     return (
       <div className="ai-video-panel">
-        <div className="ai-video-header">
-          <h2>AI Video</h2>
-        </div>
         <div className="ai-video-empty">
           <div className="ai-video-no-key">
             <span className="no-key-icon">🎬</span>
-            <p>Kling Access Key + Secret Key required</p>
+            <p>PiAPI key required for AI video generation</p>
+            <span className="no-key-hint">
+              Access Kling, Luma, Hailuo, and more models
+            </span>
             <button className="btn-settings" onClick={openSettings}>
               Open Settings
             </button>
@@ -524,7 +536,7 @@ export function AIVideoPanel() {
 
   return (
     <div className="ai-video-panel">
-      {/* Sub-tabs with service dropdown */}
+      {/* Sub-tabs with provider dropdown */}
       <div className="panel-tabs-row">
         <div className="panel-tabs">
           <button
@@ -541,13 +553,13 @@ export function AIVideoPanel() {
           </button>
         </div>
         <select
-          className="service-select"
-          value={service}
-          onChange={(e) => setService(e.target.value)}
+          className="provider-select"
+          value={selectedProvider}
+          onChange={(e) => setSelectedProvider(e.target.value)}
           disabled={isGenerating}
         >
-          {AI_SERVICES.map(s => (
-            <option key={s.id} value={s.id}>{s.name}</option>
+          {providers.map(p => (
+            <option key={p.id} value={p.id}>{p.name}</option>
           ))}
         </select>
       </div>
@@ -560,14 +572,14 @@ export function AIVideoPanel() {
             <button
               className={`tab ${generationType === 'text-to-video' ? 'active' : ''}`}
               onClick={() => setGenerationType('text-to-video')}
-              disabled={isGenerating}
+              disabled={isGenerating || !currentProvider?.supportsTextToVideo}
             >
               Text to Video
             </button>
             <button
               className={`tab ${generationType === 'image-to-video' ? 'active' : ''}`}
               onClick={() => setGenerationType('image-to-video')}
-              disabled={isGenerating}
+              disabled={isGenerating || !currentProvider?.supportsImageToVideo}
             >
               Image to Video
             </button>
@@ -580,14 +592,14 @@ export function AIVideoPanel() {
               <div className="aspect-ratio-row">
                 <label>Aspect Ratio</label>
                 <div className="aspect-ratio-options">
-                  {KLING_ASPECT_RATIOS.map(ar => (
+                  {(currentProvider?.supportedAspectRatios || ['16:9', '9:16', '1:1']).map(ar => (
                     <button
-                      key={ar.value}
-                      className={`aspect-btn ${aspectRatio === ar.value ? 'active' : ''}`}
-                      onClick={() => setAspectRatio(ar.value)}
+                      key={ar}
+                      className={`aspect-btn ${aspectRatio === ar ? 'active' : ''}`}
+                      onClick={() => setAspectRatio(ar)}
                       disabled={isGenerating}
                     >
-                      {ar.value}
+                      {ar}
                     </button>
                   ))}
                 </div>
@@ -606,17 +618,19 @@ export function AIVideoPanel() {
                   onDrop={handleStartDrop}
                   onUseCurrentFrame={useCurrentFrameStart}
                 />
-                <ImageCropper
-                  label="End Frame (optional)"
-                  imageUrl={endImagePreview}
-                  aspectRatio={aspectDimensions}
-                  onClear={clearEndImage}
-                  onCropChange={setEndCropData}
-                  disabled={isGenerating}
-                  onDropOrClick={openEndFilePicker}
-                  onDrop={handleEndDrop}
-                  onUseCurrentFrame={useCurrentFrameEnd}
-                />
+                {selectedProvider === 'kling' && (
+                  <ImageCropper
+                    label="End Frame (optional)"
+                    imageUrl={endImagePreview}
+                    aspectRatio={aspectDimensions}
+                    onClear={clearEndImage}
+                    onCropChange={setEndCropData}
+                    disabled={isGenerating}
+                    onDropOrClick={openEndFilePicker}
+                    onDrop={handleEndDrop}
+                    onUseCurrentFrame={useCurrentFrameEnd}
+                  />
+                )}
               </div>
             </>
           )}
@@ -649,16 +663,16 @@ export function AIVideoPanel() {
 
           {/* Parameters Grid */}
           <div className="params-grid">
-            {/* Model */}
+            {/* Version */}
             <div className="param-group">
-              <label>Model</label>
+              <label>Version</label>
               <select
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
+                value={selectedVersion}
+                onChange={(e) => setSelectedVersion(e.target.value)}
                 disabled={isGenerating}
               >
-                {KLING_MODELS.map(m => (
-                  <option key={m.id} value={m.id}>{m.name}</option>
+                {currentProvider?.versions.map(v => (
+                  <option key={v} value={v}>v{v}</option>
                 ))}
               </select>
             </div>
@@ -671,8 +685,8 @@ export function AIVideoPanel() {
                 onChange={(e) => setDuration(Number(e.target.value))}
                 disabled={isGenerating}
               >
-                {KLING_DURATIONS.map(d => (
-                  <option key={d.value} value={d.value}>{d.label}</option>
+                {currentProvider?.supportedDurations.map(d => (
+                  <option key={d} value={d}>{d} seconds</option>
                 ))}
               </select>
             </div>
@@ -686,56 +700,44 @@ export function AIVideoPanel() {
                   onChange={(e) => setAspectRatio(e.target.value)}
                   disabled={isGenerating}
                 >
-                  {KLING_ASPECT_RATIOS.map(ar => (
-                    <option key={ar.value} value={ar.value}>{ar.label}</option>
+                  {currentProvider?.supportedAspectRatios.map(ar => (
+                    <option key={ar} value={ar}>{ar}</option>
                   ))}
                 </select>
               </div>
             )}
 
             {/* Mode */}
-            <div className="param-group">
-              <label>Quality</label>
-              <select
-                value={mode}
-                onChange={(e) => setMode(e.target.value)}
-                disabled={isGenerating}
-              >
-                {KLING_MODES.map(m => (
-                  <option key={m.value} value={m.value}>{m.label}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Camera Control (only for text-to-video) */}
-            {generationType === 'text-to-video' && (
+            {currentProvider?.supportedModes.length > 1 && (
               <div className="param-group">
-                <label>Camera</label>
+                <label>Quality</label>
                 <select
-                  value={cameraControl}
-                  onChange={(e) => setCameraControl(e.target.value)}
+                  value={mode}
+                  onChange={(e) => setMode(e.target.value)}
                   disabled={isGenerating}
                 >
-                  {KLING_CAMERA_CONTROLS.map(c => (
-                    <option key={c.value} value={c.value}>{c.label}</option>
+                  {currentProvider.supportedModes.map(m => (
+                    <option key={m} value={m}>{m === 'std' ? 'Standard' : 'Professional'}</option>
                   ))}
                 </select>
               </div>
             )}
 
-            {/* CFG Scale */}
-            <div className="param-group cfg-slider">
-              <label>CFG Scale: {cfgScale.toFixed(2)}</label>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.05"
-                value={cfgScale}
-                onChange={(e) => setCfgScale(Number(e.target.value))}
-                disabled={isGenerating}
-              />
-            </div>
+            {/* CFG Scale (Kling only) */}
+            {selectedProvider === 'kling' && (
+              <div className="param-group cfg-slider">
+                <label>CFG Scale: {cfgScale.toFixed(2)}</label>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={cfgScale}
+                  onChange={(e) => setCfgScale(Number(e.target.value))}
+                  disabled={isGenerating}
+                />
+              </div>
+            )}
           </div>
 
           {/* Timeline Integration Option */}
@@ -752,10 +754,10 @@ export function AIVideoPanel() {
           {/* Credit Info */}
           <div className="credit-info">
             <span className="credit-cost">
-              Cost: {calculateCreditCost(model, mode, duration)} credits
+              Est. cost: ~${currentCost.toFixed(2)}
             </span>
             <a
-              href="https://klingai.com/global/dev/model-api/resource-packages"
+              href="https://piapi.ai/workspace/billing"
               target="_blank"
               rel="noopener noreferrer"
               className="credit-link"
@@ -770,7 +772,7 @@ export function AIVideoPanel() {
             onClick={generateVideo}
             disabled={isGenerating || !prompt.trim()}
           >
-            {isGenerating ? 'Starting...' : `Generate (${calculateCreditCost(model, mode, duration)} credits)`}
+            {isGenerating ? 'Starting...' : `Generate (~$${currentCost.toFixed(2)})`}
           </button>
 
           {/* Error */}
@@ -790,7 +792,7 @@ export function AIVideoPanel() {
                   <div key={job.id} className={`job-item ${job.status}`}>
                     <div className="job-header">
                       <span className="job-type">
-                        {job.type === 'text-to-video' ? 'T2V' : 'I2V'}
+                        {job.provider.toUpperCase()}
                       </span>
                       <span className={`job-status ${job.status}`}>
                         {job.status === 'pending' && 'Queued'}
@@ -883,7 +885,7 @@ export function AIVideoPanel() {
                     <div className="history-prompt">{job.prompt}</div>
                     <div className="history-meta">
                       <span className="history-type">
-                        {job.type === 'text-to-video' ? 'T2V' : 'I2V'}
+                        {job.provider?.toUpperCase() || 'KLING'}
                       </span>
                       <span className="history-date">
                         {job.createdAt.toLocaleDateString()}
