@@ -8,23 +8,40 @@ import { useTimelineStore } from '../../stores/timeline';
 import { PickWhip } from './PickWhip';
 
 // Render waveform for audio clips using canvas for better performance
+// Supports trimming: only displays the portion of waveform between inPoint and outPoint
 const Waveform = memo(function Waveform({
   waveform,
   width,
   height,
+  inPoint,
+  outPoint,
+  naturalDuration,
 }: {
   waveform: number[];
   width: number;
   height: number;
+  inPoint: number;
+  outPoint: number;
+  naturalDuration: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !waveform || waveform.length === 0 || width <= 0) return;
+    if (!canvas || !waveform || waveform.length === 0 || width <= 0 || naturalDuration <= 0) return;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+
+    // Calculate which portion of the waveform to display based on trim points
+    const startRatio = inPoint / naturalDuration;
+    const endRatio = outPoint / naturalDuration;
+    const startSample = Math.floor(startRatio * waveform.length);
+    const endSample = Math.ceil(endRatio * waveform.length);
+
+    // Extract the visible portion of the waveform
+    const visibleWaveform = waveform.slice(startSample, endSample);
+    if (visibleWaveform.length === 0) return;
 
     // Limit canvas size to browser maximum (16384 is safe for most browsers)
     const MAX_CANVAS_WIDTH = 16384;
@@ -44,8 +61,8 @@ const Waveform = memo(function Waveform({
 
     // Determine number of bars to draw (max 2 per pixel for detail)
     const maxBars = Math.floor(canvasWidth * 2);
-    const samplesPerBar = Math.max(1, Math.floor(waveform.length / maxBars));
-    const numBars = Math.ceil(waveform.length / samplesPerBar);
+    const samplesPerBar = Math.max(1, Math.floor(visibleWaveform.length / maxBars));
+    const numBars = Math.ceil(visibleWaveform.length / samplesPerBar);
     const barWidth = canvasWidth / numBars;
 
     ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
@@ -53,12 +70,12 @@ const Waveform = memo(function Waveform({
     // Draw bars, using peak value for each segment
     for (let i = 0; i < numBars; i++) {
       const startIdx = i * samplesPerBar;
-      const endIdx = Math.min(startIdx + samplesPerBar, waveform.length);
+      const endIdx = Math.min(startIdx + samplesPerBar, visibleWaveform.length);
 
       // Get peak value for this segment
       let peak = 0;
       for (let j = startIdx; j < endIdx; j++) {
-        if (waveform[j] > peak) peak = waveform[j];
+        if (visibleWaveform[j] > peak) peak = visibleWaveform[j];
       }
 
       const barHeight = Math.max(2, peak * (height - 4));
@@ -66,7 +83,7 @@ const Waveform = memo(function Waveform({
       const y = (height - barHeight) / 2;
       ctx.fillRect(x, y, Math.max(1, barWidth - 0.5), barHeight);
     }
-  }, [waveform, width, height]);
+  }, [waveform, width, height, inPoint, outPoint, naturalDuration]);
 
   if (!waveform || waveform.length === 0) return null;
 
@@ -381,9 +398,11 @@ function TimelineClipComponent({
     ? clips.find((c) => c.id === clipTrim.clipId)
     : null;
 
-  // Calculate live trim values
+  // Calculate live trim values (including inPoint/outPoint for waveform/thumbnail rendering)
   let displayStartTime = clip.startTime;
   let displayDuration = clip.duration;
+  let displayInPoint = clip.inPoint;
+  let displayOutPoint = clip.outPoint;
 
   if (isTrimming && clipTrim) {
     const deltaX = clipTrim.currentX - clipTrim.startX;
@@ -396,11 +415,15 @@ function TimelineClipComponent({
       const clampedDelta = Math.max(minTrim, Math.min(maxTrim, deltaTime));
       displayStartTime = clipTrim.originalStartTime + clampedDelta;
       displayDuration = clipTrim.originalDuration - clampedDelta;
+      // Update inPoint when trimming left edge
+      displayInPoint = clipTrim.originalInPoint + clampedDelta;
     } else {
       const maxExtend = maxDuration - clipTrim.originalOutPoint;
       const minTrim = -(clipTrim.originalDuration - 0.1);
       const clampedDelta = Math.max(minTrim, Math.min(maxExtend, deltaTime));
       displayDuration = clipTrim.originalDuration + clampedDelta;
+      // Update outPoint when trimming right edge
+      displayOutPoint = clipTrim.originalOutPoint + clampedDelta;
     }
   } else if (isLinkedToTrimming && clipTrim && trimmedClip) {
     // Apply same trim to linked clip visually
@@ -414,11 +437,13 @@ function TimelineClipComponent({
       const clampedDelta = Math.max(minTrim, Math.min(maxTrim, deltaTime));
       displayStartTime = clip.startTime + clampedDelta;
       displayDuration = clip.duration - clampedDelta;
+      displayInPoint = clip.inPoint + clampedDelta;
     } else {
       const maxExtend = maxDuration - clip.outPoint;
       const minTrim = -(clip.duration - 0.1);
       const clampedDelta = Math.max(minTrim, Math.min(maxExtend, deltaTime));
       displayDuration = clip.duration + clampedDelta;
+      displayOutPoint = clip.outPoint + clampedDelta;
     }
   }
 
@@ -540,6 +565,9 @@ function TimelineClipComponent({
             waveform={clip.waveform}
             width={width}
             height={Math.max(20, track.height - 12)}
+            inPoint={displayInPoint}
+            outPoint={displayOutPoint}
+            naturalDuration={clip.source?.naturalDuration || clip.duration}
           />
         </div>
       )}
@@ -547,8 +575,15 @@ function TimelineClipComponent({
       {thumbnails.length > 0 && !isAudioClip && (
         <div className="clip-thumbnails">
           {Array.from({ length: visibleThumbs }).map((_, i) => {
-            const thumbIndex = Math.floor((i / visibleThumbs) * thumbnails.length);
-            const thumb = thumbnails[Math.min(thumbIndex, thumbnails.length - 1)];
+            // Calculate thumbnail index based on displayInPoint/displayOutPoint (trim-aware, live during trim)
+            const naturalDuration = clip.source?.naturalDuration || clip.duration;
+            const startRatio = displayInPoint / naturalDuration;
+            const endRatio = displayOutPoint / naturalDuration;
+            // Map visible position to the trimmed range in source media
+            const positionInTrimmed = i / visibleThumbs;
+            const sourceRatio = startRatio + positionInTrimmed * (endRatio - startRatio);
+            const thumbIndex = Math.floor(sourceRatio * thumbnails.length);
+            const thumb = thumbnails[Math.min(Math.max(0, thumbIndex), thumbnails.length - 1)];
             return (
               <img
                 key={i}
