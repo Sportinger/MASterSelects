@@ -5,13 +5,15 @@
 const BASE_URL = 'https://api.klingai.com';
 const TOKEN_EXPIRATION = 1800; // 30 minutes in seconds
 
-// Available models
+// Available models (latest: 2.6 with native audio)
 export const KLING_MODELS = [
-  { id: 'kling-v1', name: 'Kling v1.0' },
-  { id: 'kling-v1-5', name: 'Kling v1.5' },
-  { id: 'kling-v1-6', name: 'Kling v1.6' },
-  { id: 'kling-v2-0', name: 'Kling v2.0' },
-  { id: 'kling-v2-1', name: 'Kling v2.1' },
+  { id: 'kling-v2-6', name: 'Kling v2.6', description: 'Latest - Native audio generation' },
+  { id: 'kling-v2-5', name: 'Kling v2.5', description: 'Fast turbo mode' },
+  { id: 'kling-v2-1', name: 'Kling v2.1', description: 'Stable release' },
+  { id: 'kling-v2-0', name: 'Kling v2.0', description: 'Previous generation' },
+  { id: 'kling-v1-6', name: 'Kling v1.6', description: 'Legacy' },
+  { id: 'kling-v1-5', name: 'Kling v1.5', description: 'Legacy' },
+  { id: 'kling-v1', name: 'Kling v1.0', description: 'Legacy' },
 ] as const;
 
 // Duration options (in seconds)

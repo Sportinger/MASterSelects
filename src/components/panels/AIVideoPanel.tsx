@@ -131,7 +131,7 @@ export function AIVideoPanel() {
 
   // Service and model selection
   const [service, setService] = useState<string>('kling');
-  const [model, setModel] = useState<string>(KLING_MODELS[3].id); // Default to v2.0
+  const [model, setModel] = useState<string>(KLING_MODELS[0].id); // Default to latest (v2.6)
 
   // Generation type (default to image-to-video)
   const [generationType, setGenerationType] = useState<GenerationType>('image-to-video');

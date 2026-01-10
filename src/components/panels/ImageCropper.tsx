@@ -146,16 +146,27 @@ export function ImageCropper({
     setIsDragging(false);
   }, []);
 
-  // Handle wheel for zoom
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    if (disabled || !imageUrl) return;
-    e.preventDefault();
+  // Handle wheel for zoom - use native event to properly prevent scroll
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
 
-    // Smooth, slow zoom
-    const zoomFactor = 0.001;
-    const delta = -e.deltaY * zoomFactor;
+    const handleWheel = (e: WheelEvent) => {
+      if (disabled || !imageUrl) return;
 
-    setScale(prev => Math.max(1, Math.min(3, prev + delta)));
+      // Prevent page scroll
+      e.preventDefault();
+      e.stopPropagation();
+
+      // Smooth, slow zoom
+      const zoomFactor = 0.001;
+      const delta = -e.deltaY * zoomFactor;
+
+      setScale(prev => Math.max(1, Math.min(3, prev + delta)));
+    };
+
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    return () => container.removeEventListener('wheel', handleWheel);
   }, [disabled, imageUrl]);
 
   // Handle drag over for file drop
@@ -182,7 +193,6 @@ export function ImageCropper({
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}
-        onWheel={handleWheel}
         onDragOver={handleDragOver}
         onDrop={onDrop}
         onClick={handleClick}
