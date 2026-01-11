@@ -778,7 +778,12 @@ class LayerBuilderService {
       if (nestedClip.source?.videoElement) {
         // Check for proxy frames for nested video clips
         const mediaStore = useMediaStore.getState();
-        const nestedMediaFile = mediaStore.files.find(f => f.name === nestedClip.file?.name);
+        // Better media file lookup - try multiple ways to find the file
+        const nestedMediaFile = mediaStore.files.find(f =>
+          f.id === nestedClip.source?.mediaFileId ||
+          f.name === nestedClip.file?.name ||
+          f.name === nestedClip.name
+        );
         const proxyFps = nestedMediaFile?.proxyFps || 30;
         const frameIndex = Math.floor(nestedClipTime * proxyFps);
         let useProxy = false;
@@ -811,6 +816,21 @@ class LayerBuilderService {
             continue; // Skip direct video playback
           }
 
+          // Try nearest cached frame for scrubbing fallback
+          const nearestFrame = proxyFrameCache.getNearestCachedFrame(nestedMediaFile.id, frameIndex);
+          if (nearestFrame) {
+            this.proxyFramesRef.set(cacheKey, { frameIndex, image: nearestFrame });
+            const proxyLayer: Layer = {
+              ...baseLayer,
+              source: {
+                type: 'image',
+                imageElement: nearestFrame,
+              },
+            } as Layer;
+            layers.push(proxyLayer);
+            continue; // Skip direct video playback
+          }
+
           // Use cached proxy frame if available while loading new one
           const cached = this.proxyFramesRef.get(cacheKey);
           if (cached?.image) {
@@ -823,6 +843,14 @@ class LayerBuilderService {
             } as Layer;
             layers.push(proxyLayer);
             continue; // Skip direct video playback
+          }
+
+          // No cached proxy frame yet - check if video is ready for fallback
+          // If video is seeking, skip this layer briefly to avoid freeze
+          const video = nestedClip.source.videoElement;
+          if (video.seeking || video.readyState < 2) {
+            // Video not ready - skip layer for this frame (preloading will catch up)
+            continue;
           }
         }
 

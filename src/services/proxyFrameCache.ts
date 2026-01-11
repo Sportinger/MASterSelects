@@ -5,6 +5,7 @@ import { projectDB } from './projectDB';
 // Cache settings
 const MAX_CACHE_SIZE = 300; // Maximum frames to keep in memory (10s at 30fps)
 const PRELOAD_AHEAD_FRAMES = 10; // Preload this many frames ahead for smooth scrubbing
+const PARALLEL_LOAD_COUNT = 4; // Load this many frames in parallel for faster preload
 
 // Frame cache entry
 interface CachedFrame {
@@ -26,16 +27,54 @@ class ProxyFrameCache {
   }
 
   // Synchronously get a frame if it's already in memory cache
-  // Also triggers preloading of upcoming frames
+  // Also triggers preloading of upcoming frames (even if current frame not cached)
   getCachedFrame(mediaFileId: string, frameIndex: number, fps: number = 30): HTMLImageElement | null {
     const key = this.getKey(mediaFileId, frameIndex);
     const cached = this.cache.get(key);
+
+    // ALWAYS trigger preloading, even if current frame isn't cached
+    // This ensures nested composition frames get preloaded when playhead enters them
+    this.schedulePreload(mediaFileId, frameIndex, fps);
+
     if (cached) {
       cached.timestamp = Date.now(); // Update for LRU
-      // Always preload upcoming frames
-      this.schedulePreload(mediaFileId, frameIndex, fps);
       return cached.image;
     }
+    return null;
+  }
+
+  // Get nearest cached frame for scrubbing fallback
+  // Returns the closest frame within maxDistance frames
+  getNearestCachedFrame(mediaFileId: string, frameIndex: number, maxDistance: number = 15): HTMLImageElement | null {
+    // Check exact frame first
+    const exactKey = this.getKey(mediaFileId, frameIndex);
+    const exact = this.cache.get(exactKey);
+    if (exact) {
+      exact.timestamp = Date.now();
+      return exact.image;
+    }
+
+    // Search nearby frames (prefer recent frames, then earlier)
+    for (let d = 1; d <= maxDistance; d++) {
+      // Check frame ahead first (more recent content)
+      const aheadKey = this.getKey(mediaFileId, frameIndex + d);
+      const ahead = this.cache.get(aheadKey);
+      if (ahead) {
+        ahead.timestamp = Date.now();
+        return ahead.image;
+      }
+
+      // Then check frame behind
+      if (frameIndex - d >= 0) {
+        const behindKey = this.getKey(mediaFileId, frameIndex - d);
+        const behind = this.cache.get(behindKey);
+        if (behind) {
+          behind.timestamp = Date.now();
+          return behind.image;
+        }
+      }
+    }
+
     return null;
   }
 
@@ -135,16 +174,22 @@ class ProxyFrameCache {
     }
   }
 
-  // Schedule preloading of upcoming frames
+  // Schedule preloading of current and upcoming frames
   private schedulePreload(mediaFileId: string, currentFrameIndex: number, _fps: number) {
-    // Add upcoming frames to preload queue
-    for (let i = 1; i <= PRELOAD_AHEAD_FRAMES; i++) {
+    // Add current frame first (highest priority for nested comp entry)
+    // Then add upcoming frames to preload queue
+    for (let i = 0; i <= PRELOAD_AHEAD_FRAMES; i++) {
       const frameIndex = currentFrameIndex + i;
       const key = this.getKey(mediaFileId, frameIndex);
 
       // Skip if already cached or in queue
       if (!this.cache.has(key) && !this.preloadQueue.includes(key)) {
-        this.preloadQueue.push(key);
+        // Insert current frame at front of queue for priority loading
+        if (i === 0) {
+          this.preloadQueue.unshift(key);
+        } else {
+          this.preloadQueue.push(key);
+        }
       }
     }
 
@@ -154,24 +199,37 @@ class ProxyFrameCache {
     }
   }
 
-  // Process preload queue
+  // Process preload queue with parallel loading for speed
   private async processPreloadQueue() {
     this.isPreloading = true;
 
     while (this.preloadQueue.length > 0) {
-      const key = this.preloadQueue.shift();
-      if (!key || this.cache.has(key)) continue;
-
-      const [mediaFileId, frameIndexStr] = key.split('_');
-      const frameIndex = parseInt(frameIndexStr, 10);
-
-      // Load in background
-      const image = await this.loadFrame(mediaFileId, frameIndex);
-      if (image) {
-        this.addToCache(mediaFileId, frameIndex, image);
+      // Load multiple frames in parallel for faster preloading
+      const batch: string[] = [];
+      while (batch.length < PARALLEL_LOAD_COUNT && this.preloadQueue.length > 0) {
+        const key = this.preloadQueue.shift();
+        if (key && !this.cache.has(key)) {
+          batch.push(key);
+        }
       }
 
-      // Yield to main thread
+      if (batch.length === 0) continue;
+
+      // Load batch in parallel
+      const loadPromises = batch.map(async (key) => {
+        const [mediaFileId, frameIndexStr] = key.split('_');
+        const frameIndex = parseInt(frameIndexStr, 10);
+
+        const image = await this.loadFrame(mediaFileId, frameIndex);
+        if (image) {
+          this.addToCache(mediaFileId, frameIndex, image);
+        }
+        return { key, success: !!image };
+      });
+
+      await Promise.all(loadPromises);
+
+      // Brief yield to main thread between batches
       await new Promise((r) => setTimeout(r, 0));
     }
 
