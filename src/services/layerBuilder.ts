@@ -14,7 +14,7 @@ class LayerBuilderService {
 
   // Audio sync throttling - don't sync every frame to avoid glitches
   private lastAudioSyncTime = 0;
-  private readonly AUDIO_SYNC_INTERVAL = 100; // Only check audio sync every 100ms
+  private readonly AUDIO_SYNC_INTERVAL = 50; // Check audio sync every 50ms (balance between drift and glitches)
 
   /**
    * Build layers for the current frame - called directly from render loop

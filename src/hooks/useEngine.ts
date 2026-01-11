@@ -171,12 +171,9 @@ export function useEngine() {
       () => updateMaskTextures()
     );
 
-    // Subscribe to playhead position changes separately
-    // This runs when scrubbing/playing to update which masks are visible
-    const unsubscribePlayhead = useTimelineStore.subscribe(
-      (state) => state.playheadPosition,
-      () => updateMaskTextures()
-    );
+    // NOTE: Removed playheadPosition subscription - it was causing updateMaskTextures()
+    // to run every frame during playback (~60x/sec), causing frame drops.
+    // Mask textures are now updated in the render loop only when needed.
 
     // Subscribe to tracks changes separately
     // This runs when track structure changes (rare)
@@ -187,7 +184,6 @@ export function useEngine() {
 
     return () => {
       unsubscribeClips();
-      unsubscribePlayhead();
       unsubscribeTracks();
     };
   }, [isEngineReady, updateMaskTextures]);
