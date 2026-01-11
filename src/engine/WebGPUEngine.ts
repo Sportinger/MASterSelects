@@ -138,6 +138,7 @@ export class WebGPUEngine {
   // Nested composition pre-render textures
   // Map of compositionId -> {texture, view} for pre-rendered nested compositions
   private nestedCompTextures: Map<string, { texture: GPUTexture; view: GPUTextureView }> = new Map();
+  private pendingTextureCleanup: GPUTexture[] = [];
 
   constructor() {
     this.context = new WebGPUContext();
@@ -803,6 +804,12 @@ export class WebGPUEngine {
     }
     // Submit pre-render commands
     device.queue.submit([preRenderCommandEncoder.finish()]);
+
+    // Clean up temporary textures after submit (they're no longer referenced)
+    for (const texture of this.pendingTextureCleanup) {
+      texture.destroy();
+    }
+    this.pendingTextureCleanup = [];
 
     this.profileData.importTexture = performance.now() - t1;
 
@@ -1475,9 +1482,9 @@ export class WebGPUEngine {
     copyPass.draw(6);
     copyPass.end();
 
-    // Clean up temporary textures
-    nestedPingTexture.destroy();
-    nestedPongTexture.destroy();
+    // Store temporary textures for cleanup after command buffer submit
+    // Can't destroy them here as they're still referenced by the command buffer
+    this.pendingTextureCleanup.push(nestedPingTexture, nestedPongTexture);
 
     return compTexture.view;
   }
