@@ -590,32 +590,34 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
       // Sigma for Gaussian - rule of thumb: radius = 3*sigma covers 99.7% of the bell curve
       let sigma = featherRadius / 3.0;
 
-      // Quality controls samples per radius: 1-100 maps to 4-32 samples per radius
-      // More samples = smoother blur (no banding)
+      // Quality controls pixels-per-sample: lower = more samples = smoother
+      // Quality 1: sample every 4 pixels (fast)
+      // Quality 100: sample every 1 pixel (smoothest, heavy)
       let quality = f32(layer.maskFeatherQuality);
-      let samplesPerRadius = i32(4.0 + quality * 0.28); // 4-32 samples based on quality
+      let pixelsPerSample = max(1.0, 4.0 - quality * 0.03); // 4.0 down to 1.0
 
-      // Total kernel radius in sample steps
-      let kernelRadius = samplesPerRadius;
+      // Calculate kernel radius based on feather size and quality
+      // This ensures we cover the full blur area with appropriate density
+      let kernelRadius = i32(featherRadius / pixelsPerSample);
+      let clampedRadius = min(kernelRadius, 127); // Cap at 127 to prevent GPU timeout
 
-      // Step size in UV space - each step is a fraction of the feather radius
-      let stepSize = texelSize * featherRadius / f32(samplesPerRadius);
+      // Step size in UV space - one sample every pixelsPerSample texels
+      let stepSize = texelSize * pixelsPerSample;
 
       var blur: f32 = 0.0;
       var totalWeight: f32 = 0.0;
 
-      // Gaussian kernel sampling at texel intervals for smooth results
-      for (var y: i32 = -kernelRadius; y <= kernelRadius; y = y + 1) {
-        for (var x: i32 = -kernelRadius; x <= kernelRadius; x = x + 1) {
+      // Gaussian kernel sampling - sample across the full blur radius
+      for (var y: i32 = -clampedRadius; y <= clampedRadius; y = y + 1) {
+        for (var x: i32 = -clampedRadius; x <= clampedRadius; x = x + 1) {
           // Offset in UV space
           let offset = vec2f(f32(x), f32(y)) * stepSize;
 
           // Distance in pixel units for Gaussian weight calculation
-          let pixelDist = vec2f(f32(x), f32(y)) * featherRadius / f32(samplesPerRadius);
-          let dist2 = dot(pixelDist, pixelDist);
+          let pixelDist = f32(x * x + y * y) * pixelsPerSample * pixelsPerSample;
 
           // Gaussian weight: exp(-dist²/(2σ²))
-          let weight = exp(-dist2 / (2.0 * sigma * sigma + 0.001));
+          let weight = exp(-pixelDist / (2.0 * sigma * sigma + 0.001));
 
           blur += textureSample(maskTexture, texSampler, input.uv + offset).r * weight;
           totalWeight += weight;
