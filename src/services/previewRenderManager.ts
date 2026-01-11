@@ -226,11 +226,22 @@ class PreviewRenderManagerService {
 
     const isMainPlaying = useTimelineStore.getState().isPlaying;
     const mainPlayhead = useTimelineStore.getState().playheadPosition;
+    const activeCompId = useMediaStore.getState().activeCompositionId;
 
     for (const preview of this.registeredPreviews.values()) {
       if (!preview.isReady) continue;
 
-      // Check if this composition is nested and currently being rendered by the main loop
+      // OPTIMIZATION 1: If this preview shows the ACTIVE composition,
+      // just copy the main render's output (no need to render twice)
+      if (preview.compositionId === activeCompId) {
+        if (engine.copyMainOutputToPreview(preview.panelId)) {
+          preview.lastRenderTime = now;
+        }
+        continue;
+      }
+
+      // OPTIMIZATION 2: If this composition is nested and currently being rendered by main loop,
+      // copy the pre-rendered nested texture instead of re-rendering
       const nestedInfo = this.getNestedCompInfo(preview.compositionId);
       if (nestedInfo) {
         const clipStart = nestedInfo.clipStartTime;
@@ -248,7 +259,7 @@ class PreviewRenderManagerService {
         }
       }
 
-      // Calculate playhead time for this composition
+      // Otherwise: Render this composition independently (different comp or different time)
       const { time: playheadTime } = this.calculatePlayheadTime(preview.compositionId);
 
       // Evaluate the composition at this time

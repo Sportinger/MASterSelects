@@ -1218,6 +1218,36 @@ export class WebGPUEngine {
   }
 
   /**
+   * Copy the main render loop's final output to an independent preview canvas
+   * Used when a preview is showing the same composition as the active timeline
+   * Returns true if successful
+   */
+  copyMainOutputToPreview(canvasId: string): boolean {
+    const device = this.context.getDevice();
+    const canvasContext = this.independentPreviewCanvases.get(canvasId);
+
+    if (!device || !canvasContext || !this.outputPipeline || !this.sampler || !this.pingView || !this.pongView) {
+      return false;
+    }
+
+    // Get the same view that was just rendered to the main output
+    const finalIsPing = !this.lastRenderWasPing;
+    const finalView = finalIsPing ? this.pingView : this.pongView;
+
+    // Create command encoder
+    const commandEncoder = device.createCommandEncoder();
+
+    // Create bind group for the final composited output
+    const outputBindGroup = this.outputPipeline.getOutputBindGroup(this.sampler, finalView, finalIsPing);
+
+    // Render to the preview canvas
+    this.outputPipeline.renderToCanvas(commandEncoder, canvasContext, outputBindGroup);
+
+    device.queue.submit([commandEncoder.finish()]);
+    return true;
+  }
+
+  /**
    * Copy a pre-rendered nested composition texture to a preview canvas
    * Used when the composition is nested in the active timeline and already rendered by main loop
    * Returns true if successful, false if no texture available

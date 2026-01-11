@@ -488,6 +488,25 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
     }
   }, [editMode]);
 
+  // Tab key to toggle edit mode
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only handle Tab when preview panel is focused or no input is focused
+      const activeElement = document.activeElement;
+      const isInputFocused = activeElement instanceof HTMLInputElement ||
+                            activeElement instanceof HTMLTextAreaElement ||
+                            activeElement?.getAttribute('contenteditable') === 'true';
+
+      if (e.key === 'Tab' && !isInputFocused) {
+        e.preventDefault();
+        setEditMode(prev => !prev);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   // Handle panning with middle mouse or Alt+drag
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (!editMode) return;
@@ -751,7 +770,7 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
         <button
           className={`preview-edit-btn ${editMode ? 'active' : ''}`}
           onClick={() => setEditMode(!editMode)}
-          title="Toggle Edit Mode (show layer bounds)"
+          title="Toggle Edit Mode [Tab]"
         >
           {editMode ? '✓ Edit' : 'Edit'}
         </button>
