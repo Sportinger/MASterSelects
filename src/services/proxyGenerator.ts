@@ -394,6 +394,8 @@ class ProxyGeneratorGPU {
 
     const codecsToTry = baseCodec.startsWith('avc1') ? h264Fallbacks : [baseCodec];
 
+    console.log(`[ProxyGen] Testing ${codecsToTry.length} codec configurations for ${width}x${height}...`);
+
     for (const codec of codecsToTry) {
       const config: VideoDecoderConfig = {
         codec,
@@ -404,12 +406,12 @@ class ProxyGeneratorGPU {
 
       try {
         const support = await VideoDecoder.isConfigSupported(config);
+        console.log(`[ProxyGen] Codec ${codec}: ${support.supported ? '✓ supported' : '✗ not supported'}`);
         if (support.supported) {
-          console.log(`[ProxyGen] Found supported codec: ${codec}`);
           return config;
         }
       } catch (e) {
-        // Codec check failed, try next
+        console.log(`[ProxyGen] Codec ${codec}: ✗ error - ${e}`);
       }
     }
 
