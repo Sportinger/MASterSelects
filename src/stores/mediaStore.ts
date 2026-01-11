@@ -683,7 +683,7 @@ export const useMediaStore = create<MediaState>()(
         },
 
         setActiveComposition: (id: string | null) => {
-          const { activeCompositionId, compositions } = get();
+          const { activeCompositionId } = get();
           const timelineStore = useTimelineStore.getState();
 
           // Save current timeline state to the current composition (if any)
@@ -700,8 +700,10 @@ export const useMediaStore = create<MediaState>()(
           set({ activeCompositionId: id });
 
           // Load timeline state from the new composition
+          // IMPORTANT: Get fresh compositions AFTER saving to include any updates
           if (id) {
-            const newComp = compositions.find((c) => c.id === id);
+            const freshCompositions = get().compositions;
+            const newComp = freshCompositions.find((c) => c.id === id);
             timelineStore.loadState(newComp?.timelineData);
           } else {
             // No composition selected - clear timeline
