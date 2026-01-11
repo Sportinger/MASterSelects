@@ -6,6 +6,10 @@ export class TextureManager {
   // Cached image textures (created from HTMLImageElement)
   private imageTextures: Map<HTMLImageElement, GPUTexture> = new Map();
 
+  // Cached canvas textures (created from HTMLCanvasElement - for text clips)
+  // Canvas reference changes when text properties change, so caching by reference is safe
+  private canvasTextures: Map<HTMLCanvasElement, GPUTexture> = new Map();
+
   // Cached image texture views
   private cachedImageViews: Map<GPUTexture, GPUTextureView> = new Map();
 
@@ -51,12 +55,16 @@ export class TextureManager {
   }
 
   // Create GPU texture from HTMLCanvasElement (for text clips)
-  // Note: Not cached because canvas content can change
+  // Cached by canvas reference - text clips create new canvas when properties change
   createCanvasTexture(canvas: HTMLCanvasElement): GPUTexture | null {
     const width = canvas.width;
     const height = canvas.height;
 
     if (width === 0 || height === 0) return null;
+
+    // Check cache first
+    const cached = this.canvasTextures.get(canvas);
+    if (cached) return cached;
 
     try {
       const texture = this.device.createTexture({
@@ -71,11 +79,17 @@ export class TextureManager {
         [width, height]
       );
 
+      this.canvasTextures.set(canvas, texture);
       return texture;
     } catch (e) {
       console.error('Failed to create canvas texture:', e);
       return null;
     }
+  }
+
+  // Get cached canvas texture
+  getCachedCanvasTexture(canvas: HTMLCanvasElement): GPUTexture | undefined {
+    return this.canvasTextures.get(canvas);
   }
 
   // Get or create a view for a texture
@@ -160,6 +174,13 @@ export class TextureManager {
       texture.destroy();
     }
     this.imageTextures.clear();
+
+    // Destroy canvas textures
+    for (const texture of this.canvasTextures.values()) {
+      texture.destroy();
+    }
+    this.canvasTextures.clear();
+
     this.cachedImageViews.clear();
 
     // Destroy video frame textures
@@ -176,6 +197,16 @@ export class TextureManager {
     if (texture) {
       texture.destroy();
       this.imageTextures.delete(image);
+      this.cachedImageViews.delete(texture);
+    }
+  }
+
+  // Remove a specific canvas from cache
+  removeCanvasTexture(canvas: HTMLCanvasElement): void {
+    const texture = this.canvasTextures.get(canvas);
+    if (texture) {
+      texture.destroy();
+      this.canvasTextures.delete(canvas);
       this.cachedImageViews.delete(texture);
     }
   }
