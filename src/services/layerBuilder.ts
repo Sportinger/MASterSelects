@@ -1,51 +1,11 @@
 // LayerBuilder - Calculates render layers on-demand without React state overhead
 // Called directly from the render loop for maximum performance
 
-import type { TimelineClip, TimelineTrack, Layer, Effect, NestedCompositionData, AnimatableProperty } from '../types';
+import type { TimelineClip, TimelineTrack, Layer, Effect, NestedCompositionData } from '../types';
 import { useTimelineStore } from '../stores/timeline';
 import { useMediaStore } from '../stores/mediaStore';
 import { proxyFrameCache } from './proxyFrameCache';
-
-// Helper: Check if effects have changed
-function effectsChanged(
-  layerEffects: Effect[] | undefined,
-  clipEffects: Effect[] | undefined
-): boolean {
-  const le = layerEffects || [];
-  const ce = clipEffects || [];
-  if (le.length !== ce.length) return true;
-  for (let i = 0; i < le.length; i++) {
-    if (le[i].id !== ce[i].id || le[i].enabled !== ce[i].enabled) return true;
-    const lp = le[i].params;
-    const cp = ce[i].params;
-    const lKeys = Object.keys(lp);
-    const cKeys = Object.keys(cp);
-    if (lKeys.length !== cKeys.length) return true;
-    for (const key of lKeys) {
-      if (lp[key] !== cp[key]) return true;
-    }
-  }
-  return false;
-}
-
-interface LayerBuilderContext {
-  playheadPosition: number;
-  clips: TimelineClip[];
-  tracks: TimelineTrack[];
-  isPlaying: boolean;
-  isDraggingPlayhead: boolean;
-  clipKeyframes: Map<string, Array<{ id: string; clipId: string; time: number; property: AnimatableProperty; value: number; easing: string }>>;
-  getInterpolatedTransform: (clipId: string, localTime: number) => {
-    position: { x: number; y: number; z: number };
-    scale: { x: number; y: number };
-    rotation: { x: number; y: number; z: number };
-    opacity: number;
-    blendMode: string;
-  };
-  getInterpolatedEffects: (clipId: string, localTime: number) => Effect[];
-  getInterpolatedSpeed: (clipId: string, localTime: number) => number;
-  getSourceTimeForClip: (clipId: string, localTime: number) => number;
-}
+import { audioManager, audioStatusTracker } from './audioManager';
 
 class LayerBuilderService {
   private lastSeekRef: { [clipId: string]: number } = {};
@@ -54,9 +14,10 @@ class LayerBuilderService {
 
   /**
    * Build layers for the current frame - called directly from render loop
-   * This avoids React state updates and re-render overhead
+   * Gets all data from stores directly, no React overhead
    */
-  buildLayers(ctx: LayerBuilderContext): Layer[] {
+  buildLayersFromStore(): Layer[] {
+    const timelineState = useTimelineStore.getState();
     const {
       playheadPosition,
       clips,
@@ -67,9 +28,17 @@ class LayerBuilderService {
       getInterpolatedEffects,
       getInterpolatedSpeed,
       getSourceTimeForClip,
-    } = ctx;
+    } = timelineState;
 
     const videoTracks = tracks.filter(t => t.type === 'video' && t.visible !== false);
+    const anyVideoSolo = videoTracks.some(t => t.solo);
+
+    // Helper to check track visibility
+    const isVideoTrackVisible = (track: TimelineTrack) => {
+      if (!track.visible) return false;
+      if (anyVideoSolo) return track.solo;
+      return true;
+    };
 
     // Get clips at current playhead
     const clipsAtTime = clips.filter(
@@ -80,6 +49,11 @@ class LayerBuilderService {
 
     videoTracks.forEach((track, layerIndex) => {
       const clip = clipsAtTime.find(c => c.trackId === track.id);
+      const trackVisible = isVideoTrackVisible(track);
+
+      if (!trackVisible) {
+        return; // Skip invisible tracks
+      }
 
       if (clip?.isComposition && clip.nestedClips && clip.nestedClips.length > 0) {
         // Handle nested composition
@@ -126,7 +100,6 @@ class LayerBuilderService {
         // Handle video clip
         const layer = this.buildVideoLayer(
           clip,
-          track,
           layerIndex,
           playheadPosition,
           isPlaying,
@@ -196,19 +169,271 @@ class LayerBuilderService {
   }
 
   /**
+   * Sync video elements to current playhead - call this from render loop
+   * Handles video.currentTime updates and play/pause state
+   */
+  syncVideoElements(): void {
+    const { playheadPosition, clips, tracks, isPlaying, isDraggingPlayhead, getInterpolatedSpeed, getSourceTimeForClip } = useTimelineStore.getState();
+
+    const clipsAtTime = clips.filter(
+      c => playheadPosition >= c.startTime && playheadPosition < c.startTime + c.duration
+    );
+
+    clipsAtTime.forEach(clip => {
+      if (clip.source?.videoElement) {
+        const video = clip.source.videoElement;
+        const clipLocalTime = playheadPosition - clip.startTime;
+        const sourceTime = getSourceTimeForClip(clip.id, clipLocalTime);
+        const initialSpeed = getInterpolatedSpeed(clip.id, 0);
+        const startPoint = initialSpeed >= 0 ? clip.inPoint : clip.outPoint;
+        const clipTime = Math.max(clip.inPoint, Math.min(clip.outPoint, startPoint + sourceTime));
+        const timeDiff = Math.abs(video.currentTime - clipTime);
+
+        if (clip.reversed) {
+          if (!video.paused) video.pause();
+          const seekThreshold = isDraggingPlayhead ? 0.1 : 0.03;
+          if (timeDiff > seekThreshold) {
+            const now = performance.now();
+            const lastSeek = this.lastSeekRef[clip.id] || 0;
+            if (now - lastSeek > 33) {
+              video.currentTime = clipTime;
+              this.lastSeekRef[clip.id] = now;
+            }
+          }
+        } else {
+          if (isPlaying && video.paused) {
+            video.play().catch(() => {});
+          } else if (!isPlaying && !video.paused) {
+            video.pause();
+          }
+
+          if (!isPlaying) {
+            const seekThreshold = isDraggingPlayhead ? 0.1 : 0.05;
+            if (timeDiff > seekThreshold) {
+              const now = performance.now();
+              const lastSeek = this.lastSeekRef[clip.id] || 0;
+              if (now - lastSeek > (isDraggingPlayhead ? 80 : 33)) {
+                if (isDraggingPlayhead && 'fastSeek' in video) {
+                  video.fastSeek(clipTime);
+                } else {
+                  video.currentTime = clipTime;
+                }
+                this.lastSeekRef[clip.id] = now;
+              }
+            }
+          }
+        }
+      }
+    });
+
+    // Pause videos not at playhead
+    clips.forEach(clip => {
+      if (clip.source?.videoElement) {
+        const isAtPlayhead = clipsAtTime.some(c => c.id === clip.id);
+        if (!isAtPlayhead && !clip.source.videoElement.paused) {
+          clip.source.videoElement.pause();
+        }
+      }
+    });
+  }
+
+  /**
+   * Sync audio elements to current playhead - call this from render loop
+   * Handles audio play/pause/seek and drift tracking
+   */
+  syncAudioElements(): void {
+    const timelineState = useTimelineStore.getState();
+    const {
+      playheadPosition,
+      clips,
+      tracks,
+      isPlaying,
+      isDraggingPlayhead,
+      getInterpolatedSpeed,
+      getSourceTimeForClip,
+    } = timelineState;
+
+    const audioTracks = tracks.filter(t => t.type === 'audio');
+    const videoTracks = tracks.filter(t => t.type === 'video');
+    const anyAudioSolo = audioTracks.some(t => t.solo);
+    const anyVideoSolo = videoTracks.some(t => t.solo);
+
+    // Helper to check track mute state
+    const isAudioTrackMuted = (track: TimelineTrack) => {
+      if (track.muted) return true;
+      if (anyAudioSolo && !track.solo) return true;
+      return false;
+    };
+
+    const isVideoTrackVisible = (track: TimelineTrack) => {
+      if (!track.visible) return false;
+      if (anyVideoSolo) return track.solo;
+      return true;
+    };
+
+    const clipsAtTime = clips.filter(
+      c => playheadPosition >= c.startTime && playheadPosition < c.startTime + c.duration
+    );
+
+    let audioPlayingCount = 0;
+    let maxAudioDrift = 0;
+    let hasAudioError = false;
+
+    // Resume audio context if needed (browser autoplay policy)
+    if (isPlaying && !isDraggingPlayhead) {
+      audioManager.resume().catch(() => {});
+    }
+
+    // Sync audio track clips
+    audioTracks.forEach(track => {
+      const clip = clipsAtTime.find(c => c.trackId === track.id);
+
+      if (clip?.source?.audioElement) {
+        const audio = clip.source.audioElement;
+        const clipLocalTime = playheadPosition - clip.startTime;
+        const currentSpeed = getInterpolatedSpeed(clip.id, clipLocalTime);
+        const absSpeed = Math.abs(currentSpeed);
+        const sourceTime = getSourceTimeForClip(clip.id, clipLocalTime);
+        const initialSpeed = getInterpolatedSpeed(clip.id, 0);
+        const startPoint = initialSpeed >= 0 ? clip.inPoint : clip.outPoint;
+        const clipTime = Math.max(clip.inPoint, Math.min(clip.outPoint, startPoint + sourceTime));
+        const timeDiff = audio.currentTime - clipTime;
+
+        if (Math.abs(timeDiff) > maxAudioDrift) {
+          maxAudioDrift = Math.abs(timeDiff);
+        }
+
+        const effectivelyMuted = isAudioTrackMuted(track);
+        audio.muted = effectivelyMuted;
+
+        // Set playback rate
+        const targetRate = absSpeed > 0.1 ? absSpeed : 1;
+        if (Math.abs(audio.playbackRate - targetRate) > 0.01) {
+          audio.playbackRate = Math.max(0.25, Math.min(4, targetRate));
+        }
+
+        // Set preservesPitch
+        const shouldPreservePitch = clip.preservesPitch !== false;
+        if ((audio as HTMLAudioElement & { preservesPitch?: boolean }).preservesPitch !== shouldPreservePitch) {
+          (audio as HTMLAudioElement & { preservesPitch?: boolean }).preservesPitch = shouldPreservePitch;
+        }
+
+        const shouldPlay = isPlaying && !effectivelyMuted && !isDraggingPlayhead && absSpeed > 0.1;
+
+        if (shouldPlay) {
+          // Only sync audio on significant drift (>100ms) to reduce pops - was 200ms
+          if (Math.abs(timeDiff) > 0.1) {
+            audio.currentTime = clipTime;
+          }
+
+          if (audio.paused) {
+            audio.currentTime = clipTime;
+            audio.play().catch(err => {
+              console.warn('[Audio] Failed to play:', err.message);
+              hasAudioError = true;
+            });
+          }
+
+          if (!audio.paused && !effectivelyMuted) {
+            audioPlayingCount++;
+          }
+        } else {
+          if (!audio.paused) {
+            audio.pause();
+          }
+        }
+      }
+    });
+
+    // Pause audio clips not at playhead
+    clips.forEach(clip => {
+      if (clip.source?.audioElement) {
+        const isAtPlayhead = clipsAtTime.some(c => c.id === clip.id);
+        if (!isAtPlayhead && !clip.source.audioElement.paused) {
+          clip.source.audioElement.pause();
+        }
+      }
+      if (clip.mixdownAudio) {
+        const isAtPlayhead = clipsAtTime.some(c => c.id === clip.id);
+        if (!isAtPlayhead && !clip.mixdownAudio.paused) {
+          clip.mixdownAudio.pause();
+        }
+      }
+    });
+
+    // Sync nested composition mixdown audio
+    clipsAtTime.forEach(clip => {
+      if (clip.isComposition && clip.mixdownAudio && clip.hasMixdownAudio) {
+        const audio = clip.mixdownAudio;
+        const clipLocalTime = playheadPosition - clip.startTime;
+        const currentSpeed = getInterpolatedSpeed(clip.id, clipLocalTime);
+        const absSpeed = Math.abs(currentSpeed);
+        const sourceTime = getSourceTimeForClip(clip.id, clipLocalTime);
+        const initialSpeed = getInterpolatedSpeed(clip.id, 0);
+        const startPoint = initialSpeed >= 0 ? clip.inPoint : clip.outPoint;
+        const clipTime = Math.max(clip.inPoint, Math.min(clip.outPoint, startPoint + sourceTime));
+
+        const track = videoTracks.find(t => t.id === clip.trackId);
+        const effectivelyMuted = track ? !isVideoTrackVisible(track) : false;
+        audio.muted = effectivelyMuted;
+
+        const targetRate = absSpeed > 0.1 ? absSpeed : 1;
+        if (Math.abs(audio.playbackRate - targetRate) > 0.01) {
+          audio.playbackRate = Math.max(0.25, Math.min(4, targetRate));
+        }
+
+        const shouldPreservePitch = clip.preservesPitch !== false;
+        if ((audio as HTMLAudioElement & { preservesPitch?: boolean }).preservesPitch !== shouldPreservePitch) {
+          (audio as HTMLAudioElement & { preservesPitch?: boolean }).preservesPitch = shouldPreservePitch;
+        }
+
+        const timeDiff = audio.currentTime - clipTime;
+        if (Math.abs(timeDiff) > maxAudioDrift) {
+          maxAudioDrift = Math.abs(timeDiff);
+        }
+
+        const shouldPlay = isPlaying && !effectivelyMuted && !isDraggingPlayhead && absSpeed > 0.1;
+
+        if (shouldPlay) {
+          if (Math.abs(timeDiff) > 0.1) {
+            audio.currentTime = clipTime;
+          }
+
+          if (audio.paused) {
+            audio.currentTime = clipTime;
+            audio.play().catch(err => {
+              console.warn('[Nested Comp Audio] Failed to play:', err.message);
+            });
+          }
+
+          if (!audio.paused && !effectivelyMuted) {
+            audioPlayingCount++;
+          }
+        } else {
+          if (!audio.paused) {
+            audio.pause();
+          }
+        }
+      }
+    });
+
+    // Update audio status for stats display
+    audioStatusTracker.updateStatus(audioPlayingCount, maxAudioDrift, hasAudioError);
+  }
+
+  /**
    * Build video layer with video seeking and proxy handling
    */
   private buildVideoLayer(
     clip: TimelineClip,
-    track: TimelineTrack,
     layerIndex: number,
     playheadPosition: number,
     isPlaying: boolean,
     isDraggingPlayhead: boolean,
-    getInterpolatedTransform: LayerBuilderContext['getInterpolatedTransform'],
-    getInterpolatedEffects: LayerBuilderContext['getInterpolatedEffects'],
-    getInterpolatedSpeed: LayerBuilderContext['getInterpolatedSpeed'],
-    getSourceTimeForClip: LayerBuilderContext['getSourceTimeForClip']
+    getInterpolatedTransform: (clipId: string, localTime: number) => ReturnType<typeof useTimelineStore.getState>['getInterpolatedTransform'] extends (clipId: string, localTime: number) => infer R ? R : never,
+    getInterpolatedEffects: (clipId: string, localTime: number) => Effect[],
+    getInterpolatedSpeed: (clipId: string, localTime: number) => number,
+    getSourceTimeForClip: (clipId: string, localTime: number) => number
   ): Layer | null {
     const clipLocalTime = playheadPosition - clip.startTime;
     const keyframeLocalTime = clipLocalTime;
@@ -218,7 +443,6 @@ class LayerBuilderService {
     const clipTime = Math.max(clip.inPoint, Math.min(clip.outPoint, startPoint + sourceTime));
     const video = clip.source!.videoElement!;
     const webCodecsPlayer = clip.source?.webCodecsPlayer;
-    const timeDiff = Math.abs(video.currentTime - clipTime);
 
     // Check for proxy usage
     const mediaStore = useMediaStore.getState();
@@ -243,11 +467,6 @@ class LayerBuilderService {
       // Proxy playback - use cached proxy frames
       const cacheKey = `${mediaFile.id}_${clip.id}`;
       const cachedInService = proxyFrameCache.getCachedFrame(mediaFile.id, frameIndex, proxyFps);
-
-      // Keep video playing for audio but muted
-      if (!video.muted) video.muted = true;
-      if (isPlaying && video.paused) video.play().catch(() => {});
-      else if (!isPlaying && !video.paused) video.pause();
 
       if (cachedInService) {
         this.proxyFramesRef.set(cacheKey, { frameIndex, image: cachedInService });
@@ -304,45 +523,6 @@ class LayerBuilderService {
     }
 
     // Direct video playback
-    if (webCodecsPlayer) {
-      const wcTimeDiff = Math.abs(webCodecsPlayer.currentTime - clipTime);
-      if (wcTimeDiff > 0.05) {
-        webCodecsPlayer.seek(clipTime);
-      }
-    }
-
-    if (clip.reversed) {
-      if (!video.paused) video.pause();
-      const seekThreshold = isDraggingPlayhead ? 0.1 : 0.03;
-      if (timeDiff > seekThreshold) {
-        const now = performance.now();
-        const lastSeek = this.lastSeekRef[clip.id] || 0;
-        if (now - lastSeek > 33) {
-          video.currentTime = clipTime;
-          this.lastSeekRef[clip.id] = now;
-        }
-      }
-    } else {
-      if (isPlaying && video.paused) video.play().catch(() => {});
-      else if (!isPlaying && !video.paused) video.pause();
-
-      if (!isPlaying) {
-        const seekThreshold = isDraggingPlayhead ? 0.1 : 0.05;
-        if (timeDiff > seekThreshold) {
-          const now = performance.now();
-          const lastSeek = this.lastSeekRef[clip.id] || 0;
-          if (now - lastSeek > (isDraggingPlayhead ? 80 : 33)) {
-            if (isDraggingPlayhead && 'fastSeek' in video) {
-              video.fastSeek(clipTime);
-            } else {
-              video.currentTime = clipTime;
-            }
-            this.lastSeekRef[clip.id] = now;
-          }
-        }
-      }
-    }
-
     const transform = getInterpolatedTransform(clip.id, keyframeLocalTime);
     const videoInterpolatedEffects = getInterpolatedEffects(clip.id, keyframeLocalTime);
 

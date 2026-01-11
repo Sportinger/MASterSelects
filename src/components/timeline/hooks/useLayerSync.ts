@@ -241,7 +241,14 @@ export function useLayerSync({
   );
 
   // Main layer sync effect
+  // PERFORMANCE: During playback, layerBuilder handles all sync in the RAF loop
+  // This effect only runs when paused (for scrubbing, editing, etc.)
   useEffect(() => {
+    // Skip all work during playback - layerBuilder handles video/audio sync in RAF
+    if (isPlaying) {
+      return;
+    }
+
     if (isRamPreviewing) {
       return;
     }

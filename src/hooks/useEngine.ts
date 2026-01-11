@@ -7,6 +7,7 @@ import { useTimelineStore } from '../stores/timeline';
 import { useSettingsStore } from '../stores/settingsStore';
 import type { ClipMask, MaskVertex } from '../types';
 import { generateMaskTexture } from '../utils/maskRenderer';
+import { layerBuilder } from '../services/layerBuilder';
 
 // Create a stable hash of mask shapes only (excludes feather/invert which are GPU uniforms)
 // This is faster than JSON.stringify for shape comparison
@@ -191,7 +192,7 @@ export function useEngine() {
     };
   }, [isEngineReady, updateMaskTextures]);
 
-  // Render loop - optimized with layer snapshotting to prevent flickering
+  // Render loop - optimized with direct layer building (bypasses React state)
   useEffect(() => {
     if (!isEngineReady) return;
 
@@ -208,18 +209,22 @@ export function useEngine() {
         }
 
         // CRITICAL: Skip live rendering during RAM Preview generation
-        // Live rendering would seek videos and interfere with RAM Preview's seeking,
-        // causing glitchy/wrong frames to be cached
         if (isRamPreviewing) {
           return;
         }
 
-        // IMPORTANT: Snapshot layers array at start of frame to ensure consistency
-        // This prevents flickering from reading partially updated state
-        const layersSnapshot = useMixerStore.getState().layers;
+        // PERFORMANCE OPTIMIZATION: Build layers directly from stores
+        // This bypasses the React effect in useLayerSync, eliminating:
+        // 1. React effect comparison overhead every frame
+        // 2. useMixerStore.setState() calls that trigger re-renders
+        // 3. Stale closure issues with React hooks
+        const layers = layerBuilder.buildLayersFromStore();
+
+        // Sync video and audio elements (play/pause/seek) - runs in RAF, not React effect
+        layerBuilder.syncVideoElements();
+        layerBuilder.syncAudioElements();
 
         // Get clips and tracks to extract mask properties at render time
-        // This ensures mask properties are ALWAYS in sync with the current frame
         const { clips, tracks, playheadPosition: currentPlayhead } = useTimelineStore.getState();
         const videoTracks = tracks.filter(t => t.type === 'video');
         const clipsAtTime = clips.filter(c =>
@@ -227,7 +232,6 @@ export function useEngine() {
         );
 
         // Check if there are ANY video clips at the current playhead position
-        // If not, render black (empty frame) regardless of what's in mixerStore layers
         const videoClipsAtTime = clipsAtTime.filter(c => {
           const track = tracks.find(t => t.id === c.trackId);
           return track?.type === 'video';
@@ -242,9 +246,8 @@ export function useEngine() {
         // Get engine output dimensions for mask generation
         const engineDimensions = engine.getOutputDimensions();
 
-        // Create frame layers with FRESH mask properties from clips (not stale store state)
-        // CRITICAL: Only include layers that have clips at the current playhead position
-        const frameLayers = layersSnapshot.map((layer, layerIndex) => {
+        // Add mask properties to layers
+        const frameLayers = layers.map((layer, layerIndex) => {
           if (!layer) return layer;
 
           const track = videoTracks[layerIndex];
@@ -252,18 +255,13 @@ export function useEngine() {
 
           const clip = clipsAtTime.find(c => c.trackId === track.id);
 
-          // If no clip at current time for this track, return layer without source
-          // This ensures preview shows black when playhead is over empty space
           if (!clip) {
             return { ...layer, source: null };
           }
 
           // Extract mask properties directly from clip at render time
           if (clip.masks && clip.masks.length > 0) {
-            // CRITICAL: Ensure mask texture exists BEFORE rendering this frame
-            // This prevents the race condition where first frame renders without mask
             if (!engine.hasMaskTexture(layer.id)) {
-              // Generate mask texture synchronously before rendering
               const maskImageData = generateMaskTexture(
                 clip.masks,
                 engineDimensions.width,
@@ -278,7 +276,6 @@ export function useEngine() {
             const maxQuality = Math.max(...clip.masks.map(m => m.featherQuality ?? 50));
             const hasInverted = clip.masks.some(m => m.inverted);
 
-            // Return layer with fresh mask properties
             return {
               ...layer,
               maskFeather: maxFeather,
@@ -290,10 +287,10 @@ export function useEngine() {
           return layer;
         });
 
-        // Render with snapshotted layers (engine handles empty layers by clearing to black)
+        // Render with built layers
         engine.render(frameLayers);
 
-        // Throttle stats updates to reduce React re-renders (every 100ms for responsive display)
+        // Throttle stats updates to reduce React re-renders (every 100ms)
         const now = performance.now();
         if (now - lastStatsUpdate > 100) {
           useMixerStore.getState().setEngineStats(engine.getStats());
