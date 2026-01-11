@@ -18,7 +18,7 @@ export function WelcomeOverlay({ onComplete }: WelcomeOverlayProps) {
   const isSupported = isFileSystemAccessSupported();
 
   const handleSelectFolder = useCallback(async () => {
-    if (isSelecting) return;
+    if (isSelecting || isClosing) return;
     setIsSelecting(true);
     setError(null);
 
@@ -26,6 +26,12 @@ export function WelcomeOverlay({ onComplete }: WelcomeOverlayProps) {
       const handle = await pickProxyFolder();
       if (handle) {
         setSelectedFolder(handle.name);
+        // Auto-close after folder selection
+        setIsClosing(true);
+        useSettingsStore.getState().setHasCompletedSetup(true);
+        setTimeout(() => {
+          onComplete();
+        }, 200);
       }
     } catch (e) {
       console.error('[WelcomeOverlay] Failed to select folder:', e);
@@ -33,7 +39,7 @@ export function WelcomeOverlay({ onComplete }: WelcomeOverlayProps) {
     } finally {
       setIsSelecting(false);
     }
-  }, [isSelecting]);
+  }, [isSelecting, isClosing, onComplete]);
 
   const handleContinue = useCallback(() => {
     if (isClosing) return;

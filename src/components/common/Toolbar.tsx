@@ -5,7 +5,7 @@ import { useEngine } from '../../hooks/useEngine';
 import { useMixerStore } from '../../stores/mixerStore';
 import { useDockStore } from '../../stores/dockStore';
 import { PANEL_CONFIGS, type PanelType } from '../../types/dock';
-import { useSettingsStore, type PreviewQuality } from '../../stores/settingsStore';
+import { useSettingsStore, type PreviewQuality, type AutosaveInterval } from '../../stores/settingsStore';
 import { useMIDI } from '../../hooks/useMIDI';
 import { SettingsDialog } from './SettingsDialog';
 import { projectFileService } from '../../services/projectFileService';

@@ -20,6 +20,9 @@ interface APIKeys {
   klingSecretKey: string;
 }
 
+// Autosave interval options (in minutes)
+export type AutosaveInterval = 1 | 2 | 5 | 10;
+
 interface SettingsState {
   // API Keys
   apiKeys: APIKeys;
@@ -30,6 +33,10 @@ interface SettingsState {
   // Preview settings
   previewQuality: PreviewQuality;
   showTransparencyGrid: boolean;  // Show checkerboard pattern for transparent areas
+
+  // Autosave settings
+  autosaveEnabled: boolean;
+  autosaveInterval: AutosaveInterval;  // in minutes
 
   // First-run state
   hasCompletedSetup: boolean;
@@ -42,6 +49,8 @@ interface SettingsState {
   setTranscriptionProvider: (provider: TranscriptionProvider) => void;
   setPreviewQuality: (quality: PreviewQuality) => void;
   setShowTransparencyGrid: (show: boolean) => void;
+  setAutosaveEnabled: (enabled: boolean) => void;
+  setAutosaveInterval: (interval: AutosaveInterval) => void;
   setHasCompletedSetup: (completed: boolean) => void;
   openSettings: () => void;
   closeSettings: () => void;
@@ -68,6 +77,8 @@ export const useSettingsStore = create<SettingsState>()(
       transcriptionProvider: 'local',
       previewQuality: 1, // Full quality by default
       showTransparencyGrid: false, // Don't show checkerboard by default
+      autosaveEnabled: false, // Autosave disabled by default
+      autosaveInterval: 5, // 5 minutes default interval
       hasCompletedSetup: false, // Show welcome overlay on first run
       isSettingsOpen: false,
 
@@ -91,6 +102,14 @@ export const useSettingsStore = create<SettingsState>()(
 
       setShowTransparencyGrid: (show) => {
         set({ showTransparencyGrid: show });
+      },
+
+      setAutosaveEnabled: (enabled) => {
+        set({ autosaveEnabled: enabled });
+      },
+
+      setAutosaveInterval: (interval) => {
+        set({ autosaveInterval: interval });
       },
 
       setHasCompletedSetup: (completed) => {
@@ -119,6 +138,8 @@ export const useSettingsStore = create<SettingsState>()(
           transcriptionProvider: state.transcriptionProvider,
           previewQuality: state.previewQuality,
           showTransparencyGrid: state.showTransparencyGrid,
+          autosaveEnabled: state.autosaveEnabled,
+          autosaveInterval: state.autosaveInterval,
           hasCompletedSetup: state.hasCompletedSetup,
         }),
       }

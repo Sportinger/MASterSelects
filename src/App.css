@@ -6385,3 +6385,54 @@ input[type="checkbox"] {
   color: #ff6b6b;
   text-align: left;
 }
+
+/* ============================================
+   Saved Toast - Center screen notification
+   ============================================ */
+
+.saved-toast {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 10000;
+  padding: 16px 32px;
+  background: rgba(0, 0, 0, 0.85);
+  border: 2px solid #ffd700;
+  border-radius: 12px;
+  font-size: 24px;
+  font-weight: 600;
+  color: #ffd700;
+  text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+  box-shadow:
+    0 0 30px rgba(255, 215, 0, 0.3),
+    0 4px 20px rgba(0, 0, 0, 0.5);
+  animation: saved-toast-in 0.3s ease-out;
+  pointer-events: none;
+}
+
+.saved-toast.exiting {
+  animation: saved-toast-out 0.3s ease-in forwards;
+}
+
+@keyframes saved-toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes saved-toast-out {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.8);
+  }
+}
