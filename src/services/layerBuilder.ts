@@ -806,8 +806,20 @@ class LayerBuilderService {
         ? nestedClip.outPoint - nestedLocalTime
         : nestedLocalTime + nestedClip.inPoint;
 
-      // Update video currentTime
-      if (nestedClip.source?.videoElement) {
+      // Check if we should use proxy mode BEFORE touching video elements
+      const mediaStore = useMediaStore.getState();
+      const nestedMediaFile = mediaStore.files.find(f =>
+        f.id === nestedClip.source?.mediaFileId ||
+        f.name === nestedClip.file?.name ||
+        f.name === nestedClip.name
+      );
+      const shouldUseProxy = mediaStore.proxyEnabled &&
+        nestedMediaFile?.proxyFps &&
+        (nestedMediaFile.proxyStatus === 'ready' || nestedMediaFile.proxyStatus === 'generating');
+
+      // Only sync video elements if NOT in proxy mode
+      // In proxy mode, we don't need the video at all - touching it causes conflicts
+      if (nestedClip.source?.videoElement && !shouldUseProxy) {
         const video = nestedClip.source.videoElement;
         const timeDiff = Math.abs(video.currentTime - nestedClipTime);
         if (timeDiff > 0.05) {
@@ -816,6 +828,12 @@ class LayerBuilderService {
         if (isPlaying && video.paused) {
           video.play().catch(() => {});
         } else if (!isPlaying && !video.paused) {
+          video.pause();
+        }
+      } else if (nestedClip.source?.videoElement && shouldUseProxy) {
+        // In proxy mode: ensure video is paused to avoid resource conflicts
+        const video = nestedClip.source.videoElement;
+        if (!video.paused) {
           video.pause();
         }
       }
@@ -859,26 +877,17 @@ class LayerBuilderService {
       };
 
       if (nestedClip.source?.videoElement) {
-        // Check for proxy frames for nested video clips
-        const mediaStore = useMediaStore.getState();
-        // Better media file lookup - try multiple ways to find the file
-        const nestedMediaFile = mediaStore.files.find(f =>
-          f.id === nestedClip.source?.mediaFileId ||
-          f.name === nestedClip.file?.name ||
-          f.name === nestedClip.name
-        );
+        // Reuse mediaStore and nestedMediaFile from earlier proxy check
         const proxyFps = nestedMediaFile?.proxyFps || 30;
         const frameIndex = Math.floor(nestedClipTime * proxyFps);
-        let useProxy = false;
 
-        if (mediaStore.proxyEnabled && nestedMediaFile?.proxyFps) {
-          if (nestedMediaFile.proxyStatus === 'ready') {
-            useProxy = true;
-          } else if (nestedMediaFile.proxyStatus === 'generating' && (nestedMediaFile.proxyProgress || 0) > 0) {
-            const totalFrames = Math.ceil((nestedMediaFile.duration || 10) * proxyFps);
-            const maxGeneratedFrame = Math.floor(totalFrames * ((nestedMediaFile.proxyProgress || 0) / 100));
-            useProxy = frameIndex < maxGeneratedFrame;
-          }
+        // Determine if we can use proxy for this specific frame
+        let useProxy = shouldUseProxy;
+        if (useProxy && nestedMediaFile?.proxyStatus === 'generating') {
+          // For generating proxies, check if this frame is ready
+          const totalFrames = Math.ceil((nestedMediaFile.duration || 10) * proxyFps);
+          const maxGeneratedFrame = Math.floor(totalFrames * ((nestedMediaFile.proxyProgress || 0) / 100));
+          useProxy = frameIndex < maxGeneratedFrame;
         }
 
         if (useProxy && nestedMediaFile) {
