@@ -2,7 +2,7 @@
 // Stores media file blobs and project data
 
 const DB_NAME = 'MASterSelectsDB';
-const DB_VERSION = 4; // Upgraded for analysis cache store
+const DB_VERSION = 5; // Upgraded for fileHash proxy deduplication
 
 // Store names
 const STORES = {
@@ -11,24 +11,39 @@ const STORES = {
   PROXY_FRAMES: 'proxyFrames', // New store for proxy frame sequences
   FS_HANDLES: 'fsHandles', // Store for FileSystemHandles (directories, files)
   ANALYSIS_CACHE: 'analysisCache', // Cache for clip analysis data
+  THUMBNAILS: 'thumbnails', // Deduplicated thumbnails by file hash
 } as const;
 
-export interface StoredMediaFile {
-  id: string;
-  name: string;
-  type: 'video' | 'audio' | 'image';
+// Thumbnail stored by file hash for deduplication
+export interface StoredThumbnail {
+  fileHash: string; // Primary key
   blob: Blob;
-  thumbnailBlob?: Blob;
-  duration?: number;
   width?: number;
   height?: number;
   createdAt: number;
 }
 
+export interface StoredMediaFile {
+  id: string;
+  name: string;
+  type: 'video' | 'audio' | 'image';
+  // No longer storing blob - only metadata and file hash for deduplication
+  fileHash?: string; // SHA-256 hash for proxy/thumbnail deduplication
+  duration?: number;
+  width?: number;
+  height?: number;
+  fps?: number;
+  codec?: string;
+  container?: string;
+  fileSize?: number;
+  createdAt: number;
+}
+
 // Proxy frame data - stores frames for a media file
 export interface StoredProxyFrame {
-  id: string; // Format: mediaFileId_frameIndex (e.g., "abc123_0042")
-  mediaFileId: string;
+  id: string; // Format: fileHash_frameIndex (e.g., "abc123_0042")
+  mediaFileId: string; // Legacy: kept for backwards compatibility
+  fileHash?: string; // SHA-256 hash of file content (for deduplication)
   frameIndex: number;
   blob: Blob; // WebP image blob
 }
@@ -127,6 +142,13 @@ class ProjectDatabase {
           const proxyStore = db.createObjectStore(STORES.PROXY_FRAMES, { keyPath: 'id' });
           proxyStore.createIndex('mediaFileId', 'mediaFileId', { unique: false });
           proxyStore.createIndex('frameIndex', 'frameIndex', { unique: false });
+          proxyStore.createIndex('fileHash', 'fileHash', { unique: false });
+        } else if (event.oldVersion < 5) {
+          // Add fileHash index for proxy deduplication (v5)
+          const proxyStore = event.target!.transaction!.objectStore(STORES.PROXY_FRAMES);
+          if (!proxyStore.indexNames.contains('fileHash')) {
+            proxyStore.createIndex('fileHash', 'fileHash', { unique: false });
+          }
         }
 
         // Create file system handles store (new in v3)
@@ -137,6 +159,11 @@ class ProjectDatabase {
         // Create analysis cache store (new in v4)
         if (!db.objectStoreNames.contains(STORES.ANALYSIS_CACHE)) {
           db.createObjectStore(STORES.ANALYSIS_CACHE, { keyPath: 'mediaFileId' });
+        }
+
+        // Create thumbnails store for deduplication (new in v5)
+        if (!db.objectStoreNames.contains(STORES.THUMBNAILS)) {
+          db.createObjectStore(STORES.THUMBNAILS, { keyPath: 'fileHash' });
         }
 
         console.log('[ProjectDB] Database schema created/upgraded');
@@ -422,6 +449,76 @@ class ProjectDatabase {
       request.onsuccess = () => resolve();
       request.onerror = () => reject(request.error);
     });
+  }
+
+  // ============ Hash-based Proxy Deduplication ============
+
+  // Get proxy frame count by file hash (for deduplication)
+  async getProxyFrameCountByHash(fileHash: string): Promise<number> {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORES.PROXY_FRAMES, 'readonly');
+      const store = transaction.objectStore(STORES.PROXY_FRAMES);
+      try {
+        const index = store.index('fileHash');
+        const request = index.count(fileHash);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => resolve(0); // Fallback if index doesn't exist
+      } catch {
+        resolve(0); // Index doesn't exist yet
+      }
+    });
+  }
+
+  // Get a proxy frame by file hash
+  async getProxyFrameByHash(fileHash: string, frameIndex: number): Promise<StoredProxyFrame | undefined> {
+    const db = await this.init();
+    const id = `${fileHash}_${frameIndex.toString().padStart(6, '0')}`;
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORES.PROXY_FRAMES, 'readonly');
+      const store = transaction.objectStore(STORES.PROXY_FRAMES);
+      const request = store.get(id);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // Check if proxy exists by file hash
+  async hasProxyByHash(fileHash: string): Promise<boolean> {
+    const count = await this.getProxyFrameCountByHash(fileHash);
+    return count > 0;
+  }
+
+  // ============ Thumbnail Deduplication ============
+
+  // Save thumbnail by file hash
+  async saveThumbnail(thumbnail: StoredThumbnail): Promise<void> {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORES.THUMBNAILS, 'readwrite');
+      const store = transaction.objectStore(STORES.THUMBNAILS);
+      const request = store.put(thumbnail);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // Get thumbnail by file hash
+  async getThumbnail(fileHash: string): Promise<StoredThumbnail | undefined> {
+    const db = await this.init();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(STORES.THUMBNAILS, 'readonly');
+      const store = transaction.objectStore(STORES.THUMBNAILS);
+      const request = store.get(fileHash);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // Check if thumbnail exists by hash
+  async hasThumbnail(fileHash: string): Promise<boolean> {
+    const thumbnail = await this.getThumbnail(fileHash);
+    return !!thumbnail;
   }
 
   // ============ File System Handles ============

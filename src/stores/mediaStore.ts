@@ -36,6 +36,7 @@ export interface MediaFile extends MediaItem {
   codec?: string; // Video/audio codec (e.g., H.264, VP9)
   container?: string; // Container format (e.g., MP4, MKV, WebM)
   fileSize?: number; // File size in bytes
+  fileHash?: string; // Hash of file content (for proxy deduplication)
   thumbnailUrl?: string;
   // Proxy support (for video files)
   proxyStatus?: ProxyStatus;
@@ -199,6 +200,34 @@ async function createThumbnail(file: File, type: 'video' | 'image'): Promise<str
       resolve(undefined);
     }
   });
+}
+
+// Calculate file hash for proxy deduplication (first 2MB + file size for speed)
+async function calculateFileHash(file: File): Promise<string> {
+  try {
+    // Read first 2MB of file (enough to uniquely identify most videos)
+    const HASH_SIZE = 2 * 1024 * 1024;
+    const slice = file.slice(0, Math.min(file.size, HASH_SIZE));
+    const buffer = await slice.arrayBuffer();
+
+    // Include file size in hash to differentiate truncated files
+    const sizeBuffer = new ArrayBuffer(8);
+    const sizeView = new DataView(sizeBuffer);
+    sizeView.setBigUint64(0, BigInt(file.size), true);
+
+    // Combine buffers
+    const combined = new Uint8Array(buffer.byteLength + 8);
+    combined.set(new Uint8Array(buffer), 0);
+    combined.set(new Uint8Array(sizeBuffer), buffer.byteLength);
+
+    // Calculate SHA-256 hash
+    const hashBuffer = await crypto.subtle.digest('SHA-256', combined);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  } catch (e) {
+    console.warn('[MediaStore] Failed to calculate file hash:', e);
+    return '';
+  }
 }
 
 // Get container format from file extension
@@ -471,18 +500,20 @@ async function generateProxyFrames(
       );
     });
 
-    // Add to batch
-    const frameId = `${mediaFile.id}_${frameIndex.toString().padStart(6, '0')}`;
+    // Use fileHash for deduplication, fallback to mediaFile.id
+    const storageKey = mediaFile.fileHash || mediaFile.id;
+    const frameId = `${storageKey}_${frameIndex.toString().padStart(6, '0')}`;
     batch.push({
       id: frameId,
-      mediaFileId: mediaFile.id,
+      mediaFileId: mediaFile.id, // Keep for backwards compatibility
+      fileHash: mediaFile.fileHash, // Add hash for deduplication
       frameIndex,
       blob,
     });
 
     // Also save to file system if folder is selected
     if (fileSystemService.hasProxyFolder()) {
-      await fileSystemService.saveProxyFrame(mediaFile.id, frameIndex, blob);
+      await fileSystemService.saveProxyFrame(storageKey, frameIndex, blob);
     }
 
     generatedCount++;
@@ -558,6 +589,43 @@ export const useMediaStore = create<MediaState>()(
             createThumbnail(file, type as 'video' | 'image'),
           ]);
 
+          // Calculate file hash for deduplication
+          const fileHash = await calculateFileHash(file);
+
+          // Check for existing thumbnail by hash
+          let finalThumbnailUrl = thumbnailUrl;
+          if (fileHash && thumbnailUrl) {
+            const existingThumb = await projectDB.getThumbnail(fileHash);
+            if (existingThumb) {
+              // Reuse existing thumbnail
+              finalThumbnailUrl = URL.createObjectURL(existingThumb.blob);
+              console.log('[MediaStore] Reusing existing thumbnail for hash:', fileHash.slice(0, 8));
+            } else {
+              // Save new thumbnail by hash
+              if (thumbnailUrl.startsWith('data:')) {
+                const response = await fetch(thumbnailUrl);
+                const thumbBlob = await response.blob();
+                await projectDB.saveThumbnail({
+                  fileHash,
+                  blob: thumbBlob,
+                  createdAt: Date.now(),
+                });
+              }
+            }
+          }
+
+          // Check for existing proxy by hash
+          let proxyStatus: ProxyStatus = 'none';
+          let proxyFrameCount: number | undefined;
+          if (fileHash && type === 'video') {
+            const existingProxyCount = await projectDB.getProxyFrameCountByHash(fileHash);
+            if (existingProxyCount > 0) {
+              proxyStatus = 'ready';
+              proxyFrameCount = existingProxyCount;
+              console.log('[MediaStore] Found existing proxy for hash:', fileHash.slice(0, 8), 'frames:', existingProxyCount);
+            }
+          }
+
           const mediaFile: MediaFile = {
             id: generateId(),
             name: file.name,
@@ -566,7 +634,11 @@ export const useMediaStore = create<MediaState>()(
             createdAt: Date.now(),
             file,
             url,
-            thumbnailUrl,
+            thumbnailUrl: finalThumbnailUrl,
+            fileHash,
+            proxyStatus,
+            proxyFrameCount,
+            proxyFps: proxyFrameCount ? PROXY_FPS : undefined,
             ...info,
           };
 
@@ -574,27 +646,26 @@ export const useMediaStore = create<MediaState>()(
             files: [...state.files, mediaFile],
           }));
 
-          // Save file blob to IndexedDB for persistence
+          // Save metadata only (no blob) to IndexedDB
           try {
             const storedFile: StoredMediaFile = {
               id: mediaFile.id,
               name: file.name,
               type,
-              blob: file,
+              fileHash,
               duration: info.duration,
               width: info.width,
               height: info.height,
+              fps: info.fps,
+              codec: info.codec,
+              container: info.container,
+              fileSize: info.fileSize,
               createdAt: mediaFile.createdAt,
             };
-            // Store thumbnail as blob if it's a data URL
-            if (thumbnailUrl && thumbnailUrl.startsWith('data:')) {
-              const response = await fetch(thumbnailUrl);
-              storedFile.thumbnailBlob = await response.blob();
-            }
             await projectDB.saveMediaFile(storedFile);
-            console.log('[MediaStore] Saved file to IndexedDB:', file.name);
+            console.log('[MediaStore] Saved file metadata to IndexedDB:', file.name);
           } catch (e) {
-            console.warn('[MediaStore] Failed to save file to IndexedDB:', e);
+            console.warn('[MediaStore] Failed to save file metadata:', e);
           }
 
           return mediaFile;
@@ -1110,9 +1181,11 @@ export const useMediaStore = create<MediaState>()(
 
           const imported: MediaFile[] = [];
           for (const { file, handle } of result) {
-            // Store the file handle for later access
             const id = generateId();
+
+            // Store the file handle in memory and IndexedDB for persistence
             fileSystemService.storeFileHandle(id, handle);
+            await projectDB.storeHandle(`media_${id}`, handle);
 
             const type = getMediaType(file);
             const url = URL.createObjectURL(file);
@@ -1120,6 +1193,39 @@ export const useMediaStore = create<MediaState>()(
               getMediaInfo(file, type),
               createThumbnail(file, type as 'video' | 'image'),
             ]);
+
+            // Calculate file hash for deduplication
+            const fileHash = await calculateFileHash(file);
+
+            // Check for existing thumbnail by hash
+            let finalThumbnailUrl = thumbnailUrl;
+            if (fileHash && thumbnailUrl) {
+              const existingThumb = await projectDB.getThumbnail(fileHash);
+              if (existingThumb) {
+                finalThumbnailUrl = URL.createObjectURL(existingThumb.blob);
+                console.log('[MediaStore] Reusing existing thumbnail for hash:', fileHash.slice(0, 8));
+              } else if (thumbnailUrl.startsWith('data:')) {
+                const response = await fetch(thumbnailUrl);
+                const thumbBlob = await response.blob();
+                await projectDB.saveThumbnail({
+                  fileHash,
+                  blob: thumbBlob,
+                  createdAt: Date.now(),
+                });
+              }
+            }
+
+            // Check for existing proxy by hash
+            let proxyStatus: ProxyStatus = 'none';
+            let proxyFrameCount: number | undefined;
+            if (fileHash && type === 'video') {
+              const existingProxyCount = await projectDB.getProxyFrameCountByHash(fileHash);
+              if (existingProxyCount > 0) {
+                proxyStatus = 'ready';
+                proxyFrameCount = existingProxyCount;
+                console.log('[MediaStore] Found existing proxy for hash:', fileHash.slice(0, 8), 'frames:', existingProxyCount);
+              }
+            }
 
             const mediaFile: MediaFile = {
               id,
@@ -1129,9 +1235,13 @@ export const useMediaStore = create<MediaState>()(
               createdAt: Date.now(),
               file,
               url,
-              thumbnailUrl,
+              thumbnailUrl: finalThumbnailUrl,
               hasFileHandle: true,
               filePath: handle.name,
+              fileHash,
+              proxyStatus,
+              proxyFrameCount,
+              proxyFps: proxyFrameCount ? PROXY_FPS : undefined,
               ...info,
             };
 
@@ -1139,26 +1249,26 @@ export const useMediaStore = create<MediaState>()(
               files: [...state.files, mediaFile],
             }));
 
-            // Save file blob to IndexedDB for persistence
+            // Save metadata only (no blob) to IndexedDB
             try {
               const storedFile: StoredMediaFile = {
                 id: mediaFile.id,
                 name: file.name,
                 type,
-                blob: file,
+                fileHash,
                 duration: info.duration,
                 width: info.width,
                 height: info.height,
+                fps: info.fps,
+                codec: info.codec,
+                container: info.container,
+                fileSize: info.fileSize,
                 createdAt: mediaFile.createdAt,
               };
-              if (thumbnailUrl && thumbnailUrl.startsWith('data:')) {
-                const response = await fetch(thumbnailUrl);
-                storedFile.thumbnailBlob = await response.blob();
-              }
               await projectDB.saveMediaFile(storedFile);
               console.log('[MediaStore] Saved file with handle:', file.name);
             } catch (e) {
-              console.warn('[MediaStore] Failed to save file to IndexedDB:', e);
+              console.warn('[MediaStore] Failed to save file metadata:', e);
             }
 
             imported.push(mediaFile);
@@ -1184,49 +1294,89 @@ export const useMediaStore = create<MediaState>()(
           return result;
         },
 
-        // Initialize from IndexedDB - restore file blobs and check proxy status
+        // Initialize from IndexedDB - restore files from handles and check proxy status
         initFromDB: async () => {
           set({ isLoading: true });
           try {
             const storedFiles = await projectDB.getAllMediaFiles();
             const { files } = get();
 
-            // Match stored blobs with existing file metadata
+            // Restore files from file handles
             const updatedFiles = await Promise.all(
               files.map(async (mediaFile) => {
                 const stored = storedFiles.find((sf) => sf.id === mediaFile.id);
-                if (stored) {
-                  // Restore file blob and URL
-                  const file = new File([stored.blob], stored.name, { type: stored.blob.type });
-                  const url = URL.createObjectURL(file);
-                  let thumbnailUrl = mediaFile.thumbnailUrl;
-                  if (stored.thumbnailBlob) {
-                    thumbnailUrl = URL.createObjectURL(stored.thumbnailBlob);
-                  }
+                if (!stored) return mediaFile;
 
-                  // Check if proxy exists for video files
-                  let proxyStatus: ProxyStatus = 'none';
-                  let proxyFrameCount: number | undefined;
-                  if (stored.type === 'video') {
-                    const frameCount = await projectDB.getProxyFrameCount(mediaFile.id);
-                    if (frameCount > 0) {
-                      proxyStatus = 'ready';
-                      proxyFrameCount = frameCount;
+                // Try to restore file from handle
+                let file: File | undefined;
+                let url = mediaFile.url;
+                let thumbnailUrl = mediaFile.thumbnailUrl;
+
+                // Try to get file handle from IndexedDB
+                const handle = await projectDB.getStoredHandle(`media_${mediaFile.id}`);
+                if (handle && 'getFile' in handle) {
+                  try {
+                    // Request permission if needed
+                    const permission = await (handle as FileSystemFileHandle).queryPermission({ mode: 'read' });
+                    if (permission === 'granted') {
+                      file = await (handle as FileSystemFileHandle).getFile();
+                      url = URL.createObjectURL(file);
+                      fileSystemService.storeFileHandle(mediaFile.id, handle as FileSystemFileHandle);
+                      console.log('[MediaStore] Restored file from handle:', stored.name);
+                    } else {
+                      // Try to request permission
+                      const newPermission = await (handle as FileSystemFileHandle).requestPermission({ mode: 'read' });
+                      if (newPermission === 'granted') {
+                        file = await (handle as FileSystemFileHandle).getFile();
+                        url = URL.createObjectURL(file);
+                        fileSystemService.storeFileHandle(mediaFile.id, handle as FileSystemFileHandle);
+                        console.log('[MediaStore] Restored file from handle (after permission):', stored.name);
+                      }
                     }
+                  } catch (e) {
+                    console.warn('[MediaStore] Failed to restore file from handle:', stored.name, e);
                   }
-
-                  return {
-                    ...mediaFile,
-                    file,
-                    url,
-                    thumbnailUrl,
-                    proxyStatus,
-                    proxyFrameCount,
-                    proxyFps: proxyFrameCount ? PROXY_FPS : undefined,
-                    proxyProgress: proxyFrameCount ? 100 : 0,
-                  };
                 }
-                return mediaFile;
+
+                // Restore thumbnail from hash
+                if (stored.fileHash) {
+                  const thumbData = await projectDB.getThumbnail(stored.fileHash);
+                  if (thumbData) {
+                    thumbnailUrl = URL.createObjectURL(thumbData.blob);
+                  }
+                }
+
+                // Check for existing proxy by hash
+                let proxyStatus: ProxyStatus = 'none';
+                let proxyFrameCount: number | undefined;
+                if (stored.type === 'video' && stored.fileHash) {
+                  const frameCount = await projectDB.getProxyFrameCountByHash(stored.fileHash);
+                  if (frameCount > 0) {
+                    proxyStatus = 'ready';
+                    proxyFrameCount = frameCount;
+                  }
+                }
+
+                return {
+                  ...mediaFile,
+                  file,
+                  url,
+                  thumbnailUrl,
+                  fileHash: stored.fileHash,
+                  hasFileHandle: !!file,
+                  proxyStatus,
+                  proxyFrameCount,
+                  proxyFps: proxyFrameCount ? PROXY_FPS : undefined,
+                  proxyProgress: proxyFrameCount ? 100 : 0,
+                  // Restore metadata
+                  duration: stored.duration ?? mediaFile.duration,
+                  width: stored.width ?? mediaFile.width,
+                  height: stored.height ?? mediaFile.height,
+                  fps: stored.fps ?? mediaFile.fps,
+                  codec: stored.codec ?? mediaFile.codec,
+                  container: stored.container ?? mediaFile.container,
+                  fileSize: stored.fileSize ?? mediaFile.fileSize,
+                };
               })
             );
 
