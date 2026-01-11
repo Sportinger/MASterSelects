@@ -273,6 +273,52 @@ export function Toolbar() {
                   </div>
                 </>
               )}
+              <div className="menu-separator" />
+              <button
+                className="menu-option"
+                onClick={async () => {
+                  if (confirm('This will clear ALL cached data and reload. Continue?')) {
+                    // Set flag to prevent beforeunload from saving data back
+                    (window as any).__CLEARING_CACHE__ = true;
+
+                    // Clear all localStorage
+                    localStorage.clear();
+                    sessionStorage.clear();
+
+                    // Delete all known IndexedDB databases
+                    const dbNames = ['webvj-db', 'webvj-projects', 'webvj-apikeys', 'keyval-store', 'MASterSelectsDB', 'multicam-settings'];
+                    for (const name of dbNames) {
+                      indexedDB.deleteDatabase(name);
+                    }
+
+                    // Clear caches
+                    if ('caches' in window) {
+                      const names = await caches.keys();
+                      for (const name of names) {
+                        await caches.delete(name);
+                      }
+                    }
+
+                    // Unregister service workers
+                    if ('serviceWorker' in navigator) {
+                      const registrations = await navigator.serviceWorker.getRegistrations();
+                      for (const reg of registrations) {
+                        await reg.unregister();
+                      }
+                    }
+
+                    // Clear again after a small delay to catch any last writes
+                    setTimeout(() => {
+                      localStorage.clear();
+                      sessionStorage.clear();
+                      // Force navigation to prevent any beforeunload handlers
+                      window.location.href = window.location.origin + window.location.pathname + '?cleared=' + Date.now();
+                    }, 100);
+                  }
+                }}
+              >
+                <span>Clear All Cache & Reload</span>
+              </button>
             </div>
           )}
         </div>

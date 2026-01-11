@@ -8,6 +8,17 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // This runs BEFORE any modules load
+      if (window.location.search.includes('reset=true')) {
+        localStorage.clear();
+        sessionStorage.clear();
+        ['webvj-db', 'webvj-projects', 'webvj-apikeys', 'keyval-store', 'MASterSelectsDB', 'multicam-settings'].forEach(function(name) {
+          indexedDB.deleteDatabase(name);
+        });
+        window.location.href = window.location.origin + window.location.pathname;
+      }
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

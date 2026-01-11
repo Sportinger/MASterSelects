@@ -1,7 +1,7 @@
 // Zustand store for media/project management (like After Effects Project panel)
 
 import { create } from 'zustand';
-import { subscribeWithSelector, persist } from 'zustand/middleware';
+import { subscribeWithSelector } from 'zustand/middleware';
 import { useTimelineStore } from './timeline';
 import { projectDB, type StoredMediaFile, type StoredProject } from '../services/projectDB';
 import { fileSystemService } from '../services/fileSystemService';
@@ -416,7 +416,6 @@ const DEFAULT_COMPOSITION: Composition = {
 
 export const useMediaStore = create<MediaState>()(
   subscribeWithSelector(
-    persist(
       (set, get) => ({
         files: [],
         compositions: [DEFAULT_COMPOSITION],
@@ -1313,22 +1312,7 @@ export const useMediaStore = create<MediaState>()(
           await projectDB.deleteProject(projectId);
           console.log('[MediaStore] Project deleted:', projectId);
         },
-      }),
-      {
-        name: 'webvj-media',
-        partialize: (state) => ({
-          // Don't persist file blobs, only metadata
-          files: state.files.map(({ file, ...rest }) => rest),
-          compositions: state.compositions,
-          folders: state.folders,
-          activeCompositionId: state.activeCompositionId,
-          openCompositionIds: state.openCompositionIds,
-          expandedFolderIds: state.expandedFolderIds,
-          currentProjectId: state.currentProjectId,
-          currentProjectName: state.currentProjectName,
-        }),
-      }
-    )
+      })
   )
 );
 
@@ -1382,11 +1366,15 @@ if (typeof window !== 'undefined') {
 
   // Save timeline before page unload (for refresh/close)
   window.addEventListener('beforeunload', () => {
+    // Don't save if we're clearing cache
+    if ((window as any).__CLEARING_CACHE__) return;
     saveTimelineToActiveComposition();
   });
 
   // Also save timeline periodically (every 30 seconds) as backup
   setInterval(() => {
+    // Don't save if we're clearing cache
+    if ((window as any).__CLEARING_CACHE__) return;
     saveTimelineToActiveComposition();
   }, 30000);
 }
