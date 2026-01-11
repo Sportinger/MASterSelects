@@ -1268,6 +1268,8 @@ export class WebGPUEngine {
     const canvasContext = this.independentPreviewCanvases.get(canvasId);
 
     if (!device || !canvasContext || !this.outputPipeline || !this.sampler || !this.pingView || !this.pongView) {
+      console.log(`[copyMainOutput] FAILED for ${canvasId}: device=${!!device}, canvas=${!!canvasContext}, pipeline=${!!this.outputPipeline}, sampler=${!!this.sampler}, ping=${!!this.pingView}, pong=${!!this.pongView}`);
+      console.log(`[copyMainOutput] Available canvases: ${Array.from(this.independentPreviewCanvases.keys()).join(', ')}`);
       return false;
     }
 

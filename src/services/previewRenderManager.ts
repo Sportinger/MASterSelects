@@ -255,10 +255,13 @@ class PreviewRenderManagerService {
       // OPTIMIZATION 1: If this preview shows the ACTIVE composition,
       // just copy the main render's output (no need to render twice)
       if (preview.compositionId === activeCompId) {
+        console.log(`[PreviewManager] Preview ${preview.panelId} matches active comp ${activeCompId}, attempting copy...`);
         if (engine.copyMainOutputToPreview(preview.panelId)) {
+          console.log(`[PreviewManager] Copy succeeded for ${preview.panelId}`);
           preview.lastRenderTime = now;
           continue; // Success - skip independent rendering
         }
+        console.log(`[PreviewManager] Copy failed for ${preview.panelId}, falling through to independent render`);
         // If copy failed, fall through to independent rendering
       }
 
