@@ -162,7 +162,10 @@ export function Toolbar() {
 
       autosaveTimerRef.current = setInterval(async () => {
         if (projectFileService.isProjectOpen() && projectFileService.hasUnsavedChanges()) {
-          console.log('[Autosave] Saving project...');
+          console.log('[Autosave] Creating backup and saving project...');
+          // Create backup before saving
+          await projectFileService.createBackup();
+          // Then save the project
           await saveCurrentProject();
           setShowSavedToast(true);
         }

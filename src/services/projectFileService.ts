@@ -470,6 +470,81 @@ class ProjectFileService {
     console.log('[ProjectFile] Project closed');
   }
 
+  /**
+   * Create a backup of the current project before saving
+   * Keeps only the last MAX_BACKUPS backups
+   */
+  async createBackup(): Promise<boolean> {
+    if (!this.projectHandle || !this.projectData) {
+      return false;
+    }
+
+    try {
+      // Read current project.json
+      const projectFile = await this.projectHandle.getFileHandle('project.json');
+      const file = await projectFile.getFile();
+      const content = await file.text();
+
+      // Create timestamp for backup filename
+      const now = new Date();
+      const timestamp = now.toISOString()
+        .replace(/[:.]/g, '-')
+        .replace('T', '_')
+        .slice(0, 19); // Format: 2026-01-11_14-30-00
+      const backupFileName = `project_${timestamp}.json`;
+
+      // Get or create Backups folder
+      const backupsFolder = await this.projectHandle.getDirectoryHandle(PROJECT_FOLDERS.BACKUPS, { create: true });
+
+      // Write backup file
+      const backupHandle = await backupsFolder.getFileHandle(backupFileName, { create: true });
+      const writable = await backupHandle.createWritable();
+      await writable.write(content);
+      await writable.close();
+
+      console.log(`[ProjectFile] Created backup: ${backupFileName}`);
+
+      // Cleanup old backups
+      await this.cleanupOldBackups(backupsFolder);
+
+      return true;
+    } catch (e) {
+      console.error('[ProjectFile] Failed to create backup:', e);
+      return false;
+    }
+  }
+
+  /**
+   * Remove old backups, keeping only the last MAX_BACKUPS
+   */
+  private async cleanupOldBackups(backupsFolder: FileSystemDirectoryHandle): Promise<void> {
+    try {
+      // List all backup files
+      const backups: { name: string; file: File }[] = [];
+
+      for await (const entry of (backupsFolder as any).values()) {
+        if (entry.kind === 'file' && entry.name.startsWith('project_') && entry.name.endsWith('.json')) {
+          const file = await entry.getFile();
+          backups.push({ name: entry.name, file });
+        }
+      }
+
+      // Sort by modification time (newest first)
+      backups.sort((a, b) => b.file.lastModified - a.file.lastModified);
+
+      // Remove old backups
+      if (backups.length > MAX_BACKUPS) {
+        const toRemove = backups.slice(MAX_BACKUPS);
+        for (const backup of toRemove) {
+          await backupsFolder.removeEntry(backup.name);
+          console.log(`[ProjectFile] Removed old backup: ${backup.name}`);
+        }
+      }
+    } catch (e) {
+      console.warn('[ProjectFile] Failed to cleanup old backups:', e);
+    }
+  }
+
   // ============================================
   // FILE OPERATIONS
   // ============================================
