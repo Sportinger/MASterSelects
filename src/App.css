@@ -2623,10 +2623,17 @@ input[type="checkbox"] {
 
 .timeline-body {
   display: flex;
+  flex-direction: row;
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+.timeline-body-content {
+  display: flex;
   flex-direction: column;
   flex: 1;
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: hidden;
   position: relative;
 }
 
@@ -2659,6 +2666,12 @@ input[type="checkbox"] {
   overflow: hidden;
   height: 30px;
   border-bottom: 1px solid var(--border-color);
+}
+
+.timeline-scroll-wrapper {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
 }
 
 /* Content row - track headers and lanes side by side */
@@ -3838,6 +3851,97 @@ input[type="checkbox"] {
   content: '';
   width: 2px;
   height: 6px;
+  background: var(--text-secondary);
+  border-radius: 1px;
+  opacity: 0.5;
+}
+
+/* Vertical Scrollbar - matches horizontal TimelineNavigator style */
+.vertical-scrollbar {
+  width: 14px;
+  background: var(--bg-primary);
+  border-left: 1px solid var(--border-color);
+  flex-shrink: 0;
+  padding: 2px;
+}
+
+.vertical-scrollbar-track {
+  width: 100%;
+  height: 100%;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  position: relative;
+  cursor: pointer;
+}
+
+.vertical-scrollbar-thumb {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  background: #2a2a2a;
+  border-radius: 4px;
+  cursor: grab;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: background 0.1s;
+}
+
+.vertical-scrollbar-thumb:hover {
+  background: #3a3a3a;
+}
+
+.vertical-scrollbar-thumb.dragging {
+  cursor: grabbing;
+  background: #444;
+}
+
+.vertical-scrollbar-handle {
+  width: 100%;
+  height: 10px;
+  cursor: ns-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+
+.vertical-scrollbar-handle:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.vertical-scrollbar-handle-top {
+  border-radius: 4px 4px 0 0;
+}
+
+.vertical-scrollbar-handle-bottom {
+  border-radius: 0 0 4px 4px;
+}
+
+.vertical-scrollbar-handle::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  background: #000;
+  border-radius: 50%;
+}
+
+.vertical-scrollbar-grip {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.vertical-scrollbar-grip::before,
+.vertical-scrollbar-grip::after {
+  content: '';
+  width: 6px;
+  height: 2px;
   background: var(--text-secondary);
   border-radius: 1px;
   opacity: 0.5;
@@ -6636,7 +6740,7 @@ input[type="checkbox"] {
 }
 
 .saved-toast.exiting {
-  animation: saved-toast-out 0.3s ease-in forwards;
+  animation: saved-toast-out 0.2s ease-out forwards;
 }
 
 @keyframes saved-toast-in {

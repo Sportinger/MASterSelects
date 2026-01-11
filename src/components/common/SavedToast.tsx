@@ -14,15 +14,15 @@ export function SavedToast({ visible, onHide }: SavedToastProps) {
   useEffect(() => {
     if (visible) {
       setIsExiting(false);
-      // Start exit animation after 1.5 seconds
+      // Start exit animation after brief display (400ms)
       const exitTimer = setTimeout(() => {
         setIsExiting(true);
-      }, 1500);
+      }, 400);
 
-      // Hide completely after animation
+      // Hide completely after fade out animation (400ms + 200ms = 600ms)
       const hideTimer = setTimeout(() => {
         onHide();
-      }, 1800);
+      }, 600);
 
       return () => {
         clearTimeout(exitTimer);

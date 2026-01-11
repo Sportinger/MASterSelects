@@ -21,6 +21,7 @@ import { MulticamDialog } from './MulticamDialog';
 import { ParentChildLink } from './ParentChildLink';
 import { PhysicsCable } from './PhysicsCable';
 import { TimelineNavigator } from './TimelineNavigator';
+import { VerticalScrollbar } from './VerticalScrollbar';
 import { useTimelineKeyboard } from './hooks/useTimelineKeyboard';
 import { useTimelineZoom } from './hooks/useTimelineZoom';
 import { usePlayheadDrag } from './hooks/usePlayheadDrag';
@@ -146,6 +147,8 @@ export function Timeline() {
   const timelineRef = useRef<HTMLDivElement>(null);
   const timelineBodyRef = useRef<HTMLDivElement>(null);
   const trackLanesRef = useRef<HTMLDivElement>(null);
+  const scrollWrapperRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   // Performance: Create lookup maps for O(1) clip/track access (must be before hooks that use them)
   const clipMap = useMemo(() => new Map(clips.map(c => [c.id, c])), [clips]);
@@ -201,6 +204,9 @@ export function Timeline() {
 
   // External file drag preview state
   const [externalDrag, setExternalDrag] = useState<ExternalDragState | null>(null);
+
+  // Vertical scroll position (custom scrollbar)
+  const [scrollY, setScrollY] = useState(0);
 
   // Context menu state for clip right-click
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -265,6 +271,31 @@ export function Timeline() {
     if (anyAudioSolo) return !track.solo;
     return false;
   }, [anyAudioSolo]);
+
+  // Calculate total content height for vertical scrollbar
+  const contentHeight = useMemo(() => {
+    let totalHeight = 0;
+    for (const track of tracks) {
+      const isExpanded = isTrackExpanded(track.id);
+      totalHeight += isExpanded ? getExpandedTrackHeight(track.id, track.height) : track.height;
+    }
+    return totalHeight;
+  }, [tracks, isTrackExpanded, getExpandedTrackHeight]);
+
+  // Track viewport height for scrollbar
+  const [viewportHeight, setViewportHeight] = useState(300);
+
+  // Update viewport height on resize
+  useEffect(() => {
+    const updateViewportHeight = () => {
+      if (scrollWrapperRef.current) {
+        setViewportHeight(scrollWrapperRef.current.clientHeight);
+      }
+    };
+    updateViewportHeight();
+    window.addEventListener('resize', updateViewportHeight);
+    return () => window.removeEventListener('resize', updateViewportHeight);
+  }, []);
 
   // Performance: Memoize proxy-ready file count
   const mediaFilesWithProxyCount = useMemo(
