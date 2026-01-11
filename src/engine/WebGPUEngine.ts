@@ -1333,13 +1333,13 @@ export class WebGPUEngine {
       }
     }
 
-    // If no layers to render, return black texture
+    // If no layers to render, return transparent texture
     if (nestedLayerData.length === 0) {
-      // Clear the output texture to black
+      // Clear the output texture to transparent
       const clearPass = commandEncoder.beginRenderPass({
         colorAttachments: [{
           view: compTexture.view,
-          clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          clearValue: { r: 0, g: 0, b: 0, a: 0 },
           loadOp: 'clear',
           storeOp: 'store',
         }],
@@ -1354,11 +1354,11 @@ export class WebGPUEngine {
     let readView = nestedPingView;
     let writeView = nestedPongView;
 
-    // Clear first buffer
+    // Clear first buffer to transparent (so nested comp blends correctly with parent)
     const clearPass = commandEncoder.beginRenderPass({
       colorAttachments: [{
         view: readView,
-        clearValue: { r: 0, g: 0, b: 0, a: 1 },
+        clearValue: { r: 0, g: 0, b: 0, a: 0 },
         loadOp: 'clear',
         storeOp: 'store',
       }],
