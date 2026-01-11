@@ -128,6 +128,9 @@ export class WebGPUEngine {
   // Flag to skip preview updates during RAM preview generation
   private isGeneratingRamPreview = false;
 
+  // Flag to completely pause render loop during export
+  private isExporting = false;
+
   // Reusable resources for RAM Preview playback
   private ramPlaybackCanvas: HTMLCanvasElement | null = null;
   private ramPlaybackCtx: CanvasRenderingContext2D | null = null;
@@ -547,6 +550,22 @@ export class WebGPUEngine {
 
   setGeneratingRamPreview(generating: boolean): void {
     this.isGeneratingRamPreview = generating;
+  }
+
+  /**
+   * Set export mode - pauses all preview rendering to avoid conflicts
+   * Export renders directly via engine.render() without preview loop interference
+   */
+  setExporting(exporting: boolean): void {
+    this.isExporting = exporting;
+    console.log(`[WebGPUEngine] Export mode: ${exporting ? 'ON' : 'OFF'}`);
+  }
+
+  /**
+   * Check if currently exporting
+   */
+  getIsExporting(): boolean {
+    return this.isExporting;
   }
 
   renderCachedFrame(time: number): boolean {
@@ -1007,13 +1026,16 @@ export class WebGPUEngine {
     // Update output pipeline uniforms (transparency grid setting)
     this.outputPipeline!.updateUniforms(this.showTransparencyGrid, this.outputWidth, this.outputHeight);
 
-    // Render to preview (skip during RAM preview generation)
-    if (this.previewContext && !this.isGeneratingRamPreview) {
+    // Skip all canvas rendering during export (export reads pixels directly from GPU buffer)
+    const skipCanvasRendering = this.isGeneratingRamPreview || this.isExporting;
+
+    // Render to preview (skip during RAM preview generation or export)
+    if (this.previewContext && !skipCanvasRendering) {
       this.outputPipeline!.renderToCanvas(commandEncoder, this.previewContext, outputBindGroup);
     }
 
     // Render to all inline preview canvases
-    if (!this.isGeneratingRamPreview) {
+    if (!skipCanvasRendering) {
       for (const previewCtx of this.previewCanvases.values()) {
         this.outputPipeline!.renderToCanvas(commandEncoder, previewCtx, outputBindGroup);
       }
@@ -1021,7 +1043,7 @@ export class WebGPUEngine {
 
     // Render to independent canvases that are showing the active composition
     // Auto-detect based on independentCanvasCompositions (no need for async flag setting)
-    if (!this.isGeneratingRamPreview) {
+    if (!skipCanvasRendering) {
       const activeCompId = useMediaStore.getState().activeCompositionId;
       for (const [canvasId, compId] of this.independentCanvasCompositions.entries()) {
         if (compId === activeCompId) {
@@ -1034,7 +1056,7 @@ export class WebGPUEngine {
     }
 
     // Render to output windows
-    if (!this.isGeneratingRamPreview) {
+    if (!skipCanvasRendering) {
       for (const output of this.outputWindows.values()) {
         if (output.context) {
           this.outputPipeline!.renderToCanvas(commandEncoder, output.context, outputBindGroup);
@@ -1758,7 +1780,11 @@ export class WebGPUEngine {
         lastFpsReset = timestamp;
       }
 
-      renderCallback();
+      // Skip render callback during export to prevent video element conflicts
+      // Export uses its own render calls with precise seeking
+      if (!this.isExporting) {
+        renderCallback();
+      }
 
       this.animationId = requestAnimationFrame(loop);
     };

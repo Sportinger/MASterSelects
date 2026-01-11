@@ -307,6 +307,9 @@ export class FrameExporter {
     const originalDimensions = engine.getOutputDimensions();
     engine.setResolution(width, height);
 
+    // Enable export mode - pauses all preview rendering to prevent conflicts
+    engine.setExporting(true);
+
     try {
       // Phase 1: Encode video frames
       for (let frame = 0; frame < totalFrames; frame++) {
@@ -314,6 +317,7 @@ export class FrameExporter {
           console.log('[FrameExporter] Export cancelled');
           this.encoder.cancel();
           this.audioPipeline?.cancel();
+          engine.setExporting(false);
           engine.setResolution(originalDimensions.width, originalDimensions.height);
           return null;
         }
@@ -405,10 +409,12 @@ export class FrameExporter {
 
       const blob = await this.encoder.finish();
       console.log(`[FrameExporter] Export complete: ${(blob.size / 1024 / 1024).toFixed(2)}MB`);
+      engine.setExporting(false);
       engine.setResolution(originalDimensions.width, originalDimensions.height);
       return blob;
     } catch (error) {
       console.error('[FrameExporter] Export error:', error);
+      engine.setExporting(false);
       engine.setResolution(originalDimensions.width, originalDimensions.height);
       return null;
     }

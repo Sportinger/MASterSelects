@@ -210,7 +210,8 @@ class PreviewRenderManagerService {
       // But allow catch-up if we're behind
       const shouldRender = deltaTime >= 14; // Slight buffer under 16.67ms
 
-      if (shouldRender) {
+      // Skip rendering during export to prevent video element conflicts
+      if (shouldRender && !engine.getIsExporting()) {
         this.renderAllPreviews();
       }
 
