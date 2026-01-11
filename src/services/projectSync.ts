@@ -253,13 +253,20 @@ function convertProjectCompositionToStore(projectComps: ProjectComposition[]): C
         reversed: c.reversed,
         disabled: c.disabled,
       })),
-      markers: pc.markers,
+      // Required CompositionTimelineData fields
+      playheadPosition: 0,
+      duration: pc.duration,
+      zoom: 1,
+      scrollX: 0,
+      inPoint: null,
+      outPoint: null,
+      loopPlayback: false,
     };
 
-    return {
+    const comp: Composition = {
       id: pc.id,
       name: pc.name,
-      type: 'composition' as const,
+      type: 'composition',
       parentId: pc.folderId,
       createdAt: Date.now(),
       width: pc.width,
@@ -267,8 +274,9 @@ function convertProjectCompositionToStore(projectComps: ProjectComposition[]): C
       frameRate: pc.frameRate,
       duration: pc.duration,
       backgroundColor: pc.backgroundColor,
-      timelineData,
+      timelineData: timelineData as any, // Type assertion for complex nested types
     };
+    return comp;
   });
 }
 
@@ -414,7 +422,7 @@ export function setupAutoSync(): void {
   );
 
   useTimelineStore.subscribe(
-    (state) => [state.clips, state.tracks, state.markers],
+    (state) => [state.clips, state.tracks],
     () => {
       if (projectFileService.isProjectOpen()) {
         projectFileService.markDirty();
