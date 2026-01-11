@@ -46,6 +46,9 @@ class LayerBuilderService {
       getSourceTimeForClip,
     } = timelineState;
 
+    // Get active composition ID for unique layer IDs across compositions
+    const activeCompId = useMediaStore.getState().activeCompositionId || 'default';
+
     // Use high-frequency playhead position during playback to avoid store read latency
     const playheadPosition = playheadState.isUsingInternalPosition
       ? playheadState.position
@@ -98,7 +101,7 @@ class LayerBuilderService {
           };
 
           layers[layerIndex] = {
-            id: `timeline_layer_${layerIndex}`,
+            id: `${activeCompId}_layer_${layerIndex}`,
             name: clip.name,
             visible: true,
             opacity: interpolatedTransform.opacity,
@@ -128,7 +131,8 @@ class LayerBuilderService {
           getInterpolatedTransform,
           getInterpolatedEffects,
           getInterpolatedSpeed,
-          getSourceTimeForClip
+          getSourceTimeForClip,
+          activeCompId
         );
         if (layer) {
           layers[layerIndex] = layer;
@@ -140,7 +144,7 @@ class LayerBuilderService {
         const imageInterpolatedEffects = getInterpolatedEffects(clip.id, imageClipLocalTime);
 
         layers[layerIndex] = {
-          id: `timeline_layer_${layerIndex}`,
+          id: `${activeCompId}_layer_${layerIndex}`,
           name: clip.name,
           visible: true,
           opacity: transform.opacity,
@@ -165,7 +169,7 @@ class LayerBuilderService {
         const textInterpolatedEffects = getInterpolatedEffects(clip.id, textClipLocalTime);
 
         layers[layerIndex] = {
-          id: `timeline_layer_${layerIndex}`,
+          id: `${activeCompId}_layer_${layerIndex}`,
           name: clip.name,
           visible: true,
           opacity: transform.opacity,
@@ -514,7 +518,8 @@ class LayerBuilderService {
     getInterpolatedTransform: (clipId: string, localTime: number) => ReturnType<typeof useTimelineStore.getState>['getInterpolatedTransform'] extends (clipId: string, localTime: number) => infer R ? R : never,
     getInterpolatedEffects: (clipId: string, localTime: number) => Effect[],
     getInterpolatedSpeed: (clipId: string, localTime: number) => number,
-    getSourceTimeForClip: (clipId: string, localTime: number) => number
+    getSourceTimeForClip: (clipId: string, localTime: number) => number,
+    activeCompId: string
   ): Layer | null {
     const clipLocalTime = playheadPosition - clip.startTime;
     const keyframeLocalTime = clipLocalTime;
@@ -555,7 +560,7 @@ class LayerBuilderService {
         const interpolatedEffects = getInterpolatedEffects(clip.id, keyframeLocalTime);
 
         return {
-          id: `timeline_layer_${layerIndex}`,
+          id: `${activeCompId}_layer_${layerIndex}`,
           name: clip.name,
           visible: true,
           opacity: transform.opacity,
@@ -582,7 +587,7 @@ class LayerBuilderService {
         const interpolatedEffects = getInterpolatedEffects(clip.id, keyframeLocalTime);
 
         return {
-          id: `timeline_layer_${layerIndex}`,
+          id: `${activeCompId}_layer_${layerIndex}`,
           name: clip.name,
           visible: true,
           opacity: transform.opacity,
@@ -608,7 +613,7 @@ class LayerBuilderService {
     const videoInterpolatedEffects = getInterpolatedEffects(clip.id, keyframeLocalTime);
 
     const layer: Layer = {
-      id: `timeline_layer_${layerIndex}`,
+      id: `${activeCompId}_layer_${layerIndex}`,
       name: clip.name,
       visible: true,
       opacity: transform.opacity,
