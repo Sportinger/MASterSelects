@@ -752,6 +752,57 @@ class LayerBuilderService {
       };
 
       if (nestedClip.source?.videoElement) {
+        // Check for proxy frames for nested video clips
+        const mediaStore = useMediaStore.getState();
+        const nestedMediaFile = mediaStore.files.find(f => f.name === nestedClip.file?.name);
+        const proxyFps = nestedMediaFile?.proxyFps || 30;
+        const frameIndex = Math.floor(nestedClipTime * proxyFps);
+        let useProxy = false;
+
+        if (mediaStore.proxyEnabled && nestedMediaFile?.proxyFps) {
+          if (nestedMediaFile.proxyStatus === 'ready') {
+            useProxy = true;
+          } else if (nestedMediaFile.proxyStatus === 'generating' && (nestedMediaFile.proxyProgress || 0) > 0) {
+            const totalFrames = Math.ceil((nestedMediaFile.duration || 10) * proxyFps);
+            const maxGeneratedFrame = Math.floor(totalFrames * ((nestedMediaFile.proxyProgress || 0) / 100));
+            useProxy = frameIndex < maxGeneratedFrame;
+          }
+        }
+
+        if (useProxy && nestedMediaFile) {
+          // Try to get proxy frame
+          const cacheKey = `nested_${nestedMediaFile.id}_${nestedClip.id}`;
+          const cachedInService = proxyFrameCache.getCachedFrame(nestedMediaFile.id, frameIndex, proxyFps);
+
+          if (cachedInService) {
+            this.proxyFramesRef.set(cacheKey, { frameIndex, image: cachedInService });
+            const proxyLayer: Layer = {
+              ...baseLayer,
+              source: {
+                type: 'image',
+                imageElement: cachedInService,
+              },
+            } as Layer;
+            layers.push(proxyLayer);
+            continue; // Skip direct video playback
+          }
+
+          // Use cached proxy frame if available while loading new one
+          const cached = this.proxyFramesRef.get(cacheKey);
+          if (cached?.image) {
+            const proxyLayer: Layer = {
+              ...baseLayer,
+              source: {
+                type: 'image',
+                imageElement: cached.image,
+              },
+            } as Layer;
+            layers.push(proxyLayer);
+            continue; // Skip direct video playback
+          }
+        }
+
+        // Fall back to direct video playback
         layers.push({
           ...baseLayer,
           source: {
