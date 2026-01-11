@@ -279,24 +279,21 @@ class ProxyGeneratorGPU {
         this.duration = track.duration / track.timescale;
         this.totalFrames = Math.ceil(this.duration * PROXY_FPS);
 
-        // Get codec config
+        // Get codec config with fallback support
         const trak = this.mp4File!.getTrackById(track.id);
         const codecString = this.getCodecString(track.codec, trak);
 
-        this.codecConfig = {
-          codec: codecString,
-          codedWidth: track.video.width,
-          codedHeight: track.video.height,
-          hardwareAcceleration: 'prefer-hardware',
-        };
+        console.log(`[ProxyGen] Detected codec: ${codecString}, trying to find supported configuration...`);
 
-        // Check if codec is supported
-        VideoDecoder.isConfigSupported(this.codecConfig).then(support => {
-          if (!support.supported) {
-            console.warn('[ProxyGen] Codec not supported:', codecString);
+        // Try to find a supported codec configuration
+        this.findSupportedCodec(codecString, track.video.width, track.video.height).then(config => {
+          if (!config) {
+            console.warn('[ProxyGen] No supported codec configuration found');
             resolve(false);
             return;
           }
+
+          this.codecConfig = config;
 
           // Extract all samples
           mp4File.setExtractionOptions(track.id, null, { nbSamples: Infinity });
@@ -372,6 +369,72 @@ class ProxyGeneratorGPU {
     }
 
     return codec;
+  }
+
+  /**
+   * Try multiple codec configurations until one is supported
+   */
+  private async findSupportedCodec(
+    baseCodec: string,
+    width: number,
+    height: number
+  ): Promise<VideoDecoderConfig | null> {
+    // Common H.264 codec strings to try
+    const h264Fallbacks = [
+      baseCodec,
+      'avc1.42001e', // Baseline L3.0
+      'avc1.4d001e', // Main L3.0
+      'avc1.64001e', // High L3.0
+      'avc1.640028', // High L4.0
+      'avc1.4d0028', // Main L4.0
+      'avc1.42E01E', // Constrained Baseline
+      'avc1.4D401E', // Main
+      'avc1.640029', // High L4.1
+    ];
+
+    const codecsToTry = baseCodec.startsWith('avc1') ? h264Fallbacks : [baseCodec];
+
+    for (const codec of codecsToTry) {
+      const config: VideoDecoderConfig = {
+        codec,
+        codedWidth: width,
+        codedHeight: height,
+        hardwareAcceleration: 'prefer-hardware',
+      };
+
+      try {
+        const support = await VideoDecoder.isConfigSupported(config);
+        if (support.supported) {
+          console.log(`[ProxyGen] Found supported codec: ${codec}`);
+          return config;
+        }
+      } catch (e) {
+        // Codec check failed, try next
+      }
+    }
+
+    // Try without hardware acceleration
+    for (const codec of codecsToTry) {
+      const config: VideoDecoderConfig = {
+        codec,
+        codedWidth: width,
+        codedHeight: height,
+        hardwareAcceleration: 'prefer-software',
+      };
+
+      try {
+        const support = await VideoDecoder.isConfigSupported(config);
+        if (support.supported) {
+          console.log(`[ProxyGen] Found supported codec (software): ${codec}`);
+          return config;
+        }
+      } catch (e) {
+        // Codec check failed, try next
+      }
+    }
+
+    console.warn(`[ProxyGen] No supported codec found for ${baseCodec}`);
+    return null;
   }
 
   private initDecoder() {
