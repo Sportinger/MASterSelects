@@ -114,7 +114,7 @@ export class WebGPUEngine {
   // Track active video for frame rate limiting
   private hasActiveVideo = false;
   private lastRenderTime = 0;
-  private readonly VIDEO_FRAME_TIME = 33.33; // ~30fps when video is playing
+  private readonly VIDEO_FRAME_TIME = 16.67; // ~60fps target (was 33.33ms / 30fps)
 
   // Performance tracking
   private lastFrameStart = 0;

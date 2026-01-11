@@ -148,6 +148,14 @@ export function Timeline() {
   const timelineBodyRef = useRef<HTMLDivElement>(null);
   const trackLanesRef = useRef<HTMLDivElement>(null);
 
+  // Performance: Create lookup maps for O(1) clip/track access (must be before hooks that use them)
+  const clipMap = useMemo(() => new Map(clips.map(c => [c.id, c])), [clips]);
+  const trackMap = useMemo(() => new Map(tracks.map(t => [t.id, t])), [tracks]);
+
+  // Time conversion helpers (must be before hooks that use them)
+  const timeToPixel = useCallback((time: number) => time * zoom, [zoom]);
+  const pixelToTime = useCallback((pixel: number) => pixel / zoom, [zoom]);
+
   // Clip dragging - extracted to hook
   const { clipDrag, clipDragRef, handleClipMouseDown, handleClipDoubleClick } = useClipDrag({
     trackLanesRef,
@@ -232,10 +240,6 @@ export function Timeline() {
   // Pick whip drag state for track/layer parenting
   const [trackPickWhipDrag, setTrackPickWhipDrag] = useState<PickWhipDragState | null>(null);
 
-  // Performance: Create lookup maps for O(1) clip/track access
-  const clipMap = useMemo(() => new Map(clips.map(c => [c.id, c])), [clips]);
-  const trackMap = useMemo(() => new Map(tracks.map(t => [t.id, t])), [tracks]);
-
   // Performance: Memoize video/audio track filtering and solo state
   const { videoTracks, audioTracks, anyVideoSolo, anyAudioSolo } = useMemo(() => {
     const vTracks = tracks.filter(t => t.type === 'video');
@@ -266,10 +270,6 @@ export function Timeline() {
     () => mediaFiles.filter((f) => f.proxyStatus === 'ready').length,
     [mediaFiles]
   );
-
-  // Time conversion helpers
-  const timeToPixel = useCallback((time: number) => time * zoom, [zoom]);
-  const pixelToTime = useCallback((pixel: number) => pixel / zoom, [zoom]);
 
   // Format time as MM:SS.ms
   const formatTime = useCallback((seconds: number) => {
