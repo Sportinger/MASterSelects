@@ -253,8 +253,18 @@ class ProxyGeneratorGPU {
     return new Promise(async (resolve) => {
       this.mp4File = MP4Box.createFile();
       const mp4File = this.mp4File!;
+      let expectedSamples = 0;
+      let samplesReady = false;
+      let codecReady = false;
 
-      mp4File.onReady = (info: { videoTracks: MP4VideoTrack[] }) => {
+      const checkComplete = () => {
+        if (codecReady && samplesReady) {
+          console.log(`[ProxyGen] Extracted ${this.samples.length} samples from video`);
+          resolve(true);
+        }
+      };
+
+      mp4File.onReady = async (info: { videoTracks: MP4VideoTrack[] }) => {
         if (info.videoTracks.length === 0) {
           resolve(false);
           return;
@@ -262,6 +272,7 @@ class ProxyGeneratorGPU {
 
         this.videoTrack = info.videoTracks[0];
         const track = this.videoTrack;
+        expectedSamples = track.nb_samples;
 
         // Calculate output dimensions (will be refined by GPU pipeline)
         let width = track.video.width;
@@ -280,26 +291,33 @@ class ProxyGeneratorGPU {
         const trak = this.mp4File!.getTrackById(track.id);
         const codecString = this.getCodecString(track.codec, trak);
 
-        console.log(`[ProxyGen] Detected codec: ${codecString}, trying to find supported configuration...`);
+        console.log(`[ProxyGen] Detected codec: ${codecString}, expecting ${expectedSamples} samples...`);
 
         // Try to find a supported codec configuration
-        this.findSupportedCodec(codecString, track.video.width, track.video.height).then(config => {
-          if (!config) {
-            console.warn('[ProxyGen] No supported codec configuration found');
-            resolve(false);
-            return;
-          }
+        const config = await this.findSupportedCodec(codecString, track.video.width, track.video.height);
+        if (!config) {
+          console.warn('[ProxyGen] No supported codec configuration found');
+          resolve(false);
+          return;
+        }
 
-          this.codecConfig = config;
+        this.codecConfig = config;
+        codecReady = true;
 
-          // Extract all samples
-          mp4File.setExtractionOptions(track.id, null, { nbSamples: Infinity });
-          mp4File.start();
-        });
+        // Extract all samples
+        mp4File.setExtractionOptions(track.id, null, { nbSamples: Infinity });
+        mp4File.start();
+
+        checkComplete();
       };
 
       mp4File.onSamples = (_trackId: number, _ref: any, samples: Sample[]) => {
         this.samples.push(...samples);
+        console.log(`[ProxyGen] Received ${samples.length} samples (total: ${this.samples.length}/${expectedSamples})`);
+        if (this.samples.length >= expectedSamples) {
+          samplesReady = true;
+          checkComplete();
+        }
       };
 
       mp4File.onError = (error: string) => {
@@ -323,14 +341,17 @@ class ProxyGeneratorGPU {
         }
         mp4File.flush();
 
-        // Wait a bit for onReady to be called
-        await new Promise(r => setTimeout(r, 100));
-
-        if (this.videoTrack) {
-          resolve(true);
-        } else {
-          resolve(false);
-        }
+        // Give some time for callbacks to fire, but with a timeout
+        setTimeout(() => {
+          if (!samplesReady && this.samples.length > 0) {
+            console.log(`[ProxyGen] Timeout: proceeding with ${this.samples.length} samples`);
+            samplesReady = true;
+            checkComplete();
+          } else if (!this.videoTrack) {
+            console.warn('[ProxyGen] Timeout: no video track found');
+            resolve(false);
+          }
+        }, 2000);
       } catch (e) {
         console.error('[ProxyGen] File read error:', e);
         resolve(false);
