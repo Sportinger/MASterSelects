@@ -633,6 +633,7 @@ export const useTimelineStore = create<TimelineStore>()(
                     thumbnails: nestedSerializedClip.thumbnails,
                     transform: nestedSerializedClip.transform,
                     effects: nestedSerializedClip.effects || [],
+                    masks: nestedSerializedClip.masks || [],  // Copy masks from source clip
                     isLoading: true,
                   };
 

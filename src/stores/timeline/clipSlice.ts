@@ -565,6 +565,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
           waveform: serializedClip.waveform,
           transform: serializedClip.transform,
           effects: serializedClip.effects || [],
+          masks: serializedClip.masks || [],  // Copy masks from source clip
           isLoading: true,
         };
 
