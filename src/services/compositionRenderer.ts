@@ -1,11 +1,12 @@
 // CompositionRenderer - Evaluates any composition at a given time and returns renderable layers
 // This enables multiple previews showing different compositions simultaneously
 
-import type { Layer, SerializableClip, TimelineTrack, TimelineClip } from '../types';
+import type { Layer, SerializableClip, TimelineTrack, TimelineClip, NestedCompositionData } from '../types';
 import { useMediaStore } from '../stores/mediaStore';
 import { useTimelineStore } from '../stores/timeline';
 import { calculateSourceTime } from '../utils/speedIntegration';
 import { textRenderer } from './textRenderer';
+import { proxyFrameCache } from './proxyFrameCache';
 
 // Source cache entry for a composition
 interface CompositionSources {
@@ -286,6 +287,20 @@ class CompositionRendererService {
       if (!clipAtTime) continue;
       if (!track.visible) continue;
 
+      // Handle nested compositions
+      const timelineClip = clipAtTime as TimelineClip;
+      if (timelineClip.isComposition && timelineClip.compositionId) {
+        const nestedLayer = this.evaluateNestedComposition(
+          timelineClip,
+          time,
+          compositionId
+        );
+        if (nestedLayer) {
+          layers.push(nestedLayer);
+        }
+        continue;
+      }
+
       const source = sources.clipSources.get(clipAtTime.id);
       if (!source) continue;
 
@@ -357,6 +372,184 @@ class CompositionRendererService {
     }
 
     return layers;
+  }
+
+  /**
+   * Evaluate a nested composition clip and return a layer with nested composition data
+   */
+  private evaluateNestedComposition(
+    clip: TimelineClip,
+    parentTime: number,
+    parentCompId: string
+  ): EvaluatedLayer | null {
+    if (!clip.nestedClips || !clip.nestedTracks) {
+      return null;
+    }
+
+    // Calculate time within the nested composition
+    const clipLocalTime = parentTime - clip.startTime;
+    const nestedTime = clipLocalTime + (clip.inPoint || 0);
+
+    // Get composition dimensions
+    const mediaStore = useMediaStore.getState();
+    const nestedComp = mediaStore.compositions.find(c => c.id === clip.compositionId);
+    const compWidth = nestedComp?.width || 1920;
+    const compHeight = nestedComp?.height || 1080;
+
+    // Build layers for the nested composition
+    const nestedVideoTracks = clip.nestedTracks.filter(t => t.type === 'video' && t.visible);
+    const nestedLayers: Layer[] = [];
+
+    for (let i = nestedVideoTracks.length - 1; i >= 0; i--) {
+      const nestedTrack = nestedVideoTracks[i];
+      const nestedClip = clip.nestedClips.find(
+        nc =>
+          nc.trackId === nestedTrack.id &&
+          nestedTime >= nc.startTime &&
+          nestedTime < nc.startTime + nc.duration
+      );
+
+      if (!nestedClip) continue;
+
+      const nestedLocalTime = nestedTime - nestedClip.startTime;
+      const nestedClipTime = nestedClip.reversed
+        ? nestedClip.outPoint - nestedLocalTime
+        : nestedLocalTime + nestedClip.inPoint;
+
+      // Build transform
+      const transform = nestedClip.transform || {
+        position: { x: 0, y: 0, z: 0 },
+        scale: { x: 1, y: 1 },
+        rotation: { x: 0, y: 0, z: 0 },
+        anchor: { x: 0.5, y: 0.5 },
+        opacity: 1,
+        blendMode: 'normal' as const,
+      };
+
+      const baseLayer = {
+        id: `${parentCompId}-nested-${nestedClip.id}`,
+        name: nestedClip.name,
+        visible: true,
+        opacity: transform.opacity ?? 1,
+        blendMode: transform.blendMode || 'normal',
+        effects: nestedClip.effects || [],
+        position: {
+          x: transform.position?.x || 0,
+          y: transform.position?.y || 0,
+          z: transform.position?.z || 0,
+        },
+        scale: {
+          x: transform.scale?.x ?? 1,
+          y: transform.scale?.y ?? 1,
+        },
+        rotation: {
+          x: ((transform.rotation?.x || 0) * Math.PI) / 180,
+          y: ((transform.rotation?.y || 0) * Math.PI) / 180,
+          z: ((transform.rotation?.z || 0) * Math.PI) / 180,
+        },
+      };
+
+      // Handle video clips with proxy support
+      if (nestedClip.source?.videoElement) {
+        const nestedMediaFile = mediaStore.files.find(f =>
+          f.id === nestedClip.source?.mediaFileId ||
+          f.name === nestedClip.file?.name ||
+          f.name === nestedClip.name
+        );
+
+        const shouldUseProxy = mediaStore.proxyEnabled &&
+          nestedMediaFile?.proxyFps &&
+          (nestedMediaFile.proxyStatus === 'ready' || nestedMediaFile.proxyStatus === 'generating');
+
+        if (shouldUseProxy && nestedMediaFile) {
+          const proxyFps = nestedMediaFile.proxyFps || 30;
+          const frameIndex = Math.floor(nestedClipTime * proxyFps);
+          const cachedFrame = proxyFrameCache.getCachedFrame(nestedMediaFile.id, frameIndex, proxyFps);
+
+          if (cachedFrame) {
+            nestedLayers.push({
+              ...baseLayer,
+              source: {
+                type: 'image',
+                imageElement: cachedFrame,
+              },
+            } as Layer);
+            continue;
+          }
+        }
+
+        // Sync video time
+        const video = nestedClip.source.videoElement;
+        if (Math.abs(video.currentTime - nestedClipTime) > 0.05) {
+          video.currentTime = nestedClipTime;
+        }
+
+        nestedLayers.push({
+          ...baseLayer,
+          source: {
+            type: 'video',
+            videoElement: video,
+            webCodecsPlayer: nestedClip.source.webCodecsPlayer,
+          },
+        } as Layer);
+      } else if (nestedClip.source?.imageElement) {
+        nestedLayers.push({
+          ...baseLayer,
+          source: {
+            type: 'image',
+            imageElement: nestedClip.source.imageElement,
+          },
+        } as Layer);
+      } else if (nestedClip.source?.textCanvas) {
+        nestedLayers.push({
+          ...baseLayer,
+          source: {
+            type: 'text',
+            textCanvas: nestedClip.source.textCanvas,
+          },
+        } as Layer);
+      }
+    }
+
+    if (nestedLayers.length === 0) {
+      return null;
+    }
+
+    // Build the nested composition data
+    const nestedCompData: NestedCompositionData = {
+      compositionId: clip.compositionId || clip.id,
+      layers: nestedLayers,
+      width: compWidth,
+      height: compHeight,
+    };
+
+    // Get clip transform
+    const clipTransform = clip.transform || {
+      position: { x: 0, y: 0, z: 0 },
+      scale: { x: 1, y: 1 },
+      rotation: { x: 0, y: 0, z: 0 },
+      opacity: 1,
+      blendMode: 'normal' as const,
+    };
+
+    return {
+      id: `${parentCompId}-${clip.id}`,
+      clipId: clip.id,
+      name: clip.name,
+      visible: true,
+      opacity: clipTransform.opacity ?? 1,
+      blendMode: clipTransform.blendMode || 'normal',
+      source: {
+        type: 'video',
+        nestedComposition: nestedCompData,
+      },
+      effects: clip.effects || [],
+      position: clipTransform.position || { x: 0, y: 0, z: 0 },
+      scale: clipTransform.scale || { x: 1, y: 1 },
+      rotation: typeof clipTransform.rotation === 'number'
+        ? clipTransform.rotation
+        : (clipTransform.rotation?.z || 0) * Math.PI / 180,
+    };
   }
 
   /**

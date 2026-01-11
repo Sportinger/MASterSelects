@@ -279,23 +279,14 @@ class PreviewRenderManagerService {
       }
 
       // Calculate playhead time for this composition
-      const { time: playheadTime, syncSource } = this.calculatePlayheadTime(preview.compositionId);
+      const { time: playheadTime } = this.calculatePlayheadTime(preview.compositionId);
 
-      // OPTIMIZATION 3: If this preview contains the active comp as a nested clip (reverse-nested),
-      // try to use the cached active comp texture instead of re-rendering (avoids video conflicts)
-      const isMainPlaying = useTimelineStore.getState().isPlaying;
-      if (syncSource === 'reverse-nested' && isMainPlaying && activeCompId) {
-        // Try to copy the cached active comp texture
-        if (engine.copyNestedCompTextureToPreview(preview.panelId, activeCompId)) {
-          preview.lastRenderTime = now;
-          continue;
-        }
-        // If no cached texture, skip to avoid video conflicts
-        continue;
-      }
+      // For reverse-nested (parent preview while child is active):
+      // We need to render the FULL parent composition, not just copy the active comp texture.
+      // The compositionRenderer.evaluateAtTime will handle nested compositions correctly,
+      // including the active comp embedded at the right position with proper proxy support.
 
-      // Otherwise: Render this composition independently (different comp or different time)
-      // Evaluate the composition at this time
+      // Evaluate the composition at this time (handles nested comps including reverse-nested)
       const evalLayers = compositionRenderer.evaluateAtTime(preview.compositionId, playheadTime);
 
       // Render to the preview canvas
