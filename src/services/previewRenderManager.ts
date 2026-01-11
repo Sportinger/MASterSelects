@@ -235,8 +235,9 @@ class PreviewRenderManagerService {
       if (preview.compositionId === activeCompId) {
         if (engine.copyMainOutputToPreview(preview.panelId)) {
           preview.lastRenderTime = now;
+          continue; // Success - skip independent rendering
         }
-        continue;
+        // If copy failed, fall through to independent rendering
       }
 
       // OPTIMIZATION 2: If this composition is nested and currently being rendered by main loop,
