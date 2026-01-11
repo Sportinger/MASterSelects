@@ -5,6 +5,7 @@ import type { Layer, SerializableClip, TimelineTrack, TimelineClip } from '../ty
 import { useMediaStore } from '../stores/mediaStore';
 import { useTimelineStore } from '../stores/timeline';
 import { calculateSourceTime } from '../utils/speedIntegration';
+import { textRenderer } from '../utils/textRenderer';
 
 // Source cache entry for a composition
 interface CompositionSources {
@@ -99,7 +100,7 @@ class CompositionRendererService {
       const mediaFileId = timelineClip.source?.mediaFileId || serializableClip.mediaFileId;
 
       if (!mediaFileId) {
-        // For active composition, the video/image elements are already loaded
+        // For active composition, the video/image/text elements are already loaded
         if (isActiveComp && timelineClip.source) {
           if (sourceType === 'video' && timelineClip.source.videoElement) {
             sources.clipSources.set(clip.id, {
@@ -127,6 +128,20 @@ class CompositionRendererService {
             });
           }
         }
+
+        // Handle text clips from serialized data (non-active composition)
+        if (sourceType === 'text' && serializableClip.textProperties) {
+          const textCanvas = textRenderer.render(serializableClip.textProperties);
+          if (textCanvas) {
+            sources.clipSources.set(clip.id, {
+              clipId: clip.id,
+              type: 'text',
+              textCanvas,
+              naturalDuration: clip.duration,
+            });
+          }
+        }
+
         continue;
       }
 
