@@ -322,7 +322,15 @@ export class FrameExporter {
         const time = startTime + frame * frameDuration;
 
         await this.seekAllClipsToTime(time);
+
+        // Small delay to let video frames fully decode after seeking
+        await new Promise(r => requestAnimationFrame(r));
+
         const layers = this.buildLayersAtTime(time);
+
+        if (layers.length === 0) {
+          console.warn('[FrameExporter] No layers at time', time);
+        }
 
         engine.render(layers);
 
@@ -461,34 +469,48 @@ export class FrameExporter {
 
   private seekVideo(video: HTMLVideoElement, time: number): Promise<void> {
     return new Promise((resolve) => {
-      if (Math.abs(video.currentTime - time) < 0.001 && !video.seeking && video.readyState >= 2) {
+      const targetTime = Math.max(0, Math.min(time, video.duration || 0));
+
+      // If already at correct time and ready, resolve immediately
+      if (Math.abs(video.currentTime - targetTime) < 0.01 && !video.seeking && video.readyState >= 3) {
         resolve();
         return;
       }
 
       const timeout = setTimeout(() => {
-        console.warn('[FrameExporter] Seek timeout at', time);
+        console.warn('[FrameExporter] Seek timeout at', targetTime);
         resolve();
-      }, 1000);
+      }, 2000); // Increased timeout
 
       const onSeeked = () => {
         clearTimeout(timeout);
         video.removeEventListener('seeked', onSeeked);
 
-        // Wait for video to be fully ready (not seeking, has data)
+        // Wait for video to be fully ready with decoded frame data
+        // readyState 3 = HAVE_FUTURE_DATA (enough to render current frame)
+        // readyState 4 = HAVE_ENOUGH_DATA (can play through)
+        let retries = 0;
+        const maxRetries = 60; // ~1 second at 60fps
+
         const waitForReady = () => {
-          if (!video.seeking && video.readyState >= 2) {
-            // Give browser one more frame to finalize
-            requestAnimationFrame(() => resolve());
-          } else {
+          retries++;
+          if (!video.seeking && video.readyState >= 3) {
+            // Give browser extra time to decode frame
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => resolve());
+            });
+          } else if (retries < maxRetries) {
             requestAnimationFrame(waitForReady);
+          } else {
+            console.warn('[FrameExporter] Video not ready after seek, proceeding anyway');
+            resolve();
           }
         };
         waitForReady();
       };
 
       video.addEventListener('seeked', onSeeked);
-      video.currentTime = Math.max(0, Math.min(time, video.duration || 0));
+      video.currentTime = targetTime;
     });
   }
 
@@ -520,8 +542,52 @@ export class FrameExporter {
       if (!clip) continue;
 
       const clipLocalTime = time - clip.startTime;
-      const transform = getInterpolatedTransform(clip.id, clipLocalTime);
-      const effects = getInterpolatedEffects(clip.id, clipLocalTime);
+
+      // Get transform safely with defaults
+      let transform;
+      try {
+        transform = getInterpolatedTransform(clip.id, clipLocalTime);
+      } catch (e) {
+        console.warn('[FrameExporter] Transform interpolation failed for clip', clip.id, e);
+        transform = {
+          position: { x: 0, y: 0, z: 0 },
+          scale: { x: 1, y: 1 },
+          rotation: { x: 0, y: 0, z: 0 },
+          opacity: 1,
+          blendMode: 'normal' as const,
+        };
+      }
+
+      // Get effects safely
+      let effects: typeof layers[0]['effects'] = [];
+      try {
+        effects = getInterpolatedEffects(clip.id, clipLocalTime);
+      } catch (e) {
+        console.warn('[FrameExporter] Effects interpolation failed for clip', clip.id, e);
+      }
+
+      const baseLayerProps = {
+        id: `export_layer_${trackIndex}`,
+        name: clip.name,
+        visible: true,
+        opacity: transform.opacity ?? 1,
+        blendMode: transform.blendMode || 'normal',
+        effects,
+        position: {
+          x: transform.position?.x ?? 0,
+          y: transform.position?.y ?? 0,
+          z: transform.position?.z ?? 0,
+        },
+        scale: {
+          x: transform.scale?.x ?? 1,
+          y: transform.scale?.y ?? 1,
+        },
+        rotation: {
+          x: ((transform.rotation?.x ?? 0) * Math.PI) / 180,
+          y: ((transform.rotation?.y ?? 0) * Math.PI) / 180,
+          z: ((transform.rotation?.z ?? 0) * Math.PI) / 180,
+        },
+      };
 
       // Handle nested compositions
       if (clip.isComposition && clip.nestedClips && clip.nestedClips.length > 0) {
@@ -540,22 +606,10 @@ export class FrameExporter {
           };
 
           layers.push({
-            id: `export_layer_${trackIndex}`,
-            name: clip.name,
-            visible: true,
-            opacity: transform.opacity,
-            blendMode: transform.blendMode,
+            ...baseLayerProps,
             source: {
               type: 'video',
               nestedComposition: nestedCompData,
-            },
-            effects,
-            position: { x: transform.position.x, y: transform.position.y, z: transform.position.z },
-            scale: { x: transform.scale.x, y: transform.scale.y },
-            rotation: {
-              x: transform.rotation.x * (Math.PI / 180),
-              y: transform.rotation.y * (Math.PI / 180),
-              z: transform.rotation.z * (Math.PI / 180),
             },
           });
         }
@@ -564,63 +618,33 @@ export class FrameExporter {
 
       // Handle video clips
       if (clip.source?.type === 'video' && clip.source.videoElement) {
-        layers.push({
-          id: `export_layer_${trackIndex}`,
-          name: clip.name,
-          visible: true,
-          opacity: transform.opacity,
-          blendMode: transform.blendMode,
-          source: {
-            type: 'video',
-            videoElement: clip.source.videoElement,
-            webCodecsPlayer: clip.source.webCodecsPlayer,
-          },
-          effects,
-          position: { x: transform.position.x, y: transform.position.y, z: transform.position.z },
-          scale: { x: transform.scale.x, y: transform.scale.y },
-          rotation: {
-            x: transform.rotation.x * (Math.PI / 180),
-            y: transform.rotation.y * (Math.PI / 180),
-            z: transform.rotation.z * (Math.PI / 180),
-          },
-        });
+        const video = clip.source.videoElement;
+        // Only use video if it's ready
+        if (video.readyState >= 2) {
+          layers.push({
+            ...baseLayerProps,
+            source: {
+              type: 'video',
+              videoElement: video,
+              webCodecsPlayer: clip.source.webCodecsPlayer,
+            },
+          });
+        } else {
+          console.warn('[FrameExporter] Video not ready for clip', clip.id, 'readyState:', video.readyState);
+        }
       }
       // Handle image clips
       else if (clip.source?.type === 'image' && clip.source.imageElement) {
         layers.push({
-          id: `export_layer_${trackIndex}`,
-          name: clip.name,
-          visible: true,
-          opacity: transform.opacity,
-          blendMode: transform.blendMode,
+          ...baseLayerProps,
           source: { type: 'image', imageElement: clip.source.imageElement },
-          effects,
-          position: { x: transform.position.x, y: transform.position.y, z: transform.position.z },
-          scale: { x: transform.scale.x, y: transform.scale.y },
-          rotation: {
-            x: transform.rotation.x * (Math.PI / 180),
-            y: transform.rotation.y * (Math.PI / 180),
-            z: transform.rotation.z * (Math.PI / 180),
-          },
         });
       }
       // Handle text clips
       else if (clip.source?.type === 'text' && clip.source.textCanvas) {
         layers.push({
-          id: `export_layer_${trackIndex}`,
-          name: clip.name,
-          visible: true,
-          opacity: transform.opacity,
-          blendMode: transform.blendMode,
+          ...baseLayerProps,
           source: { type: 'text', textCanvas: clip.source.textCanvas },
-          effects,
-          position: { x: transform.position.x, y: transform.position.y, z: transform.position.z },
-          scale: { x: transform.scale.x, y: transform.scale.y },
-          rotation: {
-            x: transform.rotation.x * (Math.PI / 180),
-            y: transform.rotation.y * (Math.PI / 180),
-            z: transform.rotation.z * (Math.PI / 180),
-          },
         });
       }
     }
@@ -630,6 +654,7 @@ export class FrameExporter {
 
   /**
    * Build layers for a nested composition at export time
+   * Note: Video seeking is handled by seekAllClipsToTime, not here
    */
   private buildNestedLayersForExport(clip: TimelineClip, nestedTime: number): Layer[] {
     if (!clip.nestedClips || !clip.nestedTracks) return [];
@@ -637,7 +662,8 @@ export class FrameExporter {
     const nestedVideoTracks = clip.nestedTracks.filter(t => t.type === 'video' && t.visible);
     const layers: Layer[] = [];
 
-    for (let i = nestedVideoTracks.length - 1; i >= 0; i--) {
+    // Process tracks in same order as main timeline (0 to N, bottom to top)
+    for (let i = 0; i < nestedVideoTracks.length; i++) {
       const nestedTrack = nestedVideoTracks[i];
       const nestedClip = clip.nestedClips.find(
         nc =>
@@ -647,11 +673,6 @@ export class FrameExporter {
       );
 
       if (!nestedClip) continue;
-
-      const nestedLocalTime = nestedTime - nestedClip.startTime;
-      const nestedClipTime = nestedClip.reversed
-        ? nestedClip.outPoint - nestedLocalTime
-        : nestedLocalTime + nestedClip.inPoint;
 
       const transform = nestedClip.transform || {
         position: { x: 0, y: 0, z: 0 },
@@ -684,18 +705,14 @@ export class FrameExporter {
         },
       };
 
-      // Seek nested video to correct time
+      // Don't seek here - seekAllClipsToTime handles all seeking
+      // Just build the layer with the video element
       if (nestedClip.source?.videoElement) {
-        const video = nestedClip.source.videoElement;
-        if (Math.abs(video.currentTime - nestedClipTime) > 0.01) {
-          video.currentTime = nestedClipTime;
-        }
-
         layers.push({
           ...baseLayer,
           source: {
             type: 'video',
-            videoElement: video,
+            videoElement: nestedClip.source.videoElement,
             webCodecsPlayer: nestedClip.source.webCodecsPlayer,
           },
         } as Layer);
