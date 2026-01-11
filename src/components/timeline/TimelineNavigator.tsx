@@ -82,7 +82,8 @@ export function TimelineNavigator({
         onScrollChange(Math.max(0, Math.min(maxScrollX, newScrollX)));
       } else if (isDragging === 'left') {
         // Resize from left = zoom and scroll
-        const zoomDelta = -deltaX * 0.01; // Negative because dragging left should zoom out
+        // Drag left (negative delta) = zoom out (see more) = smaller zoom value
+        const zoomDelta = deltaX * 0.01;
         const newZoom = Math.max(minZoom, Math.min(maxZoom, dragStartZoom + zoomDelta * dragStartZoom));
         onZoomChange(newZoom);
 
@@ -94,7 +95,8 @@ export function TimelineNavigator({
         onScrollChange(newScrollX);
       } else if (isDragging === 'right') {
         // Resize from right = zoom
-        const zoomDelta = deltaX * 0.01;
+        // Drag right (positive delta) = zoom out (see more) = smaller zoom value
+        const zoomDelta = -deltaX * 0.01;
         const newZoom = Math.max(minZoom, Math.min(maxZoom, dragStartZoom + zoomDelta * dragStartZoom));
         onZoomChange(newZoom);
 
