@@ -9,6 +9,7 @@ import { useMixerStore } from '../../stores/mixerStore';
 import { engine } from '../../engine/WebGPUEngine';
 import { proxyFrameCache } from '../../services/proxyFrameCache';
 import { audioManager, audioStatusTracker } from '../../services/audioManager';
+import { playheadState } from '../../services/layerBuilder';
 
 import { TimelineRuler } from './TimelineRuler';
 import { TimelineControls } from './TimelineControls';
@@ -547,18 +548,26 @@ export function Timeline() {
   }, [isPlaying, isDraggingPlayhead, playheadPosition, clips]);
 
   // Playback loop - using requestAnimationFrame for smooth playback
-  // Throttles React state updates to reduce re-renders while maintaining smooth playback
+  // PERFORMANCE: Uses playheadState for high-frequency updates, only updates store at throttled interval
   useEffect(() => {
-    if (!isPlaying) return;
+    if (!isPlaying) {
+      // Disable internal position tracking when not playing
+      playheadState.isUsingInternalPosition = false;
+      return;
+    }
 
     let rafId: number;
     let lastTime = performance.now();
     let lastStateUpdate = 0;
-    const STATE_UPDATE_INTERVAL = 50; // Update React state every 50ms (20fps for UI)
+    const STATE_UPDATE_INTERVAL = 33; // Update store every 33ms (~30fps for UI/subscribers)
+
+    // Initialize internal position from store and enable high-frequency mode
+    playheadState.position = useTimelineStore.getState().playheadPosition;
+    playheadState.isUsingInternalPosition = true;
 
     const getActiveVideoClip = () => {
       const state = useTimelineStore.getState();
-      const pos = state.playheadPosition;
+      const pos = playheadState.position;
       for (const clip of state.clips) {
         if (
           clip.source?.videoElement &&
@@ -584,9 +593,8 @@ export function Timeline() {
       const effectiveEnd = op !== null ? op : dur;
       const effectiveStart = ip !== null ? ip : 0;
 
-      // Playhead always moves at constant speed (independent of clip speed)
-      // The video frame shown is calculated based on playhead position and speed in the render loop
-      let newPosition = state.playheadPosition + cappedDelta;
+      // Update high-frequency position (no store update = no subscriber triggers)
+      let newPosition = playheadState.position + cappedDelta;
 
       if (newPosition >= effectiveEnd) {
         if (lp) {
@@ -600,19 +608,21 @@ export function Timeline() {
         } else {
           newPosition = effectiveEnd;
           ps();
-          setPlayheadPosition(newPosition);
+          playheadState.position = newPosition;
+          playheadState.isUsingInternalPosition = false;
+          useTimelineStore.setState({ playheadPosition: newPosition });
           return;
         }
       }
 
-      // Throttle React state updates to reduce re-renders
-      // This keeps UI responsive while allowing smooth internal tracking
+      // Update high-frequency position for render loop to read
+      playheadState.position = newPosition;
+
+      // PERFORMANCE: Only update store at throttled interval
+      // This prevents subscriber cascade (effects, re-renders) every frame
       if (currentTime - lastStateUpdate >= STATE_UPDATE_INTERVAL) {
-        setPlayheadPosition(newPosition);
-        lastStateUpdate = currentTime;
-      } else {
-        // Still update the store directly for internal use, but batch it
         useTimelineStore.setState({ playheadPosition: newPosition });
+        lastStateUpdate = currentTime;
       }
 
       rafId = requestAnimationFrame(updatePlayhead);
@@ -620,8 +630,11 @@ export function Timeline() {
 
     rafId = requestAnimationFrame(updatePlayhead);
 
-    return () => cancelAnimationFrame(rafId);
-  }, [isPlaying, setPlayheadPosition]);
+    return () => {
+      cancelAnimationFrame(rafId);
+      playheadState.isUsingInternalPosition = false;
+    };
+  }, [isPlaying]);
 
   // Handle shift+mousewheel on track header to resize height
   const handleTrackHeaderWheel = useCallback(

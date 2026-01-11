@@ -7,7 +7,7 @@ import { useTimelineStore } from '../stores/timeline';
 import { useSettingsStore } from '../stores/settingsStore';
 import type { ClipMask, MaskVertex } from '../types';
 import { generateMaskTexture } from '../utils/maskRenderer';
-import { layerBuilder } from '../services/layerBuilder';
+import { layerBuilder, playheadState } from '../services/layerBuilder';
 
 // Create a stable hash of mask shapes only (excludes feather/invert which are GPU uniforms)
 // This is faster than JSON.stringify for shape comparison
@@ -197,15 +197,20 @@ export function useEngine() {
 
     const renderFrame = () => {
       try {
+        // Use high-frequency playhead position during playback
+        const timelineState = useTimelineStore.getState();
+        const currentPlayhead = playheadState.isUsingInternalPosition
+          ? playheadState.position
+          : timelineState.playheadPosition;
+
         // Always try to use cached frame first (works even during RAM preview rendering)
-        const { playheadPosition, isRamPreviewing } = useTimelineStore.getState();
-        if (engine.renderCachedFrame(playheadPosition)) {
+        if (engine.renderCachedFrame(currentPlayhead)) {
           // Successfully rendered cached frame, skip live render
           return;
         }
 
         // CRITICAL: Skip live rendering during RAM Preview generation
-        if (isRamPreviewing) {
+        if (timelineState.isRamPreviewing) {
           return;
         }
 
@@ -221,7 +226,7 @@ export function useEngine() {
         layerBuilder.syncAudioElements();
 
         // Get clips and tracks to extract mask properties at render time
-        const { clips, tracks, playheadPosition: currentPlayhead } = useTimelineStore.getState();
+        const { clips, tracks } = timelineState;
         const videoTracks = tracks.filter(t => t.type === 'video');
         const clipsAtTime = clips.filter(c =>
           currentPlayhead >= c.startTime && currentPlayhead < c.startTime + c.duration

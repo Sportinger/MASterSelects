@@ -7,6 +7,13 @@ import { useMediaStore } from '../stores/mediaStore';
 import { proxyFrameCache } from './proxyFrameCache';
 import { audioManager, audioStatusTracker } from './audioManager';
 
+// High-frequency playhead position - updated every frame by playback loop
+// This avoids store updates which trigger subscriber cascades
+export const playheadState = {
+  position: 0,
+  isUsingInternalPosition: false, // true during playback, false when paused
+};
+
 class LayerBuilderService {
   private lastSeekRef: { [clipId: string]: number } = {};
   private proxyFramesRef: Map<string, { frameIndex: number; image: HTMLImageElement }> = new Map();
@@ -23,7 +30,6 @@ class LayerBuilderService {
   buildLayersFromStore(): Layer[] {
     const timelineState = useTimelineStore.getState();
     const {
-      playheadPosition,
       clips,
       tracks,
       isPlaying,
@@ -33,6 +39,11 @@ class LayerBuilderService {
       getInterpolatedSpeed,
       getSourceTimeForClip,
     } = timelineState;
+
+    // Use high-frequency playhead position during playback to avoid store read latency
+    const playheadPosition = playheadState.isUsingInternalPosition
+      ? playheadState.position
+      : timelineState.playheadPosition;
 
     const videoTracks = tracks.filter(t => t.type === 'video' && t.visible !== false);
     const anyVideoSolo = videoTracks.some(t => t.solo);
@@ -177,7 +188,11 @@ class LayerBuilderService {
    * Handles video.currentTime updates and play/pause state
    */
   syncVideoElements(): void {
-    const { playheadPosition, clips, tracks, isPlaying, isDraggingPlayhead, getInterpolatedSpeed, getSourceTimeForClip } = useTimelineStore.getState();
+    const timelineState = useTimelineStore.getState();
+    const { clips, tracks, isPlaying, isDraggingPlayhead, getInterpolatedSpeed, getSourceTimeForClip } = timelineState;
+    const playheadPosition = playheadState.isUsingInternalPosition
+      ? playheadState.position
+      : timelineState.playheadPosition;
 
     const clipsAtTime = clips.filter(
       c => playheadPosition >= c.startTime && playheadPosition < c.startTime + c.duration
@@ -256,7 +271,6 @@ class LayerBuilderService {
 
     const timelineState = useTimelineStore.getState();
     const {
-      playheadPosition,
       clips,
       tracks,
       isPlaying,
@@ -264,6 +278,11 @@ class LayerBuilderService {
       getInterpolatedSpeed,
       getSourceTimeForClip,
     } = timelineState;
+
+    // Use high-frequency playhead position during playback
+    const playheadPosition = playheadState.isUsingInternalPosition
+      ? playheadState.position
+      : timelineState.playheadPosition;
 
     const audioTracks = tracks.filter(t => t.type === 'audio');
     const videoTracks = tracks.filter(t => t.type === 'video');
