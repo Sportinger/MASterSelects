@@ -42,7 +42,7 @@ export function MediaPanel() {
   const [renameValue, setRenameValue] = useState('');
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; itemId?: string } | null>(null);
   const { menuRef: contextMenuRef, adjustedPosition: contextMenuPosition } = useContextMenuPosition(contextMenu);
-  const [settingsDialog, setSettingsDialog] = useState<{ compositionId: string; width: number; height: number; frameRate: number } | null>(null);
+  const [settingsDialog, setSettingsDialog] = useState<{ compositionId: string; width: number; height: number; frameRate: number; duration: number } | null>(null);
   const [addDropdownOpen, setAddDropdownOpen] = useState(false);
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
   const [internalDragId, setInternalDragId] = useState<string | null>(null);
@@ -207,6 +207,7 @@ export function MediaPanel() {
       width: comp.width,
       height: comp.height,
       frameRate: comp.frameRate,
+      duration: comp.duration,
     });
     closeContextMenu();
   }, [closeContextMenu]);
@@ -217,6 +218,7 @@ export function MediaPanel() {
       width: settingsDialog.width,
       height: settingsDialog.height,
       frameRate: settingsDialog.frameRate,
+      duration: settingsDialog.duration,
     });
     setSettingsDialog(null);
   }, [settingsDialog, updateComposition]);
@@ -773,10 +775,10 @@ export function MediaPanel() {
         );
       })()}
 
-      {/* Composition Settings Dialog */}
+      {/* Composition Settings Dialog - Clean, no blur */}
       {settingsDialog && (
         <div
-          className="modal-overlay"
+          className="comp-settings-overlay"
           onClick={() => setSettingsDialog(null)}
           style={{
             position: 'fixed',
@@ -784,7 +786,7 @@ export function MediaPanel() {
             left: 0,
             right: 0,
             bottom: 0,
-            background: 'rgba(0, 0, 0, 0.7)',
+            background: 'transparent',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -792,23 +794,23 @@ export function MediaPanel() {
           }}
         >
           <div
-            className="composition-settings-dialog"
+            className="comp-settings-dialog"
             onClick={(e) => e.stopPropagation()}
             style={{
-              background: '#2a2a2a',
-              border: '1px solid #444',
-              borderRadius: '8px',
-              padding: '24px',
-              minWidth: '320px',
-              maxWidth: '400px',
+              background: '#1e1e1e',
+              border: '1px solid #3a3a3a',
+              borderRadius: '6px',
+              padding: '20px',
+              minWidth: '340px',
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
             }}
           >
-            <h3 style={{ marginTop: 0, marginBottom: '20px' }}>Composition Settings</h3>
+            <h3 style={{ margin: '0 0 16px 0', fontSize: '14px', fontWeight: 500, color: '#e0e0e0' }}>Composition Settings</h3>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               {/* Width */}
               <div>
-                <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px' }}>Width</label>
+                <label style={{ display: 'block', marginBottom: '4px', fontSize: '11px', color: '#888' }}>Width</label>
                 <input
                   type="number"
                   value={settingsDialog.width}
@@ -818,13 +820,13 @@ export function MediaPanel() {
                   })}
                   min="1"
                   max="7680"
-                  style={{ width: '100%', padding: '6px 8px' }}
+                  style={{ width: '100%', padding: '6px 8px', background: '#2a2a2a', border: '1px solid #3a3a3a', borderRadius: '4px', color: '#fff', fontSize: '13px' }}
                 />
               </div>
 
               {/* Height */}
               <div>
-                <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px' }}>Height</label>
+                <label style={{ display: 'block', marginBottom: '4px', fontSize: '11px', color: '#888' }}>Height</label>
                 <input
                   type="number"
                   value={settingsDialog.height}
@@ -834,20 +836,20 @@ export function MediaPanel() {
                   })}
                   min="1"
                   max="4320"
-                  style={{ width: '100%', padding: '6px 8px' }}
+                  style={{ width: '100%', padding: '6px 8px', background: '#2a2a2a', border: '1px solid #3a3a3a', borderRadius: '4px', color: '#fff', fontSize: '13px' }}
                 />
               </div>
 
               {/* Frame Rate */}
               <div>
-                <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px' }}>Frame Rate</label>
+                <label style={{ display: 'block', marginBottom: '4px', fontSize: '11px', color: '#888' }}>Frame Rate</label>
                 <select
                   value={settingsDialog.frameRate}
                   onChange={(e) => setSettingsDialog({
                     ...settingsDialog,
                     frameRate: Number(e.target.value),
                   })}
-                  style={{ width: '100%', padding: '6px 8px' }}
+                  style={{ width: '100%', padding: '6px 8px', background: '#2a2a2a', border: '1px solid #3a3a3a', borderRadius: '4px', color: '#fff', fontSize: '13px' }}
                 >
                   <option value={23.976}>23.976 fps</option>
                   <option value={24}>24 fps</option>
@@ -859,21 +861,66 @@ export function MediaPanel() {
                   <option value={60}>60 fps</option>
                 </select>
               </div>
+
+              {/* Duration */}
+              <div>
+                <label style={{ display: 'block', marginBottom: '4px', fontSize: '11px', color: '#888' }}>Duration (sec)</label>
+                <input
+                  type="number"
+                  value={settingsDialog.duration}
+                  onChange={(e) => setSettingsDialog({
+                    ...settingsDialog,
+                    duration: Math.max(1, parseFloat(e.target.value) || 60),
+                  })}
+                  min="1"
+                  max="86400"
+                  step="1"
+                  style={{ width: '100%', padding: '6px 8px', background: '#2a2a2a', border: '1px solid #3a3a3a', borderRadius: '4px', color: '#fff', fontSize: '13px' }}
+                />
+              </div>
+            </div>
+
+            {/* Resolution Presets */}
+            <div style={{ marginTop: '12px' }}>
+              <label style={{ display: 'block', marginBottom: '4px', fontSize: '11px', color: '#888' }}>Presets</label>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                {[
+                  { label: '1080p', w: 1920, h: 1080 },
+                  { label: '4K', w: 3840, h: 2160 },
+                  { label: '720p', w: 1280, h: 720 },
+                  { label: '9:16', w: 1080, h: 1920 },
+                  { label: '1:1', w: 1080, h: 1080 },
+                ].map((preset) => (
+                  <button
+                    key={preset.label}
+                    onClick={() => setSettingsDialog({ ...settingsDialog, width: preset.w, height: preset.h })}
+                    style={{
+                      padding: '4px 8px',
+                      fontSize: '11px',
+                      background: settingsDialog.width === preset.w && settingsDialog.height === preset.h ? '#4a90e2' : '#2a2a2a',
+                      border: '1px solid #3a3a3a',
+                      borderRadius: '3px',
+                      color: '#fff',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Buttons */}
-            <div style={{ display: 'flex', gap: '8px', marginTop: '24px', justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', gap: '8px', marginTop: '16px', justifyContent: 'flex-end' }}>
               <button
-                className="btn"
                 onClick={() => setSettingsDialog(null)}
-                style={{ flex: 1 }}
+                style={{ padding: '6px 16px', background: '#2a2a2a', border: '1px solid #3a3a3a', borderRadius: '4px', color: '#fff', cursor: 'pointer', fontSize: '12px' }}
               >
                 Cancel
               </button>
               <button
-                className="btn"
                 onClick={saveCompositionSettings}
-                style={{ flex: 1, background: '#4a90e2' }}
+                style={{ padding: '6px 16px', background: '#4a90e2', border: 'none', borderRadius: '4px', color: '#fff', cursor: 'pointer', fontSize: '12px' }}
               >
                 Save
               </button>
