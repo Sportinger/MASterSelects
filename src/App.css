@@ -6006,197 +6006,249 @@ input[type="checkbox"] {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.7);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 10002;
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(20px);
 }
 
 .welcome-overlay {
-  background: linear-gradient(180deg, #1a1a1a 0%, #121212 100%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
-  width: 480px;
+  background: linear-gradient(165deg, rgba(30, 30, 30, 0.95) 0%, rgba(15, 15, 15, 0.98) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 24px;
+  width: 400px;
   max-width: 90vw;
-  padding: 48px 40px 40px;
+  padding: 40px 36px 32px;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
   box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.03),
-    0 24px 64px rgba(0, 0, 0, 0.7),
-    0 8px 24px rgba(0, 0, 0, 0.4);
+    0 0 0 1px rgba(255, 255, 255, 0.02),
+    0 40px 80px rgba(0, 0, 0, 0.5),
+    0 0 120px rgba(0, 0, 0, 0.3);
 }
 
-/* Logo */
-.welcome-brand {
-  margin-bottom: 24px;
-}
-
-.welcome-logo {
-  width: 64px;
-  height: 64px;
-  background: linear-gradient(135deg, #fff 0%, #999 100%);
-  border-radius: 16px;
-  display: flex;
+/* Privacy Badge */
+.welcome-badge {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  font-size: 24px;
-  font-weight: 700;
-  color: #0a0a0a;
-  letter-spacing: -1px;
+  gap: 6px;
+  padding: 6px 12px 6px 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.5);
+  letter-spacing: 0.3px;
+  margin-bottom: 32px;
+}
+
+.welcome-badge svg {
+  opacity: 0.6;
 }
 
 /* Title */
 .welcome-title {
   margin: 0 0 8px;
-  font-size: 28px;
-  font-weight: 600;
+  font-size: 36px;
+  font-weight: 700;
+  letter-spacing: -1.5px;
+  line-height: 1;
+}
+
+.welcome-title-master {
   color: #fff;
-  letter-spacing: -0.5px;
+}
+
+.welcome-title-selects {
+  color: rgba(255, 255, 255, 0.4);
 }
 
 .welcome-subtitle {
-  margin: 0 0 32px;
+  margin: 0 0 36px;
   font-size: 14px;
-  color: #666;
+  color: rgba(255, 255, 255, 0.35);
   font-weight: 400;
+  letter-spacing: 0.2px;
 }
 
-/* Folder Section */
-.welcome-folder-section {
+/* Folder Card */
+.welcome-folder-card {
   width: 100%;
   margin-bottom: 24px;
 }
 
-.welcome-folder-hint {
-  margin: 0 0 16px;
-  font-size: 13px;
-  color: #888;
+.welcome-folder-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  padding: 0 4px;
 }
 
-.welcome-select-folder {
+.welcome-folder-card-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+  letter-spacing: 0.3px;
+}
+
+.welcome-folder-card-optional {
+  font-size: 10px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.25);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Folder Button */
+.welcome-folder-btn {
   width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.welcome-folder-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.welcome-folder-btn:hover:not(:disabled) .welcome-folder-btn-arrow {
+  opacity: 0.6;
+  transform: translateX(2px);
+}
+
+.welcome-folder-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.welcome-folder-btn.has-folder {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.welcome-folder-btn-icon {
+  width: 40px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  padding: 14px 20px;
-  background: transparent;
-  border: 1px dashed rgba(255, 255, 255, 0.2);
-  border-radius: 10px;
-  color: #aaa;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.welcome-select-folder:hover:not(:disabled) {
-  border-color: rgba(255, 255, 255, 0.4);
-  background: rgba(255, 255, 255, 0.03);
-  color: #fff;
-}
-
-.welcome-select-folder:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.welcome-select-folder svg {
-  opacity: 0.7;
-}
-
-/* Folder Selected State - clickable button */
-.welcome-folder-selected {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
   background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 10px;
-  color: #fff;
+  flex-shrink: 0;
+}
+
+.welcome-folder-btn-icon svg {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.welcome-folder-btn.has-folder .welcome-folder-btn-icon {
+  background: rgba(100, 200, 100, 0.1);
+}
+
+.welcome-folder-btn.has-folder .welcome-folder-btn-icon svg {
+  color: rgba(100, 200, 100, 0.7);
+}
+
+.welcome-folder-btn-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.welcome-folder-name {
   font-size: 14px;
   font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  text-align: left;
-}
-
-.welcome-folder-selected:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.2);
-}
-
-.welcome-folder-selected:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.welcome-folder-selected svg {
-  flex-shrink: 0;
-  opacity: 0.6;
-}
-
-.welcome-folder-path {
-  flex: 1;
-  text-align: left;
+  color: #fff;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Continue Button */
-.welcome-continue {
-  width: 100%;
-  padding: 14px 24px;
-  background: #fff;
-  border: none;
-  border-radius: 10px;
-  color: #000;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
+.welcome-folder-change {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.welcome-folder-btn-arrow {
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.25);
+  opacity: 0.4;
   transition: all 0.2s ease;
-  margin-bottom: 20px;
 }
 
-.welcome-continue:hover {
-  background: #e5e5e5;
-  transform: translateY(-1px);
+/* Enter Button */
+.welcome-enter {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.2s ease;
 }
 
-.welcome-continue:active {
-  transform: translateY(0);
+.welcome-enter:hover {
+  color: rgba(255, 255, 255, 0.7);
 }
 
-/* Privacy Note */
-.welcome-privacy {
-  margin: 0;
-  font-size: 12px;
-  color: #555;
-  line-height: 1.6;
+.welcome-enter:hover kbd {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.welcome-enter kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.5);
+  transition: all 0.2s ease;
 }
 
 /* Note for unsupported browsers */
 .welcome-note {
   margin: 0;
-  padding: 12px 16px;
+  padding: 14px 16px;
   background: rgba(255, 255, 255, 0.03);
-  border-radius: 8px;
+  border-radius: 12px;
   font-size: 13px;
-  color: #666;
+  color: rgba(255, 255, 255, 0.4);
   line-height: 1.5;
 }
 
 /* Error state */
 .welcome-error {
-  margin-top: 12px;
+  margin-top: 10px;
+  padding: 0 4px;
   font-size: 12px;
   color: #ff6b6b;
+  text-align: left;
 }

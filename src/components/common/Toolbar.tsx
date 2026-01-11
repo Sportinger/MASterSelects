@@ -9,7 +9,7 @@ import { useMediaStore } from '../../stores/mediaStore';
 import { useSettingsStore, type PreviewQuality } from '../../stores/settingsStore';
 import { useMIDI } from '../../hooks/useMIDI';
 import { SettingsDialog } from './SettingsDialog';
-import type { StoredProject } from '../../services/projectDB';
+import { projectFileService } from '../../services/projectFileService';
 
 type MenuId = 'file' | 'edit' | 'view' | 'output' | 'window' | null;
 
@@ -24,31 +24,46 @@ export function Toolbar() {
     }
   }, [isEngineReady, setPlaying]);
   const { resetLayout, isPanelTypeVisible, togglePanelType, saveLayoutAsDefault } = useDockStore();
-  const {
-    currentProjectName,
-    setProjectName,
-    saveProject,
-    loadProject,
-    newProject,
-    getProjectList,
-    deleteProject,
-    isLoading,
-  } = useMediaStore();
+  const { newProject: newProjectLegacy } = useMediaStore();
   const { isSupported: midiSupported, isEnabled: midiEnabled, enableMIDI, disableMIDI, devices } = useMIDI();
   const { isSettingsOpen, openSettings, closeSettings, previewQuality, setPreviewQuality } = useSettingsStore();
 
   const [openMenu, setOpenMenu] = useState<MenuId>(null);
-  const [projects, setProjects] = useState<StoredProject[]>([]);
   const [isEditingName, setIsEditingName] = useState(false);
-  const [editName, setEditName] = useState(currentProjectName);
+  const [projectName, setProjectName] = useState('Untitled Project');
+  const [editName, setEditName] = useState(projectName);
+  const [isProjectOpen, setIsProjectOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const menuBarRef = useRef<HTMLDivElement>(null);
 
-  // Load project list when file menu opens
+  // Update project name from service
   useEffect(() => {
-    if (openMenu === 'file') {
-      getProjectList().then(setProjects);
+    const data = projectFileService.getProjectData();
+    if (data) {
+      setProjectName(data.name);
+      setIsProjectOpen(true);
+    } else {
+      setProjectName('No Project Open');
+      setIsProjectOpen(false);
     }
-  }, [openMenu, getProjectList]);
+  }, []);
+
+  // Try to restore last project on mount
+  useEffect(() => {
+    const restoreProject = async () => {
+      setIsLoading(true);
+      const restored = await projectFileService.restoreLastProject();
+      if (restored) {
+        const data = projectFileService.getProjectData();
+        if (data) {
+          setProjectName(data.name);
+          setIsProjectOpen(true);
+        }
+      }
+      setIsLoading(false);
+    };
+    restoreProject();
+  }, []);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -70,7 +85,7 @@ export function Toolbar() {
       // Ctrl+S: Save
       if (e.ctrlKey && e.key === 's') {
         e.preventDefault();
-        saveProject();
+        handleSave();
       }
       // Ctrl+N: New
       if (e.ctrlKey && e.key === 'n') {
@@ -80,45 +95,86 @@ export function Toolbar() {
       // Ctrl+O: Open
       if (e.ctrlKey && e.key === 'o') {
         e.preventDefault();
-        setOpenMenu('file');
+        handleOpen();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [saveProject]);
+  }, []);
 
   const handleSave = useCallback(async () => {
-    await saveProject();
-    setOpenMenu(null);
-  }, [saveProject]);
-
-  const handleLoad = useCallback(async (projectId: string) => {
-    await loadProject(projectId);
-    setOpenMenu(null);
-  }, [loadProject]);
-
-  const handleDelete = useCallback(async (projectId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (confirm('Delete this project?')) {
-      await deleteProject(projectId);
-      const updated = await getProjectList();
-      setProjects(updated);
+    if (!projectFileService.isProjectOpen()) {
+      // No project open, prompt to create one
+      const name = prompt('Enter project name:', 'New Project');
+      if (!name) return;
+      setIsLoading(true);
+      const success = await projectFileService.createProject(name);
+      if (success) {
+        setProjectName(name);
+        setIsProjectOpen(true);
+        newProjectLegacy(); // Reset legacy stores
+      }
+      setIsLoading(false);
+    } else {
+      await projectFileService.saveProject();
     }
-  }, [deleteProject, getProjectList]);
+    setOpenMenu(null);
+  }, [newProjectLegacy]);
+
+  const handleOpen = useCallback(async () => {
+    if (projectFileService.hasUnsavedChanges()) {
+      if (!confirm('You have unsaved changes. Open a different project?')) {
+        return;
+      }
+    }
+    setIsLoading(true);
+    const success = await projectFileService.openProject();
+    if (success) {
+      const data = projectFileService.getProjectData();
+      if (data) {
+        setProjectName(data.name);
+        setIsProjectOpen(true);
+        newProjectLegacy(); // Reset legacy stores, then load project data
+        // TODO: Load project data into stores
+      }
+    }
+    setIsLoading(false);
+    setOpenMenu(null);
+  }, [newProjectLegacy]);
 
   const handleNameSubmit = useCallback(() => {
     if (editName.trim()) {
-      setProjectName(editName.trim());
+      const newName = editName.trim();
+      setProjectName(newName);
+      // Update project data in service
+      const data = projectFileService.getProjectData();
+      if (data) {
+        projectFileService.updateProjectData({ name: newName });
+      }
     }
     setIsEditingName(false);
-  }, [editName, setProjectName]);
+  }, [editName]);
 
-  const handleNew = useCallback(() => {
-    if (confirm('Create a new project? Unsaved changes will be lost.')) {
-      newProject();
-      setOpenMenu(null);
+  const handleNew = useCallback(async () => {
+    if (projectFileService.hasUnsavedChanges()) {
+      if (!confirm('You have unsaved changes. Create a new project?')) {
+        return;
+      }
     }
-  }, [newProject]);
+    const name = prompt('Enter project name:', 'New Project');
+    if (!name) return;
+
+    setIsLoading(true);
+    projectFileService.closeProject();
+    const success = await projectFileService.createProject(name);
+    if (success) {
+      setProjectName(name);
+      setIsProjectOpen(true);
+      newProjectLegacy(); // Reset legacy stores
+    }
+    setIsLoading(false);
+    setOpenMenu(null);
+  }, [newProjectLegacy]);
 
   const handleNewOutput = useCallback(() => {
     const output = createOutputWindow(`Output ${Date.now()}`);
@@ -159,14 +215,17 @@ export function Toolbar() {
           />
         ) : (
           <span
-            className="project-name"
+            className={`project-name ${!isProjectOpen ? 'no-project' : ''}`}
             onClick={() => {
-              setEditName(currentProjectName);
-              setIsEditingName(true);
+              if (isProjectOpen) {
+                setEditName(projectName);
+                setIsEditingName(true);
+              }
             }}
-            title="Click to rename project"
+            title={isProjectOpen ? 'Click to rename project' : 'No project open'}
           >
-            {currentProjectName}
+            {projectName}
+            {projectFileService.hasUnsavedChanges() && ' •'}
           </span>
         )}
       </div>
@@ -185,40 +244,29 @@ export function Toolbar() {
           {openMenu === 'file' && (
             <div className="menu-dropdown">
               <button className="menu-option" onClick={handleNew} disabled={isLoading}>
-                <span>New Project</span>
+                <span>New Project...</span>
                 <span className="shortcut">Ctrl+N</span>
               </button>
-              <button className="menu-option" onClick={handleSave} disabled={isLoading}>
+              <button className="menu-option" onClick={handleOpen} disabled={isLoading}>
+                <span>Open Project...</span>
+                <span className="shortcut">Ctrl+O</span>
+              </button>
+              <div className="menu-separator" />
+              <button className="menu-option" onClick={handleSave} disabled={isLoading || !isProjectOpen}>
                 <span>Save</span>
                 <span className="shortcut">Ctrl+S</span>
               </button>
-              <div className="menu-separator" />
-              <div className="menu-submenu">
-                <span className="menu-label">Open Recent</span>
-                {projects.length === 0 ? (
-                  <span className="menu-empty">No recent projects</span>
-                ) : (
-                  projects
-                    .sort((a, b) => b.updatedAt - a.updatedAt)
-                    .slice(0, 10)
-                    .map((project) => (
-                      <div
-                        key={project.id}
-                        className="menu-option project-item"
-                        onClick={() => handleLoad(project.id)}
-                      >
-                        <span>{project.name}</span>
-                        <button
-                          className="delete-btn"
-                          onClick={(e) => handleDelete(project.id, e)}
-                          title="Delete"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))
-                )}
-              </div>
+              {isProjectOpen && (
+                <>
+                  <div className="menu-separator" />
+                  <div className="menu-submenu">
+                    <span className="menu-label">Project Info</span>
+                    <span className="menu-info">
+                      {projectFileService.hasUnsavedChanges() ? '● Unsaved changes' : '✓ All changes saved'}
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
