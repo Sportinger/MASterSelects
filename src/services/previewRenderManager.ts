@@ -231,15 +231,19 @@ class PreviewRenderManagerService {
       if (!preview.isReady) continue;
 
       // Check if this composition is nested and currently being rendered by the main loop
-      // If so, skip independent rendering to avoid video frame conflicts
       const nestedInfo = this.getNestedCompInfo(preview.compositionId);
-      if (isMainPlaying && nestedInfo) {
+      if (nestedInfo) {
         const clipStart = nestedInfo.clipStartTime;
         const clipEnd = clipStart + nestedInfo.clipDuration;
 
-        // If main playhead is within this nested clip's range, skip rendering
-        // The main loop is already rendering this composition as part of the parent
+        // If main playhead is within this nested clip's range, try to reuse the pre-rendered texture
+        // This avoids video frame conflicts by copying the already-rendered texture from main loop
         if (mainPlayhead >= clipStart && mainPlayhead < clipEnd) {
+          // Try to copy the pre-rendered nested comp texture to this preview
+          if (engine.copyNestedCompTextureToPreview(preview.panelId, preview.compositionId)) {
+            preview.lastRenderTime = now;
+          }
+          // Skip independent rendering - either we copied the texture or main loop hasn't rendered yet
           continue;
         }
       }

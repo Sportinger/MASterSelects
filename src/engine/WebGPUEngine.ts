@@ -1211,6 +1211,40 @@ export class WebGPUEngine {
   }
 
   /**
+   * Check if a pre-rendered texture exists for a nested composition
+   */
+  hasNestedCompTexture(compositionId: string): boolean {
+    return this.nestedCompTextures.has(compositionId);
+  }
+
+  /**
+   * Copy a pre-rendered nested composition texture to a preview canvas
+   * Used when the composition is nested in the active timeline and already rendered by main loop
+   * Returns true if successful, false if no texture available
+   */
+  copyNestedCompTextureToPreview(canvasId: string, compositionId: string): boolean {
+    const device = this.context.getDevice();
+    const canvasContext = this.independentPreviewCanvases.get(canvasId);
+    const compTexture = this.nestedCompTextures.get(compositionId);
+
+    if (!device || !canvasContext || !compTexture || !this.outputPipeline || !this.sampler) {
+      return false;
+    }
+
+    // Create command encoder
+    const commandEncoder = device.createCommandEncoder();
+
+    // Create bind group for the nested comp texture
+    const outputBindGroup = this.outputPipeline.createOutputBindGroup(this.sampler, compTexture.view);
+
+    // Render the texture to the preview canvas
+    this.outputPipeline.renderToCanvas(commandEncoder, canvasContext, outputBindGroup);
+
+    device.queue.submit([commandEncoder.finish()]);
+    return true;
+  }
+
+  /**
    * Pre-render a nested composition to an offscreen texture
    * Returns the texture view to be used as the source for the parent layer
    */
