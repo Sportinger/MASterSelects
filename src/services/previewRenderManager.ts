@@ -253,14 +253,15 @@ class PreviewRenderManagerService {
       if (!preview.isReady) continue;
 
       // OPTIMIZATION 1: If this preview shows the ACTIVE composition,
-      // use the cached texture from main render (avoids timing issues with ping/pong)
+      // mark it to receive main render output directly (same command buffer, no timing issues)
       if (preview.compositionId === activeCompId) {
-        // Use the cached active comp texture (stable, not affected by RAF timing)
-        if (engine.copyNestedCompTextureToPreview(preview.panelId, activeCompId)) {
-          preview.lastRenderTime = now;
-          continue; // Success - skip independent rendering
-        }
-        // If no cached texture yet, fall through to independent rendering
+        // Tell engine to render directly to this canvas during main render
+        engine.setCanvasMirrorsActiveComp(preview.panelId, true);
+        preview.lastRenderTime = now;
+        continue; // Skip independent rendering - main loop handles it
+      } else {
+        // Not showing active comp - remove from mirror set
+        engine.setCanvasMirrorsActiveComp(preview.panelId, false);
       }
 
       // OPTIMIZATION 2: If this composition is nested and currently being rendered by main loop,

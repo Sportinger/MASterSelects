@@ -143,6 +143,10 @@ export class WebGPUEngine {
   private nestedCompTextures: Map<string, { texture: GPUTexture; view: GPUTextureView }> = new Map();
   private pendingTextureCleanup: GPUTexture[] = [];
 
+  // Independent canvases that should mirror the main render output
+  // These are rendered to directly by the main render loop (no separate copy needed)
+  private activeCompMirrorCanvases: Set<string> = new Set();
+
   constructor() {
     this.context = new WebGPUContext();
     this.videoFrameManager = new VideoFrameManager();
@@ -264,7 +268,20 @@ export class WebGPUEngine {
 
   unregisterIndependentPreviewCanvas(id: string): void {
     this.independentPreviewCanvases.delete(id);
+    this.activeCompMirrorCanvases.delete(id); // Also remove from mirror set
     console.log(`[Engine] Unregistered INDEPENDENT preview canvas: ${id}`);
+  }
+
+  /**
+   * Mark an independent canvas to receive the main render output directly
+   * Used when a preview is showing the same composition as the active timeline
+   */
+  setCanvasMirrorsActiveComp(canvasId: string, mirrors: boolean): void {
+    if (mirrors) {
+      this.activeCompMirrorCanvases.add(canvasId);
+    } else {
+      this.activeCompMirrorCanvases.delete(canvasId);
+    }
   }
 
   // === MASK TEXTURE MANAGEMENT ===
@@ -984,6 +1001,17 @@ export class WebGPUEngine {
     if (!this.isGeneratingRamPreview) {
       for (const previewCtx of this.previewCanvases.values()) {
         this.outputPipeline!.renderToCanvas(commandEncoder, previewCtx, outputBindGroup);
+      }
+    }
+
+    // Render to independent canvases that mirror the active composition
+    // These are canvases showing the same comp as the main timeline
+    if (!this.isGeneratingRamPreview) {
+      for (const canvasId of this.activeCompMirrorCanvases) {
+        const ctx = this.independentPreviewCanvases.get(canvasId);
+        if (ctx) {
+          this.outputPipeline!.renderToCanvas(commandEncoder, ctx, outputBindGroup);
+        }
       }
     }
 
