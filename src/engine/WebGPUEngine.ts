@@ -1550,9 +1550,11 @@ export class WebGPUEngine {
 
       this.detailedStats.rafGap = this.detailedStats.rafGap * 0.9 + rafGap * 0.1;
 
-      // Detect frame drops
-      if (rafGap > this.TARGET_FRAME_TIME * 1.5 && lastTimestamp > 0) {
-        const missedFrames = Math.floor(rafGap / this.TARGET_FRAME_TIME) - 1;
+      // Detect frame drops - only count if gap is significantly larger than target
+      // A gap > 2x the target frame time means we definitely missed at least 1 frame
+      if (rafGap > this.TARGET_FRAME_TIME * 2 && lastTimestamp > 0) {
+        // Use round to better estimate missed frames (33ms gap = 1 missed)
+        const missedFrames = Math.max(1, Math.round(rafGap / this.TARGET_FRAME_TIME) - 1);
         this.detailedStats.dropsTotal += missedFrames;
         this.detailedStats.dropsThisSecond += missedFrames;
         this.detailedStats.lastDropReason = 'slow_raf';
