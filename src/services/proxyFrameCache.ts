@@ -1,6 +1,7 @@
 // Proxy frame cache - loads and caches WebP frames for fast playback
 
 import { projectDB } from './projectDB';
+import { projectFileService } from './projectFileService';
 
 // Cache settings
 const MAX_CACHE_SIZE = 300; // Maximum frames to keep in memory (10s at 30fps)
@@ -113,14 +114,28 @@ class ProxyFrameCache {
     }
   }
 
-  // Load a single frame from IndexedDB
+  // Load a single frame - check project folder first, then IndexedDB
   private async loadFrame(mediaFileId: string, frameIndex: number): Promise<HTMLImageElement | null> {
     try {
-      const frame = await projectDB.getProxyFrame(mediaFileId, frameIndex);
-      if (!frame) return null;
+      let blob: Blob | null = null;
+
+      // Try project folder first if a project is open
+      if (projectFileService.isProjectOpen()) {
+        blob = await projectFileService.getProxyFrame(mediaFileId, frameIndex);
+      }
+
+      // Fall back to IndexedDB if not found in project folder
+      if (!blob) {
+        const frame = await projectDB.getProxyFrame(mediaFileId, frameIndex);
+        if (frame) {
+          blob = frame.blob;
+        }
+      }
+
+      if (!blob) return null;
 
       // Create image from blob
-      const url = URL.createObjectURL(frame.blob);
+      const url = URL.createObjectURL(blob);
       const image = new Image();
 
       return new Promise((resolve) => {

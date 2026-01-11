@@ -5,6 +5,7 @@ import { subscribeWithSelector, persist } from 'zustand/middleware';
 import { useTimelineStore } from './timeline';
 import { projectDB, type StoredMediaFile, type StoredProject } from '../services/projectDB';
 import { fileSystemService } from '../services/fileSystemService';
+import { projectFileService } from '../services/projectFileService';
 import { engine } from '../engine/WebGPUEngine';
 import { compositionRenderer } from '../services/compositionRenderer';
 
@@ -908,12 +909,17 @@ export const useMediaStore = create<MediaState>()(
             ),
           });
 
-          // Helper to save frames to IndexedDB and optionally to file system
+          // Helper to save frames to storage
           const saveFrame = async (frame: { id: string; mediaFileId: string; frameIndex: number; blob: Blob }) => {
-            // Always save to IndexedDB (for cache/fallback)
+            // Save to project folder if a project is open (primary)
+            if (projectFileService.isProjectOpen()) {
+              await projectFileService.saveProxyFrame(frame.mediaFileId, frame.frameIndex, frame.blob);
+            }
+
+            // Also save to IndexedDB as cache/fallback
             await projectDB.saveProxyFrame(frame);
 
-            // Also save to file system if folder is selected
+            // Legacy: also save to file system service if folder is selected
             if (fileSystemService.hasProxyFolder()) {
               await fileSystemService.saveProxyFrame(frame.mediaFileId, frame.frameIndex, frame.blob);
             }

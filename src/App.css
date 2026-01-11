@@ -6023,29 +6023,26 @@ input[type="checkbox"] {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.2);
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 10002;
-  backdrop-filter: blur(20px);
-  transition: background 0.2s ease-in, backdrop-filter 0.2s ease-in;
+  backdrop-filter: blur(10px);
+  transition: backdrop-filter 0.2s ease-in;
   animation: welcome-backdrop-in 0.5s ease-out;
 }
 
 @keyframes welcome-backdrop-in {
   from {
-    background: rgba(0, 0, 0, 0);
     backdrop-filter: blur(0px);
   }
   to {
-    background: rgba(0, 0, 0, 0.2);
-    backdrop-filter: blur(20px);
+    backdrop-filter: blur(10px);
   }
 }
 
 .welcome-overlay-backdrop.closing {
-  background: rgba(0, 0, 0, 0);
   backdrop-filter: blur(0px);
 }
 
