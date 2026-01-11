@@ -634,11 +634,6 @@ class ProxyGeneratorGPU {
       try {
         this.decoder.decode(chunk);
         samplesDecoded++;
-
-        // Periodically flush to prevent queue buildup
-        if (samplesDecoded % 100 === 0) {
-          await this.decoder.flush();
-        }
       } catch (e) {
         decodeErrors++;
         if (decodeErrors <= 5) {
