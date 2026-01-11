@@ -8,8 +8,8 @@ import { useMediaStore } from '../../stores/mediaStore';
 import { useDockStore } from '../../stores/dockStore';
 import { useSettingsStore, type PreviewQuality } from '../../stores/settingsStore';
 import { MaskOverlay } from './MaskOverlay';
-import { compositionRenderer } from '../../services/compositionRenderer';
-import type { Layer, EngineStats } from '../../types';
+import { previewRenderManager } from '../../services/previewRenderManager';
+import type { EngineStats } from '../../types';
 
 interface PreviewProps {
   panelId: string;
@@ -193,7 +193,7 @@ function StatsOverlay({ stats, resolution, expanded, onToggle }: {
 }
 
 export function Preview({ panelId, compositionId }: PreviewProps) {
-  const { isEngineReady, registerPreviewCanvas, unregisterPreviewCanvas, registerIndependentPreviewCanvas, unregisterIndependentPreviewCanvas, renderToPreviewCanvas } = useEngine();
+  const { isEngineReady, registerPreviewCanvas, unregisterPreviewCanvas, registerIndependentPreviewCanvas, unregisterIndependentPreviewCanvas } = useEngine();
   const { engineStats, outputResolution, layers, selectedLayerId, selectLayer } = useMixerStore();
   const { clips, selectedClipIds, selectClip, updateClipTransform, maskEditMode } = useTimelineStore();
   const { compositions, activeCompositionId } = useMediaStore();
@@ -207,7 +207,6 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 1920, height: 1080 });
   const [compReady, setCompReady] = useState(false);
-  const animFrameRef = useRef<number | null>(null);
 
   // Determine which composition this preview is showing
   const displayedCompId = compositionId ?? activeCompositionId;
@@ -270,87 +269,26 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
     };
   }, [isEngineReady, isIndependentComp, panelId, compositionId, registerPreviewCanvas, unregisterPreviewCanvas, registerIndependentPreviewCanvas, unregisterIndependentPreviewCanvas]);
 
-  // For independent composition: prepare it for rendering
+  // For independent composition: register with centralized PreviewRenderManager
+  // The manager handles preparation, render loop, and nested composition sync
   useEffect(() => {
     if (!isIndependentComp || !compositionId || !isEngineReady) {
       setCompReady(false);
       return;
     }
 
-    console.log(`[Preview ${panelId}] Preparing composition: ${compositionId}`);
+    console.log(`[Preview ${panelId}] Registering with PreviewRenderManager for composition: ${compositionId}`);
 
-    // Prepare the composition
-    compositionRenderer.prepareComposition(compositionId).then((ready) => {
-      console.log(`[Preview ${panelId}] Composition ${compositionId} prepare result: ${ready}`);
-      setCompReady(ready);
-    });
-
-    // Note: Don't dispose composition here - it might be used by other previews
-  }, [isIndependentComp, compositionId, isEngineReady, panelId]);
-
-  // Render loop for independent compositions
-  // If this comp is nested in active timeline, sync to that. Otherwise use stored playhead.
-  useEffect(() => {
-    if (!isIndependentComp || !compReady || !compositionId) {
-      return;
-    }
-
-    console.log(`[Preview ${panelId}] Starting independent render loop for composition: ${compositionId}`);
-
-    // Debug: log once per second
-    let lastDebugLog = 0;
-
-    const renderFrame = () => {
-      const mainPlayhead = useTimelineStore.getState().playheadPosition;
-      const mainClips = useTimelineStore.getState().clips;
-      const composition = compositions.find(c => c.id === compositionId);
-
-      // Check if this composition is nested in the active timeline
-      // If so, calculate internal time based on where the nest clip is placed
-      const nestedClip = mainClips.find(c => c.isComposition && c.compositionId === compositionId);
-
-      let playheadTime: number;
-      let syncSource = 'default';
-
-      if (nestedClip && mainPlayhead >= nestedClip.startTime && mainPlayhead < nestedClip.startTime + nestedClip.duration) {
-        // Composition IS nested and main playhead is within the nested clip
-        // Calculate internal time: (main playhead - clip start) + clip's inPoint
-        playheadTime = (mainPlayhead - nestedClip.startTime) + (nestedClip.inPoint || 0);
-        syncSource = 'nested';
-      } else if (composition?.timelineData?.playheadPosition !== undefined) {
-        // Not nested (or outside nested range) - use composition's own stored playhead
-        playheadTime = composition.timelineData.playheadPosition;
-        syncSource = 'stored';
-      } else {
-        playheadTime = 0;
-      }
-
-      // Debug log once per second
-      const now = Date.now();
-      if (now - lastDebugLog > 1000) {
-        lastDebugLog = now;
-        console.log(`[Preview ${panelId}] sync=${syncSource}, mainPlayhead=${mainPlayhead.toFixed(2)}, nestedClip=${nestedClip ? `start=${nestedClip.startTime.toFixed(2)}, inPoint=${nestedClip.inPoint?.toFixed(2)}` : 'null'}, result=${playheadTime.toFixed(2)}`);
-      }
-
-      // Evaluate this composition's timeline at the calculated time
-      const evalLayers = compositionRenderer.evaluateAtTime(compositionId, playheadTime);
-
-      if (evalLayers.length > 0) {
-        renderToPreviewCanvas(panelId, evalLayers as Layer[]);
-      }
-
-      animFrameRef.current = requestAnimationFrame(renderFrame);
-    };
-
-    animFrameRef.current = requestAnimationFrame(renderFrame);
+    // Register with the centralized render manager
+    // It handles: preparation, single RAF loop, nested comp sync
+    previewRenderManager.register(panelId, compositionId);
+    setCompReady(true);
 
     return () => {
-      if (animFrameRef.current) {
-        cancelAnimationFrame(animFrameRef.current);
-        console.log(`[Preview ${panelId}] Stopped independent render loop`);
-      }
+      console.log(`[Preview ${panelId}] Unregistering from PreviewRenderManager`);
+      previewRenderManager.unregister(panelId);
     };
-  }, [isIndependentComp, compReady, compositionId, panelId, renderToPreviewCanvas, compositions]);
+  }, [isIndependentComp, compositionId, isEngineReady, panelId]);
 
   // Composition selector state
   const [selectorOpen, setSelectorOpen] = useState(false);
