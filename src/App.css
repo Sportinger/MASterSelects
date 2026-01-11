@@ -4182,8 +4182,7 @@ input[type="checkbox"] {
 
 /* Table wrapper for horizontal scrolling */
 .media-panel-table-wrapper {
-  min-width: 100%;
-  display: inline-block;
+  min-width: 650px;
 }
 
 /* Column headers */
@@ -4200,7 +4199,6 @@ input[type="checkbox"] {
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  min-width: max-content;
 }
 
 /* Column base styles */
@@ -4217,10 +4215,12 @@ input[type="checkbox"] {
 /* Column widths */
 .media-col-name {
   flex: 1;
-  min-width: 200px;
+  min-width: 150px;
+  max-width: 350px;
   display: flex;
   align-items: center;
   gap: 6px;
+  overflow: hidden;
 }
 
 .media-col-duration {
@@ -4282,7 +4282,6 @@ input[type="checkbox"] {
 
 .media-item-list {
   padding: 4px 0;
-  min-width: max-content;
 }
 
 .media-item {
@@ -4292,7 +4291,6 @@ input[type="checkbox"] {
   cursor: pointer;
   transition: background 0.1s;
   border-left: 2px solid transparent;
-  min-width: max-content;
 }
 
 .media-item:hover {
