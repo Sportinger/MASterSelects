@@ -338,23 +338,35 @@ class ProxyGeneratorGPU {
         resolve(false);
       };
 
-      // Read file in chunks
-      const reader = file.stream().getReader();
-      let offset = 0;
+      // Read entire file
+      const fileData = await file.arrayBuffer();
 
       try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          const buffer = value.buffer as MP4ArrayBuffer;
-          buffer.fileStart = offset;
-          offset += value.byteLength;
-          mp4File.appendBuffer(buffer);
-        }
+        // First pass: parse file structure (triggers onReady)
+        const buffer1 = fileData.slice(0) as MP4ArrayBuffer;
+        buffer1.fileStart = 0;
+        mp4File.appendBuffer(buffer1);
         mp4File.flush();
 
-        // Give some time for callbacks to fire, but with a timeout
+        // Wait for onReady and codec check to complete
+        await new Promise(r => setTimeout(r, 500));
+
+        if (!codecReady) {
+          console.warn('[ProxyGen] Codec not ready after first pass');
+          // Wait longer
+          await new Promise(r => setTimeout(r, 1000));
+        }
+
+        if (codecReady && this.samples.length === 0) {
+          // Second pass: re-append to extract samples now that extraction options are set
+          console.log('[ProxyGen] Re-appending data to extract samples...');
+          const buffer2 = fileData.slice(0) as MP4ArrayBuffer;
+          buffer2.fileStart = 0;
+          mp4File.appendBuffer(buffer2);
+          mp4File.flush();
+        }
+
+        // Give time for samples to be extracted
         setTimeout(() => {
           if (!samplesReady && this.samples.length > 0) {
             console.log(`[ProxyGen] Timeout: proceeding with ${this.samples.length} samples`);
@@ -362,6 +374,9 @@ class ProxyGeneratorGPU {
             checkComplete();
           } else if (!this.videoTrack) {
             console.warn('[ProxyGen] Timeout: no video track found');
+            resolve(false);
+          } else if (this.samples.length === 0) {
+            console.error('[ProxyGen] No samples extracted after re-append');
             resolve(false);
           }
         }, 2000);
