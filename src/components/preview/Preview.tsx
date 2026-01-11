@@ -193,7 +193,7 @@ function StatsOverlay({ stats, resolution, expanded, onToggle }: {
 }
 
 export function Preview({ panelId, compositionId }: PreviewProps) {
-  const { isEngineReady, registerPreviewCanvas, unregisterPreviewCanvas, registerIndependentPreviewCanvas, unregisterIndependentPreviewCanvas } = useEngine();
+  const { isEngineReady, registerPreviewCanvas, unregisterPreviewCanvas, registerIndependentPreviewCanvas, unregisterIndependentPreviewCanvas, setIndependentCanvasComposition } = useEngine();
   const { engineStats, outputResolution, layers, selectedLayerId, selectLayer } = useMixerStore();
   const { clips, selectedClipIds, selectClip, updateClipTransform, maskEditMode } = useTimelineStore();
   const { compositions, activeCompositionId } = useMediaStore();
@@ -255,7 +255,7 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
       registerPreviewCanvas(panelId, canvasRef.current);
     } else {
       console.log(`[Preview ${panelId}] Registering with independent canvas map (composition: ${compositionId})`);
-      registerIndependentPreviewCanvas(panelId, canvasRef.current);
+      registerIndependentPreviewCanvas(panelId, canvasRef.current, compositionId || undefined);
     }
 
     registrationModeRef.current = targetMode;

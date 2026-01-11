@@ -252,15 +252,11 @@ class PreviewRenderManagerService {
       if (!preview.isReady) continue;
 
       // OPTIMIZATION 1: If this preview shows the ACTIVE composition,
-      // mark it to receive main render output directly (same command buffer, no timing issues)
+      // skip independent rendering - main render loop handles it automatically
+      // (Main loop checks independentCanvasCompositions to render to matching canvases)
       if (preview.compositionId === activeCompId) {
-        // Tell engine to render directly to this canvas during main render
-        engine.setCanvasMirrorsActiveComp(preview.panelId, true);
         preview.lastRenderTime = now;
         continue; // Skip independent rendering - main loop handles it
-      } else {
-        // Not showing active comp - remove from mirror set
-        engine.setCanvasMirrorsActiveComp(preview.panelId, false);
       }
 
       // OPTIMIZATION 2: If this composition is nested and currently being rendered by main loop,

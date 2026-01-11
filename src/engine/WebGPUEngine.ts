@@ -11,6 +11,7 @@ import { EffectsPipeline } from './pipeline/EffectsPipeline';
 import { OutputPipeline } from './pipeline/OutputPipeline';
 import { VideoFrameManager } from './video/VideoFrameManager';
 import { audioStatusTracker } from '../services/audioManager';
+import { useMediaStore } from '../stores/mediaStore';
 
 export class WebGPUEngine {
   // Core context
@@ -147,6 +148,10 @@ export class WebGPUEngine {
   // These are rendered to directly by the main render loop (no separate copy needed)
   private activeCompMirrorCanvases: Set<string> = new Set();
 
+  // Track which compositionId each independent canvas is showing
+  // Used to determine which canvases should receive main render output
+  private independentCanvasCompositions: Map<string, string> = new Map();
+
   constructor() {
     this.context = new WebGPUContext();
     this.videoFrameManager = new VideoFrameManager();
@@ -258,23 +263,33 @@ export class WebGPUEngine {
   }
 
   // Register canvas for independent composition rendering (NOT rendered by main loop)
-  registerIndependentPreviewCanvas(id: string, canvas: HTMLCanvasElement): void {
+  registerIndependentPreviewCanvas(id: string, canvas: HTMLCanvasElement, compositionId?: string): void {
     const context = this.context.configureCanvas(canvas);
     if (context) {
       this.independentPreviewCanvases.set(id, context);
-      console.log(`[Engine] Registered INDEPENDENT preview canvas: ${id}`);
+      if (compositionId) {
+        this.independentCanvasCompositions.set(id, compositionId);
+      }
+      console.log(`[Engine] Registered INDEPENDENT preview canvas: ${id} for composition: ${compositionId || 'unknown'}`);
     }
+  }
+
+  // Update which composition an independent canvas is showing
+  setIndependentCanvasComposition(canvasId: string, compositionId: string): void {
+    this.independentCanvasCompositions.set(canvasId, compositionId);
   }
 
   unregisterIndependentPreviewCanvas(id: string): void {
     this.independentPreviewCanvases.delete(id);
     this.activeCompMirrorCanvases.delete(id); // Also remove from mirror set
+    this.independentCanvasCompositions.delete(id); // Also remove composition tracking
     console.log(`[Engine] Unregistered INDEPENDENT preview canvas: ${id}`);
   }
 
   /**
    * Mark an independent canvas to receive the main render output directly
    * Used when a preview is showing the same composition as the active timeline
+   * @deprecated Use setIndependentCanvasComposition instead - main loop auto-detects mirrors
    */
   setCanvasMirrorsActiveComp(canvasId: string, mirrors: boolean): void {
     if (mirrors) {
@@ -1004,13 +1019,16 @@ export class WebGPUEngine {
       }
     }
 
-    // Render to independent canvases that mirror the active composition
-    // These are canvases showing the same comp as the main timeline
+    // Render to independent canvases that are showing the active composition
+    // Auto-detect based on independentCanvasCompositions (no need for async flag setting)
     if (!this.isGeneratingRamPreview) {
-      for (const canvasId of this.activeCompMirrorCanvases) {
-        const ctx = this.independentPreviewCanvases.get(canvasId);
-        if (ctx) {
-          this.outputPipeline!.renderToCanvas(commandEncoder, ctx, outputBindGroup);
+      const activeCompId = useMediaStore.getState().activeCompositionId;
+      for (const [canvasId, compId] of this.independentCanvasCompositions.entries()) {
+        if (compId === activeCompId) {
+          const ctx = this.independentPreviewCanvases.get(canvasId);
+          if (ctx) {
+            this.outputPipeline!.renderToCanvas(commandEncoder, ctx, outputBindGroup);
+          }
         }
       }
     }

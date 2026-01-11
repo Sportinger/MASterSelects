@@ -304,12 +304,17 @@ export function useEngine() {
   }, []);
 
   // Independent canvas registration - NOT rendered by main loop
-  const registerIndependentPreviewCanvas = useCallback((id: string, canvas: HTMLCanvasElement) => {
-    engine.registerIndependentPreviewCanvas(id, canvas);
+  const registerIndependentPreviewCanvas = useCallback((id: string, canvas: HTMLCanvasElement, compositionId?: string) => {
+    engine.registerIndependentPreviewCanvas(id, canvas, compositionId);
   }, []);
 
   const unregisterIndependentPreviewCanvas = useCallback((id: string) => {
     engine.unregisterIndependentPreviewCanvas(id);
+  }, []);
+
+  // Update which composition an independent canvas is showing
+  const setIndependentCanvasComposition = useCallback((canvasId: string, compositionId: string) => {
+    engine.setIndependentCanvasComposition(canvasId, compositionId);
   }, []);
 
   const renderToPreviewCanvas = useCallback((canvasId: string, layers: import('../types').Layer[]) => {
@@ -326,6 +331,7 @@ export function useEngine() {
     unregisterPreviewCanvas,
     registerIndependentPreviewCanvas,
     unregisterIndependentPreviewCanvas,
+    setIndependentCanvasComposition,
     renderToPreviewCanvas,
   };
 }
