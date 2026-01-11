@@ -3,7 +3,7 @@
 struct MotionBlurParams {
   amount: f32,
   angle: f32,
-  quality: f32,
+  samples: f32,
   _pad: f32,
 };
 
@@ -18,7 +18,7 @@ fn motionBlurFragment(input: VertexOutput) -> @location(0) vec4f {
   }
 
   let direction = vec2f(cos(params.angle), sin(params.angle));
-  let samples = i32(params.quality * 12.0); // 12-36 samples
+  let samples = i32(clamp(params.samples, 4.0, 128.0));
 
   var color = vec4f(0.0);
   var totalWeight = 0.0;

@@ -17,6 +17,8 @@ export interface EffectParam {
   options?: { value: string; label: string }[];
   // Keyframe support:
   animatable?: boolean;
+  // Quality parameter (shown in collapsible Quality section):
+  quality?: boolean;
 }
 
 /**

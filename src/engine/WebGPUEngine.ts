@@ -12,6 +12,7 @@ import { OutputPipeline } from './pipeline/OutputPipeline';
 import { VideoFrameManager } from './video/VideoFrameManager';
 import { audioStatusTracker } from '../services/audioManager';
 import { useMediaStore } from '../stores/mediaStore';
+import { reportRenderTime } from '../services/performanceMonitor';
 
 export class WebGPUEngine {
   // Core context
@@ -1069,6 +1070,9 @@ export class WebGPUEngine {
     this.profileData.submit = performance.now() - t3;
 
     this.profileData.total = performance.now() - t0;
+
+    // Report to performance monitor for auto quality reset
+    reportRenderTime(this.profileData.total);
 
     // Update detailed stats
     this.detailedStats.importTexture = this.detailedStats.importTexture * 0.9 + this.profileData.importTexture * 0.1;

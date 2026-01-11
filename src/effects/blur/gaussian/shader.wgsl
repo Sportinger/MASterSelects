@@ -5,7 +5,7 @@ struct GaussianBlurParams {
   radius: f32,
   width: f32,
   height: f32,
-  quality: f32, // 1 = low (fast), 2 = medium, 3 = high (slow)
+  samples: f32, // Direct sample radius control (3-32)
 };
 
 @group(0) @binding(0) var texSampler: sampler;
@@ -20,9 +20,8 @@ fn gaussianBlurFragment(input: VertexOutput) -> @location(0) vec4f {
 
   let texelSize = vec2f(1.0 / params.width, 1.0 / params.height);
 
-  // Quality determines sample count
-  let qualityLevel = i32(params.quality);
-  let sampleRadius = select(select(3, 5, qualityLevel >= 2), 7, qualityLevel >= 3);
+  // Direct sample radius from params
+  let sampleRadius = i32(clamp(params.samples, 1.0, 64.0));
 
   var color = vec4f(0.0);
   var totalWeight = 0.0;

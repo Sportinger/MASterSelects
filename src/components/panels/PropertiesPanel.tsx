@@ -553,15 +553,19 @@ function EffectsTab({ clipId, effects }: EffectsTabProps) {
                   <button className="btn btn-sm btn-danger" onClick={() => removeClipEffect(clipId, effect.id)}>×</button>
                 </div>
                 <div className="effect-params">
-                  {renderEffectParams({ ...effect, params: interpolated.params }, (params) => {
-                    Object.entries(params).forEach(([paramName, value]) => {
-                      if (typeof value === 'number') {
-                        setPropertyValue(clipId, `effect.${effect.id}.${paramName}` as AnimatableProperty, value);
-                      } else {
-                        updateClipEffect(clipId, effect.id, { [paramName]: value });
-                      }
-                    });
-                  }, clipId)}
+                  <EffectParams
+                    effect={{ ...effect, params: interpolated.params }}
+                    onChange={(params) => {
+                      Object.entries(params).forEach(([paramName, value]) => {
+                        if (typeof value === 'number') {
+                          setPropertyValue(clipId, `effect.${effect.id}.${paramName}` as AnimatableProperty, value);
+                        } else {
+                          updateClipEffect(clipId, effect.id, { [paramName]: value });
+                        }
+                      });
+                    }}
+                    clipId={clipId}
+                  />
                 </div>
               </div>
             );
@@ -572,104 +576,164 @@ function EffectsTab({ clipId, effects }: EffectsTabProps) {
   );
 }
 
-function renderEffectParams(
-  effect: { id: string; type: string; params: Record<string, number | boolean | string> },
+// Single parameter control renderer
+function renderParamControl(
+  paramName: string,
+  paramDef: { type: string; label: string; default: number | boolean | string; min?: number; max?: number; step?: number; options?: { value: string; label: string }[]; animatable?: boolean },
+  value: number | boolean | string,
+  effect: { id: string; params: Record<string, number | boolean | string> },
   onChange: (params: Record<string, number | boolean | string>) => void,
-  clipId?: string
+  defaults: Record<string, number | boolean | string>,
+  clipId?: string,
+  noMaxLimit?: boolean
 ) {
-  // Get effect definition from registry
-  const effectDef = EFFECT_REGISTRY.get(effect.type);
-  if (!effectDef) {
-    return <p className="effect-info">Unknown effect type: {effect.type}</p>;
-  }
-
-  // Get defaults from registry
-  const defaults = getDefaultParams(effect.type);
-
-  const handleContextMenu = (paramName: string) => (e: React.MouseEvent) => {
+  const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     const defaultValue = defaults[paramName];
     if (defaultValue !== undefined) onChange({ ...effect.params, [paramName]: defaultValue });
   };
 
-  const renderKfToggle = (paramName: string, value: number) => {
+  const renderKfToggle = (val: number) => {
     if (!clipId) return null;
-    return <EffectKeyframeToggle clipId={clipId} effectId={effect.id} paramName={paramName} value={value} />;
+    return <EffectKeyframeToggle clipId={clipId} effectId={effect.id} paramName={paramName} value={val} />;
   };
 
-  // No parameters
+  switch (paramDef.type) {
+    case 'number': {
+      const min = paramDef.min ?? 0;
+      // For quality params with noMaxLimit, allow much higher values
+      const max = noMaxLimit ? (paramDef.max ?? 1) * 10 : (paramDef.max ?? 1);
+      const range = max - min;
+      const decimals = paramDef.step && paramDef.step >= 1 ? 0 : paramDef.step && paramDef.step >= 0.1 ? 1 : 2;
+      return (
+        <div className="control-row" key={paramName} onContextMenu={handleContextMenu}>
+          {paramDef.animatable && renderKfToggle(value as number)}
+          <label>{paramDef.label}</label>
+          <input
+            type="range"
+            min={min}
+            max={max}
+            step={paramDef.step ?? 0.01}
+            value={value as number}
+            onChange={(e) => onChange({ ...effect.params, [paramName]: parseFloat(e.target.value) })}
+          />
+          <DraggableNumber
+            value={value as number}
+            onChange={(v) => onChange({ ...effect.params, [paramName]: Math.max(min, v) })}
+            defaultValue={paramDef.default as number}
+            sensitivity={Math.max(0.5, range / 100)}
+            decimals={decimals}
+            min={min}
+          />
+        </div>
+      );
+    }
+
+    case 'boolean':
+      return (
+        <div className="control-row checkbox-row" key={paramName}>
+          <label>
+            <input
+              type="checkbox"
+              checked={value as boolean}
+              onChange={(e) => onChange({ ...effect.params, [paramName]: e.target.checked })}
+            />
+            {paramDef.label}
+          </label>
+        </div>
+      );
+
+    case 'select':
+      return (
+        <div className="control-row" key={paramName}>
+          <label>{paramDef.label}</label>
+          <select
+            value={value as string}
+            onChange={(e) => onChange({ ...effect.params, [paramName]: e.target.value })}
+          >
+            {paramDef.options?.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        </div>
+      );
+
+    default:
+      return null;
+  }
+}
+
+// Effect parameters with collapsible Quality section
+interface EffectParamsProps {
+  effect: { id: string; type: string; params: Record<string, number | boolean | string> };
+  onChange: (params: Record<string, number | boolean | string>) => void;
+  clipId?: string;
+}
+
+function EffectParams({ effect, onChange, clipId }: EffectParamsProps) {
+  const [qualityExpanded, setQualityExpanded] = useState(false);
+
+  const effectDef = EFFECT_REGISTRY.get(effect.type);
+  if (!effectDef) {
+    return <p className="effect-info">Unknown effect type: {effect.type}</p>;
+  }
+
+  const defaults = getDefaultParams(effect.type);
+
   if (Object.keys(effectDef.params).length === 0) {
     return <p className="effect-info">No parameters</p>;
   }
 
-  // Render controls based on parameter definitions
+  // Separate regular params from quality params
+  const regularParams = Object.entries(effectDef.params).filter(([, def]) => !def.quality);
+  const qualityParams = Object.entries(effectDef.params).filter(([, def]) => def.quality);
+
+  const handleResetQuality = () => {
+    const resetParams: Record<string, number | boolean | string> = { ...effect.params };
+    qualityParams.forEach(([name, def]) => {
+      resetParams[name] = def.default;
+    });
+    onChange(resetParams);
+  };
+
   return (
     <>
-      {Object.entries(effectDef.params).map(([paramName, paramDef]) => {
+      {/* Regular parameters */}
+      {regularParams.map(([paramName, paramDef]) => {
         const value = effect.params[paramName] ?? paramDef.default;
-
-        switch (paramDef.type) {
-          case 'number': {
-            const min = paramDef.min ?? 0;
-            const max = paramDef.max ?? 1;
-            const range = max - min;
-            const decimals = paramDef.step && paramDef.step >= 1 ? 0 : paramDef.step && paramDef.step >= 0.1 ? 1 : 2;
-            return (
-              <div className="control-row" key={paramName} onContextMenu={handleContextMenu(paramName)}>
-                {paramDef.animatable && renderKfToggle(paramName, value as number)}
-                <label>{paramDef.label}</label>
-                <input
-                  type="range"
-                  min={min}
-                  max={max}
-                  step={paramDef.step ?? 0.01}
-                  value={value as number}
-                  onChange={(e) => onChange({ ...effect.params, [paramName]: parseFloat(e.target.value) })}
-                />
-                <DraggableNumber
-                  value={value as number}
-                  onChange={(v) => onChange({ ...effect.params, [paramName]: Math.max(min, Math.min(max, v)) })}
-                  defaultValue={paramDef.default as number}
-                  sensitivity={Math.max(0.5, range / 100)}
-                  decimals={decimals}
-                />
-              </div>
-            );
-          }
-
-          case 'boolean':
-            return (
-              <div className="control-row checkbox-row" key={paramName}>
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={value as boolean}
-                    onChange={(e) => onChange({ ...effect.params, [paramName]: e.target.checked })}
-                  />
-                  {paramDef.label}
-                </label>
-              </div>
-            );
-
-          case 'select':
-            return (
-              <div className="control-row" key={paramName}>
-                <label>{paramDef.label}</label>
-                <select
-                  value={value as string}
-                  onChange={(e) => onChange({ ...effect.params, [paramName]: e.target.value })}
-                >
-                  {paramDef.options?.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              </div>
-            );
-
-          default:
-            return null;
-        }
+        return renderParamControl(paramName, paramDef, value, effect, onChange, defaults, clipId, false);
       })}
+
+      {/* Quality section (collapsible) */}
+      {qualityParams.length > 0 && (
+        <div className="effect-quality-section">
+          <div className="effect-quality-header" onClick={() => setQualityExpanded(!qualityExpanded)}>
+            <span className="effect-quality-toggle">{qualityExpanded ? '\u25BC' : '\u25B6'}</span>
+            <span className="effect-quality-title">Quality</span>
+            {qualityExpanded && (
+              <button
+                className="btn btn-xs effect-quality-reset"
+                onClick={(e) => { e.stopPropagation(); handleResetQuality(); }}
+                title="Reset quality to defaults"
+              >
+                Reset
+              </button>
+            )}
+          </div>
+          {qualityExpanded && (
+            <div className="effect-quality-params">
+              {qualityParams.map(([paramName, paramDef]) => {
+                const value = effect.params[paramName] ?? paramDef.default;
+                // Quality params have no max limit when dragging
+                return renderParamControl(paramName, paramDef, value, effect, onChange, defaults, clipId, true);
+              })}
+              <div className="effect-quality-warning">
+                High values may cause slowdowns
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </>
   );
 }

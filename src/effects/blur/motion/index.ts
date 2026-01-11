@@ -31,14 +31,15 @@ export const motionBlur: EffectDefinition = {
       step: 0.01,
       animatable: true,
     },
-    quality: {
+    samples: {
       type: 'number',
-      label: 'Quality',
-      default: 2,
-      min: 1,
-      max: 3,
+      label: 'Samples',
+      default: 24,
+      min: 4,
+      max: 128,
       step: 1,
       animatable: false,
+      quality: true,
     },
   },
 
@@ -46,7 +47,7 @@ export const motionBlur: EffectDefinition = {
     return new Float32Array([
       params.amount as number || 0.05,
       params.angle as number || 0,
-      params.quality as number || 2,
+      params.samples as number || 24,
       0,
     ]);
   },

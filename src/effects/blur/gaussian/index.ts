@@ -22,15 +22,15 @@ export const gaussianBlur: EffectDefinition = {
       step: 1,
       animatable: true,
     },
-    quality: {
-      type: 'select',
-      label: 'Quality',
-      default: '2',
-      options: [
-        { value: '1', label: 'Low (Fast)' },
-        { value: '2', label: 'Medium' },
-        { value: '3', label: 'High (Slow)' },
-      ],
+    samples: {
+      type: 'number',
+      label: 'Samples',
+      default: 5,
+      min: 1,
+      max: 64,
+      step: 1,
+      animatable: false,
+      quality: true, // Marks as quality parameter
     },
   },
 
@@ -39,7 +39,7 @@ export const gaussianBlur: EffectDefinition = {
       params.radius as number || 10,
       width,
       height,
-      parseFloat(params.quality as string) || 2,
+      params.samples as number || 5,
     ]);
   },
 };

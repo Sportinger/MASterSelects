@@ -49,14 +49,25 @@ export const glow: EffectDefinition = {
       step: 0.05,
       animatable: true,
     },
-    quality: {
+    rings: {
       type: 'number',
-      label: 'Quality',
-      default: 2,
+      label: 'Rings',
+      default: 4,
       min: 1,
-      max: 3,
+      max: 32,
       step: 1,
       animatable: false,
+      quality: true,
+    },
+    samplesPerRing: {
+      type: 'number',
+      label: 'Samples/Ring',
+      default: 16,
+      min: 4,
+      max: 64,
+      step: 1,
+      animatable: false,
+      quality: true,
     },
   },
 
@@ -68,8 +79,8 @@ export const glow: EffectDefinition = {
       params.softness as number || 0.5,
       width,
       height,
-      params.quality as number || 2,
-      0, // padding
+      params.rings as number || 4,
+      params.samplesPerRing as number || 16,
     ]);
   },
 };

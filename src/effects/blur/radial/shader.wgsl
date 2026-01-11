@@ -4,7 +4,7 @@ struct RadialBlurParams {
   amount: f32,
   centerX: f32,
   centerY: f32,
-  quality: f32,
+  samples: f32,
 };
 
 @group(0) @binding(0) var texSampler: sampler;
@@ -22,7 +22,7 @@ fn radialBlurFragment(input: VertexOutput) -> @location(0) vec4f {
   }
 
   var color = vec4f(0.0);
-  let samples = i32(params.quality * 16.0); // 16-48 samples based on quality
+  let samples = i32(clamp(params.samples, 4.0, 256.0));
   let amount = params.amount * 0.2;
 
   var totalWeight = 0.0;

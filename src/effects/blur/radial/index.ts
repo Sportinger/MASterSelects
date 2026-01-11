@@ -40,14 +40,15 @@ export const radialBlur: EffectDefinition = {
       step: 0.01,
       animatable: true,
     },
-    quality: {
+    samples: {
       type: 'number',
-      label: 'Quality',
-      default: 2,
-      min: 1,
-      max: 3,
+      label: 'Samples',
+      default: 32,
+      min: 4,
+      max: 256,
       step: 1,
       animatable: false,
+      quality: true,
     },
   },
 
@@ -56,7 +57,7 @@ export const radialBlur: EffectDefinition = {
       params.amount as number || 0.5,
       params.centerX as number || 0.5,
       params.centerY as number || 0.5,
-      params.quality as number || 2,
+      params.samples as number || 32,
     ]);
   },
 };

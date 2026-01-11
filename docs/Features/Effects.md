@@ -196,11 +196,28 @@ Effects are organized by category in `src/effects/`:
 - **Ctrl+Drag** for 100x slower precision
 - **Right-click** on any value to reset to default
 
-#### Quality Parameter
-Multi-sample effects (blur, glow) have a **Quality** slider:
-- **1 = Low**: Fastest, fewer samples
-- **2 = Medium**: Balanced (default)
-- **3 = High**: Best quality, more samples
+#### Quality Section
+Multi-sample effects (blur, glow) have a collapsible **Quality** section with direct control:
+
+| Effect | Quality Parameters |
+|--------|-------------------|
+| Gaussian Blur | `samples` (1-64, default 5) |
+| Zoom Blur | `samples` (4-256, default 16) |
+| Motion Blur | `samples` (4-128, default 24) |
+| Radial Blur | `samples` (4-256, default 32) |
+| Glow | `rings` (1-32, default 4), `samplesPerRing` (4-64, default 16) |
+
+- Click "Quality" header to expand/collapse
+- **No upper limit** when dragging values (can go beyond slider max)
+- "Reset" button restores defaults
+- Warning shown about potential slowdowns
+
+#### Performance Protection
+The app monitors render times and **automatically resets quality parameters** to defaults when:
+- Frame time exceeds 100ms (below 10fps)
+- 5 consecutive slow frames detected
+
+This prevents the app from becoming unresponsive when quality values are set too high.
 
 ### Adding Effects
 1. Select clip
