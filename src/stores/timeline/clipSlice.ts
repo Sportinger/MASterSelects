@@ -9,6 +9,51 @@ import { textRenderer } from '../../services/textRenderer';
 import { googleFontsService } from '../../services/googleFontsService';
 import { WebCodecsPlayer } from '../../engine/WebCodecsPlayer';
 
+// Warm up video decoder by forcing a frame decode
+// This eliminates the "cold start" delay on first play
+async function warmUpVideoDecoder(video: HTMLVideoElement): Promise<void> {
+  return new Promise((resolve) => {
+    // Skip if video is already playing or has been decoded
+    if (video.readyState >= 3) { // HAVE_FUTURE_DATA or HAVE_ENOUGH_DATA
+      resolve();
+      return;
+    }
+
+    // Use requestVideoFrameCallback if available (modern browsers)
+    // This efficiently waits for the decoder to produce a frame
+    if ('requestVideoFrameCallback' in video) {
+      const warmUp = () => {
+        video.currentTime = 0.001; // Seek to first frame (not exactly 0 to trigger decode)
+        (video as any).requestVideoFrameCallback(() => {
+          // Decoder has now processed at least one frame
+          video.pause();
+          resolve();
+        });
+        // Force decode by playing briefly
+        video.play().catch(() => resolve());
+      };
+
+      if (video.readyState >= 1) { // HAVE_METADATA
+        warmUp();
+      } else {
+        video.addEventListener('loadedmetadata', warmUp, { once: true });
+      }
+    } else {
+      // Fallback: wait for canplay event which indicates decoder is ready
+      if (video.readyState >= 2) { // HAVE_CURRENT_DATA
+        resolve();
+        return;
+      }
+      video.addEventListener('canplay', () => resolve(), { once: true });
+      // Trigger buffer by seeking
+      video.currentTime = 0.001;
+    }
+
+    // Timeout fallback (don't block forever)
+    setTimeout(resolve, 500);
+  });
+}
+
 export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
   addClip: async (trackId, file, startTime, providedDuration, mediaFileId) => {
     // Detect file type - use MIME type with fallback to extension
@@ -142,6 +187,12 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
           mediaFileId,
         },
         isLoading: false,
+      });
+
+      // Warm up video decoder in background (non-blocking)
+      // This eliminates the "cold start" delay on first play
+      warmUpVideoDecoder(video).then(() => {
+        console.log(`[Timeline] Video decoder warmed up for ${file.name}`);
       });
 
       // Try to initialize WebCodecsPlayer for hardware-accelerated decoding
