@@ -256,6 +256,23 @@ input, textarea {
   font-style: italic;
 }
 
+.menu-info {
+  display: block;
+  padding: 4px 16px 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.project-name.no-project {
+  color: var(--text-secondary);
+  cursor: default;
+  font-style: italic;
+}
+
+.project-name.no-project:hover {
+  background: transparent;
+}
+
 .menu-slider {
   display: flex;
   align-items: center;

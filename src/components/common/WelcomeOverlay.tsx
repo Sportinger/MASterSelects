@@ -14,24 +14,6 @@ export function WelcomeOverlay({ onComplete }: WelcomeOverlayProps) {
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Restore folder handle from IndexedDB on mount
-  useEffect(() => {
-    initFileSystemService().then(() => {
-      setSelectedFolder(getProxyFolderName());
-    });
-  }, []);
-
-  // Handle Enter key to continue
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Enter' && !isSelecting) {
-        handleContinue();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleContinue, isSelecting]);
-
   const isSupported = isFileSystemAccessSupported();
 
   const handleSelectFolder = useCallback(async () => {
@@ -56,6 +38,24 @@ export function WelcomeOverlay({ onComplete }: WelcomeOverlayProps) {
     useSettingsStore.getState().setHasCompletedSetup(true);
     onComplete();
   }, [onComplete]);
+
+  // Restore folder handle from IndexedDB on mount
+  useEffect(() => {
+    initFileSystemService().then(() => {
+      setSelectedFolder(getProxyFolderName());
+    });
+  }, []);
+
+  // Handle Enter key to continue
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter' && !isSelecting) {
+        handleContinue();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleContinue, isSelecting]);
 
 
   return (
