@@ -941,24 +941,31 @@ class LayerBuilderService {
             }
           }
 
-          // No cached proxy frame yet - check if video is ready for fallback
-          // If video is seeking, skip this layer briefly to avoid freeze
+          // During playback in proxy mode: skip layer if frame not cached
+          // Don't fall back to video - it's paused and would show wrong frame
+          // The preloading will catch up within a few frames
+          if (isPlaying) {
+            continue; // Skip this layer for this frame
+          }
+
+          // During scrubbing: check if video is ready for fallback
           const video = nestedClip.source.videoElement;
           if (video.seeking || video.readyState < 2) {
-            // Video not ready - skip layer for this frame (preloading will catch up)
             continue;
           }
         }
 
-        // Fall back to direct video playback
-        layers.push({
-          ...baseLayer,
-          source: {
-            type: 'video',
-            videoElement: nestedClip.source.videoElement,
-            webCodecsPlayer: nestedClip.source.webCodecsPlayer,
-          },
-        } as Layer);
+        // Fall back to direct video playback (only when NOT in proxy mode)
+        if (!shouldUseProxy) {
+          layers.push({
+            ...baseLayer,
+            source: {
+              type: 'video',
+              videoElement: nestedClip.source.videoElement,
+              webCodecsPlayer: nestedClip.source.webCodecsPlayer,
+            },
+          } as Layer);
+        }
       } else if (nestedClip.source?.imageElement) {
         layers.push({
           ...baseLayer,
