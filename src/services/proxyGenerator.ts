@@ -393,12 +393,12 @@ class ProxyGeneratorGPU {
 
     console.log(`[ProxyGen] Testing ${codecsToTry.length} codec configurations for ${width}x${height}...`);
 
+    // Try without specifying hardwareAcceleration (let browser decide)
     for (const codec of codecsToTry) {
       const config: VideoDecoderConfig = {
         codec,
         codedWidth: width,
         codedHeight: height,
-        hardwareAcceleration: 'prefer-hardware',
       };
 
       try {
