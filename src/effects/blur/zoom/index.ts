@@ -1,0 +1,53 @@
+// Zoom Blur Effect
+
+import shader from './shader.wgsl?raw';
+import type { EffectDefinition } from '../../types';
+
+export const zoomBlur: EffectDefinition = {
+  id: 'zoom-blur',
+  name: 'Zoom Blur',
+  category: 'blur',
+
+  shader,
+  entryPoint: 'zoomBlurFragment',
+  uniformSize: 16,
+
+  params: {
+    amount: {
+      type: 'number',
+      label: 'Amount',
+      default: 0.3,
+      min: 0,
+      max: 1,
+      step: 0.01,
+      animatable: true,
+    },
+    centerX: {
+      type: 'number',
+      label: 'Center X',
+      default: 0.5,
+      min: 0,
+      max: 1,
+      step: 0.01,
+      animatable: true,
+    },
+    centerY: {
+      type: 'number',
+      label: 'Center Y',
+      default: 0.5,
+      min: 0,
+      max: 1,
+      step: 0.01,
+      animatable: true,
+    },
+  },
+
+  packUniforms: (params) => {
+    return new Float32Array([
+      params.amount as number || 0.3,
+      params.centerX as number || 0.5,
+      params.centerY as number || 0.5,
+      0,
+    ]);
+  },
+};

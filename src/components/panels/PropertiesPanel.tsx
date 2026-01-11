@@ -3,10 +3,11 @@
 
 import { useRef, useCallback, useState, useEffect, useMemo } from 'react';
 import { useTimelineStore } from '../../stores/timeline';
-import type { BlendMode, AnimatableProperty, MaskMode, ClipMask, EffectType, TranscriptWord, FrameAnalysisData } from '../../types';
+import type { BlendMode, AnimatableProperty, MaskMode, ClipMask, TranscriptWord, FrameAnalysisData } from '../../types';
 import { createEffectProperty } from '../../types';
 import { EQ_FREQUENCIES } from '../../services/audioManager';
 import { TextTab } from './TextTab';
+import { EFFECT_REGISTRY, getDefaultParams, getCategoriesWithEffects } from '../../effects';
 
 // EQ band parameter names
 const EQ_BAND_PARAMS = ['band31', 'band62', 'band125', 'band250', 'band500', 'band1k', 'band2k', 'band4k', 'band8k', 'band16k'];
@@ -464,32 +465,8 @@ function VolumeTab({ clipId, effects }: VolumeTabProps) {
 // ============================================
 // EFFECTS TAB
 // ============================================
-const AVAILABLE_EFFECTS: { type: EffectType; name: string }[] = [
-  { type: 'hue-shift', name: 'Hue Shift' },
-  { type: 'brightness', name: 'Brightness' },
-  { type: 'contrast', name: 'Contrast' },
-  { type: 'saturation', name: 'Saturation' },
-  { type: 'levels', name: 'Levels' },
-  { type: 'pixelate', name: 'Pixelate' },
-  { type: 'kaleidoscope', name: 'Kaleidoscope' },
-  { type: 'mirror', name: 'Mirror' },
-  { type: 'rgb-split', name: 'RGB Split' },
-  { type: 'invert', name: 'Invert' },
-];
-
-const EFFECT_DEFAULTS: Record<string, Record<string, number | boolean | string>> = {
-  'hue-shift': { shift: 0 },
-  'saturation': { amount: 1 },
-  'brightness': { amount: 0 },
-  'contrast': { amount: 1 },
-  'blur': { radius: 0 },
-  'pixelate': { size: 8 },
-  'kaleidoscope': { segments: 6, rotation: 0 },
-  'mirror': { horizontal: true, vertical: false },
-  'invert': {},
-  'rgb-split': { amount: 0.01, angle: 0 },
-  'levels': { inputBlack: 0, inputWhite: 1, gamma: 1, outputBlack: 0, outputWhite: 1 },
-};
+// Effects are now loaded from the modular effect registry
+// See src/effects/ for effect definitions
 
 function EffectKeyframeToggle({ clipId, effectId, paramName, value }: { clipId: string; effectId: string; paramName: string; value: number }) {
   const { isRecording, toggleKeyframeRecording, hasKeyframes, addKeyframe } = useTimelineStore();
@@ -525,13 +502,20 @@ function EffectsTab({ clipId, effects }: EffectsTabProps) {
   const clipLocalTime = clip ? playheadPosition - clip.startTime : 0;
   const interpolatedEffects = getInterpolatedEffects(clipId, clipLocalTime);
 
+  // Get effects grouped by category from registry
+  const effectCategories = useMemo(() => getCategoriesWithEffects(), []);
+
   return (
     <div className="properties-tab-content effects-tab">
       <div className="effect-add-row">
         <select onChange={(e) => { if (e.target.value) { addClipEffect(clipId, e.target.value); e.target.value = ''; } }} defaultValue="">
           <option value="" disabled>+ Add Effect</option>
-          {AVAILABLE_EFFECTS.map((effect) => (
-            <option key={effect.type} value={effect.type}>{effect.name}</option>
+          {effectCategories.map(({ category, effects: catEffects }) => (
+            <optgroup key={category} label={category.charAt(0).toUpperCase() + category.slice(1)}>
+              {catEffects.map((effect) => (
+                <option key={effect.id} value={effect.id}>{effect.name}</option>
+              ))}
+            </optgroup>
           ))}
         </select>
       </div>
@@ -573,9 +557,17 @@ function renderEffectParams(
   onChange: (params: Record<string, number | boolean | string>) => void,
   clipId?: string
 ) {
+  // Get effect definition from registry
+  const effectDef = EFFECT_REGISTRY.get(effect.type);
+  if (!effectDef) {
+    return <p className="effect-info">Unknown effect type: {effect.type}</p>;
+  }
+
+  // Get defaults from registry
+  const defaults = getDefaultParams(effect.type);
+
   const handleContextMenu = (paramName: string) => (e: React.MouseEvent) => {
     e.preventDefault();
-    const defaults = EFFECT_DEFAULTS[effect.type] || {};
     const defaultValue = defaults[paramName];
     if (defaultValue !== undefined) onChange({ ...effect.params, [paramName]: defaultValue });
   };
@@ -585,65 +577,70 @@ function renderEffectParams(
     return <EffectKeyframeToggle clipId={clipId} effectId={effect.id} paramName={paramName} value={value} />;
   };
 
-  switch (effect.type) {
-    case 'hue-shift':
-      return (<div className="control-row">{renderKfToggle('shift', effect.params.shift as number)}<label>Shift</label>
-        <input type="range" min="0" max="1" step="0.01" value={effect.params.shift as number}
-          onChange={(e) => onChange({ shift: parseFloat(e.target.value) })} onContextMenu={handleContextMenu('shift')} /></div>);
-    case 'brightness':
-      return (<div className="control-row">{renderKfToggle('amount', effect.params.amount as number)}<label>Amount</label>
-        <input type="range" min="-1" max="1" step="0.01" value={effect.params.amount as number}
-          onChange={(e) => onChange({ amount: parseFloat(e.target.value) })} onContextMenu={handleContextMenu('amount')} /></div>);
-    case 'contrast':
-    case 'saturation':
-      return (<div className="control-row">{renderKfToggle('amount', effect.params.amount as number)}<label>Amount</label>
-        <input type="range" min="0" max="3" step="0.01" value={effect.params.amount as number}
-          onChange={(e) => onChange({ amount: parseFloat(e.target.value) })} onContextMenu={handleContextMenu('amount')} /></div>);
-    case 'pixelate':
-      return (<div className="control-row">{renderKfToggle('size', effect.params.size as number)}<label>Size</label>
-        <input type="range" min="1" max="64" step="1" value={effect.params.size as number}
-          onChange={(e) => onChange({ size: parseInt(e.target.value, 10) })} onContextMenu={handleContextMenu('size')} /></div>);
-    case 'kaleidoscope':
-      return (<>
-        <div className="control-row">{renderKfToggle('segments', effect.params.segments as number)}<label>Segments</label>
-          <input type="range" min="2" max="16" step="1" value={effect.params.segments as number}
-            onChange={(e) => onChange({ ...effect.params, segments: parseInt(e.target.value, 10) })} onContextMenu={handleContextMenu('segments')} /></div>
-        <div className="control-row">{renderKfToggle('rotation', effect.params.rotation as number)}<label>Rotation</label>
-          <input type="range" min="0" max={Math.PI * 2} step="0.01" value={effect.params.rotation as number}
-            onChange={(e) => onChange({ ...effect.params, rotation: parseFloat(e.target.value) })} onContextMenu={handleContextMenu('rotation')} /></div>
-      </>);
-    case 'mirror':
-      return (<>
-        <div className="control-row"><label><input type="checkbox" checked={effect.params.horizontal as boolean}
-          onChange={(e) => onChange({ ...effect.params, horizontal: e.target.checked })} /> Horizontal</label></div>
-        <div className="control-row"><label><input type="checkbox" checked={effect.params.vertical as boolean}
-          onChange={(e) => onChange({ ...effect.params, vertical: e.target.checked })} /> Vertical</label></div>
-      </>);
-    case 'rgb-split':
-      return (<>
-        <div className="control-row">{renderKfToggle('amount', effect.params.amount as number)}<label>Amount</label>
-          <input type="range" min="0" max="0.1" step="0.001" value={effect.params.amount as number}
-            onChange={(e) => onChange({ ...effect.params, amount: parseFloat(e.target.value) })} onContextMenu={handleContextMenu('amount')} /></div>
-        <div className="control-row">{renderKfToggle('angle', effect.params.angle as number)}<label>Angle</label>
-          <input type="range" min="0" max={Math.PI * 2} step="0.01" value={effect.params.angle as number}
-            onChange={(e) => onChange({ ...effect.params, angle: parseFloat(e.target.value) })} onContextMenu={handleContextMenu('angle')} /></div>
-      </>);
-    case 'levels':
-      return (<>
-        {['inputBlack', 'inputWhite', 'gamma', 'outputBlack', 'outputWhite'].map(param => (
-          <div className="control-row" key={param}>
-            {renderKfToggle(param, effect.params[param] as number)}<label>{param.replace(/([A-Z])/g, ' $1').trim()}</label>
-            <input type="range" min={param === 'gamma' ? 0.1 : 0} max={param === 'gamma' ? 10 : 1} step={param === 'gamma' ? 0.1 : 0.01}
-              value={effect.params[param] as number} onChange={(e) => onChange({ ...effect.params, [param]: parseFloat(e.target.value) })}
-              onContextMenu={handleContextMenu(param)} /><span className="value">{(effect.params[param] as number).toFixed(2)}</span>
-          </div>
-        ))}
-      </>);
-    case 'invert':
-      return <p className="effect-info">No parameters</p>;
-    default:
-      return null;
+  // No parameters
+  if (Object.keys(effectDef.params).length === 0) {
+    return <p className="effect-info">No parameters</p>;
   }
+
+  // Render controls based on parameter definitions
+  return (
+    <>
+      {Object.entries(effectDef.params).map(([paramName, paramDef]) => {
+        const value = effect.params[paramName] ?? paramDef.default;
+
+        switch (paramDef.type) {
+          case 'number':
+            return (
+              <div className="control-row" key={paramName} onContextMenu={handleContextMenu(paramName)}>
+                {paramDef.animatable && renderKfToggle(paramName, value as number)}
+                <label>{paramDef.label}</label>
+                <input
+                  type="range"
+                  min={paramDef.min ?? 0}
+                  max={paramDef.max ?? 1}
+                  step={paramDef.step ?? 0.01}
+                  value={value as number}
+                  onChange={(e) => onChange({ ...effect.params, [paramName]: parseFloat(e.target.value) })}
+                />
+                <span className="value">{(value as number).toFixed(2)}</span>
+              </div>
+            );
+
+          case 'boolean':
+            return (
+              <div className="control-row checkbox-row" key={paramName}>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={value as boolean}
+                    onChange={(e) => onChange({ ...effect.params, [paramName]: e.target.checked })}
+                  />
+                  {paramDef.label}
+                </label>
+              </div>
+            );
+
+          case 'select':
+            return (
+              <div className="control-row" key={paramName}>
+                <label>{paramDef.label}</label>
+                <select
+                  value={value as string}
+                  onChange={(e) => onChange({ ...effect.params, [paramName]: e.target.value })}
+                >
+                  {paramDef.options?.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+            );
+
+          default:
+            return null;
+        }
+      })}
+    </>
+  );
 }
 
 // ============================================

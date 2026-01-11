@@ -1,6 +1,7 @@
 // Timeline store utility functions
 
 import type { EffectType } from '../../types';
+import { getDefaultParams as getRegistryDefaultParams, hasEffect } from '../../effects';
 
 // Helper to seek video and wait for it to be ready
 export function seekVideo(video: HTMLVideoElement, time: number): Promise<void> {
@@ -155,31 +156,15 @@ export async function generateThumbnails(video: HTMLVideoElement, duration: numb
 }
 
 // Helper function to get default effect parameters
+// Now uses the modular effect registry, with fallback for audio effects
 export function getDefaultEffectParams(type: string | EffectType): Record<string, number | boolean | string> {
+  // Check if effect exists in the new registry
+  if (hasEffect(type)) {
+    return getRegistryDefaultParams(type);
+  }
+
+  // Fallback for audio effects (not yet in the modular system)
   switch (type) {
-    case 'hue-shift':
-      return { shift: 0 };
-    case 'saturation':
-      return { amount: 1 };
-    case 'brightness':
-      return { amount: 0 };
-    case 'contrast':
-      return { amount: 1 };
-    case 'blur':
-      return { radius: 0 };
-    case 'pixelate':
-      return { size: 8 };
-    case 'kaleidoscope':
-      return { segments: 6, rotation: 0 };
-    case 'mirror':
-      return { horizontal: true, vertical: false };
-    case 'invert':
-      return {};
-    case 'rgb-split':
-      return { amount: 0.01, angle: 0 };
-    case 'levels':
-      return { inputBlack: 0, inputWhite: 1, gamma: 1, outputBlack: 0, outputWhite: 1 };
-    // Audio effects
     case 'audio-eq':
       return {
         band31: 0, band62: 0, band125: 0, band250: 0, band500: 0,

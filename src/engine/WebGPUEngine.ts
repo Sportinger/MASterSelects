@@ -7,7 +7,7 @@ import { TextureManager } from './texture/TextureManager';
 import { MaskTextureManager } from './texture/MaskTextureManager';
 import { ScrubbingCache } from './texture/ScrubbingCache';
 import { CompositorPipeline } from './pipeline/CompositorPipeline';
-import { EffectsPipeline } from './pipeline/EffectsPipeline';
+import { EffectsPipeline } from '../effects/EffectsPipeline';
 import { OutputPipeline } from './pipeline/OutputPipeline';
 import { VideoFrameManager } from './video/VideoFrameManager';
 import { audioStatusTracker } from '../services/audioManager';
