@@ -35,8 +35,8 @@ export class ProxyResizePipeline {
   private atlasWidth = 0;
   private atlasHeight = 0;
 
-  // Uniform buffer for tile params
-  private uniformBuffer: GPUBuffer | null = null;
+  // Uniform buffers for tile params (one per batch slot to avoid overwrite)
+  private uniformBuffers: GPUBuffer[] = [];
 
   // Staging buffer for readback
   private stagingBuffer: GPUBuffer | null = null;
@@ -70,12 +70,15 @@ export class ProxyResizePipeline {
       ],
     });
 
-    // Create uniform buffer (TileParams struct = 8 floats = 32 bytes)
-    this.uniformBuffer = this.device.createBuffer({
-      label: 'Proxy Resize Uniform Buffer',
-      size: 32,
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
+    // Create uniform buffers - one per batch slot (TileParams struct = 8 floats = 32 bytes)
+    // This avoids the issue where writeBuffer overwrites before GPU executes
+    for (let i = 0; i < BATCH_SIZE; i++) {
+      this.uniformBuffers.push(this.device.createBuffer({
+        label: `Proxy Resize Uniform Buffer ${i}`,
+        size: 32,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+      }));
+    }
 
     // Create pipeline layout
     const pipelineLayout = this.device.createPipelineLayout({
@@ -160,8 +163,13 @@ export class ProxyResizePipeline {
    * Render a single video frame to a tile in the atlas
    */
   renderFrameToAtlas(frame: VideoFrame, tileIndex: number, commandEncoder: GPUCommandEncoder): void {
-    if (!this.pipeline || !this.atlasView || !this.sampler || !this.uniformBuffer || !this.bindGroupLayout) {
+    if (!this.pipeline || !this.atlasView || !this.sampler || !this.bindGroupLayout) {
       console.warn('[ProxyResizePipeline] Pipeline not initialized');
+      return;
+    }
+
+    if (tileIndex >= this.uniformBuffers.length) {
+      console.warn(`[ProxyResizePipeline] Tile index ${tileIndex} exceeds buffer count`);
       return;
     }
 
@@ -176,6 +184,9 @@ export class ProxyResizePipeline {
       console.warn('[ProxyResizePipeline] Failed to import video frame:', e);
       return;
     }
+
+    // Get the uniform buffer for this tile slot
+    const uniformBuffer = this.uniformBuffers[tileIndex];
 
     // Update uniform buffer with tile params
     const uniformData = new Float32Array([
@@ -194,16 +205,16 @@ export class ProxyResizePipeline {
     uniformView.setUint32(0, tileX, true);
     uniformView.setUint32(4, tileY, true);
 
-    this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
+    this.device.queue.writeBuffer(uniformBuffer, 0, uniformData);
 
-    // Create bind group for this frame
+    // Create bind group for this frame (each frame uses its own uniform buffer)
     const bindGroup = this.device.createBindGroup({
       label: `Proxy Resize Bind Group (tile ${tileIndex})`,
       layout: this.bindGroupLayout,
       entries: [
         { binding: 0, resource: this.sampler },
         { binding: 1, resource: externalTexture },
-        { binding: 2, resource: { buffer: this.uniformBuffer } },
+        { binding: 2, resource: { buffer: uniformBuffer } },
       ],
     });
 
@@ -317,7 +328,10 @@ export class ProxyResizePipeline {
   destroy(): void {
     this.atlasTexture?.destroy();
     this.stagingBuffer?.destroy();
-    this.uniformBuffer?.destroy();
+    for (const buffer of this.uniformBuffers) {
+      buffer.destroy();
+    }
+    this.uniformBuffers = [];
     console.log('[ProxyResizePipeline] Destroyed');
   }
 }
