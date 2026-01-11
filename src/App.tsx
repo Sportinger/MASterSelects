@@ -7,6 +7,7 @@ import { WelcomeOverlay } from './components/common/WelcomeOverlay';
 import { useGlobalHistory } from './hooks/useGlobalHistory';
 import { useClipPanelSync } from './hooks/useClipPanelSync';
 import { projectDB } from './services/projectDB';
+import { projectFileService } from './services/projectFileService';
 import './App.css';
 
 function App() {
@@ -21,12 +22,27 @@ function App() {
   const [hasStoredProject, setHasStoredProject] = useState(false);
   const [manuallyDismissed, setManuallyDismissed] = useState(false);
 
-  // Check for stored project on mount
+  // Check for stored project on mount, then poll for changes
+  // This handles the case where Toolbar's restore fails and clears handles
   useEffect(() => {
-    projectDB.hasLastProject().then((hasProject) => {
-      setHasStoredProject(hasProject);
+    const checkProject = async () => {
+      // Check both: IndexedDB handle exists AND project is actually open
+      const hasHandle = await projectDB.hasLastProject();
+      const isOpen = projectFileService.isProjectOpen();
+      setHasStoredProject(hasHandle || isOpen);
       setIsChecking(false);
-    });
+    };
+
+    checkProject();
+
+    // Poll for changes (handles cleared after failed restore)
+    const interval = setInterval(async () => {
+      const hasHandle = await projectDB.hasLastProject();
+      const isOpen = projectFileService.isProjectOpen();
+      setHasStoredProject(hasHandle || isOpen);
+    }, 500);
+
+    return () => clearInterval(interval);
   }, []);
 
   // Show welcome if no stored project and not manually dismissed this session

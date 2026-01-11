@@ -1037,6 +1037,8 @@ class ProjectFileService {
       const parentHandle = await projectDB.getStoredHandle('projectsFolder');
       if (!parentHandle || parentHandle.kind !== 'directory') {
         console.log('[ProjectFile] No parent folder stored, cannot recreate');
+        // Clear invalid stored handles so WelcomeOverlay shows
+        await this.clearStoredHandles();
         return false;
       }
 
@@ -1059,7 +1061,23 @@ class ProjectFileService {
       return success;
     } catch (e) {
       console.warn('[ProjectFile] Failed to recreate project from parent:', e);
+      // Clear invalid stored handles so WelcomeOverlay shows
+      await this.clearStoredHandles();
       return false;
+    }
+  }
+
+  /**
+   * Clear stored handles (used when project can't be restored)
+   * This will cause WelcomeOverlay to show on next check
+   */
+  private async clearStoredHandles(): Promise<void> {
+    try {
+      await projectDB.deleteHandle('lastProject');
+      await projectDB.deleteHandle('projectsFolder');
+      console.log('[ProjectFile] Cleared stored handles');
+    } catch (e) {
+      console.warn('[ProjectFile] Failed to clear stored handles:', e);
     }
   }
 
