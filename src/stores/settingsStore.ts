@@ -31,6 +31,9 @@ interface SettingsState {
   previewQuality: PreviewQuality;
   showTransparencyGrid: boolean;  // Show checkerboard pattern for transparent areas
 
+  // First-run state
+  hasCompletedSetup: boolean;
+
   // UI state
   isSettingsOpen: boolean;
 
@@ -39,6 +42,7 @@ interface SettingsState {
   setTranscriptionProvider: (provider: TranscriptionProvider) => void;
   setPreviewQuality: (quality: PreviewQuality) => void;
   setShowTransparencyGrid: (show: boolean) => void;
+  setHasCompletedSetup: (completed: boolean) => void;
   openSettings: () => void;
   closeSettings: () => void;
   toggleSettings: () => void;
@@ -64,6 +68,7 @@ export const useSettingsStore = create<SettingsState>()(
       transcriptionProvider: 'local',
       previewQuality: 1, // Full quality by default
       showTransparencyGrid: false, // Don't show checkerboard by default
+      hasCompletedSetup: false, // Show welcome overlay on first run
       isSettingsOpen: false,
 
       // Actions
@@ -88,6 +93,10 @@ export const useSettingsStore = create<SettingsState>()(
         set({ showTransparencyGrid: show });
       },
 
+      setHasCompletedSetup: (completed) => {
+        set({ hasCompletedSetup: completed });
+      },
+
       openSettings: () => set({ isSettingsOpen: true }),
       closeSettings: () => set({ isSettingsOpen: false }),
       toggleSettings: () => set((state) => ({ isSettingsOpen: !state.isSettingsOpen })),
@@ -110,6 +119,7 @@ export const useSettingsStore = create<SettingsState>()(
           transcriptionProvider: state.transcriptionProvider,
           previewQuality: state.previewQuality,
           showTransparencyGrid: state.showTransparencyGrid,
+          hasCompletedSetup: state.hasCompletedSetup,
         }),
       }
     )
