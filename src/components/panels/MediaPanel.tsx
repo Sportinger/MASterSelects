@@ -359,6 +359,15 @@ export function MediaPanel() {
     setInternalDragId(null);
   }, [selectedIds, moveToFolder, importFiles]);
 
+  // Format file size
+  const formatFileSize = (bytes?: number): string => {
+    if (!bytes) return '–';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  };
+
   // Render a single item
   const renderItem = (item: ProjectItem, depth: number = 0) => {
     const isFolder = 'isExpanded' in item;
@@ -371,12 +380,12 @@ export function MediaPanel() {
     const canDrag = true;
     const isDragTarget = isFolder && dragOverFolderId === item.id;
     const isBeingDragged = internalDragId === item.id;
+    const mediaFile = isMediaFile ? (item as MediaFile) : null;
 
     return (
       <div key={item.id}>
         <div
           className={`media-item ${isSelected ? 'selected' : ''} ${isFolder ? 'folder' : ''} ${isMediaFile && !hasFile ? 'no-file' : ''} ${isDragTarget ? 'drag-target' : ''} ${isBeingDragged ? 'dragging' : ''}`}
-          style={{ paddingLeft: `${12 + depth * 16}px` }}
           draggable={canDrag}
           onDragStart={(e) => handleDragStart(e, item)}
           onDragEnd={handleDragEnd}
@@ -387,78 +396,102 @@ export function MediaPanel() {
           onDoubleClick={() => handleItemDoubleClick(item)}
           onContextMenu={(e) => handleContextMenu(e, item.id)}
         >
-          {/* Icon */}
-          <span className="media-item-icon">
-            {isFolder ? (isExpanded ? '📂' : '📁') :
-             item.type === 'composition' ? '🎬' :
-             item.type === 'video' ? '🎥' :
-             item.type === 'audio' ? '🔊' :
-             item.type === 'image' ? '🖼️' : '📄'}
-          </span>
+          {/* Name column (with icon, thumbnail, name) */}
+          <div className="media-col media-col-name" style={{ paddingLeft: `${12 + depth * 16}px` }}>
+            {/* Icon */}
+            <span className="media-item-icon">
+              {isFolder ? (isExpanded ? '📂' : '📁') :
+               item.type === 'composition' ? '🎬' :
+               item.type === 'video' ? '🎥' :
+               item.type === 'audio' ? '🔊' :
+               item.type === 'image' ? '🖼️' : '📄'}
+            </span>
 
-          {/* Thumbnail for media files */}
-          {'thumbnailUrl' in item && item.thumbnailUrl && (
-            <img
-              src={item.thumbnailUrl}
-              alt=""
-              className="media-item-thumbnail"
-              draggable={false}
-            />
-          )}
+            {/* Thumbnail for media files */}
+            {'thumbnailUrl' in item && item.thumbnailUrl && (
+              <img
+                src={item.thumbnailUrl}
+                alt=""
+                className="media-item-thumbnail"
+                draggable={false}
+              />
+            )}
 
-          {/* Name */}
-          {isRenaming ? (
-            <input
-              type="text"
-              className="media-item-rename"
-              value={renameValue}
-              onChange={(e) => setRenameValue(e.target.value)}
-              onBlur={finishRename}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') finishRename();
-                if (e.key === 'Escape') setRenamingId(null);
-              }}
-              autoFocus
-              onClick={(e) => e.stopPropagation()}
-            />
-          ) : (
-            <span
-              className={`media-item-name ${isSelected ? 'editable' : ''}`}
-              onClick={(e) => handleNameClick(e, item.id, item.name)}
-            >
-              {item.name}
-            </span>
-          )}
-
-          {/* Info */}
-          {'duration' in item && item.duration && (
-            <span className="media-item-info">
-              {formatDuration(item.duration)}
-            </span>
-          )}
-          {'width' in item && 'height' in item && item.width && item.height && (
-            <span className="media-item-info">
-              {item.width}×{item.height}
-            </span>
-          )}
-          {/* Proxy badge */}
-          {'proxyStatus' in item && item.proxyStatus === 'ready' && (
-            <span className="media-item-proxy-badge" title="Proxy generated">
-              P
-            </span>
-          )}
-          {'proxyStatus' in item && item.proxyStatus === 'generating' && (
-            <span className="media-item-proxy-generating" title={`Generating proxy: ${(item as MediaFile).proxyProgress || 0}%`}>
-              <span className="proxy-fill-badge">
-                <span className="proxy-fill-bg">P</span>
-                <span
-                  className="proxy-fill-progress"
-                  style={{ height: `${(item as MediaFile).proxyProgress || 0}%` }}
-                >P</span>
+            {/* Name */}
+            {isRenaming ? (
+              <input
+                type="text"
+                className="media-item-rename"
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onBlur={finishRename}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') finishRename();
+                  if (e.key === 'Escape') setRenamingId(null);
+                }}
+                autoFocus
+                onClick={(e) => e.stopPropagation()}
+              />
+            ) : (
+              <span
+                className={`media-item-name ${isSelected ? 'editable' : ''}`}
+                onClick={(e) => handleNameClick(e, item.id, item.name)}
+              >
+                {item.name}
               </span>
-              <span className="proxy-percent">{(item as MediaFile).proxyProgress || 0}%</span>
-            </span>
-          )}
+            )}
+
+            {/* Proxy badge */}
+            {'proxyStatus' in item && item.proxyStatus === 'ready' && (
+              <span className="media-item-proxy-badge" title="Proxy generated">
+                P
+              </span>
+            )}
+            {'proxyStatus' in item && item.proxyStatus === 'generating' && (
+              <span className="media-item-proxy-generating" title={`Generating proxy: ${(item as MediaFile).proxyProgress || 0}%`}>
+                <span className="proxy-fill-badge">
+                  <span className="proxy-fill-bg">P</span>
+                  <span
+                    className="proxy-fill-progress"
+                    style={{ height: `${(item as MediaFile).proxyProgress || 0}%` }}
+                  >P</span>
+                </span>
+                <span className="proxy-percent">{(item as MediaFile).proxyProgress || 0}%</span>
+              </span>
+            )}
+          </div>
+
+          {/* Duration column */}
+          <div className="media-col media-col-duration">
+            {'duration' in item && item.duration ? formatDuration(item.duration) : '–'}
+          </div>
+
+          {/* Resolution column */}
+          <div className="media-col media-col-resolution">
+            {'width' in item && 'height' in item && item.width && item.height
+              ? `${item.width}×${item.height}`
+              : '–'}
+          </div>
+
+          {/* FPS column */}
+          <div className="media-col media-col-fps">
+            {mediaFile?.fps ? `${mediaFile.fps}` : (item.type === 'composition' ? (item as any).frameRate : '–')}
+          </div>
+
+          {/* Container column */}
+          <div className="media-col media-col-container">
+            {mediaFile?.container || '–'}
+          </div>
+
+          {/* Codec column */}
+          <div className="media-col media-col-codec">
+            {mediaFile?.codec || '–'}
+          </div>
+
+          {/* Size column */}
+          <div className="media-col media-col-size">
+            {mediaFile ? formatFileSize(mediaFile.fileSize) : '–'}
+          </div>
         </div>
 
         {/* Render children if folder is expanded */}
@@ -541,7 +574,7 @@ export function MediaPanel() {
         onChange={handleFileChange}
       />
 
-      {/* Item list */}
+      {/* Item list with column headers */}
       <div className="media-panel-content">
         {rootItems.length === 0 ? (
           <div className="media-panel-empty">
@@ -556,8 +589,20 @@ export function MediaPanel() {
             <p className="hint">Drag & drop files here or click Import</p>
           </div>
         ) : (
-          <div className="media-item-list">
-            {rootItems.map(item => renderItem(item))}
+          <div className="media-panel-table-wrapper">
+            {/* Column headers */}
+            <div className="media-column-headers">
+              <div className="media-col media-col-name">Name</div>
+              <div className="media-col media-col-duration">Duration</div>
+              <div className="media-col media-col-resolution">Resolution</div>
+              <div className="media-col media-col-fps">FPS</div>
+              <div className="media-col media-col-container">Container</div>
+              <div className="media-col media-col-codec">Codec</div>
+              <div className="media-col media-col-size">Size</div>
+            </div>
+            <div className="media-item-list">
+              {rootItems.map(item => renderItem(item))}
+            </div>
           </div>
         )}
       </div>

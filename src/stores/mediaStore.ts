@@ -32,6 +32,10 @@ export interface MediaFile extends MediaItem {
   duration?: number; // For video/audio
   width?: number; // For video/image
   height?: number; // For video/image
+  fps?: number; // Frame rate for video
+  codec?: string; // Video/audio codec (e.g., H.264, VP9)
+  container?: string; // Container format (e.g., MP4, MKV, WebM)
+  fileSize?: number; // File size in bytes
   thumbnailUrl?: string;
   // Proxy support (for video files)
   proxyStatus?: ProxyStatus;
@@ -197,43 +201,191 @@ async function createThumbnail(file: File, type: 'video' | 'image'): Promise<str
   });
 }
 
+// Get container format from file extension
+function getContainerFormat(fileName: string): string {
+  const ext = fileName.split('.').pop()?.toLowerCase() || '';
+  const containerMap: Record<string, string> = {
+    mp4: 'MP4',
+    m4v: 'MP4',
+    mov: 'MOV',
+    mkv: 'MKV',
+    webm: 'WebM',
+    avi: 'AVI',
+    wmv: 'WMV',
+    flv: 'FLV',
+    ogv: 'OGV',
+    '3gp': '3GP',
+    mp3: 'MP3',
+    wav: 'WAV',
+    ogg: 'OGG',
+    flac: 'FLAC',
+    aac: 'AAC',
+    m4a: 'M4A',
+    jpg: 'JPEG',
+    jpeg: 'JPEG',
+    png: 'PNG',
+    gif: 'GIF',
+    webp: 'WebP',
+    bmp: 'BMP',
+    svg: 'SVG',
+  };
+  return containerMap[ext] || ext.toUpperCase();
+}
+
+// Try to parse FPS from filename (common patterns like "25fps", "_30p", etc.)
+function parseFpsFromFilename(fileName: string): number | undefined {
+  // Match patterns like "25fps", "30fps", "24p", "60p", "29.97fps"
+  const fpsMatch = fileName.match(/[_\-\s\(](\d+(?:\.\d+)?)\s*(?:fps|p)[\s\)\-_\.]/i);
+  if (fpsMatch) {
+    const fps = parseFloat(fpsMatch[1]);
+    if (fps > 0 && fps <= 240) return fps;
+  }
+  return undefined;
+}
+
+// Get codec info from file (best effort - browsers have limited support)
+async function getCodecInfo(file: File): Promise<string | undefined> {
+  // Try to read first few bytes for codec detection
+  try {
+    const buffer = await file.slice(0, 32).arrayBuffer();
+    const view = new DataView(buffer);
+
+    // Check for common signatures
+    const ext = file.name.split('.').pop()?.toLowerCase();
+
+    // For MP4/MOV, codec is usually H.264 or H.265
+    if (ext === 'mp4' || ext === 'm4v' || ext === 'mov') {
+      // We could parse moov/trak boxes but that's complex
+      // Return common default
+      return 'H.264';
+    }
+
+    // For WebM, usually VP8 or VP9
+    if (ext === 'webm') {
+      // Check for WebM signature (1A 45 DF A3)
+      if (view.getUint32(0) === 0x1A45DFA3) {
+        return 'VP9'; // Modern WebM usually VP9
+      }
+    }
+
+    // For MKV
+    if (ext === 'mkv') {
+      return 'H.264'; // Most common
+    }
+
+    // Audio codecs
+    if (ext === 'mp3') return 'MP3';
+    if (ext === 'aac' || ext === 'm4a') return 'AAC';
+    if (ext === 'wav') return 'PCM';
+    if (ext === 'ogg') return 'Vorbis';
+    if (ext === 'flac') return 'FLAC';
+
+  } catch {
+    // Ignore errors
+  }
+  return undefined;
+}
+
 // Get media dimensions/duration
 async function getMediaInfo(file: File, type: 'video' | 'audio' | 'image'): Promise<{
   width?: number;
   height?: number;
   duration?: number;
+  fps?: number;
+  codec?: string;
+  container?: string;
+  fileSize?: number;
 }> {
+  const container = getContainerFormat(file.name);
+  const fileSize = file.size;
+  const codec = await getCodecInfo(file);
+
   return new Promise((resolve) => {
     if (type === 'image') {
       const img = new Image();
       img.src = URL.createObjectURL(file);
       img.onload = () => {
-        resolve({ width: img.width, height: img.height });
+        resolve({ width: img.width, height: img.height, container, fileSize, codec });
         URL.revokeObjectURL(img.src);
       };
-      img.onerror = () => resolve({});
+      img.onerror = () => resolve({ container, fileSize });
     } else if (type === 'video') {
       const video = document.createElement('video');
       video.src = URL.createObjectURL(file);
       video.onloadedmetadata = () => {
+        // Try to get FPS from filename first
+        let fps = parseFpsFromFilename(file.name);
+
+        // If not found, try to estimate from video (this is approximate)
+        if (!fps && video.duration > 0) {
+          // Use requestVideoFrameCallback if available for accurate FPS
+          if ('requestVideoFrameCallback' in video) {
+            let frameCount = 0;
+            let startTime = 0;
+            const countFrames = (now: number, metadata: { presentedFrames: number }) => {
+              if (frameCount === 0) {
+                startTime = now;
+              }
+              frameCount++;
+              if (frameCount >= 10 && now - startTime > 100) {
+                // Estimate FPS from counted frames
+                fps = Math.round((frameCount / ((now - startTime) / 1000)) * 10) / 10;
+                resolve({
+                  width: video.videoWidth,
+                  height: video.videoHeight,
+                  duration: video.duration,
+                  fps,
+                  codec,
+                  container,
+                  fileSize,
+                });
+                URL.revokeObjectURL(video.src);
+                video.pause();
+                return;
+              }
+              (video as any).requestVideoFrameCallback(countFrames);
+            };
+            video.muted = true;
+            video.play().then(() => {
+              (video as any).requestVideoFrameCallback(countFrames);
+            }).catch(() => {
+              // Fallback if autoplay blocked
+              resolve({
+                width: video.videoWidth,
+                height: video.videoHeight,
+                duration: video.duration,
+                codec,
+                container,
+                fileSize,
+              });
+              URL.revokeObjectURL(video.src);
+            });
+            return;
+          }
+        }
+
         resolve({
           width: video.videoWidth,
           height: video.videoHeight,
           duration: video.duration,
+          fps,
+          codec,
+          container,
+          fileSize,
         });
         URL.revokeObjectURL(video.src);
       };
-      video.onerror = () => resolve({});
+      video.onerror = () => resolve({ container, fileSize });
     } else if (type === 'audio') {
       const audio = document.createElement('audio');
       audio.src = URL.createObjectURL(file);
       audio.onloadedmetadata = () => {
-        resolve({ duration: audio.duration });
+        resolve({ duration: audio.duration, codec, container, fileSize });
         URL.revokeObjectURL(audio.src);
       };
-      audio.onerror = () => resolve({});
+      audio.onerror = () => resolve({ container, fileSize });
     } else {
-      resolve({});
+      resolve({ container, fileSize });
     }
   });
 }

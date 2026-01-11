@@ -166,11 +166,21 @@ interface MediaFile {
 
 ## Media Properties
 
-### Displayed Info
-- Thumbnail (video/image)
-- Duration (mm:ss)
-- Dimensions (W×H)
-- File name
+### Column Display
+The media list displays items in a table with the following columns:
+
+| Column | Description | Example |
+|--------|-------------|---------|
+| **Name** | File name with icon and thumbnail | 🎥 Video.mp4 |
+| **Duration** | Clip length (mm:ss) | 4:02 |
+| **Resolution** | Width × Height | 1920×1080 |
+| **FPS** | Frame rate | 25 |
+| **Container** | File container format | MP4, MKV, WebM |
+| **Codec** | Video/audio codec | H.264, VP9 |
+| **Size** | File size | 125.4 MB |
+
+### Horizontal Scrolling
+When columns don't fit in the panel width, scroll horizontally with mouse.
 
 ### Metadata
 ```typescript
@@ -182,6 +192,10 @@ interface MediaFile {
   duration?: number;
   width?: number;
   height?: number;
+  fps?: number;           // Frame rate (video)
+  codec?: string;         // H.264, VP9, AAC, etc.
+  container?: string;     // MP4, MKV, WebM, etc.
+  fileSize?: number;      // File size in bytes
   thumbnailUrl?: string;
 }
 ```

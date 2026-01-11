@@ -4177,8 +4177,81 @@ input[type="checkbox"] {
 
 .media-panel-content {
   flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: auto;
+}
+
+/* Table wrapper for horizontal scrolling */
+.media-panel-table-wrapper {
+  min-width: 100%;
+  display: inline-block;
+}
+
+/* Column headers */
+.media-column-headers {
+  display: flex;
+  align-items: center;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  font-size: 10px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  min-width: max-content;
+}
+
+/* Column base styles */
+.media-col {
+  flex-shrink: 0;
+  padding: 0 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Column widths */
+.media-col-name {
+  flex: 1;
+  min-width: 200px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.media-col-duration {
+  width: 56px;
+  text-align: right;
+}
+
+.media-col-resolution {
+  width: 80px;
+  text-align: right;
+}
+
+.media-col-fps {
+  width: 40px;
+  text-align: right;
+}
+
+.media-col-container {
+  width: 60px;
+  text-align: center;
+}
+
+.media-col-codec {
+  width: 56px;
+  text-align: center;
+}
+
+.media-col-size {
+  width: 70px;
+  text-align: right;
+  padding-right: 12px;
 }
 
 .media-panel-empty {
@@ -4209,16 +4282,17 @@ input[type="checkbox"] {
 
 .media-item-list {
   padding: 4px 0;
+  min-width: max-content;
 }
 
 .media-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
+  padding: 4px 0;
   cursor: pointer;
   transition: background 0.1s;
   border-left: 2px solid transparent;
+  min-width: max-content;
 }
 
 .media-item:hover {
@@ -4235,12 +4309,10 @@ input[type="checkbox"] {
   cursor: not-allowed;
 }
 
-.media-item.no-file::after {
-  content: '(reload required)';
+.media-item.no-file .media-col-name::after {
+  content: ' (reload required)';
   font-size: 10px;
   color: var(--text-secondary);
-  margin-left: auto;
-  padding-right: 8px;
 }
 
 .media-item-icon {
@@ -4267,6 +4339,8 @@ input[type="checkbox"] {
   padding: 2px 4px;
   border-radius: 3px;
   cursor: default;
+  color: var(--text-primary);
+  min-width: 0;
 }
 
 .media-item-name.editable {
@@ -4288,10 +4362,12 @@ input[type="checkbox"] {
   outline: none;
 }
 
+/* Legacy - replaced by media-col system */
 .media-item-info {
   font-size: 10px;
   color: var(--text-secondary);
   flex-shrink: 0;
+  display: none;
 }
 
 .media-item-proxy-badge {
