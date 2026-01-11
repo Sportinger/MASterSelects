@@ -1,9 +1,43 @@
 // Media Panel - Project browser like After Effects
 
-import { useCallback, useRef, useState, useEffect } from 'react';
+import React, { useCallback, useRef, useState, useEffect } from 'react';
 import { useMediaStore } from '../../stores/mediaStore';
 import type { MediaFile, Composition, ProjectItem } from '../../stores/mediaStore';
 import { useContextMenuPosition } from '../../hooks/useContextMenuPosition';
+
+// Column definitions
+type ColumnId = 'name' | 'duration' | 'resolution' | 'fps' | 'container' | 'codec' | 'size';
+
+const COLUMN_LABELS: Record<ColumnId, string> = {
+  name: 'Name',
+  duration: 'Duration',
+  resolution: 'Resolution',
+  fps: 'FPS',
+  container: 'Container',
+  codec: 'Codec',
+  size: 'Size',
+};
+
+const DEFAULT_COLUMN_ORDER: ColumnId[] = ['name', 'duration', 'resolution', 'fps', 'container', 'codec', 'size'];
+const STORAGE_KEY = 'media-panel-column-order';
+
+// Load column order from localStorage
+function loadColumnOrder(): ColumnId[] {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored) as ColumnId[];
+      // Validate that all columns are present
+      if (parsed.length === DEFAULT_COLUMN_ORDER.length &&
+          DEFAULT_COLUMN_ORDER.every(col => parsed.includes(col))) {
+        return parsed;
+      }
+    }
+  } catch {
+    // Ignore errors
+  }
+  return DEFAULT_COLUMN_ORDER;
+}
 
 export function MediaPanel() {
   const {
@@ -47,6 +81,59 @@ export function MediaPanel() {
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
   const [internalDragId, setInternalDragId] = useState<string | null>(null);
   const [isExternalDragOver, setIsExternalDragOver] = useState(false);
+
+  // Column order state
+  const [columnOrder, setColumnOrder] = useState<ColumnId[]>(loadColumnOrder);
+  const [draggingColumn, setDraggingColumn] = useState<ColumnId | null>(null);
+  const [dragOverColumn, setDragOverColumn] = useState<ColumnId | null>(null);
+
+  // Save column order to localStorage
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(columnOrder));
+  }, [columnOrder]);
+
+  // Column drag handlers
+  const handleColumnDragStart = useCallback((e: React.DragEvent, columnId: ColumnId) => {
+    e.stopPropagation();
+    setDraggingColumn(columnId);
+    e.dataTransfer.setData('application/x-column-id', columnId);
+    e.dataTransfer.effectAllowed = 'move';
+  }, []);
+
+  const handleColumnDragOver = useCallback((e: React.DragEvent, columnId: ColumnId) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (draggingColumn && draggingColumn !== columnId) {
+      setDragOverColumn(columnId);
+    }
+  }, [draggingColumn]);
+
+  const handleColumnDragLeave = useCallback(() => {
+    setDragOverColumn(null);
+  }, []);
+
+  const handleColumnDrop = useCallback((e: React.DragEvent, targetColumnId: ColumnId) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const sourceColumnId = e.dataTransfer.getData('application/x-column-id') as ColumnId;
+    if (sourceColumnId && sourceColumnId !== targetColumnId) {
+      setColumnOrder(prev => {
+        const newOrder = [...prev];
+        const sourceIndex = newOrder.indexOf(sourceColumnId);
+        const targetIndex = newOrder.indexOf(targetColumnId);
+        newOrder.splice(sourceIndex, 1);
+        newOrder.splice(targetIndex, 0, sourceColumnId);
+        return newOrder;
+      });
+    }
+    setDraggingColumn(null);
+    setDragOverColumn(null);
+  }, []);
+
+  const handleColumnDragEnd = useCallback(() => {
+    setDraggingColumn(null);
+    setDragOverColumn(null);
+  }, []);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -370,37 +457,64 @@ export function MediaPanel() {
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
   };
 
-  // Render a single item
-  const renderItem = (item: ProjectItem, depth: number = 0) => {
-    const isFolder = 'isExpanded' in item;
-    const isSelected = selectedIds.includes(item.id);
-    const isRenaming = renamingId === item.id;
-    const isExpanded = isFolder && expandedFolderIds.includes(item.id);
-    const isMediaFile = !isFolder && 'type' in item && item.type !== 'composition';
-    const hasFile = isMediaFile && 'file' in item && !!(item as MediaFile).file;
-    // All items are draggable for internal moves
-    const canDrag = true;
-    const isDragTarget = isFolder && dragOverFolderId === item.id;
-    const isBeingDragged = internalDragId === item.id;
-    const mediaFile = isMediaFile ? (item as MediaFile) : null;
+  // Name column width state (resizable)
+  const [nameColumnWidth, setNameColumnWidth] = useState(() => {
+    const stored = localStorage.getItem('media-panel-name-width');
+    return stored ? parseInt(stored) : 250;
+  });
+  const resizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
-    return (
-      <div key={item.id}>
-        <div
-          className={`media-item ${isSelected ? 'selected' : ''} ${isFolder ? 'folder' : ''} ${isMediaFile && !hasFile ? 'no-file' : ''} ${isDragTarget ? 'drag-target' : ''} ${isBeingDragged ? 'dragging' : ''}`}
-          draggable={canDrag}
-          onDragStart={(e) => handleDragStart(e, item)}
-          onDragEnd={handleDragEnd}
-          onDragOver={isFolder ? (e) => handleFolderDragOver(e, item.id) : undefined}
-          onDragLeave={isFolder ? handleFolderDragLeave : undefined}
-          onDrop={isFolder ? (e) => handleFolderDrop(e, item.id) : undefined}
-          onClick={(e) => handleItemClick(item.id, e)}
-          onDoubleClick={() => handleItemDoubleClick(item)}
-          onContextMenu={(e) => handleContextMenu(e, item.id)}
-        >
-          {/* Name column (with icon, thumbnail, name) */}
-          <div className="media-col media-col-name" style={{ paddingLeft: `${12 + depth * 16}px` }}>
-            {/* Icon */}
+  // Save name column width
+  useEffect(() => {
+    localStorage.setItem('media-panel-name-width', String(nameColumnWidth));
+  }, [nameColumnWidth]);
+
+  // Resize handlers
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    resizeRef.current = { startX: e.clientX, startWidth: nameColumnWidth };
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (resizeRef.current) {
+        const delta = moveEvent.clientX - resizeRef.current.startX;
+        const newWidth = Math.max(120, Math.min(500, resizeRef.current.startWidth + delta));
+        setNameColumnWidth(newWidth);
+      }
+    };
+
+    const handleMouseUp = () => {
+      resizeRef.current = null;
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, [nameColumnWidth]);
+
+  // Render column content for an item
+  const renderColumnContent = (
+    colId: ColumnId,
+    item: ProjectItem,
+    depth: number,
+    isFolder: boolean,
+    isExpanded: boolean,
+    isRenaming: boolean,
+    isSelected: boolean,
+    mediaFile: MediaFile | null
+  ) => {
+    switch (colId) {
+      case 'name':
+        return (
+          <div
+            className="media-col media-col-name"
+            style={{ paddingLeft: `${12 + depth * 16}px`, width: nameColumnWidth, minWidth: nameColumnWidth, maxWidth: nameColumnWidth }}
+          >
             <span className="media-item-icon">
               {isFolder ? (isExpanded ? '📂' : '📁') :
                item.type === 'composition' ? '🎬' :
@@ -408,18 +522,9 @@ export function MediaPanel() {
                item.type === 'audio' ? '🔊' :
                item.type === 'image' ? '🖼️' : '📄'}
             </span>
-
-            {/* Thumbnail for media files */}
             {'thumbnailUrl' in item && item.thumbnailUrl && (
-              <img
-                src={item.thumbnailUrl}
-                alt=""
-                className="media-item-thumbnail"
-                draggable={false}
-              />
+              <img src={item.thumbnailUrl} alt="" className="media-item-thumbnail" draggable={false} />
             )}
-
-            {/* Name */}
             {isRenaming ? (
               <input
                 type="text"
@@ -442,61 +547,82 @@ export function MediaPanel() {
                 {item.name}
               </span>
             )}
-
-            {/* Proxy badge */}
             {'proxyStatus' in item && item.proxyStatus === 'ready' && (
-              <span className="media-item-proxy-badge" title="Proxy generated">
-                P
-              </span>
+              <span className="media-item-proxy-badge" title="Proxy generated">P</span>
             )}
             {'proxyStatus' in item && item.proxyStatus === 'generating' && (
               <span className="media-item-proxy-generating" title={`Generating proxy: ${(item as MediaFile).proxyProgress || 0}%`}>
                 <span className="proxy-fill-badge">
                   <span className="proxy-fill-bg">P</span>
-                  <span
-                    className="proxy-fill-progress"
-                    style={{ height: `${(item as MediaFile).proxyProgress || 0}%` }}
-                  >P</span>
+                  <span className="proxy-fill-progress" style={{ height: `${(item as MediaFile).proxyProgress || 0}%` }}>P</span>
                 </span>
                 <span className="proxy-percent">{(item as MediaFile).proxyProgress || 0}%</span>
               </span>
             )}
           </div>
-
-          {/* Duration column */}
+        );
+      case 'duration':
+        return (
           <div className="media-col media-col-duration">
             {'duration' in item && item.duration ? formatDuration(item.duration) : '–'}
           </div>
-
-          {/* Resolution column */}
+        );
+      case 'resolution':
+        return (
           <div className="media-col media-col-resolution">
-            {'width' in item && 'height' in item && item.width && item.height
-              ? `${item.width}×${item.height}`
-              : '–'}
+            {'width' in item && 'height' in item && item.width && item.height ? `${item.width}×${item.height}` : '–'}
           </div>
-
-          {/* FPS column */}
+        );
+      case 'fps':
+        return (
           <div className="media-col media-col-fps">
-            {mediaFile?.fps ? `${mediaFile.fps}` : (item.type === 'composition' ? (item as any).frameRate : '–')}
+            {mediaFile?.fps ? `${mediaFile.fps}` : (item.type === 'composition' ? (item as Composition).frameRate : '–')}
           </div>
+        );
+      case 'container':
+        return <div className="media-col media-col-container">{mediaFile?.container || '–'}</div>;
+      case 'codec':
+        return <div className="media-col media-col-codec">{mediaFile?.codec || '–'}</div>;
+      case 'size':
+        return <div className="media-col media-col-size">{mediaFile ? formatFileSize(mediaFile.fileSize) : '–'}</div>;
+      default:
+        return null;
+    }
+  };
 
-          {/* Container column */}
-          <div className="media-col media-col-container">
-            {mediaFile?.container || '–'}
-          </div>
+  // Render a single item
+  const renderItem = (item: ProjectItem, depth: number = 0) => {
+    const isFolder = 'isExpanded' in item;
+    const isSelected = selectedIds.includes(item.id);
+    const isRenaming = renamingId === item.id;
+    const isExpanded = isFolder && expandedFolderIds.includes(item.id);
+    const isMediaFile = !isFolder && 'type' in item && item.type !== 'composition';
+    const hasFile = isMediaFile && 'file' in item && !!(item as MediaFile).file;
+    const canDrag = true;
+    const isDragTarget = isFolder && dragOverFolderId === item.id;
+    const isBeingDragged = internalDragId === item.id;
+    const mediaFile = isMediaFile ? (item as MediaFile) : null;
 
-          {/* Codec column */}
-          <div className="media-col media-col-codec">
-            {mediaFile?.codec || '–'}
-          </div>
-
-          {/* Size column */}
-          <div className="media-col media-col-size">
-            {mediaFile ? formatFileSize(mediaFile.fileSize) : '–'}
-          </div>
+    return (
+      <div key={item.id}>
+        <div
+          className={`media-item ${isSelected ? 'selected' : ''} ${isFolder ? 'folder' : ''} ${isMediaFile && !hasFile ? 'no-file' : ''} ${isDragTarget ? 'drag-target' : ''} ${isBeingDragged ? 'dragging' : ''}`}
+          draggable={canDrag}
+          onDragStart={(e) => handleDragStart(e, item)}
+          onDragEnd={handleDragEnd}
+          onDragOver={isFolder ? (e) => handleFolderDragOver(e, item.id) : undefined}
+          onDragLeave={isFolder ? handleFolderDragLeave : undefined}
+          onDrop={isFolder ? (e) => handleFolderDrop(e, item.id) : undefined}
+          onClick={(e) => handleItemClick(item.id, e)}
+          onDoubleClick={() => handleItemDoubleClick(item)}
+          onContextMenu={(e) => handleContextMenu(e, item.id)}
+        >
+          {columnOrder.map(colId => (
+            <React.Fragment key={colId}>
+              {renderColumnContent(colId, item, depth, isFolder, isExpanded, isRenaming, isSelected, mediaFile)}
+            </React.Fragment>
+          ))}
         </div>
-
-        {/* Render children if folder is expanded */}
         {isFolder && isExpanded && (
           <div className="media-folder-children">
             {getItemsByFolder(item.id).map(child => renderItem(child, depth + 1))}
@@ -594,13 +720,29 @@ export function MediaPanel() {
           <div className="media-panel-table-wrapper">
             {/* Column headers */}
             <div className="media-column-headers">
-              <div className="media-col media-col-name">Name</div>
-              <div className="media-col media-col-duration">Duration</div>
-              <div className="media-col media-col-resolution">Resolution</div>
-              <div className="media-col media-col-fps">FPS</div>
-              <div className="media-col media-col-container">Container</div>
-              <div className="media-col media-col-codec">Codec</div>
-              <div className="media-col media-col-size">Size</div>
+              {columnOrder.map((colId) => (
+                <div
+                  key={colId}
+                  className={`media-col media-col-${colId} ${draggingColumn === colId ? 'dragging' : ''} ${dragOverColumn === colId ? 'drag-over' : ''}`}
+                  style={colId === 'name' ? { width: nameColumnWidth, minWidth: nameColumnWidth, maxWidth: nameColumnWidth } : undefined}
+                  draggable
+                  onDragStart={(e) => handleColumnDragStart(e, colId)}
+                  onDragOver={(e) => handleColumnDragOver(e, colId)}
+                  onDragLeave={handleColumnDragLeave}
+                  onDrop={(e) => handleColumnDrop(e, colId)}
+                  onDragEnd={handleColumnDragEnd}
+                >
+                  {COLUMN_LABELS[colId]}
+                  {/* Resize handle after name column */}
+                  {colId === 'name' && (
+                    <div
+                      className="media-col-resize-handle"
+                      onMouseDown={handleResizeStart}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  )}
+                </div>
+              ))}
             </div>
             <div className="media-item-list">
               {rootItems.map(item => renderItem(item))}

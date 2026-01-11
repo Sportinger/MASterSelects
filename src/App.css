@@ -4214,13 +4214,48 @@ input[type="checkbox"] {
 
 /* Column widths */
 .media-col-name {
-  flex: 1;
-  min-width: 150px;
-  max-width: 350px;
   display: flex;
   align-items: center;
   gap: 6px;
   overflow: hidden;
+  position: relative;
+  flex-shrink: 0;
+}
+
+/* Resize handle for name column */
+.media-col-resize-handle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.15s;
+}
+
+.media-col-resize-handle:hover,
+.media-col-resize-handle:active {
+  background: var(--accent-color);
+}
+
+/* Column header drag styles */
+.media-column-headers .media-col {
+  cursor: grab;
+  user-select: none;
+  transition: background 0.1s, opacity 0.1s;
+}
+
+.media-column-headers .media-col:active {
+  cursor: grabbing;
+}
+
+.media-column-headers .media-col.dragging {
+  opacity: 0.5;
+}
+
+.media-column-headers .media-col.drag-over {
+  background: rgba(74, 144, 226, 0.3);
 }
 
 .media-col-duration {

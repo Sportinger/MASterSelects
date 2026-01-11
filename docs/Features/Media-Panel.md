@@ -179,6 +179,16 @@ The media list displays items in a table with the following columns:
 | **Codec** | Video/audio codec | H.264, VP9 |
 | **Size** | File size | 125.4 MB |
 
+### Column Customization
+
+**Reorder Columns:**
+- Drag column headers to rearrange
+- Order is saved in localStorage
+
+**Resize Name Column:**
+- Drag the vertical line between Name and other columns
+- Width is saved in localStorage (120px - 500px)
+
 ### Horizontal Scrolling
 When columns don't fit in the panel width, scroll horizontally with mouse.
 
