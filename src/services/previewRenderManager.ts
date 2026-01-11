@@ -281,9 +281,23 @@ class PreviewRenderManagerService {
         }
       }
 
-      // Otherwise: Render this composition independently (different comp or different time)
-      const { time: playheadTime } = this.calculatePlayheadTime(preview.compositionId);
+      // Calculate playhead time for this composition
+      const { time: playheadTime, syncSource } = this.calculatePlayheadTime(preview.compositionId);
 
+      // OPTIMIZATION 3: If this preview contains the active comp as a nested clip (reverse-nested),
+      // try to use the cached active comp texture instead of re-rendering (avoids video conflicts)
+      const isMainPlaying = useTimelineStore.getState().isPlaying;
+      if (syncSource === 'reverse-nested' && isMainPlaying && activeCompId) {
+        // Try to copy the cached active comp texture
+        if (engine.copyNestedCompTextureToPreview(preview.panelId, activeCompId)) {
+          preview.lastRenderTime = now;
+          continue;
+        }
+        // If no cached texture, skip to avoid video conflicts
+        continue;
+      }
+
+      // Otherwise: Render this composition independently (different comp or different time)
       // Evaluate the composition at this time
       const evalLayers = compositionRenderer.evaluateAtTime(preview.compositionId, playheadTime);
 

@@ -4,6 +4,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { engine } from '../engine/WebGPUEngine';
 import { useMixerStore } from '../stores/mixerStore';
 import { useTimelineStore } from '../stores/timeline';
+import { useMediaStore } from '../stores/mediaStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import type { ClipMask, MaskVertex } from '../types';
 import { generateMaskTexture } from '../utils/maskRenderer';
@@ -255,6 +256,13 @@ export function useEngine() {
 
         // Render layers (layerBuilder already handles mask properties)
         engine.render(layers);
+
+        // Cache active comp output for parent preview texture sharing
+        // This allows parent compositions to show the active comp without video conflicts
+        const activeCompId = useMediaStore.getState().activeCompositionId;
+        if (activeCompId) {
+          engine.cacheActiveCompOutput(activeCompId);
+        }
 
         // Throttle stats updates (every 100ms)
         const now = performance.now();

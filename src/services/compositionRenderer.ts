@@ -11,11 +11,12 @@ interface CompositionSources {
   compositionId: string;
   clipSources: Map<string, {
     clipId: string;
-    type: 'video' | 'image' | 'audio';
+    type: 'video' | 'image' | 'audio' | 'text';
     videoElement?: HTMLVideoElement;
     webCodecsPlayer?: import('../engine/WebCodecsPlayer').WebCodecsPlayer;
     imageElement?: HTMLImageElement;
-    file: File;
+    textCanvas?: HTMLCanvasElement;
+    file?: File;
     naturalDuration: number;
   }>;
   isReady: boolean;
@@ -116,6 +117,13 @@ class CompositionRendererService {
               imageElement: timelineClip.source.imageElement,
               file: timelineClip.file,
               naturalDuration: timelineClip.source.naturalDuration || 5,
+            });
+          } else if (sourceType === 'text' && timelineClip.source.textCanvas) {
+            sources.clipSources.set(clip.id, {
+              clipId: clip.id,
+              type: 'text',
+              textCanvas: timelineClip.source.textCanvas,
+              naturalDuration: clip.duration,
             });
           }
         }
@@ -292,6 +300,28 @@ class CompositionRendererService {
         opacity: 1,
       };
 
+      // Build layer source based on type
+      let layerSource: EvaluatedLayer['source'] = null;
+      if (source.videoElement) {
+        layerSource = {
+          type: 'video',
+          file: source.file,
+          videoElement: source.videoElement,
+          webCodecsPlayer: source.webCodecsPlayer,
+        };
+      } else if (source.imageElement) {
+        layerSource = {
+          type: 'image',
+          file: source.file,
+          imageElement: source.imageElement,
+        };
+      } else if (source.textCanvas) {
+        layerSource = {
+          type: 'text',
+          textCanvas: source.textCanvas,
+        };
+      }
+
       const layer: EvaluatedLayer = {
         id: `${compositionId}-${clipAtTime.id}`,
         clipId: clipAtTime.id,
@@ -299,16 +329,7 @@ class CompositionRendererService {
         visible: true,
         opacity: transform.opacity ?? 1,
         blendMode: 'normal',
-        source: source.videoElement
-          ? {
-              type: 'video',
-              file: source.file,
-              videoElement: source.videoElement,
-              webCodecsPlayer: source.webCodecsPlayer, // Pass through WebCodecsPlayer for hardware decoding
-            }
-          : source.imageElement
-          ? { type: 'image', file: source.file, imageElement: source.imageElement }
-          : null,
+        source: layerSource,
         effects: clipAtTime.effects || [],
         position: transform.position || { x: 0, y: 0, z: 0 },
         scale: transform.scale || { x: 1, y: 1 },

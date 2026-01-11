@@ -1218,6 +1218,47 @@ export class WebGPUEngine {
   }
 
   /**
+   * Cache the current main render output for a composition
+   * This allows parent previews to use the cached texture when the child comp is active
+   */
+  cacheActiveCompOutput(compositionId: string): void {
+    const device = this.context.getDevice();
+    if (!device || !this.pingTexture || !this.pongTexture) return;
+
+    // Get the texture that has the final render
+    const finalIsPing = !this.lastRenderWasPing;
+    const sourceTexture = finalIsPing ? this.pingTexture : this.pongTexture;
+
+    // Get or create the cache texture
+    let compTexture = this.nestedCompTextures.get(compositionId);
+    if (!compTexture || compTexture.texture.width !== this.outputWidth || compTexture.texture.height !== this.outputHeight) {
+      // Clean up old texture
+      if (compTexture) {
+        compTexture.texture.destroy();
+      }
+
+      // Create new texture for caching
+      const texture = device.createTexture({
+        size: { width: this.outputWidth, height: this.outputHeight },
+        format: 'rgba8unorm',
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+      });
+      const view = texture.createView();
+      compTexture = { texture, view };
+      this.nestedCompTextures.set(compositionId, compTexture);
+    }
+
+    // Copy the current output to the cache
+    const commandEncoder = device.createCommandEncoder();
+    commandEncoder.copyTextureToTexture(
+      { texture: sourceTexture },
+      { texture: compTexture.texture },
+      { width: this.outputWidth, height: this.outputHeight }
+    );
+    device.queue.submit([commandEncoder.finish()]);
+  }
+
+  /**
    * Copy the main render loop's final output to an independent preview canvas
    * Used when a preview is showing the same composition as the active timeline
    * Returns true if successful
