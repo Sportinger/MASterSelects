@@ -3771,7 +3771,7 @@ input[type="checkbox"] {
   height: 20px;
   background: var(--bg-primary);
   border-top: 1px solid var(--border-color);
-  padding: 4px 150px 4px 150px; /* Same padding as track headers */
+  padding: 4px 14px 4px 150px; /* Left: track headers width, Right: vertical scrollbar width */
   flex-shrink: 0;
 }
 
