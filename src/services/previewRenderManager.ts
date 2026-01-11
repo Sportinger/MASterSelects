@@ -224,7 +224,6 @@ class PreviewRenderManagerService {
       this.nestedCompCache.clear();
     }
 
-    const isMainPlaying = useTimelineStore.getState().isPlaying;
     const mainPlayhead = useTimelineStore.getState().playheadPosition;
     const activeCompId = useMediaStore.getState().activeCompositionId;
 
