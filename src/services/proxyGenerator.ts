@@ -305,8 +305,21 @@ class ProxyGeneratorGPU {
         codecReady = true;
 
         // Extract all samples
+        console.log(`[ProxyGen] Setting extraction options for track ${track.id}...`);
         mp4File.setExtractionOptions(track.id, null, { nbSamples: Infinity });
         mp4File.start();
+
+        // Force re-process already buffered data
+        mp4File.flush();
+
+        console.log(`[ProxyGen] Extraction started, waiting for samples...`);
+
+        // If no samples after a short delay, something is wrong
+        setTimeout(() => {
+          if (this.samples.length === 0) {
+            console.warn(`[ProxyGen] No samples received after start(). Track has ${expectedSamples} samples.`);
+          }
+        }, 500);
 
         checkComplete();
       };
