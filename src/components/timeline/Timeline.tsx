@@ -22,6 +22,7 @@ import { PhysicsCable } from './PhysicsCable';
 import { TimelineNavigator } from './TimelineNavigator';
 import { useContextMenuPosition } from '../../hooks/useContextMenuPosition';
 import { useTimelineKeyboard } from './hooks/useTimelineKeyboard';
+import { useTimelineZoom } from './hooks/useTimelineZoom';
 import {
   RAM_PREVIEW_IDLE_DELAY,
   PROXY_IDLE_DELAY,
@@ -1611,35 +1612,16 @@ export function Timeline() {
     [trackMap]
   );
 
-  // Fit composition to window - calculate zoom to show entire duration
-  const handleFitToWindow = useCallback(() => {
-    const trackLanes = timelineBodyRef.current?.querySelector('.track-lanes-scroll');
-    const viewportWidth = trackLanes?.parentElement?.clientWidth ?? 800;
-    // Calculate zoom: viewportWidth = duration * zoom, so zoom = viewportWidth / duration
-    // Subtract some padding (50px) to not be right at the edge
-    const targetZoom = Math.max(MIN_ZOOM, (viewportWidth - 50) / duration);
-    setZoom(targetZoom);
-    setScrollX(0); // Reset scroll to start
-  }, [duration, setZoom, setScrollX]);
-
-  // Wrapper for setZoom that enforces dynamic minimum based on timeline duration
-  const handleSetZoom = useCallback((newZoom: number) => {
-    const trackLanes = timelineBodyRef.current?.querySelector('.track-lanes-scroll');
-    const viewportWidth = trackLanes?.parentElement?.clientWidth ?? 800;
-    // Don't allow zooming out beyond the point where entire timeline duration is visible
-    const dynamicMinZoom = Math.max(MIN_ZOOM, viewportWidth / duration);
-    setZoom(Math.max(dynamicMinZoom, newZoom));
-  }, [duration, setZoom]);
-
-  // Adjust zoom if duration changes and current zoom would show more than timeline
-  useEffect(() => {
-    const trackLanes = timelineBodyRef.current?.querySelector('.track-lanes-scroll');
-    const viewportWidth = trackLanes?.parentElement?.clientWidth ?? 800;
-    const dynamicMinZoom = Math.max(MIN_ZOOM, viewportWidth / duration);
-    if (zoom < dynamicMinZoom) {
-      setZoom(dynamicMinZoom);
-    }
-  }, [duration, zoom, setZoom]);
+  // Zoom handling - extracted to hook
+  const { handleSetZoom, handleFitToWindow } = useTimelineZoom({
+    timelineBodyRef: timelineBodyRef,
+    zoom,
+    scrollX,
+    duration,
+    playheadPosition,
+    setZoom,
+    setScrollX,
+  });
 
   // Handle time ruler mousedown
   const handleRulerMouseDown = useCallback(
@@ -2717,54 +2699,6 @@ export function Timeline() {
     },
     [scrollX, pixelToTime, addCompClip, addClip, externalDrag, tracks]
   );
-
-  // Zoom with mouse wheel, also handle vertical scroll
-  // Use native event listener with { passive: false } to allow preventDefault
-  useEffect(() => {
-    const el = timelineBodyRef.current;
-    if (!el) return;
-
-    const handleWheel = (e: WheelEvent) => {
-      if (e.ctrlKey || e.altKey) {
-        e.preventDefault();
-        // Get the track lanes container width for accurate centering
-        const trackLanes = el.querySelector('.track-lanes');
-        const viewportWidth = trackLanes?.clientWidth ?? el.clientWidth - 120; // 120 = track headers width
-
-        // Calculate dynamic minimum zoom so you can't zoom out beyond timeline duration
-        // This ensures the entire timeline fits exactly when fully zoomed out
-        const dynamicMinZoom = Math.max(MIN_ZOOM, viewportWidth / duration);
-
-        // Adjust delta based on current zoom level for smoother zooming
-        // Use smaller steps at low zoom levels for precision
-        const zoomFactor = zoom < 1 ? 0.1 : zoom < 10 ? 1 : 5;
-        const delta = e.deltaY > 0 ? -zoomFactor : zoomFactor;
-        const newZoom = Math.max(dynamicMinZoom, Math.min(MAX_ZOOM, zoom + delta));
-
-        // Calculate playhead position in pixels with new zoom
-        const playheadPixel = playheadPosition * newZoom;
-
-        // Calculate scrollX to center playhead in viewport
-        const newScrollX = Math.max(0, playheadPixel - viewportWidth / 2);
-
-        setZoom(newZoom);
-        setScrollX(newScrollX);
-      } else if (e.shiftKey) {
-        // Shift+scroll = horizontal scroll (use deltaY since mouse wheel is vertical)
-        e.preventDefault();
-        setScrollX(Math.max(0, scrollX + e.deltaY));
-      } else {
-        // Handle horizontal scroll (e.g., trackpad horizontal gesture)
-        if (e.deltaX !== 0) {
-          setScrollX(Math.max(0, scrollX + e.deltaX));
-        }
-        // Vertical scroll is handled natively by the parent timeline-body container
-      }
-    };
-
-    el.addEventListener('wheel', handleWheel, { passive: false });
-    return () => el.removeEventListener('wheel', handleWheel);
-  }, [zoom, scrollX, playheadPosition, duration, setZoom, setScrollX]);
 
   // Render keyframe diamonds
   const renderKeyframeDiamonds = useCallback(
