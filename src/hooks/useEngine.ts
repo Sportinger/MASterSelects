@@ -83,9 +83,21 @@ export function useEngine() {
       () => updateResolution()
     );
 
+    // Subscribe to transparency grid setting
+    const updateTransparencyGrid = () => {
+      const { showTransparencyGrid } = useSettingsStore.getState();
+      engine.setShowTransparencyGrid(showTransparencyGrid);
+    };
+    updateTransparencyGrid(); // Initial update
+    const unsubscribeTransparency = useSettingsStore.subscribe(
+      (state) => state.showTransparencyGrid,
+      () => updateTransparencyGrid()
+    );
+
     return () => {
       unsubscribeMixer();
       unsubscribeSettings();
+      unsubscribeTransparency();
     };
   }, [isEngineReady]);
 

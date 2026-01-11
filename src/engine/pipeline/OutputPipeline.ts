@@ -1,4 +1,4 @@
-// Output to canvas pipeline
+// Output to canvas pipeline with optional transparency grid
 
 import outputShader from '../../shaders/output.wgsl?raw';
 
@@ -11,20 +11,29 @@ export class OutputPipeline {
   // Bind group layout
   private outputBindGroupLayout: GPUBindGroupLayout | null = null;
 
-  // Cached output bind groups
-  private cachedOutputBindGroupPing: GPUBindGroup | null = null;
-  private cachedOutputBindGroupPong: GPUBindGroup | null = null;
+  // Uniform buffer for output settings
+  private uniformBuffer: GPUBuffer | null = null;
+
+  // Cached output bind groups (keyed by texture view)
+  private bindGroupCache = new Map<GPUTextureView, GPUBindGroup>();
 
   constructor(device: GPUDevice) {
     this.device = device;
   }
 
   async createPipeline(): Promise<void> {
-    // Output bind group layout
+    // Create uniform buffer (16 bytes: u32 + f32 + f32 + padding)
+    this.uniformBuffer = this.device.createBuffer({
+      size: 16,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    // Output bind group layout with uniform buffer
     this.outputBindGroupLayout = this.device.createBindGroupLayout({
       entries: [
         { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
         { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
       ],
     });
 
@@ -45,6 +54,20 @@ export class OutputPipeline {
     });
   }
 
+  // Update uniform buffer with current settings
+  updateUniforms(showTransparencyGrid: boolean, outputWidth: number, outputHeight: number): void {
+    if (!this.uniformBuffer) return;
+
+    const data = new ArrayBuffer(16);
+    const view = new DataView(data);
+    view.setUint32(0, showTransparencyGrid ? 1 : 0, true);  // showTransparencyGrid
+    view.setFloat32(4, outputWidth, true);   // outputWidth
+    view.setFloat32(8, outputHeight, true);  // outputHeight
+    view.setFloat32(12, 0, true);            // padding
+
+    this.device.queue.writeBuffer(this.uniformBuffer, 0, data);
+  }
+
   getOutputPipeline(): GPURenderPipeline | null {
     return this.outputPipeline;
   }
@@ -53,50 +76,39 @@ export class OutputPipeline {
     return this.outputBindGroupLayout;
   }
 
-  // Get or create output bind group for ping texture
-  getOutputBindGroup(
-    sampler: GPUSampler,
-    textureView: GPUTextureView,
-    isPing: boolean
-  ): GPUBindGroup {
-    // Check cache
-    const cached = isPing ? this.cachedOutputBindGroupPing : this.cachedOutputBindGroupPong;
-    if (cached) return cached;
+  // Create output bind group for a texture view
+  createOutputBindGroup(sampler: GPUSampler, textureView: GPUTextureView): GPUBindGroup {
+    // Check cache first
+    let bindGroup = this.bindGroupCache.get(textureView);
+    if (bindGroup) return bindGroup;
 
     // Create new bind group
-    const bindGroup = this.device.createBindGroup({
+    bindGroup = this.device.createBindGroup({
       layout: this.outputBindGroupLayout!,
       entries: [
         { binding: 0, resource: sampler },
         { binding: 1, resource: textureView },
+        { binding: 2, resource: { buffer: this.uniformBuffer! } },
       ],
     });
 
     // Cache it
-    if (isPing) {
-      this.cachedOutputBindGroupPing = bindGroup;
-    } else {
-      this.cachedOutputBindGroupPong = bindGroup;
-    }
-
+    this.bindGroupCache.set(textureView, bindGroup);
     return bindGroup;
   }
 
-  // Create a fresh output bind group (no caching)
-  createOutputBindGroup(sampler: GPUSampler, textureView: GPUTextureView): GPUBindGroup {
-    return this.device.createBindGroup({
-      layout: this.outputBindGroupLayout!,
-      entries: [
-        { binding: 0, resource: sampler },
-        { binding: 1, resource: textureView },
-      ],
-    });
+  // Legacy method for compatibility - same as createOutputBindGroup now
+  getOutputBindGroup(
+    sampler: GPUSampler,
+    textureView: GPUTextureView,
+    _isPing: boolean
+  ): GPUBindGroup {
+    return this.createOutputBindGroup(sampler, textureView);
   }
 
   // Invalidate cached bind groups (when textures are recreated)
   invalidateCache(): void {
-    this.cachedOutputBindGroupPing = null;
-    this.cachedOutputBindGroupPong = null;
+    this.bindGroupCache.clear();
   }
 
   // Render to a canvas context
@@ -125,5 +137,7 @@ export class OutputPipeline {
 
   destroy(): void {
     this.invalidateCache();
+    this.uniformBuffer?.destroy();
+    this.uniformBuffer = null;
   }
 }

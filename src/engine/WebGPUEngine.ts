@@ -100,6 +100,9 @@ export class WebGPUEngine {
   private outputWidth = 1920;
   private outputHeight = 1080;
 
+  // Transparency grid (checkerboard) display
+  private showTransparencyGrid = false;
+
   // Ring buffer for frame times (avoids O(n) shift)
   private frameTimeBuffer = new Float32Array(60);
   private frameTimeIndex = 0;
@@ -969,6 +972,9 @@ export class WebGPUEngine {
     const finalIsPing = !usePing;
     const outputBindGroup = this.outputPipeline!.getOutputBindGroup(this.sampler!, readView, finalIsPing);
 
+    // Update output pipeline uniforms (transparency grid setting)
+    this.outputPipeline!.updateUniforms(this.showTransparencyGrid, this.outputWidth, this.outputHeight);
+
     // Render to preview (skip during RAM preview generation)
     if (this.previewContext && !this.isGeneratingRamPreview) {
       this.outputPipeline!.renderToCanvas(commandEncoder, this.previewContext, outputBindGroup);
@@ -1631,6 +1637,10 @@ export class WebGPUEngine {
       this.scrubbingCache.clearScrubbingCache();
       console.log(`[Engine] Caches cleared for resolution change to ${width}×${height}`);
     }
+  }
+
+  setShowTransparencyGrid(show: boolean): void {
+    this.showTransparencyGrid = show;
   }
 
   getDevice(): GPUDevice | null {

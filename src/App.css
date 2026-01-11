@@ -5062,6 +5062,33 @@ input[type="checkbox"] {
   z-index: 20;
 }
 
+.preview-transparency-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.preview-transparency-toggle:hover {
+  background: rgba(0, 0, 0, 0.8);
+  color: var(--text-primary);
+  border-color: #555;
+}
+
+.preview-transparency-toggle.active {
+  background: rgba(0, 212, 255, 0.2);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .preview-quality-dropdown-wrapper {
   position: relative;
 }

@@ -29,6 +29,7 @@ interface SettingsState {
 
   // Preview settings
   previewQuality: PreviewQuality;
+  showTransparencyGrid: boolean;  // Show checkerboard pattern for transparent areas
 
   // UI state
   isSettingsOpen: boolean;
@@ -37,6 +38,7 @@ interface SettingsState {
   setApiKey: (provider: keyof APIKeys, key: string) => void;
   setTranscriptionProvider: (provider: TranscriptionProvider) => void;
   setPreviewQuality: (quality: PreviewQuality) => void;
+  setShowTransparencyGrid: (show: boolean) => void;
   openSettings: () => void;
   closeSettings: () => void;
   toggleSettings: () => void;
@@ -61,6 +63,7 @@ export const useSettingsStore = create<SettingsState>()(
       },
       transcriptionProvider: 'local',
       previewQuality: 1, // Full quality by default
+      showTransparencyGrid: false, // Don't show checkerboard by default
       isSettingsOpen: false,
 
       // Actions
@@ -79,6 +82,10 @@ export const useSettingsStore = create<SettingsState>()(
 
       setPreviewQuality: (quality) => {
         set({ previewQuality: quality });
+      },
+
+      setShowTransparencyGrid: (show) => {
+        set({ showTransparencyGrid: show });
       },
 
       openSettings: () => set({ isSettingsOpen: true }),
@@ -102,6 +109,7 @@ export const useSettingsStore = create<SettingsState>()(
           apiKeys: state.apiKeys,
           transcriptionProvider: state.transcriptionProvider,
           previewQuality: state.previewQuality,
+          showTransparencyGrid: state.showTransparencyGrid,
         }),
       }
     )

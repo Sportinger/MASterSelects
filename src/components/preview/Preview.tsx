@@ -198,7 +198,7 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
   const { clips, selectedClipIds, selectClip, updateClipTransform, maskEditMode } = useTimelineStore();
   const { compositions, activeCompositionId } = useMediaStore();
   const { addPreviewPanel, updatePanelData, closePanelById } = useDockStore();
-  const { previewQuality, setPreviewQuality } = useSettingsStore();
+  const { previewQuality, setPreviewQuality, showTransparencyGrid, setShowTransparencyGrid } = useSettingsStore();
 
   // Get first selected clip for preview
   const selectedClipId = selectedClipIds.size > 0 ? [...selectedClipIds][0] : null;
@@ -881,6 +881,24 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
 
       {/* Bottom-left controls */}
       <div className="preview-controls-bottom">
+        {/* Transparency grid toggle */}
+        <button
+          className={`preview-transparency-toggle ${showTransparencyGrid ? 'active' : ''}`}
+          onClick={() => setShowTransparencyGrid(!showTransparencyGrid)}
+          title="Toggle transparency grid (checkerboard)"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <rect x="0" y="0" width="4" height="4" opacity="0.6" />
+            <rect x="8" y="0" width="4" height="4" opacity="0.6" />
+            <rect x="4" y="4" width="4" height="4" opacity="0.6" />
+            <rect x="12" y="4" width="4" height="4" opacity="0.6" />
+            <rect x="0" y="8" width="4" height="4" opacity="0.6" />
+            <rect x="8" y="8" width="4" height="4" opacity="0.6" />
+            <rect x="4" y="12" width="4" height="4" opacity="0.6" />
+            <rect x="12" y="12" width="4" height="4" opacity="0.6" />
+          </svg>
+        </button>
+
         <div className="preview-quality-dropdown-wrapper" ref={qualityDropdownRef}>
           <button
             className="preview-quality-dropdown-btn"
