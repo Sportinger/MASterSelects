@@ -218,6 +218,8 @@ class ProjectFileService {
   private projectData: ProjectFile | null = null;
   private isDirty = false;
   private autoSaveInterval: number | null = null;
+  private pendingHandle: FileSystemDirectoryHandle | null = null; // Handle waiting for permission
+  private permissionNeeded = false;
 
   // Check if File System Access API is supported
   isSupported(): boolean {
@@ -247,6 +249,36 @@ class ProjectFileService {
   // Mark project as dirty (has changes)
   markDirty(): void {
     this.isDirty = true;
+  }
+
+  // Check if permission is needed to restore last project
+  needsPermission(): boolean {
+    return this.permissionNeeded && this.pendingHandle !== null;
+  }
+
+  // Get pending project name (for UI)
+  getPendingProjectName(): string | null {
+    return this.pendingHandle?.name || null;
+  }
+
+  // Request permission for pending handle (must be called from user gesture)
+  async requestPendingPermission(): Promise<boolean> {
+    if (!this.pendingHandle) return false;
+
+    try {
+      const result = await this.pendingHandle.requestPermission({ mode: 'readwrite' });
+      if (result === 'granted') {
+        const success = await this.loadProject(this.pendingHandle);
+        if (success) {
+          this.pendingHandle = null;
+          this.permissionNeeded = false;
+          return true;
+        }
+      }
+    } catch (e) {
+      console.warn('[ProjectFile] Failed to request permission:', e);
+    }
+    return false;
   }
 
   // ============================================
@@ -848,20 +880,25 @@ class ProjectFileService {
 
   /**
    * Try to restore last opened project
+   * Returns true if restored, false if not restored but permission might be needed
    */
   async restoreLastProject(): Promise<boolean> {
     try {
       const handle = await projectDB.getStoredHandle('lastProject');
       if (!handle || handle.kind !== 'directory') return false;
 
-      // Request permission
+      // Check permission silently (no popup)
       const permission = await handle.queryPermission({ mode: 'readwrite' });
-      if (permission !== 'granted') {
-        const result = await handle.requestPermission({ mode: 'readwrite' });
-        if (result !== 'granted') return false;
+      if (permission === 'granted') {
+        // Permission already granted, load project
+        return await this.loadProject(handle as FileSystemDirectoryHandle);
+      } else {
+        // Permission not granted - store handle for later, show UI prompt
+        this.pendingHandle = handle as FileSystemDirectoryHandle;
+        this.permissionNeeded = true;
+        console.log('[ProjectFile] Permission needed for:', handle.name);
+        return false;
       }
-
-      return await this.loadProject(handle as FileSystemDirectoryHandle);
     } catch (e) {
       console.warn('[ProjectFile] Failed to restore last project:', e);
       return false;

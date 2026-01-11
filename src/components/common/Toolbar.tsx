@@ -39,6 +39,8 @@ export function Toolbar() {
   const [editName, setEditName] = useState(projectName);
   const [isProjectOpen, setIsProjectOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [needsPermission, setNeedsPermission] = useState(false);
+  const [pendingProjectName, setPendingProjectName] = useState<string | null>(null);
   const menuBarRef = useRef<HTMLDivElement>(null);
 
   // Update project name from service
@@ -66,6 +68,10 @@ export function Toolbar() {
           setProjectName(data.name);
           setIsProjectOpen(true);
         }
+      } else if (projectFileService.needsPermission()) {
+        // Permission needed - show button instead of auto-popup
+        setNeedsPermission(true);
+        setPendingProjectName(projectFileService.getPendingProjectName());
       }
       setIsLoading(false);
 
@@ -177,9 +183,27 @@ export function Toolbar() {
     if (success) {
       setProjectName(name);
       setIsProjectOpen(true);
+      setNeedsPermission(false);
     }
     setIsLoading(false);
     setOpenMenu(null);
+  }, []);
+
+  // Handle restoring permission for pending project
+  const handleRestorePermission = useCallback(async () => {
+    setIsLoading(true);
+    const success = await projectFileService.requestPendingPermission();
+    if (success) {
+      await loadProjectToStores();
+      const data = projectFileService.getProjectData();
+      if (data) {
+        setProjectName(data.name);
+        setIsProjectOpen(true);
+      }
+      setNeedsPermission(false);
+      setPendingProjectName(null);
+    }
+    setIsLoading(false);
   }, []);
 
   const handleNewOutput = useCallback(() => {
@@ -206,7 +230,16 @@ export function Toolbar() {
     <div className="toolbar">
       {/* Project Name */}
       <div className="toolbar-project">
-        {isEditingName ? (
+        {needsPermission ? (
+          <button
+            className="restore-permission-btn"
+            onClick={handleRestorePermission}
+            disabled={isLoading}
+            title={`Click to restore access to ${pendingProjectName}`}
+          >
+            {isLoading ? 'Restoring...' : `Restore "${pendingProjectName}"`}
+          </button>
+        ) : isEditingName ? (
           <input
             type="text"
             className="project-name-input"

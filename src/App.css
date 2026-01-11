@@ -110,6 +110,28 @@ input, textarea {
   width: 150px;
 }
 
+.toolbar-project .restore-permission-btn {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.toolbar-project .restore-permission-btn:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.toolbar-project .restore-permission-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 /* Menu Bar */
 .menu-bar {
   display: flex;
