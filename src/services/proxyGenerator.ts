@@ -240,7 +240,42 @@ class ProxyGeneratorGPU {
         this.initDecoder();
 
         // Process samples in batches
-        await this.processSamplesGPU(mediaFileId, saveFrame);
+        try {
+          await this.processSamplesGPU(mediaFileId, saveFrame);
+        } catch (firstError) {
+          console.warn('[ProxyGen] First decode attempt failed, trying without description...');
+
+          // Reset state
+          this.decodedFrames.clear();
+          this.processedFrames = 0;
+
+          // Try without description (some browsers handle this differently)
+          if (this.codecConfig?.description) {
+            const configWithoutDesc: VideoDecoderConfig = {
+              codec: this.codecConfig.codec,
+              codedWidth: this.codecConfig.codedWidth,
+              codedHeight: this.codecConfig.codedHeight,
+            };
+
+            try {
+              const support = await VideoDecoder.isConfigSupported(configWithoutDesc);
+              if (support.supported) {
+                console.log('[ProxyGen] Retrying with config without description...');
+                this.codecConfig = configWithoutDesc;
+                this.decoder?.close();
+                this.initDecoder();
+                await this.processSamplesGPU(mediaFileId, saveFrame);
+              } else {
+                throw firstError;
+              }
+            } catch (retryError) {
+              console.error('[ProxyGen] Retry also failed:', retryError);
+              throw firstError;
+            }
+          } else {
+            throw firstError;
+          }
+        }
 
       } catch (error) {
         console.error('[ProxyGen] Generation failed:', error);
@@ -502,6 +537,7 @@ class ProxyGeneratorGPU {
 
     let decodedCount = 0;
     let errorCount = 0;
+    let lastError: any = null;
 
     this.decoder = new VideoDecoder({
       output: (frame) => {
@@ -510,7 +546,11 @@ class ProxyGeneratorGPU {
       },
       error: (error) => {
         errorCount++;
-        console.error('[ProxyGen] Decoder error:', error);
+        lastError = error;
+        // Only log first few errors to avoid spam
+        if (errorCount <= 3) {
+          console.error('[ProxyGen] Decoder error:', error);
+        }
       },
     });
 
@@ -526,6 +566,7 @@ class ProxyGeneratorGPU {
     // Store counters for later logging
     (this.decoder as any)._decodedCount = () => decodedCount;
     (this.decoder as any)._errorCount = () => errorCount;
+    (this.decoder as any)._lastError = () => lastError;
   }
 
   private handleDecodedFrame(frame: VideoFrame) {
@@ -547,16 +588,39 @@ class ProxyGeneratorGPU {
   ): Promise<void> {
     if (!this.decoder || !this.resizePipeline) return;
 
-    // Count keyframes for diagnostics
-    const keyframeCount = this.samples.filter(s => s.is_sync).length;
-    const deltaCount = this.samples.length - keyframeCount;
-    console.log(`[ProxyGen] Decoding ${this.samples.length} samples (${keyframeCount} keyframes, ${deltaCount} delta frames)...`);
+    // Sort samples by DTS (decode order) to ensure proper decoding
+    const sortedSamples = [...this.samples].sort((a, b) => a.dts - b.dts);
 
-    // Decode all samples first
+    // Count keyframes for diagnostics
+    const keyframeCount = sortedSamples.filter(s => s.is_sync).length;
+    const deltaCount = sortedSamples.length - keyframeCount;
+    console.log(`[ProxyGen] Decoding ${sortedSamples.length} samples (${keyframeCount} keyframes, ${deltaCount} delta frames)...`);
+
+    // Find first keyframe to start decoding from
+    const firstKeyframeIdx = sortedSamples.findIndex(s => s.is_sync);
+    if (firstKeyframeIdx === -1) {
+      console.error('[ProxyGen] No keyframes found in video!');
+      throw new Error('No keyframes found');
+    }
+    if (firstKeyframeIdx > 0) {
+      console.log(`[ProxyGen] Skipping ${firstKeyframeIdx} samples before first keyframe`);
+    }
+
+    // Decode samples starting from first keyframe
     let decodeErrors = 0;
-    for (const sample of this.samples) {
+    let samplesDecoded = 0;
+
+    for (let i = firstKeyframeIdx; i < sortedSamples.length; i++) {
+      const sample = sortedSamples[i];
+
       if (this.checkCancelled?.()) {
         this.isCancelled = true;
+        break;
+      }
+
+      // Check decoder state before decoding
+      if (this.decoder.state === 'closed') {
+        console.error('[ProxyGen] Decoder was closed unexpectedly');
         break;
       }
 
@@ -569,29 +633,57 @@ class ProxyGeneratorGPU {
 
       try {
         this.decoder.decode(chunk);
+        samplesDecoded++;
+
+        // Periodically flush to prevent queue buildup
+        if (samplesDecoded % 100 === 0) {
+          await this.decoder.flush();
+        }
       } catch (e) {
         decodeErrors++;
         if (decodeErrors <= 5) {
-          console.error(`[ProxyGen] Decode error on sample ${sample.number}:`, e);
+          console.error(`[ProxyGen] Decode error on sample ${sample.number} (sync=${sample.is_sync}):`, e);
+        }
+        // If we hit too many errors, stop
+        if (decodeErrors > 50) {
+          console.error('[ProxyGen] Too many decode errors, stopping');
+          break;
         }
       }
     }
 
     // Wait for decoder to finish
-    await this.decoder.flush();
+    try {
+      if (this.decoder.state !== 'closed') {
+        await this.decoder.flush();
+      }
+    } catch (e) {
+      console.warn('[ProxyGen] Decoder flush error:', e);
+    }
 
     // Log decoder stats
+    const framesDecoded = (this.decoder as any)._decodedCount?.() || 0;
+    const decoderErrors = (this.decoder as any)._errorCount?.() || 0;
+    const lastError = (this.decoder as any)._lastError?.();
+
     const decoderCounts = {
-      samplesProcessed: this.samples.length,
-      framesDecoded: (this.decoder as any)._decodedCount?.() || 'unknown',
-      decoderErrors: (this.decoder as any)._errorCount?.() || 'unknown',
+      samplesProcessed: sortedSamples.length - firstKeyframeIdx,
+      samplesDecoded,
+      framesDecoded,
+      decoderErrors,
       syncDecodeErrors: decodeErrors,
       framesStored: this.decodedFrames.size,
     };
     console.log(`[ProxyGen] Decoder stats:`, decoderCounts);
 
-    if (this.decodedFrames.size < this.samples.length * 0.5) {
-      console.warn(`[ProxyGen] ⚠️ Only ${this.decodedFrames.size}/${this.samples.length} frames decoded - possible codec config issue`);
+    // If we got very few frames, throw to trigger retry
+    if (this.decodedFrames.size < 10 && sortedSamples.length > 100) {
+      const errorMsg = lastError ? lastError.message || lastError.toString() : 'Unknown decoder error';
+      throw new Error(`Decoding failed: only ${this.decodedFrames.size} frames from ${sortedSamples.length} samples. ${errorMsg}`);
+    }
+
+    if (this.decodedFrames.size < sortedSamples.length * 0.3) {
+      console.warn(`[ProxyGen] ⚠️ Only ${this.decodedFrames.size}/${sortedSamples.length} frames decoded - possible codec config issue`);
     }
 
     console.log(`[ProxyGen] Starting GPU batch processing on ${this.decodedFrames.size} frames...`);
