@@ -3,6 +3,7 @@
 import React, { useCallback, useRef, useState, useEffect } from 'react';
 import { useMediaStore } from '../../stores/mediaStore';
 import type { MediaFile, Composition, ProjectItem } from '../../stores/mediaStore';
+import { useTimelineStore } from '../../stores/timeline';
 import { useContextMenuPosition } from '../../hooks/useContextMenuPosition';
 
 // Column definitions
@@ -307,8 +308,12 @@ export function MediaPanel() {
       frameRate: settingsDialog.frameRate,
       duration: settingsDialog.duration,
     });
+    // If this is the active composition, also update timeline duration
+    if (settingsDialog.compositionId === activeCompositionId) {
+      useTimelineStore.getState().setDuration(settingsDialog.duration);
+    }
     setSettingsDialog(null);
-  }, [settingsDialog, updateComposition]);
+  }, [settingsDialog, updateComposition, activeCompositionId]);
 
   // Handle drag start for media files and compositions (to drag to Timeline OR to folders)
   const handleDragStart = useCallback((e: React.DragEvent, item: ProjectItem) => {
