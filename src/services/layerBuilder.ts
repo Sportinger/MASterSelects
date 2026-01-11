@@ -373,23 +373,24 @@ class LayerBuilderService {
 
         if (shouldPlay) {
           // Gradual drift correction using playback rate adjustment
-          // This is smoother than hard seeking for small drifts
           const absDrift = Math.abs(timeDiff);
 
-          if (forceHardSync || absDrift > 0.15) {
-            // Force sync on playback start OR large drift (>150ms): hard seek to resync
+          let newRate = targetRate;
+
+          if (forceHardSync || absDrift > 0.25) {
+            // Force sync on playback start OR large drift (>250ms): hard seek
             audio.currentTime = clipTime;
-            audio.playbackRate = Math.max(0.25, Math.min(4, targetRate));
-          } else if (absDrift > 0.03) {
-            // Drift 30-150ms: adjust playback rate proportionally
-            // Scale correction based on drift amount (3% to 10%)
-            const correctionFactor = Math.min(0.10, absDrift * 0.5); // Up to 10% correction
+            newRate = targetRate;
+          } else if (absDrift > 0.05) {
+            // Drift 50-250ms: gentle playback rate adjustment (max 3%)
+            const correctionFactor = Math.min(0.03, absDrift * 0.1);
             const correction = timeDiff > 0 ? -correctionFactor : correctionFactor;
-            const correctedRate = targetRate * (1 + correction);
-            audio.playbackRate = Math.max(0.25, Math.min(4, correctedRate));
-          } else {
-            // Drift < 30ms: acceptable, use normal rate
-            audio.playbackRate = Math.max(0.25, Math.min(4, targetRate));
+            newRate = targetRate * (1 + correction);
+          }
+
+          // Only change rate if difference is significant (avoid constant micro-adjustments)
+          if (Math.abs(audio.playbackRate - newRate) > 0.005) {
+            audio.playbackRate = Math.max(0.25, Math.min(4, newRate));
           }
 
           if (audio.paused) {
@@ -461,19 +462,22 @@ class LayerBuilderService {
           // Gradual drift correction using playback rate adjustment
           const absDrift = Math.abs(timeDiff);
 
-          if (forceHardSync || absDrift > 0.15) {
-            // Force sync on playback start OR large drift (>150ms): hard seek
+          let newRate = targetRate;
+
+          if (forceHardSync || absDrift > 0.25) {
+            // Force sync on playback start OR large drift (>250ms): hard seek
             audio.currentTime = clipTime;
-            audio.playbackRate = Math.max(0.25, Math.min(4, targetRate));
-          } else if (absDrift > 0.03) {
-            // Drift 30-150ms: adjust playback rate proportionally
-            const correctionFactor = Math.min(0.10, absDrift * 0.5);
+            newRate = targetRate;
+          } else if (absDrift > 0.05) {
+            // Drift 50-250ms: gentle playback rate adjustment (max 3%)
+            const correctionFactor = Math.min(0.03, absDrift * 0.1);
             const correction = timeDiff > 0 ? -correctionFactor : correctionFactor;
-            const correctedRate = targetRate * (1 + correction);
-            audio.playbackRate = Math.max(0.25, Math.min(4, correctedRate));
-          } else {
-            // Drift < 30ms: acceptable
-            audio.playbackRate = Math.max(0.25, Math.min(4, targetRate));
+            newRate = targetRate * (1 + correction);
+          }
+
+          // Only change rate if difference is significant
+          if (Math.abs(audio.playbackRate - newRate) > 0.005) {
+            audio.playbackRate = Math.max(0.25, Math.min(4, newRate));
           }
 
           if (audio.paused) {
