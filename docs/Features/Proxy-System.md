@@ -39,10 +39,21 @@ Large video files (4K, high bitrate) can be slow to scrub. Proxies provide:
 3. Choose storage folder (first time)
 4. Generation starts in background
 
-### Generation Process
-- Uses GPU acceleration
-- Multi-core processing
-- Progress shown in background tasks
+### Generation Process (GPU-Accelerated)
+The proxy generator uses a multi-stage GPU pipeline for maximum speed:
+
+1. **Video Decoding**: WebCodecs VideoDecoder with hardware acceleration
+2. **GPU Batch Resize**: 16 frames rendered to texture atlas per batch
+3. **Single Buffer Readback**: One GPU→CPU transfer per 16 frames
+4. **Parallel Encoding**: Worker pool encodes WebP frames simultaneously
+
+**Performance**: 4-10x faster than CPU-only processing
+
+### Technical Details
+- **Max Resolution**: 1280px width (configurable)
+- **Batch Size**: 16 frames per GPU pass
+- **Output Format**: WebP at 92% quality
+- **Frame Rate**: 30 fps proxy
 
 ### First-Time Setup
 First proxy generation prompts for folder:

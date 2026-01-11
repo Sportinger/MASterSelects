@@ -1,15 +1,20 @@
-// GPU-accelerated proxy frame generator using WebCodecs
-// Uses VideoDecoder for hardware decoding and workers for parallel WebP encoding
+// GPU-accelerated proxy frame generator using WebCodecs + WebGPU
+// Uses VideoDecoder for hardware decoding and GPU for batch resize
+// Workers handle parallel WebP encoding
 
 import * as MP4BoxModule from 'mp4box';
+import { engine } from '../engine/WebGPUEngine';
+import { ProxyResizePipeline } from '../engine/proxy/ProxyResizePipeline';
+
 const MP4Box = (MP4BoxModule as any).default || MP4BoxModule;
 
 // Configuration
 const PROXY_FPS = 30;
 const PROXY_QUALITY = 0.92;
-const PROXY_MAX_WIDTH = 1920;
+const PROXY_MAX_WIDTH = 1280; // Changed from 1920 for faster generation
 const WORKER_POOL_SIZE = navigator.hardwareConcurrency || 4;
-const BATCH_SIZE = 10;
+const BATCH_SIZE = ProxyResizePipeline.getBatchSize(); // 16 frames per GPU batch
+const DB_BATCH_SIZE = 10; // IndexedDB write batch size
 
 // MP4Box types
 interface MP4ArrayBuffer extends ArrayBuffer {
@@ -48,18 +53,18 @@ interface MP4File {
   getTrackById: (id: number) => any;
 }
 
-// ProxyFrame documents the data format used by encoding workers:
-// { frameIndex: number, blob: Blob }
-
 interface GeneratorResult {
   frameCount: number;
   fps: number;
 }
 
-// Worker code as a string (will be converted to blob URL)
+// Worker code that accepts raw RGBA pixels
 const workerCode = `
   self.onmessage = async function(e) {
-    const { frameIndex, imageData, width, height, quality } = e.data;
+    const { frameIndex, pixels, width, height, quality } = e.data;
+
+    // Create ImageData from raw pixels
+    const imageData = new ImageData(new Uint8ClampedArray(pixels), width, height);
 
     // Create OffscreenCanvas and draw ImageData
     const canvas = new OffscreenCanvas(width, height);
@@ -80,14 +85,14 @@ class ProxyGeneratorGPU {
   private workers: Worker[] = [];
   private workerBusy: boolean[] = [];
   private pendingFrames: Map<number, { resolve: (blob: Blob) => void; reject: (err: Error) => void }> = new Map();
-  private frameQueue: { frameIndex: number; imageData: ImageData }[] = [];
+  private frameQueue: { frameIndex: number; pixels: Uint8Array }[] = [];
 
   private videoTrack: MP4VideoTrack | null = null;
   private samples: Sample[] = [];
   private codecConfig: VideoDecoderConfig | null = null;
 
-  private canvas: OffscreenCanvas | null = null;
-  private ctx: OffscreenCanvasRenderingContext2D | null = null;
+  // GPU resize pipeline
+  private resizePipeline: ProxyResizePipeline | null = null;
 
   private outputWidth = 0;
   private outputHeight = 0;
@@ -147,17 +152,17 @@ class ProxyGeneratorGPU {
 
     this.workers[workerIndex].postMessage({
       frameIndex: frame.frameIndex,
-      imageData: frame.imageData,
+      pixels: frame.pixels,
       width: this.outputWidth,
       height: this.outputHeight,
       quality: PROXY_QUALITY,
-    });
+    }, [frame.pixels.buffer]); // Transfer buffer for performance
   }
 
-  private async encodeFrameAsync(frameIndex: number, imageData: ImageData): Promise<Blob> {
+  private encodeFrameAsync(frameIndex: number, pixels: Uint8Array): Promise<Blob> {
     return new Promise((resolve, reject) => {
       this.pendingFrames.set(frameIndex, { resolve, reject });
-      this.frameQueue.push({ frameIndex, imageData });
+      this.frameQueue.push({ frameIndex, pixels });
       this.processFrameQueue();
     });
   }
@@ -177,7 +182,7 @@ class ProxyGeneratorGPU {
     this.decodedFrames.clear();
     this.frameTimestamps = [];
 
-    return new Promise(async (resolve, _reject) => {
+    return new Promise(async (resolve, reject) => {
       this.resolveGeneration = resolve;
 
       try {
@@ -185,6 +190,14 @@ class ProxyGeneratorGPU {
         if (!('VideoDecoder' in window)) {
           console.warn('[ProxyGen] WebCodecs not supported, falling back to legacy method');
           resolve(null); // Signal to use fallback
+          return;
+        }
+
+        // Check for WebGPU support
+        const device = engine.getDevice();
+        if (!device) {
+          console.warn('[ProxyGen] WebGPU not available, falling back to legacy method');
+          resolve(null);
           return;
         }
 
@@ -196,11 +209,20 @@ class ProxyGeneratorGPU {
           return;
         }
 
-        console.log(`[ProxyGen] Video loaded: ${this.outputWidth}x${this.outputHeight}, ${this.totalFrames} frames at ${PROXY_FPS}fps`);
+        console.log(`[ProxyGen] Video loaded: ${this.videoTrack!.video.width}x${this.videoTrack!.video.height}, targeting ${this.outputWidth}x${this.outputHeight} at ${PROXY_FPS}fps`);
 
-        // Create canvas for frame extraction
-        this.canvas = new OffscreenCanvas(this.outputWidth, this.outputHeight);
-        this.ctx = this.canvas.getContext('2d') as OffscreenCanvasRenderingContext2D;
+        // Initialize GPU resize pipeline
+        this.resizePipeline = new ProxyResizePipeline(device);
+        this.resizePipeline.initializeAtlas(
+          this.videoTrack!.video.width,
+          this.videoTrack!.video.height,
+          PROXY_MAX_WIDTH
+        );
+
+        // Update output dimensions from pipeline
+        const dims = this.resizePipeline.getFrameDimensions();
+        this.outputWidth = dims.width;
+        this.outputHeight = dims.height;
 
         // Calculate target frame timestamps (at PROXY_FPS)
         for (let i = 0; i < this.totalFrames; i++) {
@@ -210,12 +232,12 @@ class ProxyGeneratorGPU {
         // Initialize decoder
         this.initDecoder();
 
-        // Process samples
-        await this.processSamples(mediaFileId, saveFrame);
+        // Process samples in batches
+        await this.processSamplesGPU(mediaFileId, saveFrame);
 
       } catch (error) {
         console.error('[ProxyGen] Generation failed:', error);
-        _reject(error);
+        reject(error);
       }
     });
   }
@@ -234,7 +256,7 @@ class ProxyGeneratorGPU {
         this.videoTrack = info.videoTracks[0];
         const track = this.videoTrack;
 
-        // Calculate output dimensions
+        // Calculate output dimensions (will be refined by GPU pipeline)
         let width = track.video.width;
         let height = track.video.height;
         if (width > PROXY_MAX_WIDTH) {
@@ -360,27 +382,22 @@ class ProxyGeneratorGPU {
     const frameIndex = Math.round(timestamp * PROXY_FPS);
 
     if (frameIndex >= 0 && frameIndex < this.totalFrames) {
-      // Store frame for processing
+      // Store frame for batch processing
       this.decodedFrames.set(frameIndex, frame);
     } else {
       frame.close();
     }
   }
 
-  private async processSamples(
+  private async processSamplesGPU(
     mediaFileId: string,
     saveFrame: (frame: { id: string; mediaFileId: string; frameIndex: number; blob: Blob }) => Promise<void>
   ): Promise<void> {
-    if (!this.decoder || !this.ctx || !this.canvas) return;
+    if (!this.decoder || !this.resizePipeline) return;
 
-    const targetFrameSet = new Set<number>();
-    for (let i = 0; i < this.totalFrames; i++) {
-      targetFrameSet.add(i);
-    }
+    console.log(`[ProxyGen] Decoding ${this.samples.length} samples with GPU batch processing...`);
 
-    // Decode all samples
-    console.log(`[ProxyGen] Decoding ${this.samples.length} samples...`);
-
+    // Decode all samples first
     for (const sample of this.samples) {
       if (this.checkCancelled?.()) {
         this.isCancelled = true;
@@ -399,57 +416,84 @@ class ProxyGeneratorGPU {
 
     // Wait for decoder to finish
     await this.decoder.flush();
-    console.log(`[ProxyGen] Decoded ${this.decodedFrames.size} frames`);
-
-    // Process decoded frames
-    const batch: { id: string; mediaFileId: string; frameIndex: number; blob: Blob }[] = [];
+    console.log(`[ProxyGen] Decoded ${this.decodedFrames.size} frames, starting GPU batch processing...`);
 
     // Sort frame indices
     const sortedIndices = Array.from(this.decodedFrames.keys()).sort((a, b) => a - b);
 
-    for (const frameIndex of sortedIndices) {
+    // Process frames in batches
+    let batchStart = 0;
+    const dbBatch: { id: string; mediaFileId: string; frameIndex: number; blob: Blob }[] = [];
+
+    while (batchStart < sortedIndices.length) {
       if (this.checkCancelled?.()) {
         this.isCancelled = true;
         break;
       }
 
-      const frame = this.decodedFrames.get(frameIndex);
-      if (!frame) continue;
+      // Collect frames for this GPU batch
+      const batchIndices = sortedIndices.slice(batchStart, batchStart + BATCH_SIZE);
+      const batchFrames: VideoFrame[] = [];
+      const batchFrameIndices: number[] = [];
 
-      try {
-        // Draw frame to canvas
-        this.ctx.drawImage(frame, 0, 0, this.outputWidth, this.outputHeight);
-        frame.close();
-        this.decodedFrames.delete(frameIndex);
-
-        // Get image data for worker
-        const imageData = this.ctx.getImageData(0, 0, this.outputWidth, this.outputHeight);
-
-        // Encode in parallel using workers
-        const blob = await this.encodeFrameAsync(frameIndex, imageData);
-
-        // Add to batch
-        const frameId = `${mediaFileId}_${frameIndex.toString().padStart(6, '0')}`;
-        batch.push({ id: frameId, mediaFileId, frameIndex, blob });
-
-        this.processedFrames++;
-        this.onProgress?.(Math.round((this.processedFrames / this.totalFrames) * 100));
-
-        // Save batch
-        if (batch.length >= BATCH_SIZE) {
-          for (const f of batch) {
-            await saveFrame(f);
-          }
-          batch.length = 0;
+      for (const frameIndex of batchIndices) {
+        const frame = this.decodedFrames.get(frameIndex);
+        if (frame) {
+          batchFrames.push(frame);
+          batchFrameIndices.push(frameIndex);
         }
-      } catch (e) {
-        console.error('[ProxyGen] Frame processing error:', e);
-        frame.close();
       }
+
+      if (batchFrames.length > 0) {
+        try {
+          // GPU batch resize
+          const pixelArrays = await this.resizePipeline.processBatch(batchFrames);
+
+          // Close video frames after GPU processing
+          for (const frame of batchFrames) {
+            frame.close();
+          }
+
+          // Encode all frames in parallel using workers
+          const encodePromises = pixelArrays.map((pixels, i) =>
+            this.encodeFrameAsync(batchFrameIndices[i], pixels)
+          );
+
+          const blobs = await Promise.all(encodePromises);
+
+          // Add to DB batch
+          for (let i = 0; i < blobs.length; i++) {
+            const frameIndex = batchFrameIndices[i];
+            const frameId = `${mediaFileId}_${frameIndex.toString().padStart(6, '0')}`;
+            dbBatch.push({ id: frameId, mediaFileId, frameIndex, blob: blobs[i] });
+            this.decodedFrames.delete(frameIndex);
+          }
+
+          this.processedFrames += batchFrames.length;
+          this.onProgress?.(Math.round((this.processedFrames / this.totalFrames) * 100));
+
+          // Save DB batch periodically
+          if (dbBatch.length >= DB_BATCH_SIZE) {
+            for (const f of dbBatch) {
+              await saveFrame(f);
+            }
+            dbBatch.length = 0;
+          }
+
+        } catch (e) {
+          console.error('[ProxyGen] GPU batch processing error:', e);
+          // Close frames on error
+          for (const frame of batchFrames) {
+            frame.close();
+          }
+        }
+      }
+
+      batchStart += BATCH_SIZE;
     }
 
-    // Save remaining batch
-    for (const f of batch) {
+    // Save remaining DB batch
+    for (const f of dbBatch) {
       await saveFrame(f);
     }
 
@@ -459,9 +503,14 @@ class ProxyGeneratorGPU {
     }
     this.decodedFrames.clear();
 
+    // Clean up GPU pipeline
+    this.resizePipeline.destroy();
+    this.resizePipeline = null;
+
     if (this.isCancelled) {
       this.resolveGeneration?.(null);
     } else {
+      console.log(`[ProxyGen] Completed: ${this.processedFrames} frames processed`);
       this.resolveGeneration?.({
         frameCount: this.processedFrames,
         fps: PROXY_FPS,
@@ -476,6 +525,7 @@ class ProxyGeneratorGPU {
       frame.close();
     }
     this.decodedFrames.clear();
+    this.resizePipeline?.destroy();
   }
 }
 
