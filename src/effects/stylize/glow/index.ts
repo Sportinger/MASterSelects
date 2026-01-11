@@ -49,6 +49,15 @@ export const glow: EffectDefinition = {
       step: 0.05,
       animatable: true,
     },
+    quality: {
+      type: 'number',
+      label: 'Quality',
+      default: 2,
+      min: 1,
+      max: 3,
+      step: 1,
+      animatable: false,
+    },
   },
 
   packUniforms: (params, width, height) => {
@@ -59,7 +68,8 @@ export const glow: EffectDefinition = {
       params.softness as number || 0.5,
       width,
       height,
-      0, 0, // padding
+      params.quality as number || 2,
+      0, // padding
     ]);
   },
 };

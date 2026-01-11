@@ -129,56 +129,87 @@ Full 3D rotation with configurable perspective:
 
 ## GPU Effects
 
-### 9 Implemented Effects
+### 30+ Modular Effects
 
-#### 1. Hue Shift
-- **Parameter**: `shift` (0-1, wrapped)
-- **Shader**: RGB↔HSV conversion, hue rotation
+Effects are organized by category in `src/effects/`:
 
-#### 2. Brightness
-- **Parameter**: `amount` (-1 to +1)
-- **Shader**: Additive RGB adjustment
+#### Color Correction
+| Effect | Parameters |
+|--------|------------|
+| Brightness | amount (-1 to +1) |
+| Contrast | amount (0-3) |
+| Saturation | amount (0-3) |
+| Vibrance | amount (0-2) |
+| Hue Shift | shift (0-1) |
+| Temperature | amount (-1 to +1) |
+| Exposure | amount (-3 to +3) |
+| Levels | inputBlack, inputWhite, gamma, outputBlack, outputWhite |
+| Invert | (no params) |
 
-#### 3. Contrast
-- **Parameter**: `amount` (0-3, default 1)
-- **Shader**: `(color - 0.5) * amount + 0.5`
+#### Blur Effects
+| Effect | Parameters |
+|--------|------------|
+| Box Blur | radius (0-20) |
+| Gaussian Blur | radius (0-50), **quality** (1-3) |
+| Motion Blur | amount, angle, **quality** (1-3) |
+| Radial Blur | amount, centerX, centerY, **quality** (1-3) |
+| Zoom Blur | amount, centerX, centerY, **quality** (1-3) |
 
-#### 4. Saturation
-- **Parameter**: `amount` (0-3, default 1)
-- **Shader**: Mix between grayscale and original
+#### Distort Effects
+| Effect | Parameters |
+|--------|------------|
+| Pixelate | size (1-64) |
+| Kaleidoscope | segments, rotation |
+| Mirror | horizontal, vertical |
+| RGB Split | amount, angle |
+| Twirl | amount, radius, centerX, centerY |
+| Wave | amplitude, frequency, speed |
+| Bulge | amount, radius, centerX, centerY |
 
-#### 5. Pixelate
-- **Parameter**: `size` (1-64 pixels)
-- **Shader**: Floor-based pixel block sampling
+#### Stylize Effects
+| Effect | Parameters |
+|--------|------------|
+| Vignette | amount, size, softness, roundness |
+| Grain | amount, size |
+| Glow | amount, threshold, radius, softness, **quality** (1-3) |
+| Posterize | levels |
+| Edge Detect | threshold |
+| Scanlines | count, intensity |
+| Threshold | level |
+| Sharpen | amount, radius |
 
-#### 6. Kaleidoscope
-- **Parameters**: `segments` (2-16), `rotation` (0-2π)
-- **Shader**: Polar coordinates + sector mirroring
+#### Keying
+| Effect | Parameters |
+|--------|------------|
+| Chroma Key | keyColor, tolerance, softness |
 
-#### 7. Mirror
-- **Parameters**: `horizontal` (bool), `vertical` (bool)
-- **Shader**: Conditional UV flipping
+### Effect Controls
 
-#### 8. RGB Split
-- **Parameters**: `amount` (0-0.1), `angle` (0-2π)
-- **Shader**: Offset color channel sampling
+#### Bypass Toggle
+- Click the **checkmark icon** left of the effect name to toggle effect on/off
+- Bypassed effects show as semi-transparent
+- Useful for A/B comparisons without removing effects
 
-#### 9. Levels
-- **Parameters**: `inputBlack`, `inputWhite`, `gamma` (0.1-10), `outputBlack`, `outputWhite`
-- **Shader**: Input remap → gamma → output remap
+#### Draggable Values
+- **Drag** on any numeric value to adjust it
+- **Shift+Drag** for 10x slower precision
+- **Ctrl+Drag** for 100x slower precision
+- **Right-click** on any value to reset to default
 
-#### 10. Invert
-- **No parameters**
-- **Shader**: `1.0 - color.rgb`
+#### Quality Parameter
+Multi-sample effects (blur, glow) have a **Quality** slider:
+- **1 = Low**: Fastest, fewer samples
+- **2 = Medium**: Balanced (default)
+- **3 = High**: Best quality, more samples
 
 ### Adding Effects
 1. Select clip
-2. Open Effects Panel
-3. Click effect to add
-4. Adjust parameters with sliders
+2. Open Properties Panel → Effects tab
+3. Choose effect from dropdown (grouped by category)
+4. Adjust parameters with sliders or drag on values
 
 ### Effect Order
-Effects process in order listed (ping-pong rendering).
+Effects process top-to-bottom (ping-pong rendering).
 
 ---
 
@@ -229,17 +260,6 @@ Final Output
 - Bind group layout
 - Render pipeline
 - Uniform buffer (16-32 bytes)
-
----
-
-## Not Implemented
-
-- Blur effect (defined in types, no shader)
-- Motion blur
-- Glow/bloom
-- Color curves
-- Distortion effects
-- Particle effects
 
 ---
 

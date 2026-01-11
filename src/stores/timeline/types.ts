@@ -113,6 +113,7 @@ export interface ClipActions {
   addClipEffect: (clipId: string, effectType: string) => void;
   removeClipEffect: (clipId: string, effectId: string) => void;
   updateClipEffect: (clipId: string, effectId: string, params: Partial<Effect['params']>) => void;
+  setClipEffectEnabled: (clipId: string, effectId: string, enabled: boolean) => void;
   // Multicam group linking
   createLinkedGroup: (clipIds: string[], offsets: Map<string, number>) => void;
   unlinkGroup: (clipId: string) => void;

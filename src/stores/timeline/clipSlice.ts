@@ -1435,6 +1435,23 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
     invalidateCache();
   },
 
+  setClipEffectEnabled: (clipId, effectId, enabled) => {
+    const { clips, invalidateCache } = get();
+    set({
+      clips: clips.map(c =>
+        c.id === clipId
+          ? {
+              ...c,
+              effects: c.effects.map(e =>
+                e.id === effectId ? { ...e, enabled } : e
+              ),
+            }
+          : c
+      ),
+    });
+    invalidateCache();
+  },
+
   // Create a linked group from selected clips (multicam sync)
   createLinkedGroup: (clipIds, offsets) => {
     const { clips, invalidateCache } = get();

@@ -4,7 +4,7 @@ struct ZoomBlurParams {
   amount: f32,
   centerX: f32,
   centerY: f32,
-  _pad: f32,
+  quality: f32,
 };
 
 @group(0) @binding(0) var texSampler: sampler;
@@ -17,7 +17,8 @@ fn zoomBlurFragment(input: VertexOutput) -> @location(0) vec4f {
   let dir = input.uv - center;
 
   var color = vec4f(0.0);
-  let samples = 16;
+  // Quality: 1=8 samples, 2=16 samples, 3=32 samples
+  let samples = i32(8.0 * pow(2.0, params.quality - 1.0));
   let amount = params.amount * 0.5;
 
   for (var i = 0; i < samples; i++) {

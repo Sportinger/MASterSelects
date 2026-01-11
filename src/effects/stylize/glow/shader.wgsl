@@ -7,8 +7,8 @@ struct GlowParams {
   softness: f32,
   width: f32,
   height: f32,
+  quality: f32,
   _p1: f32,
-  _p2: f32,
 };
 
 @group(0) @binding(0) var texSampler: sampler;
@@ -24,8 +24,9 @@ fn glowFragment(input: VertexOutput) -> @location(0) vec4f {
   var glow = vec3f(0.0);
   var totalWeight = 0.0;
 
-  let rings = 4;        // Number of concentric rings
-  let samplesPerRing = 16;  // Samples per ring
+  // Quality: 1=2 rings/8 samples, 2=4 rings/16 samples, 3=6 rings/24 samples
+  let rings = i32(params.quality * 2.0);
+  let samplesPerRing = i32(params.quality * 8.0);
 
   for (var ring = 1; ring <= rings; ring++) {
     let ringRadius = f32(ring) * params.radius * texelSize.x * 10.0;

@@ -40,6 +40,15 @@ export const zoomBlur: EffectDefinition = {
       step: 0.01,
       animatable: true,
     },
+    quality: {
+      type: 'number',
+      label: 'Quality',
+      default: 2,
+      min: 1,
+      max: 3,
+      step: 1,
+      animatable: false,
+    },
   },
 
   packUniforms: (params) => {
@@ -47,7 +56,7 @@ export const zoomBlur: EffectDefinition = {
       params.amount as number || 0.3,
       params.centerX as number || 0.5,
       params.centerY as number || 0.5,
-      0,
+      params.quality as number || 2,
     ]);
   },
 };
