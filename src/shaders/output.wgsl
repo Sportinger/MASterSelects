@@ -43,11 +43,11 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 @group(0) @binding(2) var<uniform> uniforms: OutputUniforms;
 
 // Generate checkerboard pattern for transparency visualization
-fn checkerboard(uv: vec2f, outputSize: vec2f) -> vec3f {
-  // 10x10 pixel squares
-  let squareSize = 10.0;
-  let pixelCoord = uv * outputSize;
-  let checker = floor(pixelCoord.x / squareSize) + floor(pixelCoord.y / squareSize);
+// Uses screen position so grid stays same size regardless of viewport scaling
+fn checkerboard(screenPos: vec2f) -> vec3f {
+  // 8x8 screen pixel squares (fixed size on screen)
+  let squareSize = 8.0;
+  let checker = floor(screenPos.x / squareSize) + floor(screenPos.y / squareSize);
   let isLight = (i32(checker) % 2) == 0;
 
   // Light gray and dark gray
@@ -60,8 +60,8 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
 
   // If transparency grid is enabled and there's transparency, blend with checkerboard
   if (uniforms.showTransparencyGrid == 1u && color.a < 1.0) {
-    let outputSize = vec2f(uniforms.outputWidth, uniforms.outputHeight);
-    let checker = checkerboard(input.uv, outputSize);
+    // Use screen position (input.position.xy) for consistent grid size
+    let checker = checkerboard(input.position.xy);
     // Blend: checkerboard * (1 - alpha) + color * alpha
     let blended = checker * (1.0 - color.a) + color.rgb * color.a;
     return vec4f(blended, 1.0);
