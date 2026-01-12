@@ -10,6 +10,7 @@ GPU-accelerated proxy generation for smooth editing of large video files.
 
 - [Overview](#overview)
 - [Proxy Generation](#proxy-generation)
+- [Cross-Platform Support](#cross-platform-support)
 - [Proxy Playback](#proxy-playback)
 - [Storage](#storage)
 - [Configuration](#configuration)
@@ -55,16 +56,51 @@ The proxy generator uses a multi-stage GPU pipeline for maximum speed:
 - **Output Format**: WebP at 92% quality
 - **Frame Rate**: 30 fps proxy
 
-### First-Time Setup
-First proxy generation prompts for folder:
-1. Folder picker dialog appears
-2. Select/create proxy folder
-3. Folder remembered for future
+### Automatic Project Folder Storage
+Proxies are automatically stored in your project folder:
+```
+MyProject/
+└── Proxy/
+    └── {mediaHash}/
+        └── frames/
+            ├── 000000.webp
+            ├── 000001.webp
+            └── ...
+```
+
+No folder picker needed - proxies go directly to project folder.
 
 ### Partial Proxies
 - Can use proxy while generating
 - Frames available immediately
 - Falls back to original for missing frames
+
+---
+
+## Cross-Platform Support
+
+### Windows (NVIDIA)
+Streaming decode mode for Windows NVIDIA GPUs:
+- Processes frames during decoding (not after)
+- Releases decoder buffer memory as frames complete
+- Active wait loop handles slow hardware decoders
+- Prevents stalling on limited DPB (Decoded Picture Buffer)
+
+### Linux
+Standard high-performance decode:
+- Hardware-accelerated via VA-API/VDPAU
+- Batch processing for maximum throughput
+
+### macOS
+- VideoToolbox hardware decoding
+- Same streaming approach as Windows
+
+### Performance Tips
+| Issue | Solution |
+|-------|----------|
+| Slow on Windows | Uses streaming decode automatically |
+| Stalls at 0% | Check GPU drivers, try different video |
+| Black frames | Verify WebCodecs support |
 
 ---
 
@@ -90,21 +126,30 @@ Editor automatically uses:
 
 ## Storage
 
-### File System Access API
-Proxies stored externally using browser File System API:
-- User selects storage folder
-- Files persist on disk
-- Access permission remembered
+### Project Folder Storage
+Proxies stored in your project folder:
+- No separate folder selection needed
+- Files persist with project
+- Hash-based deduplication
 
-### Proxy Folder
-- All proxies in single folder
-- Named by source file hash
-- Reusable across sessions
+### File Organization
+```
+ProjectFolder/Proxy/{mediaHash}/frames/
+```
+- `{mediaHash}` = SHA-256 of file content
+- Same file imported twice shares proxies
+- Portable with project folder
 
 ### Storage Requirements
-- ~10-20% of original size
-- Depends on proxy resolution
-- Can be deleted to reclaim space
+- ~10-20% of original video size
+- Depends on proxy resolution (1280px max)
+- Delete `Proxy/` folder to reclaim space
+
+### Deduplication
+Files are identified by content hash:
+- Same video = same proxies
+- Re-import doesn't regenerate
+- Thumbnails also deduplicated
 
 ---
 

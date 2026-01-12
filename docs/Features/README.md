@@ -2,7 +2,7 @@
 
 **Professional WebGPU Video Compositor & Timeline Editor**
 
-Version 1.0 | January 2026
+Version 1.0.6 | January 2026
 
 ---
 
@@ -18,23 +18,25 @@ MASterSelects is a browser-based professional video editing application built on
 | **Multi-track Timeline** | Professional NLE with video/audio tracks, nested compositions, and multicam |
 | **Keyframe Animation** | Full property animation with bezier curve editor and 5 easing modes |
 | **AI Integration** | 50+ intelligent editing tools via OpenAI function calling |
-| **GPU Effects** | 9 real-time effects, 37 blend modes, vector masks with feathering |
+| **30+ GPU Effects** | Color, blur, distort, stylize, keying effects with quality controls |
 | **Professional Audio** | 10-band parametric EQ with keyframe automation |
 | **Multicam Support** | Audio-based cross-correlation synchronization |
-| **Video Export** | H.264/VP9 encoding via WebCodecs API |
+| **Video Export** | H.264/VP9 WebCodecs + FFmpeg WASM (ProRes, DNxHR, HAP) |
+| **Local Storage** | Project folder with autosave, backups, and smart media relinking |
 
 ---
 
 ## Technology Stack
 
 ```
-Frontend          React 18 + TypeScript + Vite
+Frontend          React 19 + TypeScript + Vite 7.2
 State Management  Zustand with slice architecture
-GPU Rendering     WebGPU + WGSL shaders (1,352 lines)
-Video Decoding    WebCodecs API with HTMLVideoElement fallback
+GPU Rendering     WebGPU + WGSL shaders (2,000+ lines)
+Video Decoding    WebCodecs API with hardware acceleration
+Video Encoding    WebCodecs + FFmpeg WASM (ProRes, DNxHR, HAP)
 Audio Processing  Web Audio API with AnalyserNode
 AI Services       OpenAI GPT-4 function calling
-Persistence       IndexedDB + File System Access API
+Persistence       File System Access API + local project folders
 UI Framework      Custom dockable panel system
 ```
 
@@ -112,18 +114,19 @@ UI Framework      Custom dockable panel system
 
 ### GPU Effects & Compositing
 
-| Feature | Status | Details |
-|---------|--------|---------|
-| Hue Shift | ✅ | -180° to +180° color rotation |
-| Brightness | ✅ | -1 to +1 adjustment |
-| Contrast | ✅ | 0 to 2 multiplier |
-| Saturation | ✅ | 0 to 2 multiplier |
-| Pixelate | ✅ | 1-100 pixel block size |
-| Kaleidoscope | ✅ | 2-32 segment mirroring |
-| Mirror | ✅ | Horizontal/vertical reflection |
-| RGB Split | ✅ | Chromatic aberration effect |
-| Levels | ✅ | Input/output black, white, gamma |
-| Invert | ✅ | Color inversion |
+| Category | Effects | Count |
+|----------|---------|-------|
+| **Color** | Brightness, Contrast, Saturation, Vibrance, Hue Shift, Temperature, Exposure, Levels, Invert | 9 |
+| **Blur** | Box Blur, Gaussian Blur, Motion Blur, Radial Blur, Zoom Blur | 5 |
+| **Distort** | Pixelate, Kaleidoscope, Mirror, RGB Split, Twirl, Wave, Bulge | 7 |
+| **Stylize** | Vignette, Grain, Glow, Posterize, Edge Detect, Scanlines, Threshold, Sharpen | 8 |
+| **Keying** | Chroma Key | 1 |
+
+**Effect Controls:**
+- ✅ Bypass toggle for A/B comparison
+- ✅ Draggable values with precision modifiers (Shift/Ctrl)
+- ✅ Quality parameters for blur/glow effects
+- ✅ Auto performance protection (resets if too slow)
 
 ### Blend Modes (37 Total)
 
@@ -183,14 +186,15 @@ UI Framework      Custom dockable panel system
 | Feature | Status | Details |
 |---------|--------|---------|
 | Real-time Preview | ✅ | 60fps GPU rendering |
+| Idle Mode | ✅ | Auto-pause GPU when nothing changes |
 | Preview Quality | ✅ | Full/Half/Quarter resolution for performance |
 | RAM Preview | ✅ | 30fps cached playback, 900 frame limit |
 | Multiple Outputs | ✅ | Open multiple preview windows |
 | Edit Mode | ✅ | Direct manipulation in preview |
 | Scrubbing Cache | ✅ | 3-tier caching system |
-| Statistics Overlay | ✅ | FPS, timing, bottleneck indicators |
+| Statistics Overlay | ✅ | FPS, timing, idle status indicators |
 | Resolution Presets | ✅ | 480p to 4K preview |
-| Frame Stepping | ✅ | Arrow key frame navigation |
+| Pause on Drag | ✅ | Playback pauses when dragging playhead |
 
 ### Export
 
@@ -209,14 +213,16 @@ UI Framework      Custom dockable panel system
 
 | Feature | Status | Details |
 |---------|--------|---------|
-| Auto-Save | ✅ | Every 30 seconds + key events |
-| IndexedDB Storage | ✅ | 5 object stores |
-| File System Access | ✅ | Persistent file handles |
-| Folder Organization | ✅ | Nested folders with drag-drop |
-| Recent Projects | ✅ | Up to 10 recent projects |
+| Local Project Folder | ✅ | All data stored in user-selected folder |
+| Auto-Save | ✅ | Configurable interval (1-10 min) |
+| Backup System | ✅ | Keeps last 20 backups automatically |
+| Welcome Overlay | ✅ | Project folder selection on launch |
+| Save As | ✅ | Export project to new location |
+| Smart Media Relink | ✅ | Auto-find moved/renamed files |
+| Reload All | ✅ | Restore file permissions after restart |
 | Media Import | ✅ | MP4, WebM, MOV, WAV, MP3, PNG, JPG |
-| Proxy Generation | ✅ | GPU-accelerated, 30fps, WebP |
-| Layout Persistence | ✅ | Save/restore panel layouts |
+| Proxy Generation | ✅ | GPU-accelerated, Windows/Linux/Mac |
+| Hash Deduplication | ✅ | Same files share proxies/thumbnails |
 
 ### User Interface
 
@@ -428,12 +434,9 @@ See [Keyboard Shortcuts](./Keyboard-Shortcuts.md) for complete reference.
 
 The following features are planned but not currently available:
 
-- Audio export (video-only export currently)
-- ProRes/DNxHR codec support
 - Cloud storage integration
 - Asset library across projects
 - Batch import settings
-- Media relinking dialog
 - Multi-pass encoding
 - Background export queue
 
@@ -443,7 +446,13 @@ The following features are planned but not currently available:
 
 | Version | Date | Highlights |
 |---------|------|------------|
-| 1.0 | Jan 2026 | Initial release with full WebGPU pipeline |
+| 1.0.6 | Jan 2026 | Windows GPU proxy fix, streaming decode, FFmpeg WASM |
+| 1.0.5 | Jan 2026 | 30+ modular GPU effects, effect bypass/quality controls |
+| 1.0.4 | Jan 2026 | Local project storage, autosave, backup system |
+| 1.0.3 | Jan 2026 | Smart media relink, reload all, welcome overlay |
+| 1.0.2 | Jan 2026 | Media panel columns, idle mode, version display |
+| 1.0.1 | Jan 2026 | Audio export, nested composition fixes |
+| 1.0.0 | Jan 2026 | Initial release with full WebGPU pipeline |
 
 ---
 
@@ -453,4 +462,4 @@ MASterSelects is proprietary software.
 
 ---
 
-*Documentation generated from codebase analysis of 362 commits — January 2026*
+*Documentation updated January 2026*

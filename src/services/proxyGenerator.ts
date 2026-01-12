@@ -547,12 +547,13 @@ class ProxyGeneratorGPU {
       console.log(`[ProxyGen] Using AVC description (${description.length} bytes) for H.264 decoding`);
     }
 
-    // Try without specifying hardwareAcceleration (let browser decide)
+    // Try with hardware acceleration preferred
     for (const codec of codecsToTry) {
       const config: VideoDecoderConfig = {
         codec,
         codedWidth: width,
         codedHeight: height,
+        hardwareAcceleration: 'prefer-hardware',
         // Include description for AVC/H.264 (required for proper decoding)
         ...(description && { description }),
       };
@@ -588,11 +589,16 @@ class ProxyGeneratorGPU {
         errorCount++;
         lastError = error;
         // Only log first few errors to avoid spam
-        if (errorCount <= 3) {
-          console.error('[ProxyGen] Decoder error:', error);
+        if (errorCount <= 5) {
+          console.error('[ProxyGen] Decoder error:', error.message || error);
+        }
+        if (errorCount === 5) {
+          console.warn('[ProxyGen] Suppressing further decoder errors...');
         }
       },
     });
+
+    console.log('[ProxyGen] VideoDecoder created, state:', this.decoder.state);
 
     this.decoder.configure(this.codecConfig);
     console.log('[ProxyGen] Decoder configured:', {
@@ -614,13 +620,33 @@ class ProxyGeneratorGPU {
     const timestamp = frame.timestamp / 1_000_000; // Convert to seconds
     const frameIndex = Math.round(timestamp * PROXY_FPS);
 
+    // Log first few frames and every 50th frame
+    const frameCount = this.decodedFrames.size + 1;
+    if (frameCount <= 3 || frameCount % 50 === 0) {
+      console.log(`[ProxyGen] Frame decoded: index=${frameIndex}, timestamp=${timestamp.toFixed(2)}s, size=${frame.codedWidth}x${frame.codedHeight}, total=${frameCount}`);
+    }
+
     if (frameIndex >= 0 && frameIndex < this.totalFrames) {
+      // Check if we already have this frame (avoid duplicates)
+      const existing = this.decodedFrames.get(frameIndex);
+      if (existing) {
+        existing.close(); // Close old frame
+      }
       // Store frame for batch processing
       this.decodedFrames.set(frameIndex, frame);
     } else {
       frame.close();
     }
+
+    // CRITICAL: Process frames when buffer gets full to release decoder memory
+    // NVIDIA hardware decoders have limited DPB (Decoded Picture Buffer)
+    if (this.decodedFrames.size >= BATCH_SIZE && this.pendingBatchProcess) {
+      this.pendingBatchProcess();
+    }
   }
+
+  // Callback to trigger batch processing from decode loop
+  private pendingBatchProcess: (() => void) | null = null;
 
   private async processSamplesGPU(
     mediaFileId: string,
@@ -646,104 +672,20 @@ class ProxyGeneratorGPU {
       console.log(`[ProxyGen] Skipping ${firstKeyframeIdx} samples before first keyframe`);
     }
 
-    // Decode samples starting from first keyframe
-    let decodeErrors = 0;
-    let samplesDecoded = 0;
-
-    for (let i = firstKeyframeIdx; i < sortedSamples.length; i++) {
-      const sample = sortedSamples[i];
-
-      if (this.checkCancelled?.()) {
-        this.isCancelled = true;
-        break;
-      }
-
-      // Check decoder state before decoding
-      if (this.decoder.state === 'closed') {
-        console.error('[ProxyGen] Decoder was closed unexpectedly');
-        break;
-      }
-
-      const chunk = new EncodedVideoChunk({
-        type: sample.is_sync ? 'key' : 'delta',
-        timestamp: (sample.cts / sample.timescale) * 1_000_000,
-        duration: (sample.duration / sample.timescale) * 1_000_000,
-        data: sample.data,
-      });
-
-      try {
-        this.decoder.decode(chunk);
-        samplesDecoded++;
-      } catch (e) {
-        decodeErrors++;
-        if (decodeErrors <= 5) {
-          console.error(`[ProxyGen] Decode error on sample ${sample.number} (sync=${sample.is_sync}):`, e);
-        }
-        // If we hit too many errors, stop
-        if (decodeErrors > 50) {
-          console.error('[ProxyGen] Too many decode errors, stopping');
-          break;
-        }
-      }
-    }
-
-    // Wait for decoder to finish
-    try {
-      if (this.decoder.state !== 'closed') {
-        await this.decoder.flush();
-      }
-    } catch (e) {
-      console.warn('[ProxyGen] Decoder flush error:', e);
-    }
-
-    // Log decoder stats
-    const framesDecoded = (this.decoder as any)._decodedCount?.() || 0;
-    const decoderErrors = (this.decoder as any)._errorCount?.() || 0;
-    const lastError = (this.decoder as any)._lastError?.();
-
-    const decoderCounts = {
-      samplesProcessed: sortedSamples.length - firstKeyframeIdx,
-      samplesDecoded,
-      framesDecoded,
-      decoderErrors,
-      syncDecodeErrors: decodeErrors,
-      framesStored: this.decodedFrames.size,
-    };
-    console.log(`[ProxyGen] Decoder stats:`, decoderCounts);
-
-    // If we got very few frames, throw to trigger retry
-    if (this.decodedFrames.size < 10 && sortedSamples.length > 100) {
-      const errorMsg = lastError ? lastError.message || lastError.toString() : 'Unknown decoder error';
-      throw new Error(`Decoding failed: only ${this.decodedFrames.size} frames from ${sortedSamples.length} samples. ${errorMsg}`);
-    }
-
-    if (this.decodedFrames.size < sortedSamples.length * 0.3) {
-      console.warn(`[ProxyGen] ⚠️ Only ${this.decodedFrames.size}/${sortedSamples.length} frames decoded - possible codec config issue`);
-    }
-
-    console.log(`[ProxyGen] Starting GPU batch processing on ${this.decodedFrames.size} frames...`);
-
-    // Sort frame indices
-    const sortedIndices = Array.from(this.decodedFrames.keys()).sort((a, b) => a - b);
-
     // Performance tracking
     const startTime = performance.now();
     let totalGpuTime = 0;
     let totalEncodeTime = 0;
     let batchCount = 0;
-
-    // Process frames in batches
-    let batchStart = 0;
     const dbBatch: { id: string; mediaFileId: string; frameIndex: number; blob: Blob }[] = [];
 
-    while (batchStart < sortedIndices.length) {
-      if (this.checkCancelled?.()) {
-        this.isCancelled = true;
-        break;
-      }
+    // Helper function to process accumulated frames
+    const processAccumulatedFrames = async () => {
+      if (this.decodedFrames.size < BATCH_SIZE) return;
 
-      // Collect frames for this GPU batch
-      const batchIndices = sortedIndices.slice(batchStart, batchStart + BATCH_SIZE);
+      // Sort and get frames to process
+      const sortedIndices = Array.from(this.decodedFrames.keys()).sort((a, b) => a - b);
+      const batchIndices = sortedIndices.slice(0, BATCH_SIZE);
       const batchFrames: VideoFrame[] = [];
       const batchFrameIndices: number[] = [];
 
@@ -752,6 +694,7 @@ class ProxyGeneratorGPU {
         if (frame) {
           batchFrames.push(frame);
           batchFrameIndices.push(frameIndex);
+          this.decodedFrames.delete(frameIndex);
         }
       }
 
@@ -759,27 +702,23 @@ class ProxyGeneratorGPU {
         try {
           batchCount++;
 
-          // GPU batch resize with timing
+          // GPU batch resize
           const gpuStart = performance.now();
-          const pixelArrays = await this.resizePipeline.processBatch(batchFrames);
+          const pixelArrays = await this.resizePipeline!.processBatch(batchFrames);
           const gpuEnd = performance.now();
-          const gpuTime = gpuEnd - gpuStart;
-          totalGpuTime += gpuTime;
+          totalGpuTime += gpuEnd - gpuStart;
 
-          // Close video frames after GPU processing
+          // CRITICAL: Close video frames immediately to release decoder buffer
           for (const frame of batchFrames) {
             frame.close();
           }
 
-          // Validate and encode frames in parallel using workers
+          // Encode frames in parallel
           const encodeStart = performance.now();
           const expectedPixelSize = this.outputWidth * this.outputHeight * 4;
 
           const encodePromises = pixelArrays.map((pixels, i) => {
-            // Validate pixel data
             if (!pixels || pixels.byteLength !== expectedPixelSize) {
-              console.warn(`[ProxyGen] Invalid pixel data for frame ${batchFrameIndices[i]}: got ${pixels?.byteLength || 0}, expected ${expectedPixelSize}`);
-              // Return empty blob for invalid frames
               return Promise.resolve(new Blob([], { type: 'image/webp' }));
             }
             return this.encodeFrameAsync(batchFrameIndices[i], pixels);
@@ -787,28 +726,24 @@ class ProxyGeneratorGPU {
 
           const blobs = await Promise.all(encodePromises);
           const encodeEnd = performance.now();
-          const encodeTime = encodeEnd - encodeStart;
-          totalEncodeTime += encodeTime;
+          totalEncodeTime += encodeEnd - encodeStart;
 
-          // Log batch performance (every 5 batches to avoid spam)
+          // Log batch performance
           if (batchCount % 5 === 0 || batchCount === 1) {
-            console.log(`[ProxyGen] Batch ${batchCount}: GPU=${gpuTime.toFixed(1)}ms, Encode=${encodeTime.toFixed(1)}ms, Frames=${batchFrames.length}`);
+            console.log(`[ProxyGen] Batch ${batchCount}: GPU=${(gpuEnd - gpuStart).toFixed(1)}ms, Frames=${batchFrames.length}, Decoded=${this.decodedFrames.size} pending`);
           }
 
-          // Add to DB batch (skip empty blobs from failed frames)
-          let validFrames = 0;
+          // Save frames
           for (let i = 0; i < blobs.length; i++) {
             const blob = blobs[i];
             if (blob && blob.size > 0) {
               const frameIndex = batchFrameIndices[i];
               const frameId = `${mediaFileId}_${frameIndex.toString().padStart(6, '0')}`;
               dbBatch.push({ id: frameId, mediaFileId, frameIndex, blob });
-              validFrames++;
+              this.processedFrames++;
             }
-            this.decodedFrames.delete(batchFrameIndices[i]);
           }
 
-          this.processedFrames += validFrames;
           this.onProgress?.(Math.round((this.processedFrames / this.totalFrames) * 100));
 
           // Save DB batch periodically
@@ -821,14 +756,203 @@ class ProxyGeneratorGPU {
 
         } catch (e) {
           console.error('[ProxyGen] GPU batch processing error:', e);
-          // Close frames on error
           for (const frame of batchFrames) {
             frame.close();
           }
         }
       }
+    };
 
-      batchStart += BATCH_SIZE;
+    // Set up callback for streaming processing
+    let processingPromise: Promise<void> | null = null;
+    this.pendingBatchProcess = () => {
+      if (!processingPromise) {
+        processingPromise = processAccumulatedFrames().then(() => {
+          processingPromise = null;
+        });
+      }
+    };
+
+    // Decode samples with streaming processing
+    let decodeErrors = 0;
+    let samplesDecoded = 0;
+    const MAX_PENDING_FRAMES = BATCH_SIZE * 2; // Keep at most 2 batches worth of frames
+
+    console.log(`[ProxyGen] Starting streaming decode (max ${MAX_PENDING_FRAMES} pending frames)...`);
+    const decodeStartTime = performance.now();
+
+    for (let i = firstKeyframeIdx; i < sortedSamples.length; i++) {
+      const sample = sortedSamples[i];
+
+      if (this.checkCancelled?.()) {
+        this.isCancelled = true;
+        break;
+      }
+
+      if (this.decoder.state === 'closed') {
+        console.error('[ProxyGen] Decoder was closed unexpectedly');
+        break;
+      }
+
+      // Wait if we have too many pending frames (release decoder buffer pressure)
+      let waitCount = 0;
+      while (this.decodedFrames.size >= MAX_PENDING_FRAMES) {
+        await processAccumulatedFrames();
+        await new Promise(resolve => setTimeout(resolve, 5));
+        waitCount++;
+        if (waitCount > 400) { // 2 second timeout
+          console.warn(`[ProxyGen] Frame processing stalled, ${this.decodedFrames.size} frames pending`);
+          break;
+        }
+      }
+
+      const chunk = new EncodedVideoChunk({
+        type: sample.is_sync ? 'key' : 'delta',
+        timestamp: (sample.cts / sample.timescale) * 1_000_000,
+        duration: (sample.duration / sample.timescale) * 1_000_000,
+        data: sample.data,
+      });
+
+      try {
+        this.decoder.decode(chunk);
+        samplesDecoded++;
+        if (samplesDecoded % 100 === 0) {
+          console.log(`[ProxyGen] Submitted ${samplesDecoded}/${sortedSamples.length} samples, ${this.decodedFrames.size} frames pending, ${this.processedFrames} processed`);
+        }
+      } catch (e) {
+        decodeErrors++;
+        if (decodeErrors <= 5) {
+          console.error(`[ProxyGen] Decode error on sample ${sample.number}:`, e);
+        }
+        if (decodeErrors > 50) {
+          console.error('[ProxyGen] Too many decode errors, stopping');
+          break;
+        }
+      }
+
+      // Small yield to allow decoder output callback to fire
+      if (i % 10 === 0) {
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+    }
+
+    const decodeLoopTime = performance.now() - decodeStartTime;
+    console.log(`[ProxyGen] Decode loop complete: ${samplesDecoded} samples in ${decodeLoopTime.toFixed(0)}ms`);
+
+    // Wait for decoder to output remaining frames
+    // Windows NVIDIA decoders can be very slow, so we actively wait
+    console.log(`[ProxyGen] Waiting for decoder to output frames (currently ${this.decodedFrames.size} pending)...`);
+
+    const expectedFrames = Math.min(sortedSamples.length - firstKeyframeIdx, this.totalFrames);
+    const maxWaitTime = 120000; // 2 minutes max wait
+    const waitStart = performance.now();
+    let lastFrameCount = this.decodedFrames.size + this.processedFrames;
+    let stallCount = 0;
+
+    // Keep processing while decoder outputs frames
+    while (performance.now() - waitStart < maxWaitTime) {
+      const currentFrameCount = this.decodedFrames.size + this.processedFrames;
+
+      // Process any accumulated frames
+      if (this.decodedFrames.size >= BATCH_SIZE) {
+        await processAccumulatedFrames();
+      }
+
+      // Check if we got all expected frames
+      if (this.processedFrames >= expectedFrames * 0.95) {
+        console.log(`[ProxyGen] Got ${this.processedFrames}/${expectedFrames} frames (95%+), continuing...`);
+        break;
+      }
+
+      // Check for stall (no new frames for 5 seconds)
+      if (currentFrameCount === lastFrameCount) {
+        stallCount++;
+        if (stallCount > 100) { // 5 seconds (100 * 50ms)
+          console.warn(`[ProxyGen] Decoder stalled for 5s at ${currentFrameCount} frames`);
+          break;
+        }
+      } else {
+        stallCount = 0;
+        lastFrameCount = currentFrameCount;
+      }
+
+      // Log progress periodically
+      if (stallCount === 0 && currentFrameCount % 50 === 0) {
+        const elapsed = ((performance.now() - waitStart) / 1000).toFixed(1);
+        console.log(`[ProxyGen] Decoder progress: ${this.processedFrames} processed, ${this.decodedFrames.size} pending (${elapsed}s elapsed)`);
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+
+    // Try to flush any remaining frames
+    try {
+      if (this.decoder.state !== 'closed') {
+        console.log('[ProxyGen] Final decoder flush...');
+        await Promise.race([
+          this.decoder.flush(),
+          new Promise<void>((_, reject) => setTimeout(() => reject(new Error('Flush timeout')), 5000))
+        ]);
+      }
+    } catch (e) {
+      // Ignore flush timeout at this point
+    }
+
+    // Process any remaining frames
+    console.log(`[ProxyGen] Processing ${this.decodedFrames.size} remaining frames...`);
+    while (this.decodedFrames.size > 0) {
+      // Process whatever we have, even if less than BATCH_SIZE
+      const sortedIndices = Array.from(this.decodedFrames.keys()).sort((a, b) => a - b);
+      const batchIndices = sortedIndices.slice(0, Math.min(BATCH_SIZE, sortedIndices.length));
+      const batchFrames: VideoFrame[] = [];
+      const batchFrameIndices: number[] = [];
+
+      for (const frameIndex of batchIndices) {
+        const frame = this.decodedFrames.get(frameIndex);
+        if (frame) {
+          batchFrames.push(frame);
+          batchFrameIndices.push(frameIndex);
+          this.decodedFrames.delete(frameIndex);
+        }
+      }
+
+      if (batchFrames.length === 0) break;
+
+      try {
+        batchCount++;
+        const pixelArrays = await this.resizePipeline!.processBatch(batchFrames);
+
+        for (const frame of batchFrames) {
+          frame.close();
+        }
+
+        const expectedPixelSize = this.outputWidth * this.outputHeight * 4;
+        const encodePromises = pixelArrays.map((pixels, i) => {
+          if (!pixels || pixels.byteLength !== expectedPixelSize) {
+            return Promise.resolve(new Blob([], { type: 'image/webp' }));
+          }
+          return this.encodeFrameAsync(batchFrameIndices[i], pixels);
+        });
+
+        const blobs = await Promise.all(encodePromises);
+
+        for (let i = 0; i < blobs.length; i++) {
+          const blob = blobs[i];
+          if (blob && blob.size > 0) {
+            const frameIndex = batchFrameIndices[i];
+            const frameId = `${mediaFileId}_${frameIndex.toString().padStart(6, '0')}`;
+            dbBatch.push({ id: frameId, mediaFileId, frameIndex, blob });
+            this.processedFrames++;
+          }
+        }
+
+        this.onProgress?.(Math.round((this.processedFrames / this.totalFrames) * 100));
+      } catch (e) {
+        console.error('[ProxyGen] Final batch error:', e);
+        for (const frame of batchFrames) {
+          frame.close();
+        }
+      }
     }
 
     // Save remaining DB batch
@@ -836,13 +960,8 @@ class ProxyGeneratorGPU {
       await saveFrame(f);
     }
 
-    // Clean up remaining frames
-    for (const frame of this.decodedFrames.values()) {
-      frame.close();
-    }
-    this.decodedFrames.clear();
-
-    // Clean up GPU pipeline
+    // Clean up
+    this.pendingBatchProcess = null;
     this.resizePipeline.destroy();
     this.resizePipeline = null;
 
@@ -858,10 +977,6 @@ class ProxyGeneratorGPU {
         totalBatches: batchCount,
         totalTime: `${(totalTime / 1000).toFixed(1)}s`,
         framesPerSecond: fps.toFixed(1),
-        gpuTime: `${(totalGpuTime / 1000).toFixed(2)}s (${((totalGpuTime / totalTime) * 100).toFixed(1)}%)`,
-        encodeTime: `${(totalEncodeTime / 1000).toFixed(2)}s (${((totalEncodeTime / totalTime) * 100).toFixed(1)}%)`,
-        avgGpuPerBatch: `${(totalGpuTime / batchCount).toFixed(1)}ms`,
-        avgGpuPerFrame: `${(totalGpuTime / this.processedFrames).toFixed(2)}ms`,
       });
 
       this.resolveGeneration?.({

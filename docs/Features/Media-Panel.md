@@ -250,12 +250,35 @@ On project load:
 
 ---
 
+## Media Relinking
+
+### Relink Dialog
+When media files are missing or moved:
+1. **Automatic detection** - App detects missing files on project load
+2. **Relink dialog** - Shows list of missing files
+3. **Auto-scan** - Scans folders to find matching files
+4. **Manual browse** - Locate individual files manually
+
+### Reload All
+Toolbar button to restore file permissions:
+- Click when files show "needs reload" indicator
+- Re-requests access to all file handles
+- Useful after browser restart
+
+### Visual Indicators
+| Badge | Meaning |
+|-------|---------|
+| ⚠️ Yellow | Permission lost, click to reload |
+| ❌ Red | File missing, needs relink |
+| P (blue) | Proxy available |
+
+---
+
 ## Not Implemented
 
 - Cloud storage integration
 - Asset library across projects
 - Batch import settings
-- Media relinking dialog
 
 ---
 
