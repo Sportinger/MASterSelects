@@ -16,6 +16,9 @@ export function MobileApp() {
   // Initialize global undo/redo system
   useGlobalHistory();
 
+  // Show mobile warning initially
+  const [showMobileWarning, setShowMobileWarning] = useState(true);
+
   // Panel states
   const [propertiesPanelOpen, setPropertiesPanelOpen] = useState(false);
   const [mediaPanelOpen, setMediaPanelOpen] = useState(false);
@@ -61,6 +64,50 @@ export function MobileApp() {
       redo();
     }
   }, []);
+
+  // Mobile warning overlay
+  if (showMobileWarning) {
+    return (
+      <div className="mobile-warning-overlay">
+        <div className="mobile-warning-dialog">
+          <div className="mobile-warning-icon">📱</div>
+          <h2>Mobile Version</h2>
+          <p>
+            Die Mobile-Version von MASterSelects ist noch in Entwicklung
+            und nur rudimentär implementiert.
+          </p>
+          <p>
+            Für das volle Editing-Erlebnis bitte einen <strong>Desktop-Browser</strong> verwenden.
+          </p>
+          <div className="mobile-warning-buttons">
+            <button
+              className="mobile-warning-btn primary"
+              onClick={() => setShowMobileWarning(false)}
+            >
+              Trotzdem testen
+            </button>
+          </div>
+          <div className="mobile-warning-features">
+            <div className="feature-status">
+              <span className="status-icon done">✓</span> Preview
+            </div>
+            <div className="feature-status">
+              <span className="status-icon done">✓</span> Timeline (basic)
+            </div>
+            <div className="feature-status">
+              <span className="status-icon wip">◐</span> Touch-Gesten
+            </div>
+            <div className="feature-status">
+              <span className="status-icon todo">○</span> Effects
+            </div>
+            <div className="feature-status">
+              <span className="status-icon todo">○</span> Export
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

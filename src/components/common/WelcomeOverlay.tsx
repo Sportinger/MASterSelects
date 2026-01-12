@@ -1,14 +1,60 @@
 // WelcomeOverlay - First-time user welcome with folder picker
 // Shows on first load to ask for project storage folder
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { isFileSystemAccessSupported } from '../../services/fileSystemService';
 import { projectFileService } from '../../services/projectFileService';
 import { openExistingProject } from '../../services/projectSync';
 
+// Detect browser name and if it's Chromium-based
+function detectBrowser(): { name: string; isChromium: boolean } {
+  const ua = navigator.userAgent;
+
+  // Check specific browsers (order matters - more specific first)
+  if (/Edg\//.test(ua)) {
+    return { name: 'Microsoft Edge', isChromium: true };
+  }
+  if (/OPR\//.test(ua) || /Opera/.test(ua)) {
+    return { name: 'Opera', isChromium: true };
+  }
+  if (/Chrome\//.test(ua) && !/Chromium\//.test(ua)) {
+    return { name: 'Google Chrome', isChromium: true };
+  }
+  if (/Chromium\//.test(ua)) {
+    return { name: 'Chromium', isChromium: true };
+  }
+  if (/Safari\//.test(ua) && !/Chrome\//.test(ua)) {
+    return { name: 'Safari', isChromium: false };
+  }
+  if (/Firefox\//.test(ua)) {
+    return { name: 'Firefox', isChromium: false };
+  }
+
+  return { name: 'Unknown Browser', isChromium: false };
+}
+
 interface WelcomeOverlayProps {
   onComplete: () => void;
 }
+
+// Typewriter sequence with typo correction
+const TYPEWRITER_SEQUENCE = [
+  { action: 'type', text: 'Local', class: 'local' },
+  { action: 'pause', duration: 400 },
+  { action: 'type', text: ' · ', class: 'dot' },
+  { action: 'type', text: 'Private', class: 'private' },
+  { action: 'pause', duration: 350 },
+  { action: 'type', text: ' · ', class: 'dot' },
+  { action: 'type', text: 'Fre', class: 'free' },  // Start typing Free
+  { action: 'pause', duration: 150 },
+  { action: 'type', text: 'q', class: 'free' },    // Typo!
+  { action: 'pause', duration: 300 },
+  { action: 'delete', count: 1 },                   // Delete the typo
+  { action: 'pause', duration: 150 },
+  { action: 'type', text: 'e', class: 'free' },    // Correct it
+  { action: 'pause', duration: 100 },
+  { action: 'done' },
+];
 
 export function WelcomeOverlay({ onComplete }: WelcomeOverlayProps) {
   const [isSelecting, setIsSelecting] = useState(false);
@@ -16,7 +62,88 @@ export function WelcomeOverlay({ onComplete }: WelcomeOverlayProps) {
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Typewriter state
+  const [typewriterParts, setTypewriterParts] = useState<Array<{ text: string; class: string }>>([]);
+  const [showCursor, setShowCursor] = useState(true);
+  const [typewriterDone, setTypewriterDone] = useState(false);
+  const typewriterRef = useRef<{ step: number; charIndex: number }>({ step: 0, charIndex: 0 });
+
   const isSupported = isFileSystemAccessSupported();
+  const browser = useMemo(() => detectBrowser(), []);
+
+  // Typewriter effect
+  useEffect(() => {
+    let timeout: ReturnType<typeof setTimeout>;
+
+    const randomDelay = (base: number, variance: number) =>
+      base + Math.random() * variance - variance / 2;
+
+    const processStep = () => {
+      const { step } = typewriterRef.current;
+      if (step >= TYPEWRITER_SEQUENCE.length) return;
+
+      const action = TYPEWRITER_SEQUENCE[step];
+
+      if (action.action === 'type' && action.text) {
+        const { charIndex } = typewriterRef.current;
+        if (charIndex < action.text.length) {
+          // Type one character
+          const char = action.text[charIndex];
+          setTypewriterParts(prev => {
+            const newParts = [...prev];
+            const lastPart = newParts[newParts.length - 1];
+            if (lastPart && lastPart.class === action.class) {
+              lastPart.text += char;
+            } else {
+              newParts.push({ text: char, class: action.class! });
+            }
+            return newParts;
+          });
+          typewriterRef.current.charIndex++;
+          timeout = setTimeout(processStep, randomDelay(70, 50));
+        } else {
+          // Move to next step
+          typewriterRef.current.step++;
+          typewriterRef.current.charIndex = 0;
+          timeout = setTimeout(processStep, randomDelay(30, 20));
+        }
+      } else if (action.action === 'pause') {
+        typewriterRef.current.step++;
+        timeout = setTimeout(processStep, action.duration);
+      } else if (action.action === 'delete') {
+        setTypewriterParts(prev => {
+          const newParts = [...prev];
+          const lastPart = newParts[newParts.length - 1];
+          if (lastPart && lastPart.text.length > 0) {
+            lastPart.text = lastPart.text.slice(0, -1);
+            if (lastPart.text.length === 0) {
+              newParts.pop();
+            }
+          }
+          return newParts;
+        });
+        typewriterRef.current.step++;
+        timeout = setTimeout(processStep, randomDelay(60, 30));
+      } else if (action.action === 'done') {
+        setShowCursor(false);
+        setTypewriterDone(true);
+      }
+    };
+
+    // Start after a short delay
+    timeout = setTimeout(processStep, 500);
+
+    return () => clearTimeout(timeout);
+  }, []);
+
+  // Cursor blink
+  useEffect(() => {
+    if (typewriterDone) return;
+    const interval = setInterval(() => {
+      setShowCursor(prev => !prev);
+    }, 530);
+    return () => clearInterval(interval);
+  }, [typewriterDone]);
 
   const handleSelectFolder = useCallback(async () => {
     if (isSelecting || isClosing) return;
@@ -127,13 +254,12 @@ export function WelcomeOverlay({ onComplete }: WelcomeOverlayProps) {
   return (
     <div className={`welcome-overlay-backdrop ${isClosing ? 'closing' : ''}`}>
       <div className="welcome-overlay">
-        {/* Privacy tagline */}
-        <div className="welcome-tagline">
-          <span className="welcome-tag-local">Local</span>
-          <span className="welcome-tag-dot">·</span>
-          <span className="welcome-tag-private">Private</span>
-          <span className="welcome-tag-dot">·</span>
-          <span className="welcome-tag-free">Free</span>
+        {/* Privacy tagline - Typewriter effect */}
+        <div className={`welcome-tagline ${typewriterDone ? 'shimmer' : ''}`}>
+          {typewriterParts.map((part, i) => (
+            <span key={i} className={`welcome-tag-${part.class}`}>{part.text}</span>
+          ))}
+          <span className={`welcome-cursor ${showCursor ? 'visible' : ''}`}>|</span>
         </div>
 
         {/* Title */}
@@ -144,19 +270,44 @@ export function WelcomeOverlay({ onComplete }: WelcomeOverlayProps) {
 
         <p className="welcome-subtitle">Video editing in your browser</p>
 
-        {/* Folder Selection Card */}
-        <div className="welcome-folder-card">
-          <div className="welcome-folder-card-header">
-            <span className="welcome-folder-card-label">Project</span>
-            <span className="welcome-folder-card-optional">required</span>
+        {/* Browser Warning for non-Chromium browsers */}
+        {!browser.isChromium && (
+          <div className="welcome-browser-warning">
+            <svg className="welcome-browser-warning-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+              <line x1="12" y1="9" x2="12" y2="13"/>
+              <line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            <span className="welcome-browser-warning-label">Unsupported Browser</span>
+            <span className="welcome-browser-warning-name">{browser.name}</span>
+            <span className="welcome-browser-warning-desc">MasterSelects requires WebGPU which is currently only fully supported in Chrome.</span>
+            <a className="welcome-browser-warning-btn" href="https://www.google.com/chrome/" target="_blank" rel="noopener noreferrer">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10"/>
+                <circle cx="12" cy="12" r="4"/>
+                <line x1="21.17" y1="8" x2="12" y2="8"/>
+                <line x1="3.95" y1="6.06" x2="8.54" y2="14"/>
+                <line x1="10.88" y1="21.94" x2="15.46" y2="14"/>
+              </svg>
+              Download Chrome
+            </a>
           </div>
+        )}
 
-          {!isSupported ? (
-            <p className="welcome-note">
-              Your browser does not support local file storage.
-              Please use Chrome, Edge, or another Chromium-based browser.
-            </p>
-          ) : (
+        {/* Folder Selection Card - hide if browser not supported */}
+        {(isSupported || browser.isChromium) && (
+          <div className="welcome-folder-card">
+            <div className="welcome-folder-card-header">
+              <span className="welcome-folder-card-label">Project</span>
+              <span className="welcome-folder-card-optional">required</span>
+            </div>
+
+            {!isSupported ? (
+              <p className="welcome-note">
+                Your browser does not support local file storage.
+                Please use Chrome, Edge, or another Chromium-based browser.
+              </p>
+            ) : (
             <div className="welcome-folder-buttons">
               {/* New Project Button */}
               <button
@@ -209,8 +360,9 @@ export function WelcomeOverlay({ onComplete }: WelcomeOverlayProps) {
             </div>
           )}
 
-          {error && <p className="welcome-error">{error}</p>}
-        </div>
+            {error && <p className="welcome-error">{error}</p>}
+          </div>
+        )}
 
         {/* Enter hint */}
         <button className="welcome-enter" onClick={handleContinue}>

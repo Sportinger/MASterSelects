@@ -24,7 +24,13 @@ Local project folder storage with auto-save, backups, and smart media relinking.
 On first launch or when no project is open, the Welcome Overlay appears:
 - Animated entrance with blur backdrop
 - "Local. Private. Free." tagline
-- Two options: **Select Project Folder** or **Continue Without Saving**
+- Two options: **New Project** or **Open Existing**
+
+### Browser Warning
+If using a non-Chromium browser (Safari, Firefox), a red warning banner appears:
+- **"Unsupported Browser"** label with detected browser name displayed prominently
+- Explains that WebGPU requires Google Chrome (with download link)
+- Notes that users can continue without saving, but many features won't work
 
 ### Select Project Folder
 1. Click "Select Project Folder"

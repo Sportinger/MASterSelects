@@ -6507,7 +6507,9 @@ input[type="checkbox"] {
 .welcome-tagline {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 0;
+  min-height: 24px;
+  position: relative;
   font-size: 15px;
   font-weight: 600;
   letter-spacing: 0.5px;
@@ -6528,8 +6530,56 @@ input[type="checkbox"] {
 }
 
 .welcome-tag-dot {
-  color: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.3);
   font-weight: 400;
+}
+
+/* Typewriter cursor */
+.welcome-cursor {
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 300;
+  margin-left: 1px;
+  opacity: 0;
+  transition: opacity 0.05s;
+}
+
+.welcome-cursor.visible {
+  opacity: 1;
+}
+
+/* Shimmer effect after typewriter completes */
+.welcome-tagline.shimmer {
+  position: relative;
+  overflow: visible;
+}
+
+.welcome-tagline.shimmer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0) 40%,
+    rgba(255, 255, 255, 0.4) 50%,
+    rgba(255, 255, 255, 0) 60%,
+    transparent 100%
+  );
+  animation: shimmer 1.5s ease-out forwards;
+  animation-delay: 0.2s;
+  pointer-events: none;
+}
+
+@keyframes shimmer {
+  0% {
+    left: -100%;
+  }
+  100% {
+    left: 200%;
+  }
 }
 
 @keyframes welcome-fade-in {
@@ -6796,6 +6846,77 @@ input[type="checkbox"] {
   font-size: 13px;
   color: rgba(255, 255, 255, 0.4);
   line-height: 1.5;
+}
+
+/* Browser warning for non-Chromium browsers */
+.welcome-browser-warning {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  margin: 8px 0 20px 0;
+  padding: 20px 24px;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(185, 28, 28, 0.1) 100%);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 16px;
+  max-width: 340px;
+  box-shadow: 0 0 30px rgba(239, 68, 68, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.welcome-browser-warning-icon {
+  color: #ef4444;
+  filter: drop-shadow(0 0 8px rgba(239, 68, 68, 0.5));
+}
+
+.welcome-browser-warning-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #ef4444;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.welcome-browser-warning-name {
+  font-size: 22px;
+  font-weight: 700;
+  color: #fff;
+  margin: -2px 0 4px 0;
+}
+
+.welcome-browser-warning-desc {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.5;
+  max-width: 280px;
+}
+
+.welcome-browser-warning-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 10px 18px;
+  background: linear-gradient(135deg, #4285f4 0%, #1a73e8 100%);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(66, 133, 244, 0.3);
+}
+
+.welcome-browser-warning-btn:hover {
+  background: linear-gradient(135deg, #5a95f5 0%, #2b7de9 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(66, 133, 244, 0.4);
+}
+
+.welcome-browser-warning-btn svg {
+  opacity: 0.9;
 }
 
 /* Error state */
