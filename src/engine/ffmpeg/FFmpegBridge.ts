@@ -38,12 +38,17 @@ export class FFmpegBridge {
 
   /**
    * Check if FFmpeg WASM is supported in this browser
+   * Now supports single-threaded mode, so only WebAssembly is required
    */
   static isSupported(): boolean {
-    return (
-      typeof WebAssembly !== 'undefined' &&
-      typeof SharedArrayBuffer !== 'undefined'
-    );
+    return typeof WebAssembly !== 'undefined';
+  }
+
+  /**
+   * Check if multi-threaded mode is available (faster but needs SharedArrayBuffer)
+   */
+  static isMultiThreaded(): boolean {
+    return typeof SharedArrayBuffer !== 'undefined';
   }
 
   /**
@@ -103,11 +108,25 @@ export class FFmpegBridge {
       });
 
       // Load FFmpeg core from CDN
-      const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
-      await ffmpeg.load({
+      // Use single-threaded version if SharedArrayBuffer not available
+      const hasSharedArrayBuffer = typeof SharedArrayBuffer !== 'undefined';
+      const baseURL = hasSharedArrayBuffer
+        ? 'https://unpkg.com/@ffmpeg/core-mt@0.12.6/dist/esm'  // Multi-threaded (faster)
+        : 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';     // Single-threaded (compatible)
+
+      console.log(`[FFmpegBridge] Using ${hasSharedArrayBuffer ? 'multi-threaded' : 'single-threaded'} core`);
+
+      const loadConfig: Record<string, unknown> = {
         coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
         wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-      });
+      };
+
+      // Multi-threaded version needs worker
+      if (hasSharedArrayBuffer) {
+        loadConfig.workerURL = await toBlobURL(`${baseURL}/ffmpeg-core.worker.js`, 'text/javascript');
+      }
+
+      await ffmpeg.load(loadConfig);
 
       this.ffmpeg = ffmpeg as unknown as FFmpegCore;
 

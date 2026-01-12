@@ -71,6 +71,7 @@ export function FFmpegExportSection({
 
   // Check if FFmpeg is supported
   const isSupported = FFmpegBridge.isSupported();
+  const isMultiThreaded = FFmpegBridge.isMultiThreaded();
 
   // Load FFmpeg on demand
   const loadFFmpeg = useCallback(async () => {
@@ -253,8 +254,7 @@ export function FFmpegExportSection({
           FFmpeg Export (Not Supported)
         </div>
         <div className="export-error" style={{ margin: '8px 0' }}>
-          FFmpeg WASM requires SharedArrayBuffer which is not available.
-          Make sure your server sends the correct COOP/COEP headers.
+          FFmpeg WASM requires WebAssembly support.
         </div>
       </div>
     );
@@ -263,7 +263,14 @@ export function FFmpegExportSection({
   return (
     <div className="export-section">
       <div className="export-section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span>FFmpeg Export</span>
+        <span>
+          FFmpeg Export
+          {!isMultiThreaded && (
+            <span style={{ fontSize: '10px', color: 'var(--text-secondary)', marginLeft: '6px' }} title="Single-threaded mode (slower but compatible)">
+              (ST)
+            </span>
+          )}
+        </span>
         {!isFFmpegReady && (
           <button
             onClick={loadFFmpeg}
