@@ -211,6 +211,8 @@ export interface EngineStats {
     drift: number;         // Max audio drift from expected time in ms
     status: 'sync' | 'drift' | 'silent' | 'error';
   };
+  // Idle mode - engine pauses rendering when nothing changes
+  isIdle: boolean;
 }
 
 // Timeline types

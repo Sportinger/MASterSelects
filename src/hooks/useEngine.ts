@@ -229,6 +229,7 @@ export function useEngine() {
 
     // Stats update throttle
     let lastStatsUpdate = 0;
+    let lastPlayhead = -1;
 
     const renderFrame = () => {
       try {
@@ -236,6 +237,14 @@ export function useEngine() {
         const currentPlayhead = playheadState.isUsingInternalPosition
           ? playheadState.position
           : useTimelineStore.getState().playheadPosition;
+
+        // Track playhead changes for idle detection
+        // During playback, playhead constantly changes -> keeps engine active
+        // When stopped/scrubbing, only renders when playhead actually moves
+        if (currentPlayhead !== lastPlayhead) {
+          lastPlayhead = currentPlayhead;
+          engine.requestRender();
+        }
 
         // Always try to use cached frame first (works even during RAM preview rendering)
         if (engine.renderCachedFrame(currentPlayhead)) {
@@ -285,6 +294,57 @@ export function useEngine() {
       engine.stop();
     };
   }, [isEngineReady, isPlaying]);
+
+  // Subscribe to state changes that require re-render (wake from idle)
+  useEffect(() => {
+    if (!isEngineReady) return;
+
+    // Clips changes (content, transforms, effects, etc.)
+    const unsubClips = useTimelineStore.subscribe(
+      (state) => state.clips,
+      () => engine.requestRender()
+    );
+
+    // Track changes
+    const unsubTracks = useTimelineStore.subscribe(
+      (state) => state.tracks,
+      () => engine.requestRender()
+    );
+
+    // Layer changes in mixer store
+    const unsubLayers = useMixerStore.subscribe(
+      (state) => state.layers,
+      () => engine.requestRender()
+    );
+
+    // Output resolution changes
+    const unsubResolution = useMixerStore.subscribe(
+      (state) => state.outputResolution,
+      () => engine.requestRender()
+    );
+
+    // Settings changes (transparency grid, preview quality)
+    const unsubSettings = useSettingsStore.subscribe(
+      (state) => [state.showTransparencyGrid, state.previewQuality],
+      () => engine.requestRender(),
+      { equalityFn: (a, b) => a[0] === b[0] && a[1] === b[1] }
+    );
+
+    // Active composition changes
+    const unsubActiveComp = useMediaStore.subscribe(
+      (state) => state.activeCompositionId,
+      () => engine.requestRender()
+    );
+
+    return () => {
+      unsubClips();
+      unsubTracks();
+      unsubLayers();
+      unsubResolution();
+      unsubSettings();
+      unsubActiveComp();
+    };
+  }, [isEngineReady]);
 
   const createOutputWindow = useCallback((name: string) => {
     const id = `output_${Date.now()}`;

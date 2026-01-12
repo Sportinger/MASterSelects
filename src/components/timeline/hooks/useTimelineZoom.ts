@@ -57,6 +57,16 @@ export function useTimelineZoom({
     setZoom(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom)));
   }, [setZoom]);
 
+  // Clamp scrollX when zoom or duration changes to prevent scrolling past duration
+  useEffect(() => {
+    const trackLanes = timelineBodyRef.current?.querySelector('.track-lanes');
+    const viewportWidth = trackLanes?.clientWidth ?? 800;
+    const maxScrollX = Math.max(0, duration * zoom - viewportWidth);
+    if (scrollX > maxScrollX) {
+      setScrollX(maxScrollX);
+    }
+  }, [timelineBodyRef, zoom, duration, scrollX, setScrollX]);
+
   // Zoom with mouse wheel, also handle vertical scroll
   // Use native event listener with { passive: false } to allow preventDefault
   useEffect(() => {

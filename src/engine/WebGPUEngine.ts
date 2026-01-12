@@ -132,6 +132,13 @@ export class WebGPUEngine {
   // Flag to completely pause render loop during export
   private isExporting = false;
 
+  // Idle mode - pause rendering when nothing changes
+  private lastActivityTime = 0;
+  private isIdle = false;
+  private readonly IDLE_TIMEOUT = 1000; // 1 second before going idle
+  private renderRequested = false;
+  private lastRenderedPlayhead = -1; // Track playhead to detect scrubbing
+
   // Reusable resources for RAM Preview playback
   private ramPlaybackCanvas: HTMLCanvasElement | null = null;
   private ramPlaybackCtx: CanvasRenderingContext2D | null = null;
@@ -567,6 +574,39 @@ export class WebGPUEngine {
    */
   getIsExporting(): boolean {
     return this.isExporting;
+  }
+
+  /**
+   * Request a render - call this when something changes that needs to be displayed
+   * This wakes the engine from idle mode
+   */
+  requestRender(): void {
+    this.lastActivityTime = performance.now();
+    this.renderRequested = true;
+    if (this.isIdle) {
+      this.isIdle = false;
+      console.log('[WebGPU] Waking from idle mode');
+    }
+  }
+
+  /**
+   * Check if engine is currently in idle mode (not rendering)
+   */
+  getIsIdle(): boolean {
+    return this.isIdle;
+  }
+
+  /**
+   * Update playhead tracking for idle detection
+   * Returns true if playhead changed (needs render)
+   */
+  updatePlayheadTracking(playhead: number): boolean {
+    const changed = Math.abs(playhead - this.lastRenderedPlayhead) > 0.0001;
+    if (changed) {
+      this.lastRenderedPlayhead = playhead;
+      this.requestRender();
+    }
+    return changed;
   }
 
   renderCachedFrame(time: number): boolean {
@@ -1736,6 +1776,7 @@ export class WebGPUEngine {
       targetFps: 60,
       decoder: this.detailedStats.decoder,
       audio: audioStatusTracker.getStatus(),
+      isIdle: this.isIdle,
     };
   }
 
@@ -1744,6 +1785,8 @@ export class WebGPUEngine {
   start(renderCallback: () => void): void {
     if (this.isRunning) return;
     this.isRunning = true;
+    this.lastActivityTime = performance.now();
+    this.isIdle = false;
     console.log('[WebGPU] Starting render loop');
 
     let lastTimestamp = 0;
@@ -1754,6 +1797,22 @@ export class WebGPUEngine {
 
       const rafGap = lastTimestamp > 0 ? timestamp - lastTimestamp : 0;
       lastTimestamp = timestamp;
+
+      // Check for idle timeout - enter idle mode if no activity
+      const timeSinceActivity = timestamp - this.lastActivityTime;
+      if (!this.isIdle && !this.renderRequested && timeSinceActivity > this.IDLE_TIMEOUT) {
+        this.isIdle = true;
+        console.log('[WebGPU] Entering idle mode - no changes for 1s');
+      }
+
+      // Skip rendering when idle (but keep the loop running to detect wake-up)
+      if (this.isIdle && !this.renderRequested) {
+        this.animationId = requestAnimationFrame(loop);
+        return;
+      }
+
+      // Clear render request flag after processing
+      this.renderRequested = false;
 
       // Frame rate limiting when video is playing
       if (this.hasActiveVideo) {
