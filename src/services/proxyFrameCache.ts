@@ -29,7 +29,6 @@ class ProxyFrameCache {
   // Audio buffer cache for instant scrubbing (Web Audio API)
   private audioBufferCache: Map<string, AudioBuffer> = new Map();
   private audioContext: AudioContext | null = null;
-  private scrubSource: AudioBufferSourceNode | null = null;
   private scrubGain: GainNode | null = null;
 
   // Get cache key
@@ -419,7 +418,6 @@ class ProxyFrameCache {
 
   // Track active scrub sources for overlapping playback
   private activeScrubSources: AudioBufferSourceNode[] = [];
-  private lastScrubTime = 0;
 
   /**
    * Play instant scrub audio at a specific time
@@ -443,14 +441,10 @@ class ProxyFrameCache {
       }
 
       // Clean up finished sources (keep max 3 overlapping)
-      this.activeScrubSources = this.activeScrubSources.filter(src => {
-        try {
-          // Check if source is still playing by seeing if it throws on stop
-          return true;
-        } catch {
-          return false;
-        }
-      });
+      // Note: sources auto-remove via onended callback, this is just a safety limit
+      if (this.activeScrubSources.length > 5) {
+        this.activeScrubSources = this.activeScrubSources.slice(-3);
+      }
 
       // If too many sources, stop oldest
       while (this.activeScrubSources.length > 3) {
@@ -485,8 +479,7 @@ class ProxyFrameCache {
       // Play snippet
       source.start(0, startTime, duration);
       this.activeScrubSources.push(source);
-      this.lastScrubTime = time;
-    } catch (e) {
+    } catch {
       // Ignore scrub errors
     }
   }
