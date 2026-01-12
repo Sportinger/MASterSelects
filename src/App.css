@@ -3803,17 +3803,17 @@ input[type="checkbox"] {
 
 /* Timeline Navigator - Horizontal scrollbar with zoom handles */
 .timeline-navigator {
-  height: 20px;
+  height: 16px;
   background: var(--bg-primary);
   border-top: 1px solid var(--border-color);
-  padding: 4px 14px 4px 150px; /* Left: track headers width, Right: vertical scrollbar width */
+  padding: 3px 14px 3px 150px; /* Left: track headers width, Right: vertical scrollbar width */
   flex-shrink: 0;
 }
 
 .timeline-navigator-track {
   height: 100%;
-  background: var(--bg-tertiary);
-  border-radius: 4px;
+  background: #1a1a1a;
+  border-radius: 5px;
   position: relative;
   cursor: pointer;
 }
@@ -3822,9 +3822,9 @@ input[type="checkbox"] {
   position: absolute;
   top: 0;
   height: 100%;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
+  background: #3a3a3a;
+  border: none;
+  border-radius: 5px;
   cursor: grab;
   display: flex;
   align-items: center;
@@ -3833,44 +3833,42 @@ input[type="checkbox"] {
 }
 
 .timeline-navigator-thumb:hover {
-  background: #3a3a3a;
+  background: #444;
 }
 
 .timeline-navigator-thumb.dragging {
   cursor: grabbing;
-  background: #444;
+  background: #4a4a4a;
 }
 
 .timeline-navigator-handle {
-  width: 8px;
+  width: 14px;
   height: 100%;
   cursor: ew-resize;
   display: flex;
   align-items: center;
   justify-content: center;
-  opacity: 0.6;
   transition: opacity 0.15s;
 }
 
-.timeline-navigator-handle:hover {
-  opacity: 1;
-  background: rgba(255, 255, 255, 0.1);
+.timeline-navigator-handle:hover::before {
+  background: #666;
 }
 
 .timeline-navigator-handle-left {
-  border-radius: 4px 0 0 4px;
+  border-radius: 5px 0 0 5px;
 }
 
 .timeline-navigator-handle-right {
-  border-radius: 0 4px 4px 0;
+  border-radius: 0 5px 5px 0;
 }
 
 .timeline-navigator-handle::before {
   content: '';
-  width: 2px;
-  height: 8px;
-  background: var(--text-secondary);
-  border-radius: 1px;
+  width: 6px;
+  height: 6px;
+  background: #2a2a2a;
+  border-radius: 50%;
 }
 
 .timeline-navigator-grip {
@@ -3878,17 +3876,11 @@ input[type="checkbox"] {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 2px;
 }
 
 .timeline-navigator-grip::before,
 .timeline-navigator-grip::after {
-  content: '';
-  width: 2px;
-  height: 6px;
-  background: var(--text-secondary);
-  border-radius: 1px;
-  opacity: 0.5;
+  display: none;
 }
 
 /* Vertical Scrollbar - matches horizontal TimelineNavigator style */
