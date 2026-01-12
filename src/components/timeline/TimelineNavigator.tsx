@@ -3,6 +3,9 @@
 
 import { useRef, useState, useCallback, useEffect } from 'react';
 
+// Padding in pixels to show beyond the end of the composition (must match useTimelineZoom)
+const END_PADDING = 100;
+
 interface TimelineNavigatorProps {
   duration: number;
   scrollX: number;
@@ -87,35 +90,36 @@ export function TimelineNavigator({
       } else if (isDragging === 'left') {
         // Resize from left - handle follows mouse 1:1
         // New thumb width = original width minus the delta (drag left = wider thumb)
-        // Cap at trackWidth to prevent zooming out beyond duration
+        // Cap at trackWidth to prevent zooming out beyond duration (with padding)
         const newThumbWidth = Math.max(40, Math.min(trackWidth, dragStartThumbWidth - deltaX));
 
         // Calculate zoom from thumb width: thumbWidth = (viewportWidth / (duration * zoom)) * trackWidth
         // Rearranged: zoom = viewportWidth * trackWidth / (duration * thumbWidth)
-        const dynamicMinZoom = viewportWidth / duration;
+        // Use padding to allow seeing end marker
+        const dynamicMinZoom = (viewportWidth - END_PADDING) / duration;
         const newZoom = Math.max(dynamicMinZoom, Math.min(maxZoom, (viewportWidth * trackWidth) / (duration * newThumbWidth)));
         onZoomChange(newZoom);
 
-        // Adjust scroll to keep right edge stable
+        // Adjust scroll to keep right edge stable (with padding)
         const newTotalWidth = duration * newZoom;
-        const newMaxScrollX = Math.max(0, newTotalWidth - viewportWidth);
+        const newMaxScrollX = Math.max(0, newTotalWidth - viewportWidth + END_PADDING);
         const rightEdge = dragStartScrollX + viewportWidth;
         const newScrollX = Math.max(0, Math.min(newMaxScrollX, rightEdge * (newZoom / dragStartZoom) - viewportWidth));
         onScrollChange(newScrollX);
       } else if (isDragging === 'right') {
         // Resize from right - handle follows mouse 1:1
         // New thumb width = original width plus the delta (drag right = wider thumb)
-        // Cap at trackWidth to prevent zooming out beyond duration
+        // Cap at trackWidth to prevent zooming out beyond duration (with padding)
         const newThumbWidth = Math.max(40, Math.min(trackWidth, dragStartThumbWidth + deltaX));
 
-        // Calculate zoom from thumb width
-        const dynamicMinZoom = viewportWidth / duration;
+        // Calculate zoom from thumb width (with padding)
+        const dynamicMinZoom = (viewportWidth - END_PADDING) / duration;
         const newZoom = Math.max(dynamicMinZoom, Math.min(maxZoom, (viewportWidth * trackWidth) / (duration * newThumbWidth)));
         onZoomChange(newZoom);
 
-        // Keep left edge stable
+        // Keep left edge stable (with padding)
         const newTotalWidth = duration * newZoom;
-        const newMaxScrollX = Math.max(0, newTotalWidth - viewportWidth);
+        const newMaxScrollX = Math.max(0, newTotalWidth - viewportWidth + END_PADDING);
         const newScrollX = Math.min(newMaxScrollX, dragStartScrollX * (newZoom / dragStartZoom));
         onScrollChange(Math.max(0, newScrollX));
       }

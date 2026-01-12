@@ -52,12 +52,16 @@ export function useTimelineZoom({
     setScrollX(0); // Reset scroll to start
   }, [timelineBodyRef, duration, setZoom, setScrollX]);
 
-  // Calculate dynamic minimum zoom to prevent zooming out beyond duration
+  // Padding in pixels to show beyond the end of the composition
+  const END_PADDING = 100;
+
+  // Calculate dynamic minimum zoom to prevent zooming out too far beyond duration
   const getDynamicMinZoom = useCallback(() => {
     const trackLanes = timelineBodyRef.current?.querySelector('.track-lanes');
     const viewportWidth = trackLanes?.clientWidth ?? 800;
-    // Minimum zoom ensures duration * zoom >= viewportWidth (no empty space on right)
-    return Math.max(MIN_ZOOM, viewportWidth / duration);
+    // Allow some padding at the end to see the end marker
+    // Min zoom ensures duration * zoom >= viewportWidth - END_PADDING
+    return Math.max(MIN_ZOOM, (viewportWidth - END_PADDING) / duration);
   }, [timelineBodyRef, duration]);
 
   // Wrapper for setZoom that enforces dynamic min zoom
@@ -70,15 +74,15 @@ export function useTimelineZoom({
   useEffect(() => {
     const trackLanes = timelineBodyRef.current?.querySelector('.track-lanes');
     const viewportWidth = trackLanes?.clientWidth ?? 800;
-    const dynamicMinZoom = Math.max(MIN_ZOOM, viewportWidth / duration);
+    const dynamicMinZoom = Math.max(MIN_ZOOM, (viewportWidth - END_PADDING) / duration);
 
     // Clamp zoom to dynamic minimum
     if (zoom < dynamicMinZoom) {
       setZoom(dynamicMinZoom);
     }
 
-    // Clamp scrollX to max
-    const maxScrollX = Math.max(0, duration * zoom - viewportWidth);
+    // Clamp scrollX to max (allow scrolling up to END_PADDING past duration)
+    const maxScrollX = Math.max(0, duration * zoom - viewportWidth + END_PADDING);
     if (scrollX > maxScrollX) {
       setScrollX(maxScrollX);
     }
@@ -97,8 +101,8 @@ export function useTimelineZoom({
         const trackLanes = el.querySelector('.track-lanes');
         const viewportWidth = trackLanes?.clientWidth ?? el.clientWidth - 120; // 120 = track headers width
 
-        // Calculate dynamic minimum zoom to prevent zooming out beyond duration
-        const dynamicMinZoom = Math.max(MIN_ZOOM, viewportWidth / duration);
+        // Calculate dynamic minimum zoom with padding to see end marker
+        const dynamicMinZoom = Math.max(MIN_ZOOM, (viewportWidth - END_PADDING) / duration);
 
         // Adjust delta based on current zoom level for smoother zooming
         // Use smaller steps at low zoom levels for precision
@@ -106,8 +110,8 @@ export function useTimelineZoom({
         const delta = e.deltaY > 0 ? -zoomFactor : zoomFactor;
         const newZoom = Math.max(dynamicMinZoom, Math.min(MAX_ZOOM, zoom + delta));
 
-        // Calculate max scroll to prevent scrolling past duration
-        const maxScrollX = Math.max(0, duration * newZoom - viewportWidth);
+        // Calculate max scroll with padding
+        const maxScrollX = Math.max(0, duration * newZoom - viewportWidth + END_PADDING);
 
         // Calculate playhead position in pixels with new zoom
         const playheadPixel = playheadPosition * newZoom;
@@ -122,14 +126,14 @@ export function useTimelineZoom({
         e.preventDefault();
         const trackLanes = el.querySelector('.track-lanes');
         const viewportWidth = trackLanes?.clientWidth ?? el.clientWidth - 120;
-        const maxScrollX = Math.max(0, duration * zoom - viewportWidth);
+        const maxScrollX = Math.max(0, duration * zoom - viewportWidth + END_PADDING);
         setScrollX(Math.max(0, Math.min(maxScrollX, scrollX + e.deltaY)));
       } else {
         // Handle horizontal scroll (e.g., trackpad horizontal gesture)
         if (e.deltaX !== 0) {
           const trackLanes = el.querySelector('.track-lanes');
           const viewportWidth = trackLanes?.clientWidth ?? el.clientWidth - 120;
-          const maxScrollX = Math.max(0, duration * zoom - viewportWidth);
+          const maxScrollX = Math.max(0, duration * zoom - viewportWidth + END_PADDING);
           setScrollX(Math.max(0, Math.min(maxScrollX, scrollX + e.deltaX)));
         }
         // Handle vertical scroll with custom scrollbar
