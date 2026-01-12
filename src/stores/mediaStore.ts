@@ -611,15 +611,15 @@ export const useMediaStore = create<MediaState>()(
             }
           }
 
-          // Check for existing proxy by hash
+          // Check for existing proxy by hash (in project folder, not browser cache)
           let proxyStatus: ProxyStatus = 'none';
           let proxyFrameCount: number | undefined;
-          if (fileHash && type === 'video') {
-            const existingProxyCount = await projectDB.getProxyFrameCountByHash(fileHash);
+          if (fileHash && type === 'video' && projectFileService.isProjectOpen()) {
+            const existingProxyCount = await projectFileService.getProxyFrameCount(fileHash);
             if (existingProxyCount > 0) {
               proxyStatus = 'ready';
               proxyFrameCount = existingProxyCount;
-              console.log('[MediaStore] Found existing proxy for hash:', fileHash.slice(0, 8), 'frames:', existingProxyCount);
+              console.log('[MediaStore] Found existing proxy in project folder for hash:', fileHash.slice(0, 8), 'frames:', existingProxyCount);
             }
           }
 
@@ -643,27 +643,7 @@ export const useMediaStore = create<MediaState>()(
             files: [...state.files, mediaFile],
           }));
 
-          // Save metadata only (no blob) to IndexedDB
-          try {
-            const storedFile: StoredMediaFile = {
-              id: mediaFile.id,
-              name: file.name,
-              type,
-              fileHash,
-              duration: info.duration,
-              width: info.width,
-              height: info.height,
-              fps: info.fps,
-              codec: info.codec,
-              container: info.container,
-              fileSize: info.fileSize,
-              createdAt: mediaFile.createdAt,
-            };
-            await projectDB.saveMediaFile(storedFile);
-            console.log('[MediaStore] Saved file metadata to IndexedDB:', file.name);
-          } catch (e) {
-            console.warn('[MediaStore] Failed to save file metadata:', e);
-          }
+          // Media metadata is saved to project.json via projectSync (no IndexedDB needed)
 
           return mediaFile;
         },
@@ -1194,24 +1174,25 @@ export const useMediaStore = create<MediaState>()(
 
           console.log(`[Proxy] Starting generation for ${mediaFile.name}...`);
 
-          // Check where to store proxies:
-          // 1. If project is open → use project's Proxy/ folder (no prompt needed)
-          // 2. If no project → proxies go to IndexedDB (browser storage)
-          if (projectFileService.isProjectOpen()) {
-            const projectName = projectFileService.getProjectData()?.name;
-            console.log(`[Proxy] Using project folder: ${projectName}/Proxy/`);
-          } else {
-            console.log('[Proxy] No project open, using browser storage for proxies');
+          // Proxies are stored in project folder ONLY (no browser cache fallback)
+          // Requires project to be open
+          if (!projectFileService.isProjectOpen()) {
+            console.error('[Proxy] No project open - cannot generate proxy!');
+            return;
           }
 
-          // Check if proxy already exists
-          const hasExisting = await projectDB.hasProxy(mediaFileId);
-          if (hasExisting) {
-            console.log('[Proxy] Proxy already exists for:', mediaFile.name);
+          const projectName = projectFileService.getProjectData()?.name;
+          console.log(`[Proxy] Using project folder: ${projectName}/Proxy/`);
+
+          // Check if proxy already exists (in project folder, not browser cache)
+          const storageKeyForCheck = mediaFile.fileHash || mediaFileId;
+          const existingFrameCount = await projectFileService.getProxyFrameCount(storageKeyForCheck);
+          if (existingFrameCount > 0) {
+            console.log('[Proxy] Proxy already exists in project folder for:', mediaFile.name, 'frames:', existingFrameCount);
             set({
               files: get().files.map((f) =>
                 f.id === mediaFileId
-                  ? { ...f, proxyStatus: 'ready' as ProxyStatus, proxyProgress: 100 }
+                  ? { ...f, proxyStatus: 'ready' as ProxyStatus, proxyProgress: 100, proxyFrameCount: existingFrameCount }
                   : f
               ),
             });
@@ -1379,15 +1360,15 @@ export const useMediaStore = create<MediaState>()(
               }
             }
 
-            // Check for existing proxy by hash
+            // Check for existing proxy by hash (in project folder, not browser cache)
             let proxyStatus: ProxyStatus = 'none';
             let proxyFrameCount: number | undefined;
-            if (fileHash && type === 'video') {
-              const existingProxyCount = await projectDB.getProxyFrameCountByHash(fileHash);
+            if (fileHash && type === 'video' && projectFileService.isProjectOpen()) {
+              const existingProxyCount = await projectFileService.getProxyFrameCount(fileHash);
               if (existingProxyCount > 0) {
                 proxyStatus = 'ready';
                 proxyFrameCount = existingProxyCount;
-                console.log('[MediaStore] Found existing proxy for hash:', fileHash.slice(0, 8), 'frames:', existingProxyCount);
+                console.log('[MediaStore] Found existing proxy in project folder for hash:', fileHash.slice(0, 8), 'frames:', existingProxyCount);
               }
             }
 
@@ -1413,27 +1394,7 @@ export const useMediaStore = create<MediaState>()(
               files: [...state.files, mediaFile],
             }));
 
-            // Save metadata only (no blob) to IndexedDB
-            try {
-              const storedFile: StoredMediaFile = {
-                id: mediaFile.id,
-                name: file.name,
-                type,
-                fileHash,
-                duration: info.duration,
-                width: info.width,
-                height: info.height,
-                fps: info.fps,
-                codec: info.codec,
-                container: info.container,
-                fileSize: info.fileSize,
-                createdAt: mediaFile.createdAt,
-              };
-              await projectDB.saveMediaFile(storedFile);
-              console.log('[MediaStore] Saved file with handle:', file.name);
-            } catch (e) {
-              console.warn('[MediaStore] Failed to save file metadata:', e);
-            }
+            // Media metadata is saved to project.json via projectSync (no IndexedDB needed)
 
             imported.push(mediaFile);
           }
@@ -1493,15 +1454,15 @@ export const useMediaStore = create<MediaState>()(
               }
             }
 
-            // Check for existing proxy by hash
+            // Check for existing proxy by hash (in project folder, not browser cache)
             let proxyStatus: ProxyStatus = 'none';
             let proxyFrameCount: number | undefined;
-            if (fileHash && type === 'video') {
-              const existingProxyCount = await projectDB.getProxyFrameCountByHash(fileHash);
+            if (fileHash && type === 'video' && projectFileService.isProjectOpen()) {
+              const existingProxyCount = await projectFileService.getProxyFrameCount(fileHash);
               if (existingProxyCount > 0) {
                 proxyStatus = 'ready';
                 proxyFrameCount = existingProxyCount;
-                console.log('[MediaStore] Reusing existing proxy for hash:', fileHash.slice(0, 8));
+                console.log('[MediaStore] Reusing existing proxy in project folder for hash:', fileHash.slice(0, 8));
               }
             }
 
@@ -1534,27 +1495,8 @@ export const useMediaStore = create<MediaState>()(
               files: [...state.files, mediaFile],
             }));
 
-            // Save to IndexedDB
-            try {
-              const storedFile: StoredMediaFile = {
-                id,
-                name: file.name,
-                type: mediaFile.type,
-                fileHash,
-                duration: info.duration,
-                width: info.width,
-                height: info.height,
-                fps: info.fps,
-                codec: info.codec,
-                container: info.container,
-                fileSize: info.fileSize,
-                createdAt: mediaFile.createdAt,
-              };
-              await projectDB.saveMediaFile(storedFile);
-              console.log('[MediaStore] Saved file with handle from drop:', file.name);
-            } catch (e) {
-              console.warn('[MediaStore] Failed to save file metadata:', e);
-            }
+            // Media metadata is saved to project.json via projectSync (no IndexedDB needed)
+            // File handles stored earlier via projectDB.storeHandle for browser API persistence
 
             imported.push(mediaFile);
           }
@@ -1631,11 +1573,11 @@ export const useMediaStore = create<MediaState>()(
                   }
                 }
 
-                // Check for existing proxy by hash
+                // Check for existing proxy by hash (in project folder, not browser cache)
                 let proxyStatus: ProxyStatus = 'none';
                 let proxyFrameCount: number | undefined;
-                if (stored.type === 'video' && stored.fileHash) {
-                  const frameCount = await projectDB.getProxyFrameCountByHash(stored.fileHash);
+                if (stored.type === 'video' && stored.fileHash && projectFileService.isProjectOpen()) {
+                  const frameCount = await projectFileService.getProxyFrameCount(stored.fileHash);
                   if (frameCount > 0) {
                     proxyStatus = 'ready';
                     proxyFrameCount = frameCount;

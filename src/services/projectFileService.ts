@@ -921,6 +921,30 @@ class ProjectFileService {
     }
   }
 
+  /**
+   * Get proxy frame count for a media file (by hash or ID)
+   * Returns 0 if no proxy exists
+   */
+  async getProxyFrameCount(mediaId: string): Promise<number> {
+    if (!this.projectHandle) return 0;
+
+    try {
+      const proxyFolder = await this.projectHandle.getDirectoryHandle(PROJECT_FOLDERS.PROXY);
+      const mediaFolder = await proxyFolder.getDirectoryHandle(mediaId);
+
+      // Count .webp files in the folder
+      let count = 0;
+      for await (const entry of (mediaFolder as any).values()) {
+        if (entry.kind === 'file' && entry.name.endsWith('.webp')) {
+          count++;
+        }
+      }
+      return count;
+    } catch (e) {
+      return 0;
+    }
+  }
+
   // ============================================
   // ANALYSIS OPERATIONS (Range-based caching)
   // ============================================
