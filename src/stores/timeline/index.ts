@@ -857,9 +857,15 @@ export const useTimelineStore = create<TimelineStore>()(
             });
           }
 
+          // Skip media loading if file needs reload (no valid File object)
+          if (needsReload) {
+            console.log('[loadState] Skipping media load for clip that needs reload:', clip.name);
+            continue;
+          }
+
           // Load media element async
           const type = serializedClip.sourceType;
-          const fileUrl = URL.createObjectURL(mediaFile.file);
+          const fileUrl = URL.createObjectURL(mediaFile.file!);
 
           if (type === 'video') {
             const video = document.createElement('video');
