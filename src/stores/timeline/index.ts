@@ -777,19 +777,27 @@ export const useTimelineStore = create<TimelineStore>()(
 
           // Regular media clips
           const mediaFile = mediaStore.files.find(f => f.id === serializedClip.mediaFileId);
-          if (!mediaFile || !mediaFile.file) {
-            console.warn('Could not find media file for clip:', serializedClip.name,
-              '| mediaFileId:', serializedClip.mediaFileId,
-              '| available IDs:', mediaStore.files.map(f => f.id).join(', '));
+          if (!mediaFile) {
+            console.warn('Media file not found for clip:', serializedClip.name,
+              '| mediaFileId:', serializedClip.mediaFileId);
             continue;
           }
+
+          // Create the clip - even if file is missing (needs reload after refresh)
+          const needsReload = !mediaFile.file;
+          if (needsReload) {
+            console.log('[loadState] Clip needs reload (file permission required):', serializedClip.name);
+          }
+
+          // Create placeholder file if missing
+          const file = mediaFile.file || new File([], mediaFile.name || 'pending', { type: 'video/mp4' });
 
           // Create the clip with loading state
           const clip: TimelineClip = {
             id: serializedClip.id,
             trackId: serializedClip.trackId,
-            name: serializedClip.name,
-            file: mediaFile.file,
+            name: serializedClip.name || mediaFile.name || 'Untitled',
+            file: file,
             startTime: serializedClip.startTime,
             duration: serializedClip.duration,
             inPoint: serializedClip.inPoint,
@@ -799,6 +807,7 @@ export const useTimelineStore = create<TimelineStore>()(
               mediaFileId: serializedClip.mediaFileId, // Preserve mediaFileId for cache lookups
               naturalDuration: serializedClip.naturalDuration,
             },
+            needsReload: needsReload, // Flag for UI to show reload indicator
             thumbnails: serializedClip.thumbnails,
             linkedClipId: serializedClip.linkedClipId,
             linkedGroupId: serializedClip.linkedGroupId,

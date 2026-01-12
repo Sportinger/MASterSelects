@@ -284,6 +284,7 @@ export interface TimelineClip {
   transform: ClipTransform;  // Visual transform properties
   effects: Effect[];      // Effects applied to this clip
   isLoading?: boolean;    // True while media is being loaded
+  needsReload?: boolean;  // True if file handle needs re-authorization after page refresh
   reversed?: boolean;     // True if clip plays in reverse
   speed?: number;         // Playback speed (default 1.0, 0.5 = half speed, -1.0 = reverse)
   preservesPitch?: boolean;  // Keep pitch when speed changes (default true)
