@@ -6679,6 +6679,27 @@ input[type="checkbox"] {
   transition: all 0.2s ease;
 }
 
+/* Folder Buttons Container */
+.welcome-folder-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Secondary button style (Open Existing) */
+.welcome-folder-btn-secondary {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.04);
+}
+
+.welcome-folder-btn-secondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.welcome-folder-btn-secondary .welcome-folder-btn-icon {
+  background: rgba(255, 255, 255, 0.03);
+}
+
 /* Enter Button */
 .welcome-enter {
   display: inline-flex;

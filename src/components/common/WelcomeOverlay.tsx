@@ -4,6 +4,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { isFileSystemAccessSupported } from '../../services/fileSystemService';
 import { projectFileService } from '../../services/projectFileService';
+import { openExistingProject } from '../../services/projectSync';
 
 interface WelcomeOverlayProps {
   onComplete: () => void;
@@ -52,6 +53,41 @@ export function WelcomeOverlay({ onComplete }: WelcomeOverlayProps) {
       }
       console.error('[WelcomeOverlay] Failed to select folder:', e);
       setError('Failed to select folder. Please try again.');
+    } finally {
+      setIsSelecting(false);
+    }
+  }, [isSelecting, isClosing, onComplete]);
+
+  // Open existing project from local folder
+  const handleOpenExisting = useCallback(async () => {
+    if (isSelecting || isClosing) return;
+    setIsSelecting(true);
+    setError(null);
+
+    try {
+      // Let user pick existing project folder and load it into stores
+      const success = await openExistingProject();
+
+      if (success) {
+        const projectData = projectFileService.getProjectData();
+        setSelectedFolder(projectData?.name || 'Project');
+
+        // Auto-close after project opens
+        setIsClosing(true);
+        setTimeout(() => {
+          onComplete();
+        }, 200);
+      } else {
+        // User cancelled or folder has no project.json
+        setError('No valid project found. Select a folder containing project.json');
+      }
+    } catch (e: any) {
+      if (e.name === 'AbortError') {
+        // User cancelled - not an error
+        return;
+      }
+      console.error('[WelcomeOverlay] Failed to open project:', e);
+      setError('Failed to open project. Please try again.');
     } finally {
       setIsSelecting(false);
     }
@@ -111,7 +147,7 @@ export function WelcomeOverlay({ onComplete }: WelcomeOverlayProps) {
         {/* Folder Selection Card */}
         <div className="welcome-folder-card">
           <div className="welcome-folder-card-header">
-            <span className="welcome-folder-card-label">Project Folder</span>
+            <span className="welcome-folder-card-label">Project</span>
             <span className="welcome-folder-card-optional">required</span>
           </div>
 
@@ -121,33 +157,56 @@ export function WelcomeOverlay({ onComplete }: WelcomeOverlayProps) {
               Please use Chrome, Edge, or another Chromium-based browser.
             </p>
           ) : (
-            <button
-              className={`welcome-folder-btn ${selectedFolder ? 'has-folder' : ''}`}
-              onClick={handleSelectFolder}
-              disabled={isSelecting}
-            >
-              <div className="welcome-folder-btn-icon">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+            <div className="welcome-folder-buttons">
+              {/* New Project Button */}
+              <button
+                className={`welcome-folder-btn ${selectedFolder ? 'has-folder' : ''}`}
+                onClick={handleSelectFolder}
+                disabled={isSelecting}
+              >
+                <div className="welcome-folder-btn-icon">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <path d="M12 5v14M5 12h14"/>
+                  </svg>
+                </div>
+                <div className="welcome-folder-btn-text">
+                  {selectedFolder ? (
+                    <>
+                      <span className="welcome-folder-name">{selectedFolder}</span>
+                      <span className="welcome-folder-change">Project created</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="welcome-folder-name">{isSelecting ? 'Creating...' : 'New Project'}</span>
+                      <span className="welcome-folder-change">Create in a new folder</span>
+                    </>
+                  )}
+                </div>
+                <svg className="welcome-folder-btn-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M9 18l6-6-6-6"/>
                 </svg>
-              </div>
-              <div className="welcome-folder-btn-text">
-                {selectedFolder ? (
-                  <>
-                    <span className="welcome-folder-name">{selectedFolder}</span>
-                    <span className="welcome-folder-change">Click to change</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="welcome-folder-name">{isSelecting ? 'Creating project...' : 'Choose folder'}</span>
-                    <span className="welcome-folder-change">Where to store your projects</span>
-                  </>
-                )}
-              </div>
-              <svg className="welcome-folder-btn-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M9 18l6-6-6-6"/>
-              </svg>
-            </button>
+              </button>
+
+              {/* Open Existing Project Button */}
+              <button
+                className="welcome-folder-btn welcome-folder-btn-secondary"
+                onClick={handleOpenExisting}
+                disabled={isSelecting || !!selectedFolder}
+              >
+                <div className="welcome-folder-btn-icon">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                  </svg>
+                </div>
+                <div className="welcome-folder-btn-text">
+                  <span className="welcome-folder-name">Open Existing</span>
+                  <span className="welcome-folder-change">Resume a saved project</span>
+                </div>
+                <svg className="welcome-folder-btn-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M9 18l6-6-6-6"/>
+                </svg>
+              </button>
+            </div>
           )}
 
           {error && <p className="welcome-error">{error}</p>}
