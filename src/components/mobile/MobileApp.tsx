@@ -95,6 +95,20 @@ export function MobileApp() {
         >
           <div className="pull-handle" />
         </div>
+
+        {/* Side menu buttons */}
+        <button
+          className="mobile-menu-btn left"
+          onClick={() => setMediaPanelOpen(true)}
+        >
+          ☰
+        </button>
+        <button
+          className="mobile-menu-btn right"
+          onClick={() => setOptionsMenuOpen(true)}
+        >
+          ⚙
+        </button>
       </div>
 
       {/* Active Slider - shows between preview and timeline */}
