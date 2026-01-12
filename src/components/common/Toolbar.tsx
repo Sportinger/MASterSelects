@@ -115,6 +115,12 @@ export function Toolbar() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
+      // Ctrl+Shift+S: Save As
+      if (e.ctrlKey && e.shiftKey && e.key === 's') {
+        e.preventDefault();
+        handleSaveAs();
+        return;
+      }
       // Ctrl+S: Save
       if (e.ctrlKey && e.key === 's') {
         e.preventDefault();
@@ -187,6 +193,22 @@ export function Toolbar() {
       }
     };
   }, [autosaveEnabled, autosaveInterval, isProjectOpen]);
+
+  const handleSaveAs = useCallback(async () => {
+    const name = prompt('Save project as:', projectName || 'New Project');
+    if (!name) return;
+
+    setIsLoading(true);
+    const success = await createNewProject(name);
+    if (success) {
+      setProjectName(name);
+      setIsProjectOpen(true);
+      setNeedsPermission(false);
+      setShowSavedToast(true);
+    }
+    setIsLoading(false);
+    setOpenMenu(null);
+  }, [projectName]);
 
   const handleOpen = useCallback(async () => {
     if (projectFileService.hasUnsavedChanges()) {
@@ -351,9 +373,13 @@ export function Toolbar() {
                 <span className="shortcut">Ctrl+O</span>
               </button>
               <div className="menu-separator" />
-              <button className="menu-option" onClick={handleSave} disabled={isLoading || !isProjectOpen}>
+              <button className="menu-option" onClick={() => handleSave()} disabled={isLoading || !isProjectOpen}>
                 <span>Save</span>
                 <span className="shortcut">Ctrl+S</span>
+              </button>
+              <button className="menu-option" onClick={handleSaveAs} disabled={isLoading}>
+                <span>Save As...</span>
+                <span className="shortcut">Ctrl+Shift+S</span>
               </button>
               {isProjectOpen && (
                 <>

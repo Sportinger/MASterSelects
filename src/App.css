@@ -171,8 +171,7 @@ input, textarea {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
   z-index: 10000;
   padding: 4px 0;
-  max-height: 80vh;
-  overflow-y: auto;
+  overflow: visible;
 }
 
 .menu-dropdown-wide {
