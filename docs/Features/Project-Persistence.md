@@ -2,18 +2,67 @@
 
 [← Back to Index](./README.md)
 
-IndexedDB storage with auto-save and file handle persistence.
+Local project folder storage with auto-save, backups, and smart media relinking.
 
 ---
 
 ## Table of Contents
 
+- [Welcome Overlay](#welcome-overlay)
+- [Project Folder Structure](#project-folder-structure)
 - [Auto-Save](#auto-save)
 - [Backup System](#backup-system)
+- [Media Relinking](#media-relinking)
 - [What Gets Saved](#what-gets-saved)
-- [IndexedDB Structure](#indexeddb-structure)
-- [File System Access](#file-system-access)
 - [Project Management](#project-management)
+
+---
+
+## Welcome Overlay
+
+### First Launch
+On first launch or when no project is open, the Welcome Overlay appears:
+- Animated entrance with blur backdrop
+- "Local. Private. Free." tagline
+- Two options: **Select Project Folder** or **Continue Without Saving**
+
+### Select Project Folder
+1. Click "Select Project Folder"
+2. Choose or create a folder for your project
+3. App creates `project.json` and required subfolders
+4. Folder remembered for future sessions
+
+### Continue Without Saving
+- Work without persistence
+- Project lost on refresh
+- Useful for quick experiments
+
+---
+
+## Project Folder Structure
+
+Projects are stored in a local folder you choose:
+
+```
+MyProject/
+├── project.json           # Main project file
+├── Backups/               # Auto-backup folder
+│   ├── project_2026-01-11_14-00-00.json
+│   └── ... (last 20 backups)
+├── Proxy/                 # Generated proxy frames
+│   └── {mediaHash}/       # Per-file proxy data
+│       └── frames/        # WebP proxy frames
+├── Thumbnails/            # Media thumbnails
+│   └── {mediaHash}.webp
+└── Analysis/              # Clip analysis data
+    └── {mediaHash}.json
+```
+
+### Benefits of Local Storage
+- **No browser storage limits** - Use as much disk space as needed
+- **Portable projects** - Copy folder to move between machines
+- **External backup** - Use any backup tool on the folder
+- **Version control** - Can use Git for project history
 
 ---
 
@@ -78,9 +127,48 @@ ProjectFolder/
 
 ---
 
+## Media Relinking
+
+### Auto-Reconnect
+When opening a project, the app automatically:
+1. Checks if media source folder is accessible
+2. Requests permission if needed
+3. Scans for files matching project media
+
+### Relink Dialog
+When media files are missing, the **Relink Dialog** appears:
+
+| Feature | Description |
+|---------|-------------|
+| Missing files list | Shows all files that need relinking |
+| Auto-scan | Scans selected folder for matching files |
+| Manual relink | Browse for individual files |
+| Skip | Continue with missing media (clips show warning) |
+
+### Smart Relink
+The app attempts to auto-match files by:
+1. **Exact filename match** - Same name in new location
+2. **Hash match** - Same content (file hash)
+3. **Similar name** - Fuzzy matching for renamed files
+
+### Reload All Button
+In Media Panel toolbar:
+- Click "Reload All" to restore file permissions
+- Useful after browser restart
+- Re-requests access to stored file handles
+
+### Visual Indicators
+| Indicator | Meaning |
+|-----------|---------|
+| ⚠️ Yellow badge | File needs reload (permission lost) |
+| ❌ Red badge | File missing (needs relink) |
+| ✓ Normal | File accessible |
+
+---
+
 ## What Gets Saved
 
-### Project Data
+### Project Data (project.json)
 ```typescript
 interface StoredProject {
   id: string;
@@ -89,9 +177,10 @@ interface StoredProject {
   updatedAt: number;
   compositions: Composition[];
   folders: Folder[];
-  mediaFileIds: string[];
+  mediaFiles: MediaFileMetadata[];
   openTabs: string[];
   expandedFolders: string[];
+  mediaSourceFolder?: string;
 }
 ```
 
@@ -104,111 +193,44 @@ interface StoredProject {
 - Effect parameters
 - Mask shapes
 
-### Media Files
-- File blobs stored in IndexedDB
-- Metadata (duration, dimensions)
-- Thumbnails
-- Waveform data
+### Media Metadata
+- File paths (relative to source folder)
+- Duration, dimensions, FPS
+- Codec and container info
+- File hash for deduplication
 
-### Analysis Data
-- Focus analysis per frame
-- Motion analysis
-- Brightness data
-- Cached in IndexedDB
-
-### Transcripts
-- Word-level timestamps
-- Speaker identification
-- Language settings
-
----
-
-## IndexedDB Structure
-
-### Database: MASterSelectsDB (v4)
-
-| Store | Contents |
-|-------|----------|
-| `mediaFiles` | File blobs + metadata |
-| `projects` | Project definitions |
-| `proxyFrames` | Proxy frame data (WebP) |
-| `fsHandles` | FileSystemHandles |
-| `analysisCache` | Clip analysis data |
-
-### Storage Flow
-```
-User Action → Zustand Store → IndexedDB
-                    ↓
-Page Reload → IndexedDB → Zustand Store
-```
-
----
-
-## File System Access
-
-### Persistent File Handles
-When using File System Access API:
-```typescript
-// Stored in fsHandles store
-interface FSHandle {
-  fileId: string;
-  handle: FileSystemFileHandle;
-}
-```
-
-### Benefits
-- "Show in Explorer" works
-- Re-access files without re-import
-- Proxy folder persistence
-
-### Proxy Folder
-```typescript
-pickProxyFolder()           // User selects folder
-saveProxyFrame(id, index, blob) // Write frame
-getProxyFolderName()        // Display name
-```
+### Stored in Project Folder
+| Location | Contents |
+|----------|----------|
+| `project.json` | Main project data |
+| `Backups/` | Auto-backup files |
+| `Proxy/` | Proxy frames (WebP) |
+| `Thumbnails/` | Media thumbnails |
+| `Analysis/` | Clip analysis cache |
 
 ---
 
 ## Project Management
 
 ### New Project
-```typescript
-newProject()
-- Confirmation dialog
-- Clears all media
-- Creates default composition
-```
+- File menu → New Project
+- Or `Ctrl+N`
+- Prompts to save current project first
 
 ### Save Project
-```typescript
-saveProject(name?)
-- Serializes all state
-- Writes to IndexedDB
-- Updates timestamp
-```
+- `Ctrl+S` saves to project folder
+- Shows yellow "Saved" toast
+- Updates `project.json`
 
-### Load Project
-```typescript
-loadProject(projectId)
-- Reads from IndexedDB
-- Reconstructs File objects
-- Restores blob URLs
-- Opens composition tabs
-```
+### Save As
+- File menu → Save As
+- Choose new folder location
+- Copies project to new location
 
-### Recent Projects
-File menu shows up to 10 recent:
-- Sorted by last modified
-- Delete button on each
-- Click to load
-
-### Delete Project
-```typescript
-deleteProject(projectId)
-- Removes from IndexedDB
-- Cleans up media files
-```
+### Open Existing Project
+- From Welcome Overlay: "Open Existing Project"
+- Or File menu → Open Project
+- Select folder containing `project.json`
 
 ---
 
@@ -229,67 +251,33 @@ resetLayout()          // View menu
 
 ---
 
-## Timeline Sync
-
-### Composition ↔ Timeline
-```typescript
-// On composition switch
-1. Save current timeline to composition.timelineData
-2. Load new composition's timelineData
-3. Restore tracks, clips, keyframes
-```
-
-### Auto-Sync Points
-- Switching compositions
-- Saving project
-- Before page unload
-- Every 30 seconds
-
----
-
-## Data Migration
-
-### Version Handling
-```typescript
-// projectDB.ts
-const DB_VERSION = 4;
-
-// Migration on upgrade
-if (oldVersion < 4) {
-  // Add analysisCache store
-}
-```
-
----
-
 ## Troubleshooting
 
-### Data Not Restoring
-1. Check DevTools → Application → IndexedDB
-2. Look for MASterSelectsDB
-3. Verify stores exist
+### Project Not Loading
+1. Check if `project.json` exists in folder
+2. Verify folder permissions
+3. Check browser console for errors
 
-### Corrupted Data
-```javascript
-// Clear and start fresh
-indexedDB.deleteDatabase('MASterSelectsDB');
-```
+### Missing Media After Reload
+1. Click "Reload All" in Media Panel
+2. Or use Relink Dialog to locate files
+3. Check if source folder is accessible
 
-### Missing Media
-- Re-import files
-- Media stored as blob
-- Original file not needed after import
+### Restore from Backup
+1. Navigate to `ProjectFolder/Backups/`
+2. Find backup by timestamp
+3. Copy to `project.json` (rename existing first)
+4. Reopen project
 
 ---
 
-## Memory vs Storage
+## Storage Comparison
 
-| Location | Contents |
-|----------|----------|
-| **Zustand (RAM)** | Active state, file references |
-| **IndexedDB** | Persistent blobs, projects |
-| **localStorage** | Dock layout, settings |
-| **File System** | Proxy folder (optional) |
+| Storage | Used For | Limits |
+|---------|----------|--------|
+| **Project Folder** | Project, proxies, analysis | Disk space |
+| **IndexedDB** | File handles, preferences | ~50MB |
+| **localStorage** | Dock layout, settings | ~5MB |
 
 ---
 

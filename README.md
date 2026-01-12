@@ -1,6 +1,6 @@
 # MASterSelects
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)
+![Version](https://img.shields.io/badge/version-1.0.6-blue.svg)
 ![License](https://img.shields.io/badge/license-Proprietary-red.svg)
 ![Platform](https://img.shields.io/badge/platform-Browser-lightgrey.svg)
 ![WebGPU](https://img.shields.io/badge/WebGPU-Powered-green.svg)
@@ -19,15 +19,16 @@ A browser-based video editing application with After Effects-style compositing, 
 | **Multi-track Timeline** | Video and audio tracks with nested compositions | [Timeline](docs/Features/Timeline.md) |
 | **Keyframe Animation** | Bezier curve editor with 5 easing modes | [Keyframes](docs/Features/Keyframes.md) |
 | **37 Blend Modes** | All After Effects blend modes | [Effects](docs/Features/Effects.md) |
-| **9 GPU Effects** | Hue, contrast, pixelate, kaleidoscope, etc. | [Effects](docs/Features/Effects.md) |
+| **30+ GPU Effects** | Color, blur, distort, stylize, keying effects | [Effects](docs/Features/Effects.md) |
 | **Vector Masks** | Rectangle, ellipse, pen tool with GPU feathering | [Masks](docs/Features/Masks.md) |
 | **AI Integration** | 50+ editing tools via GPT-4 | [AI Integration](docs/Features/AI-Integration.md) |
 | **10-Band EQ** | Parametric equalizer with keyframe support | [Audio](docs/Features/Audio.md) |
 | **Multicam Sync** | Audio-based cross-correlation synchronization | [Audio](docs/Features/Audio.md) |
 | **4 Transcription Providers** | Local Whisper, OpenAI, AssemblyAI, Deepgram | [AI Integration](docs/Features/AI-Integration.md) |
-| **RAM Preview** | Cached playback at 30fps | [Preview](docs/Features/Preview.md) |
-| **Video Export** | H.264/VP9 via WebCodecs | [Export](docs/Features/Export.md) |
-| **Auto-Save** | IndexedDB persistence | [Project Persistence](docs/Features/Project-Persistence.md) |
+| **RAM Preview** | Cached playback at 30fps with idle mode | [Preview](docs/Features/Preview.md) |
+| **Video Export** | H.264/VP9 WebCodecs + FFmpeg WASM (ProRes, DNxHR) | [Export](docs/Features/Export.md) |
+| **Local Project Storage** | Project folder with autosave and backups | [Project Persistence](docs/Features/Project-Persistence.md) |
+| **Smart Media Relink** | Auto-reconnect and relink missing media files | [Media Panel](docs/Features/Media-Panel.md) |
 
 **[Full Documentation](docs/Features/README.md)** | **[Keyboard Shortcuts](docs/Features/Keyboard-Shortcuts.md)**
 
@@ -37,13 +38,14 @@ A browser-based video editing application with After Effects-style compositing, 
 
 | Technology | Purpose |
 |------------|---------|
-| React 18 + TypeScript | UI framework |
-| Vite | Build tooling & HMR |
+| React 19 + TypeScript | UI framework |
+| Vite 7.2 | Build tooling & HMR |
 | Zustand | State management |
-| WebGPU + WGSL | GPU rendering (1,352 lines of shaders) |
-| WebCodecs | Hardware video decoding |
+| WebGPU + WGSL | GPU rendering (2,000+ lines of shaders) |
+| WebCodecs | Hardware video decoding & encoding |
+| FFmpeg WASM | Professional codecs (ProRes, DNxHR, HAP) |
 | Web Audio API | 10-band EQ, audio sync |
-| IndexedDB | Project persistence |
+| File System Access API | Local project storage |
 | OpenAI API | AI editing tools |
 
 ---
