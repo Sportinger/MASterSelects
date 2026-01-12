@@ -91,6 +91,7 @@ interface MediaState {
   importFiles: (files: FileList | File[]) => Promise<MediaFile[]>;
   removeFile: (id: string) => void;
   renameFile: (id: string, name: string) => void;
+  reloadFile: (id: string) => Promise<boolean>; // Re-request file permission after refresh
 
   // Actions - Compositions
   createComposition: (name: string, settings?: Partial<Composition>) => Composition;
@@ -710,6 +711,69 @@ export const useMediaStore = create<MediaState>()(
           set((state) => ({
             files: state.files.map((f) => (f.id === id ? { ...f, name } : f)),
           }));
+        },
+
+        reloadFile: async (id: string) => {
+          const mediaFile = get().files.find(f => f.id === id);
+          if (!mediaFile) return false;
+
+          // Try to get file handle from storage
+          const handle = fileSystemService.getFileHandle(id);
+          if (!handle) {
+            console.warn('[MediaStore] No file handle stored for:', mediaFile.name);
+            return false;
+          }
+
+          try {
+            // Request permission
+            const permission = await handle.requestPermission({ mode: 'read' });
+            if (permission !== 'granted') {
+              console.warn('[MediaStore] Permission denied for:', mediaFile.name);
+              return false;
+            }
+
+            // Get the file
+            const file = await handle.getFile();
+            const url = URL.createObjectURL(file);
+
+            // Revoke old URL if exists
+            if (mediaFile.url) {
+              URL.revokeObjectURL(mediaFile.url);
+            }
+
+            // Update media store
+            set((state) => ({
+              files: state.files.map((f) =>
+                f.id === id ? { ...f, file, url } : f
+              ),
+            }));
+
+            console.log('[MediaStore] Reloaded file:', mediaFile.name);
+
+            // Update timeline clips that use this media file
+            const { useTimelineStore } = await import('./timeline');
+            const timelineStore = useTimelineStore.getState();
+            const clips = timelineStore.clips.filter(
+              c => c.source?.mediaFileId === id && c.needsReload
+            );
+
+            if (clips.length > 0) {
+              // Update clips with new file
+              for (const clip of clips) {
+                timelineStore.updateClip(clip.id, {
+                  file,
+                  needsReload: false,
+                  isLoading: true, // Trigger video element reload
+                });
+              }
+              console.log('[MediaStore] Updated', clips.length, 'clips with reloaded file');
+            }
+
+            return true;
+          } catch (e) {
+            console.error('[MediaStore] Failed to reload file:', mediaFile.name, e);
+            return false;
+          }
         },
 
         createComposition: (name: string, settings?: Partial<Composition>) => {

@@ -56,6 +56,7 @@ export function MediaPanel() {
     removeFolder,
     renameFile,
     renameFolder,
+    reloadFile,
     toggleFolderExpanded,
     setSelection,
     addToSelection,
@@ -206,15 +207,21 @@ export function MediaPanel() {
   }, [addToSelection, setSelection]);
 
   // Handle double-click (open/expand)
-  const handleItemDoubleClick = useCallback((item: ProjectItem) => {
+  const handleItemDoubleClick = useCallback(async (item: ProjectItem) => {
     if ('isExpanded' in item) {
       // It's a folder
       toggleFolderExpanded(item.id);
     } else if (item.type === 'composition') {
       // Open composition in timeline (as a tab)
       openCompositionTab(item.id);
+    } else if ('file' in item && !item.file) {
+      // Media file needs reload - request permission
+      const success = await reloadFile(item.id);
+      if (success) {
+        console.log('[MediaPanel] File reloaded successfully');
+      }
     }
-  }, [toggleFolderExpanded, openCompositionTab]);
+  }, [toggleFolderExpanded, openCompositionTab, reloadFile]);
 
   // Context menu
   const handleContextMenu = useCallback((e: React.MouseEvent, itemId?: string) => {
