@@ -1268,14 +1268,19 @@ export const useMediaStore = create<MediaState>()(
           });
 
           // Helper to save frames to storage
-          const saveFrame = async (frame: { id: string; mediaFileId: string; frameIndex: number; blob: Blob }) => {
+          // Use fileHash for folder naming (for deduplication), fallback to mediaFileId
+          const storageKey = mediaFile.fileHash || mediaFileId;
+          const saveFrame = async (frame: { id: string; mediaFileId: string; frameIndex: number; blob: Blob; fileHash?: string }) => {
             // Save to project folder if a project is open (primary storage)
             if (projectFileService.isProjectOpen()) {
-              await projectFileService.saveProxyFrame(frame.mediaFileId, frame.frameIndex, frame.blob);
-            } else {
-              // No project open - use IndexedDB as fallback
-              await projectDB.saveProxyFrame(frame);
+              await projectFileService.saveProxyFrame(storageKey, frame.frameIndex, frame.blob);
             }
+            // Also save to IndexedDB for redundancy and faster access
+            await projectDB.saveProxyFrame({
+              ...frame,
+              id: `${storageKey}_${frame.frameIndex.toString().padStart(6, '0')}`,
+              fileHash: mediaFile.fileHash,
+            });
           };
 
           try {
