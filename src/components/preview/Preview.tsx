@@ -49,7 +49,10 @@ function StatsOverlay({ stats, resolution, expanded, onToggle }: {
       >
         <span style={{ color: fpsColor, fontWeight: 'bold' }}>{stats.fps}</span>
         <span style={{ opacity: 0.7 }}> FPS</span>
-        {stats.decoder !== 'none' && (
+        {stats.isIdle && (
+          <span style={{ color: '#888', marginLeft: 6, fontSize: 9 }}>[IDLE]</span>
+        )}
+        {stats.decoder !== 'none' && !stats.isIdle && (
           <span style={{ color: decoderColor, marginLeft: 6, fontSize: 9 }}>[{stats.decoder === 'WebCodecs' ? 'WC' : 'HTML'}]</span>
         )}
         {stats.drops.lastSecond > 0 && (
@@ -77,6 +80,9 @@ function StatsOverlay({ stats, resolution, expanded, onToggle }: {
       <div className="stats-header">
         <span style={{ color: fpsColor, fontWeight: 'bold', fontSize: 18 }}>{stats.fps}</span>
         <span style={{ opacity: 0.7 }}> / {stats.targetFps} FPS</span>
+        {stats.isIdle && (
+          <span style={{ color: '#888', marginLeft: 8, fontSize: 11 }}>[IDLE]</span>
+        )}
         <span style={{ opacity: 0.5, marginLeft: 8, fontSize: 11 }}>
           {resolution.width}×{resolution.height}
         </span>
@@ -124,6 +130,12 @@ function StatsOverlay({ stats, resolution, expanded, onToggle }: {
       </div>
 
       <div className="stats-section">
+        <div className="stats-row">
+          <span>Engine</span>
+          <span style={{ color: stats.isIdle ? '#888' : '#4f4' }}>
+            {stats.isIdle ? '● Idle (saving power)' : '● Active'}
+          </span>
+        </div>
         <div className="stats-row">
           <span>Layers</span>
           <span>{stats.layerCount}</span>
