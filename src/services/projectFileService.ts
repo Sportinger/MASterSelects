@@ -849,7 +849,10 @@ class ProjectFileService {
    * Save proxy frame
    */
   async saveProxyFrame(mediaId: string, frameIndex: number, blob: Blob): Promise<boolean> {
-    if (!this.projectHandle) return false;
+    if (!this.projectHandle) {
+      console.error('[ProjectFile] No project handle for proxy save!');
+      return false;
+    }
 
     try {
       // Get or create media subfolder in Proxy/
@@ -861,6 +864,10 @@ class ProjectFileService {
       const writable = await fileHandle.createWritable();
       await writable.write(blob);
       await writable.close();
+
+      if (frameIndex === 0 || frameIndex === 5) {
+        console.log(`[ProjectFile] Saved proxy frame ${frameIndex} to ${this.projectHandle.name}/${PROJECT_FOLDERS.PROXY}/${mediaId}/${fileName} (${blob.size} bytes)`);
+      }
       return true;
     } catch (e) {
       console.error('[ProjectFile] Failed to save proxy frame:', e);
