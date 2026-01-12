@@ -35,7 +35,7 @@ export function TimelineContextMenu({
   setContextMenu,
   clipMap,
   selectedClipIds,
-  selectClip,
+  selectClip: _selectClip,
   removeClip,
   splitClipAtPlayhead,
   toggleClipReverse,
@@ -146,25 +146,6 @@ export function TimelineContextMenu({
 
     setContextMenu(null);
   };
-
-  // Handle right-click on clip (to be called from parent)
-  const handleClipContextMenu = useCallback(
-    (e: React.MouseEvent, clipId: string) => {
-      e.preventDefault();
-      e.stopPropagation();
-      // If right-clicking on an unselected clip, select only that one
-      // If right-clicking on a selected clip, keep the current multi-selection
-      if (!selectedClipIds.has(clipId)) {
-        selectClip(clipId);
-      }
-      setContextMenu({
-        x: e.clientX,
-        y: e.clientY,
-        clipId,
-      });
-    },
-    [selectClip, selectedClipIds, setContextMenu]
-  );
 
   if (!contextMenu) return null;
 

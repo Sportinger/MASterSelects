@@ -437,6 +437,7 @@ export async function analyzeClip(clipId: string): Promise<void> {
         globalMotion: motionResult.global,
         localMotion: motionResult.local,
         focus,
+        brightness: 0.5, // TODO: Calculate actual brightness from frame
         faceCount,
         isSceneCut: motionResult.isSceneCut,
       });

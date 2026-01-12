@@ -38,7 +38,7 @@ interface UseClipDragReturn {
 export function useClipDrag({
   trackLanesRef,
   timelineRef,
-  clips,
+  clips: _clips,
   tracks,
   clipMap,
   selectedClipIds,

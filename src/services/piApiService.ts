@@ -3,9 +3,6 @@
 // Docs: https://piapi.ai/docs/overview
 
 const BASE_URL = 'https://api.piapi.ai';
-const UPLOAD_URL = 'https://upload.theapi.app/api/ephemeral_resource';
-// CORS proxy for browser-based uploads (PiAPI doesn't set CORS headers)
-const CORS_PROXY = 'https://corsproxy.io/?';
 const MODELS_CACHE_KEY = 'piapi-video-models';
 const MODELS_CACHE_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours
 
@@ -300,61 +297,7 @@ class PiApiService {
     return url.trim();
   }
 
-  // Upload image to PiAPI's ephemeral resource endpoint via CORS proxy
-  private async uploadToPiApiViaProxy(dataUrl: string): Promise<string> {
-    if (!this.hasApiKey()) {
-      throw new Error('PiAPI key not set');
-    }
-
-    // Extract base64 data and determine file type
-    let fileData = dataUrl;
-    let fileName = 'image.jpg';
-
-    const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-    if (match) {
-      const mimeType = match[1];
-      fileData = match[2];
-      if (mimeType.includes('png')) {
-        fileName = 'image.png';
-      } else if (mimeType.includes('webp')) {
-        fileName = 'image.webp';
-      }
-    }
-
-    console.log('[PiAPI] Uploading image via CORS proxy, size:', Math.round(fileData.length / 1024), 'KB');
-
-    // Use CORS proxy since PiAPI doesn't set CORS headers for browser requests
-    const proxiedUrl = CORS_PROXY + encodeURIComponent(UPLOAD_URL);
-
-    const response = await fetch(proxiedUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': this.apiKey,
-      },
-      body: JSON.stringify({
-        file_name: fileName,
-        file_data: fileData,
-      }),
-    });
-
-    const result = await response.json();
-    console.log('[PiAPI] Upload response:', result);
-
-    if (!response.ok || (result.code && result.code !== 200)) {
-      throw new Error(result.message || `Upload failed: ${response.status}`);
-    }
-
-    const url = result.data?.url || result.url;
-    if (!url) {
-      throw new Error('No URL returned from upload');
-    }
-
-    console.log('[PiAPI] Image uploaded successfully:', url);
-    return url;
-  }
-
-  // Main upload method - tries multiple services
+  // Main upload method - uses litterbox.catbox.moe
   private async uploadImage(dataUrl: string): Promise<string> {
     // Try litterbox.catbox.moe first (free, supports CORS, 1 hour expiry)
     try {
@@ -450,7 +393,7 @@ class PiApiService {
   private buildRequestBody(
     provider: string,
     version: string,
-    taskType: 'text_to_video' | 'image_to_video',
+    _taskType: 'text_to_video' | 'image_to_video',
     params: {
       prompt: string;
       negativePrompt?: string;

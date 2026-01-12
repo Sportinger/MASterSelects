@@ -145,7 +145,7 @@ class ProjectDatabase {
           proxyStore.createIndex('fileHash', 'fileHash', { unique: false });
         } else if (event.oldVersion < 5) {
           // Add fileHash index for proxy deduplication (v5)
-          const proxyStore = event.target!.transaction!.objectStore(STORES.PROXY_FRAMES);
+          const proxyStore = (event.target as IDBOpenDBRequest).transaction!.objectStore(STORES.PROXY_FRAMES);
           if (!proxyStore.indexNames.contains('fileHash')) {
             proxyStore.createIndex('fileHash', 'fileHash', { unique: false });
           }
@@ -456,7 +456,7 @@ class ProjectDatabase {
   // Get proxy frame count by file hash (for deduplication)
   async getProxyFrameCountByHash(fileHash: string): Promise<number> {
     const db = await this.init();
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve, _reject) => {
       const transaction = db.transaction(STORES.PROXY_FRAMES, 'readonly');
       const store = transaction.objectStore(STORES.PROXY_FRAMES);
       try {

@@ -7,7 +7,7 @@ import { audioAnalyzer, type AudioFingerprint } from './audioAnalyzer';
  * Cross-correlation algorithm to find the offset between two audio signals.
  * Returns the offset in milliseconds (positive = second signal is delayed)
  */
-function crossCorrelate(
+export function crossCorrelate(
   signal1: Float32Array,
   signal2: Float32Array,
   maxOffsetSamples: number

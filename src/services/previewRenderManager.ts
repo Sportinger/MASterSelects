@@ -128,7 +128,6 @@ class PreviewRenderManagerService {
    */
   private calculatePlayheadTime(compositionId: string): { time: number; syncSource: 'nested' | 'reverse-nested' | 'stored' | 'default' } {
     const mainPlayhead = useTimelineStore.getState().playheadPosition;
-    const isMainPlaying = useTimelineStore.getState().isPlaying;
     const activeCompId = useMediaStore.getState().activeCompositionId;
 
     // Case 1: Check if this composition is nested in active timeline (child preview while parent is active)

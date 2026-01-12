@@ -32,7 +32,7 @@ export function TimelineNavigator({
   const [dragStartX, setDragStartX] = useState(0);
   const [dragStartScrollX, setDragStartScrollX] = useState(0);
   const [dragStartZoom, setDragStartZoom] = useState(0);
-  const [dragStartThumbLeft, setDragStartThumbLeft] = useState(0);
+  const [, setDragStartThumbLeft] = useState(0);
   const [dragStartThumbWidth, setDragStartThumbWidth] = useState(0);
 
   // Calculate thumb position and size

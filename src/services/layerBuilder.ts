@@ -6,8 +6,6 @@ import { useTimelineStore } from '../stores/timeline';
 import { useMediaStore } from '../stores/mediaStore';
 import { proxyFrameCache } from './proxyFrameCache';
 import { audioManager, audioStatusTracker } from './audioManager';
-import { generateMaskTexture } from '../utils/maskRenderer';
-import { engine } from '../engine/WebGPUEngine';
 
 // High-frequency playhead position - updated every frame by playback loop
 // This avoids store updates which trigger subscriber cascades
@@ -20,7 +18,6 @@ export const playheadState = {
 class LayerBuilderService {
   private lastSeekRef: { [clipId: string]: number } = {};
   private proxyFramesRef: Map<string, { frameIndex: number; image: HTMLImageElement }> = new Map();
-  private proxyLoadingRef: Set<string> = new Set();
 
   // Audio sync throttling - don't sync every frame to avoid glitches
   private lastAudioSyncTime = 0;
@@ -385,7 +382,7 @@ class LayerBuilderService {
    */
   syncVideoElements(): void {
     const timelineState = useTimelineStore.getState();
-    const { clips, tracks, isPlaying, isDraggingPlayhead, getInterpolatedSpeed, getSourceTimeForClip } = timelineState;
+    const { clips, isPlaying, isDraggingPlayhead, getInterpolatedSpeed, getSourceTimeForClip } = timelineState;
     const playheadPosition = playheadState.isUsingInternalPosition
       ? playheadState.position
       : timelineState.playheadPosition;
@@ -699,8 +696,8 @@ class LayerBuilderService {
     clip: TimelineClip,
     layerIndex: number,
     playheadPosition: number,
-    isPlaying: boolean,
-    isDraggingPlayhead: boolean,
+    _isPlaying: boolean,
+    _isDraggingPlayhead: boolean,
     getInterpolatedTransform: (clipId: string, localTime: number) => ReturnType<typeof useTimelineStore.getState>['getInterpolatedTransform'] extends (clipId: string, localTime: number) => infer R ? R : never,
     getInterpolatedEffects: (clipId: string, localTime: number) => Effect[],
     getInterpolatedSpeed: (clipId: string, localTime: number) => number,

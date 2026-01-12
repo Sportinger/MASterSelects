@@ -2,7 +2,6 @@
 // Extracts audio levels and fingerprints from media files for sync and analysis
 
 import { useMediaStore } from '../stores/mediaStore';
-import { projectDB } from './projectDB';
 
 export interface AudioLevel {
   timestamp: number; // ms

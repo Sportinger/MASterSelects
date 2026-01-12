@@ -4,7 +4,6 @@
 import type { MultiCamSource, MultiCamAnalysis, CameraAnalysis, FrameAnalysis, DetectedFace } from '../stores/multicamStore';
 import { useMediaStore } from '../stores/mediaStore';
 import { audioAnalyzer } from './audioAnalyzer';
-import { projectDB } from './projectDB';
 
 // Analysis sample interval in milliseconds
 const SAMPLE_INTERVAL_MS = 500; // Sample every 500ms
@@ -111,7 +110,7 @@ async function extractFrame(
   canvas: HTMLCanvasElement,
   ctx: CanvasRenderingContext2D
 ): Promise<ImageData> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve, _reject) => {
     const onSeeked = () => {
       video.removeEventListener('seeked', onSeeked);
 

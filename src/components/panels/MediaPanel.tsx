@@ -574,10 +574,10 @@ export function MediaPanel() {
           >
             <span className="media-item-icon">
               {isFolder ? (isExpanded ? '📂' : '📁') :
-               item.type === 'composition' ? '🎬' :
-               item.type === 'video' ? '🎥' :
-               item.type === 'audio' ? '🔊' :
-               item.type === 'image' ? '🖼️' : '📄'}
+               'type' in item && item.type === 'composition' ? '🎬' :
+               'type' in item && item.type === 'video' ? '🎥' :
+               'type' in item && item.type === 'audio' ? '🔊' :
+               'type' in item && item.type === 'image' ? '🖼️' : '📄'}
             </span>
             {'thumbnailUrl' in item && item.thumbnailUrl && (
               <img src={item.thumbnailUrl} alt="" className="media-item-thumbnail" draggable={false} />
@@ -633,7 +633,7 @@ export function MediaPanel() {
       case 'fps':
         return (
           <div className="media-col media-col-fps">
-            {mediaFile?.fps ? `${mediaFile.fps}` : (item.type === 'composition' ? (item as Composition).frameRate : '–')}
+            {mediaFile?.fps ? `${mediaFile.fps}` : ('type' in item && item.type === 'composition' ? (item as Composition).frameRate : '–')}
           </div>
         );
       case 'container':

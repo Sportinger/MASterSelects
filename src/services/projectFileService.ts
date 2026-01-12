@@ -234,7 +234,6 @@ const MAX_BACKUPS = 20;
 
 class ProjectFileService {
   private projectHandle: FileSystemDirectoryHandle | null = null;
-  private projectPath: string | null = null;
   private projectData: ProjectFile | null = null;
   private isDirty = false;
   private autoSaveInterval: number | null = null;
@@ -408,7 +407,7 @@ class ProjectFileService {
 
       // Set as current project
       this.projectHandle = projectFolder;
-      this.projectPath = name;
+      // _projectPath no longer tracked:name;
       this.projectData = initialProject;
       this.isDirty = false;
 
@@ -474,7 +473,7 @@ class ProjectFileService {
 
       // Set as current project
       this.projectHandle = handle;
-      this.projectPath = handle.name;
+      // _projectPath no longer tracked:handle.name;
       this.projectData = projectData;
       this.isDirty = false;
 
@@ -519,7 +518,7 @@ class ProjectFileService {
   closeProject(): void {
     this.stopAutoSave();
     this.projectHandle = null;
-    this.projectPath = null;
+    // _projectPath no longer tracked:null;
     this.projectData = null;
     this.isDirty = false;
     console.log('[ProjectFile] Project closed');
@@ -843,7 +842,7 @@ class ProjectFileService {
    * Save waveform data for a media file
    */
   async saveWaveform(mediaId: string, waveformData: Float32Array): Promise<boolean> {
-    const blob = new Blob([waveformData.buffer], { type: 'application/octet-stream' });
+    const blob = new Blob([waveformData.buffer as ArrayBuffer], { type: 'application/octet-stream' });
     return this.writeFile('CACHE_WAVEFORMS', `${mediaId}.waveform`, blob);
   }
 
@@ -1299,9 +1298,8 @@ class ProjectFileService {
       await this.writeProjectJson(newFolder, this.projectData);
 
       // Update our handle to point to new folder
-      const oldHandle = this.projectHandle;
       this.projectHandle = newFolder;
-      this.projectPath = trimmedName;
+      // _projectPath no longer tracked:trimmedName;
 
       // Update stored handles
       await projectDB.storeHandle('lastProject', newFolder);

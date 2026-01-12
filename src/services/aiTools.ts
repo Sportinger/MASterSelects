@@ -4,7 +4,7 @@
 import { useTimelineStore } from '../stores/timeline';
 import { useMediaStore } from '../stores/mediaStore';
 import { engine } from '../engine/WebGPUEngine';
-import { startBatch, endBatch, captureSnapshot } from '../stores/historyStore';
+import { startBatch, endBatch } from '../stores/historyStore';
 import type { TimelineClip, TimelineTrack } from '../stores/timeline/types';
 
 // Tools that modify the timeline or media (need history tracking)
@@ -826,7 +826,7 @@ function formatClipInfo(clip: TimelineClip, track: TimelineTrack | undefined) {
     duration: clip.duration,
     inPoint: clip.inPoint,
     outPoint: clip.outPoint,
-    sourceType: clip.source.type,
+    sourceType: clip.source?.type,
     hasAnalysis: clip.analysisStatus === 'ready',
     hasTranscript: !!clip.transcript?.length,
     // Transform info
@@ -1097,7 +1097,6 @@ async function executeToolInternal(
             continue;
           }
 
-          const clipStart = targetClip.startTime;
           const clipEnd = targetClip.startTime + targetClip.duration;
 
           try {
@@ -1676,7 +1675,7 @@ async function executeToolInternal(
             frameSpacing,
             frameTimes: times,
             description: 'Top row: 4 frames BEFORE cut. Bottom row: 4 frames AFTER cut (starting at cut point).',
-            ...gridResult.data,
+            ...(gridResult.data ?? {}),
           },
         };
       }
@@ -1695,7 +1694,7 @@ async function executeToolInternal(
           data: {
             frameTimes: times,
             columns,
-            ...gridResult.data,
+            ...(gridResult.data ?? {}),
           },
         };
       }

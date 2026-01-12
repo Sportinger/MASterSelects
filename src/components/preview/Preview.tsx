@@ -9,7 +9,7 @@ import { useDockStore } from '../../stores/dockStore';
 import { useSettingsStore, type PreviewQuality } from '../../stores/settingsStore';
 import { MaskOverlay } from './MaskOverlay';
 import { previewRenderManager } from '../../services/previewRenderManager';
-import type { EngineStats } from '../../types';
+import type { EngineStats, Layer } from '../../types';
 
 interface PreviewProps {
   panelId: string;
@@ -205,7 +205,7 @@ function StatsOverlay({ stats, resolution, expanded, onToggle }: {
 }
 
 export function Preview({ panelId, compositionId }: PreviewProps) {
-  const { isEngineReady, registerPreviewCanvas, unregisterPreviewCanvas, registerIndependentPreviewCanvas, unregisterIndependentPreviewCanvas, setIndependentCanvasComposition } = useEngine();
+  const { isEngineReady, registerPreviewCanvas, unregisterPreviewCanvas, registerIndependentPreviewCanvas, unregisterIndependentPreviewCanvas } = useEngine();
   const { engineStats, outputResolution, layers, selectedLayerId, selectLayer } = useMixerStore();
   const { clips, selectedClipIds, selectClip, updateClipTransform, maskEditMode } = useTimelineStore();
   const { compositions, activeCompositionId } = useMediaStore();
@@ -221,7 +221,7 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 1920, height: 1080 });
-  const [compReady, setCompReady] = useState(false);
+  const [, setCompReady] = useState(false);
 
   // Determine which composition this preview is showing
   const displayedCompId = compositionId ?? activeCompositionId;

@@ -402,7 +402,7 @@ export function ExportPanel() {
               value={videoCodec}
               onChange={(e) => setVideoCodec(e.target.value as VideoCodec)}
             >
-              {FrameExporter.getVideoCodecs(containerFormat).map(({ id, label, description }) => (
+              {FrameExporter.getVideoCodecs(containerFormat).map(({ id, label }) => (
                 <option key={id} value={id} disabled={!codecSupport[id]}>
                   {label} {!codecSupport[id] ? '(not supported)' : ''}
                 </option>

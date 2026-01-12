@@ -1,7 +1,7 @@
 // MultiCam Panel - AI-powered multicam editing interface
 
 import { useState, useCallback, useMemo } from 'react';
-import { useMultiCamStore } from '../../stores/multicamStore';
+import { useMultiCamStore, type EditStyle } from '../../stores/multicamStore';
 import { useMediaStore, type MediaFile } from '../../stores/mediaStore';
 import './MultiCamPanel.css';
 
@@ -294,7 +294,7 @@ interface SettingsModalProps {
   customPrompt: string;
   onSetApiKey: (key: string) => void;
   onClearApiKey: () => void;
-  onSetEditStyle: (style: string) => void;
+  onSetEditStyle: (style: EditStyle) => void;
   onSetCustomPrompt: (prompt: string) => void;
 }
 
@@ -361,7 +361,7 @@ function SettingsModal({
             <label>Edit Style</label>
             <select
               value={editStyle}
-              onChange={(e) => onSetEditStyle(e.target.value)}
+              onChange={(e) => onSetEditStyle(e.target.value as EditStyle)}
             >
               <option value="podcast">Podcast</option>
               <option value="interview">Interview</option>

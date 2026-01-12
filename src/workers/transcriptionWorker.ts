@@ -114,7 +114,7 @@ async function loadModel(
 async function transcribe(
   audioData: Float32Array,
   language: string,
-  audioDuration: number,
+  _audioDuration: number,
   onProgress: (progress: number, message: string) => void,
   onWords: (words: TranscriptWord[]) => void
 ): Promise<TranscriptWord[]> {

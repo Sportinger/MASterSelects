@@ -3,7 +3,7 @@
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import { useTimelineStore } from './timeline';
-import { projectDB, type StoredMediaFile, type StoredProject } from '../services/projectDB';
+import { projectDB, type StoredProject } from '../services/projectDB';
 import { fileSystemService } from '../services/fileSystemService';
 import { projectFileService } from '../services/projectFileService';
 import { engine } from '../engine/WebGPUEngine';
@@ -386,150 +386,9 @@ async function getMediaInfo(file: File, type: 'video' | 'audio' | 'image'): Prom
 
 // Proxy generation settings
 const PROXY_FPS = 30; // Generate 30 frames per second
-const PROXY_QUALITY = 0.92; // WebP quality (0-1), high for color accuracy
-const PROXY_MAX_WIDTH = 1920; // Max width, keep aspect ratio
 
 // Track active proxy generation for cancellation
 const activeProxyGenerations = new Map<string, { cancelled: boolean }>();
-
-// Generate proxy frames from a video file
-async function generateProxyFrames(
-  mediaFile: MediaFile,
-  onProgress: (progress: number) => void,
-  checkCancelled: () => boolean
-): Promise<{ frameCount: number; fps: number } | null> {
-  if (!mediaFile.file || mediaFile.type !== 'video') {
-    return null;
-  }
-
-  const video = document.createElement('video');
-  video.src = URL.createObjectURL(mediaFile.file);
-  video.muted = true;
-  video.playsInline = true;
-  video.preload = 'auto';
-
-  // Wait for video to be ready
-  await new Promise<void>((resolve, reject) => {
-    video.onloadedmetadata = () => resolve();
-    video.onerror = () => reject(new Error('Failed to load video'));
-    setTimeout(() => reject(new Error('Video load timeout')), 30000);
-  });
-
-  // Wait for video to be fully ready for seeking
-  await new Promise<void>((resolve) => {
-    if (video.readyState >= 3) {
-      resolve();
-    } else {
-      video.oncanplaythrough = () => resolve();
-      setTimeout(resolve, 5000); // Timeout fallback
-    }
-  });
-
-  const duration = video.duration;
-  const totalFrames = Math.ceil(duration * PROXY_FPS);
-
-  // Calculate dimensions (maintain aspect ratio, max 1920 width)
-  let width = video.videoWidth;
-  let height = video.videoHeight;
-  if (width > PROXY_MAX_WIDTH) {
-    height = Math.round((PROXY_MAX_WIDTH / width) * height);
-    width = PROXY_MAX_WIDTH;
-  }
-
-  // Create canvas for frame extraction
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d', { alpha: false });
-  if (!ctx) {
-    URL.revokeObjectURL(video.src);
-    return null;
-  }
-
-  console.log(`[Proxy] Generating ${totalFrames} frames at ${width}x${height} for ${mediaFile.name}`);
-
-  // Batch frames for efficient DB writes
-  const BATCH_SIZE = 10;
-  let batch: import('../services/projectDB').StoredProxyFrame[] = [];
-  let generatedCount = 0;
-
-  for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
-    if (checkCancelled()) {
-      console.log('[Proxy] Generation cancelled');
-      URL.revokeObjectURL(video.src);
-      return null;
-    }
-
-    const time = frameIndex / PROXY_FPS;
-
-    // Seek to frame time
-    await new Promise<void>((resolve) => {
-      const onSeeked = () => {
-        video.removeEventListener('seeked', onSeeked);
-        resolve();
-      };
-      video.addEventListener('seeked', onSeeked);
-      video.currentTime = time;
-      // Timeout fallback
-      setTimeout(() => {
-        video.removeEventListener('seeked', onSeeked);
-        resolve();
-      }, 1000);
-    });
-
-    // Wait for frame to be ready
-    await new Promise<void>((resolve) => {
-      if (video.readyState >= 2) {
-        resolve();
-      } else {
-        const checkReady = () => {
-          if (video.readyState >= 2) resolve();
-          else requestAnimationFrame(checkReady);
-        };
-        checkReady();
-        setTimeout(resolve, 500);
-      }
-    });
-
-    // Draw frame to canvas
-    ctx.drawImage(video, 0, 0, width, height);
-
-    // Convert to WebP blob
-    const blob = await new Promise<Blob>((resolve) => {
-      canvas.toBlob(
-        (b) => resolve(b || new Blob()),
-        'image/webp',
-        PROXY_QUALITY
-      );
-    });
-
-    // Use fileHash for deduplication, fallback to mediaFile.id
-    const storageKey = mediaFile.fileHash || mediaFile.id;
-
-    // Save to project folder ONLY (no browser cache)
-    if (projectFileService.isProjectOpen()) {
-      await projectFileService.saveProxyFrame(storageKey, frameIndex, blob);
-    } else {
-      console.warn('[Proxy] No project open - cannot save proxy frame');
-    }
-
-    generatedCount++;
-
-    // Update progress
-    const progress = Math.round((generatedCount / totalFrames) * 100);
-    onProgress(progress);
-
-    // Yield to UI every 5 frames
-    if (frameIndex % 5 === 0) {
-      await new Promise((r) => setTimeout(r, 0));
-    }
-  }
-
-  URL.revokeObjectURL(video.src);
-  console.log(`[Proxy] Completed ${generatedCount} frames for ${mediaFile.name}`);
-
-  return { frameCount: generatedCount, fps: PROXY_FPS };
-}
 
 // Default composition created on first load
 const DEFAULT_COMPOSITION: Composition = {
@@ -709,7 +568,8 @@ export const useMediaStore = create<MediaState>()(
 
             try {
               // Open file picker for user to re-select the file
-              const [newHandle] = await window.showOpenFilePicker({
+              const showOpenFilePicker = (window as unknown as { showOpenFilePicker: (options: unknown) => Promise<FileSystemFileHandle[]> }).showOpenFilePicker;
+              const [newHandle] = await showOpenFilePicker({
                 multiple: false,
                 types: [{
                   description: 'Media Files',
@@ -724,8 +584,8 @@ export const useMediaStore = create<MediaState>()(
               if (newHandle) {
                 handle = newHandle;
                 // Store the handle for future use
-                fileSystemService.storeFileHandle(id, handle);
-                await projectDB.storeHandle(`media_${id}`, handle);
+                fileSystemService.storeFileHandle(id, handle!);
+                await projectDB.storeHandle(`media_${id}`, handle!);
                 console.log('[MediaStore] Stored new handle for:', mediaFile.name);
               }
             } catch (e) {
@@ -1797,30 +1657,34 @@ export const useMediaStore = create<MediaState>()(
             const storedFiles = await projectDB.getAllMediaFiles();
             const mediaFileMap = new Map(storedFiles.map((f) => [f.id, f]));
 
-            // Restore files with blobs
+            // Restore files from metadata (legacy fallback - blobs no longer stored)
             const files: MediaFile[] = [];
             for (const fileId of project.data.mediaFileIds) {
               const stored = mediaFileMap.get(fileId);
               if (stored) {
-                const file = new File([stored.blob], stored.name, { type: stored.blob.type });
-                const url = URL.createObjectURL(file);
-                let thumbnailUrl: string | undefined;
-                if (stored.thumbnailBlob) {
-                  thumbnailUrl = URL.createObjectURL(stored.thumbnailBlob);
+                // Legacy support: check if blob exists (old projects)
+                const storedWithBlob = stored as typeof stored & { blob?: Blob; thumbnailBlob?: Blob };
+                if (storedWithBlob.blob) {
+                  const file = new File([storedWithBlob.blob], stored.name, { type: storedWithBlob.blob.type });
+                  const url = URL.createObjectURL(file);
+                  let thumbnailUrl: string | undefined;
+                  if (storedWithBlob.thumbnailBlob) {
+                    thumbnailUrl = URL.createObjectURL(storedWithBlob.thumbnailBlob);
+                  }
+                  files.push({
+                    id: stored.id,
+                    name: stored.name,
+                    type: stored.type,
+                    parentId: null,
+                    createdAt: stored.createdAt,
+                    file,
+                    url,
+                    thumbnailUrl,
+                    duration: stored.duration,
+                    width: stored.width,
+                    height: stored.height,
+                  });
                 }
-                files.push({
-                  id: stored.id,
-                  name: stored.name,
-                  type: stored.type,
-                  parentId: null,
-                  createdAt: stored.createdAt,
-                  file,
-                  url,
-                  thumbnailUrl,
-                  duration: stored.duration,
-                  width: stored.width,
-                  height: stored.height,
-                });
               }
             }
 

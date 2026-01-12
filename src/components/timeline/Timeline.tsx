@@ -3,12 +3,8 @@
 
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { useTimelineStore } from '../../stores/timeline';
-import type { AnimatableProperty, Effect, TimelineClip as TimelineClipType, Layer, NestedCompositionData } from '../../types';
+import type { AnimatableProperty, TimelineClip as TimelineClipType } from '../../types';
 import { useMediaStore } from '../../stores/mediaStore';
-import { useMixerStore } from '../../stores/mixerStore';
-import { engine } from '../../engine/WebGPUEngine';
-import { proxyFrameCache } from '../../services/proxyFrameCache';
-import { audioManager, audioStatusTracker } from '../../services/audioManager';
 import { playheadState } from '../../services/layerBuilder';
 
 import { TimelineRuler } from './TimelineRuler';
@@ -35,14 +31,10 @@ import {
   PROXY_IDLE_DELAY,
   DURATION_CHECK_TIMEOUT,
 } from './constants';
-import { MIN_ZOOM, MAX_ZOOM, PROPERTY_ROW_HEIGHT } from '../../stores/timeline/constants';
+import { MIN_ZOOM, MAX_ZOOM } from '../../stores/timeline/constants';
 import type {
-  ClipDragState,
-  ClipTrimState,
-  MarkerDragState,
   ExternalDragState,
   ContextMenuState,
-  MarqueeState,
   PickWhipDragState,
 } from './types';
 
@@ -141,7 +133,7 @@ export function Timeline() {
     getNextFileNeedingProxy,
     generateProxy,
   } = useMediaStore();
-  const activeComposition = getActiveComposition();
+  const activeComposition = getActiveComposition() ?? null;
   const openCompositions = getOpenCompositions();
 
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -171,7 +163,7 @@ export function Timeline() {
   const gridSize = gridInterval * zoom; // Grid line spacing in pixels
 
   // Clip dragging - extracted to hook
-  const { clipDrag, clipDragRef, handleClipMouseDown, handleClipDoubleClick } = useClipDrag({
+  const { clipDrag, handleClipMouseDown, handleClipDoubleClick } = useClipDrag({
     trackLanesRef,
     timelineRef,
     clips,
@@ -188,7 +180,7 @@ export function Timeline() {
   });
 
   // Clip trimming - extracted to hook
-  const { clipTrim, clipTrimRef, handleTrimStart } = useClipTrim({
+  const { clipTrim, handleTrimStart } = useClipTrim({
     clipMap,
     selectClip,
     trimClip,

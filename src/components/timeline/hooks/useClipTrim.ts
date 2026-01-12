@@ -93,9 +93,9 @@ export function useClipTrim({
         const deltaX = trim.currentX - trim.startX;
         const deltaTime = pixelToTime(deltaX);
 
-        // Text, image, and color clips can be extended infinitely (no natural duration limit)
+        // Text and image clips can be extended infinitely (no natural duration limit)
         const sourceType = clipToTrim.source?.type;
-        const isInfiniteClip = sourceType === 'text' || sourceType === 'image' || sourceType === 'color';
+        const isInfiniteClip = sourceType === 'text' || sourceType === 'image';
         const maxDuration = isInfiniteClip
           ? Number.MAX_SAFE_INTEGER
           : (clipToTrim.source?.naturalDuration || clipToTrim.duration);
@@ -106,7 +106,7 @@ export function useClipTrim({
 
         if (trim.edge === 'left') {
           const maxTrim = trim.originalDuration - 0.1;
-          // For infinite clips (text/image/color), allow extending left up to timeline start (0)
+          // For infinite clips (text/image), allow extending left up to timeline start (0)
           // For video/audio, limit to existing in-point (can't reveal non-existent media)
           const minTrim = isInfiniteClip
             ? -trim.originalStartTime  // Can extend left until startTime reaches 0

@@ -94,7 +94,6 @@ export function ParentChildLink({
 
       // Spring force towards target
       const dx = targetX - physics.cx;
-      const _dy = targetY - physics.cy;
 
       // Calculate natural sag based on distance between endpoints
       const distance = Math.sqrt(Math.pow(parentX - childX, 2) + Math.pow(parentY - childY, 2));

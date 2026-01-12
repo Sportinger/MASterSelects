@@ -246,6 +246,7 @@ export interface FrameAnalysisData {
   globalMotion: number;   // 0-1 camera/scene motion (whole frame changes uniformly)
   localMotion: number;    // 0-1 object motion (localized changes within frame)
   focus: number;          // 0-1 focus/sharpness score
+  brightness: number;     // 0-1 brightness/luminance score
   faceCount: number;      // Number of faces detected
   isSceneCut?: boolean;   // True if this frame is likely a scene cut
 }

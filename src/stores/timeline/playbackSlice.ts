@@ -20,7 +20,7 @@ export const createPlaybackSlice: SliceCreator<PlaybackAndRamPreviewActions> = (
   },
 
   play: async () => {
-    const { clips, playheadPosition, tracks } = get();
+    const { clips, playheadPosition } = get();
 
     // Find all video clips at current playhead position that need to be ready
     const clipsAtPlayhead = clips.filter(clip => {

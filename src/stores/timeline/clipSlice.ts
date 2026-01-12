@@ -40,13 +40,14 @@ async function warmUpVideoDecoder(video: HTMLVideoElement): Promise<void> {
       }
     } else {
       // Fallback: wait for canplay event which indicates decoder is ready
-      if (video.readyState >= 2) { // HAVE_CURRENT_DATA
+      const videoEl = video as HTMLVideoElement;
+      if (videoEl.readyState >= 2) { // HAVE_CURRENT_DATA
         resolve();
         return;
       }
-      video.addEventListener('canplay', () => resolve(), { once: true });
+      videoEl.addEventListener('canplay', () => resolve(), { once: true });
       // Trigger buffer by seeking
-      video.currentTime = 0.001;
+      videoEl.currentTime = 0.001;
     }
 
     // Timeout fallback (don't block forever)
