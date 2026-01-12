@@ -2,6 +2,7 @@
 
 import { projectDB } from './projectDB';
 import { projectFileService } from './projectFileService';
+import { useMediaStore } from '../stores/mediaStore';
 
 // Cache settings
 const MAX_CACHE_SIZE = 300; // Maximum frames to keep in memory (10s at 30fps)
@@ -119,14 +120,22 @@ class ProxyFrameCache {
     try {
       let blob: Blob | null = null;
 
+      // Get the media file to find its fileHash (used for proxy folder naming)
+      const mediaFile = useMediaStore.getState().files.find(f => f.id === mediaFileId);
+      const storageKey = mediaFile?.fileHash || mediaFileId;
+
       // Try project folder first if a project is open
       if (projectFileService.isProjectOpen()) {
-        blob = await projectFileService.getProxyFrame(mediaFileId, frameIndex);
+        blob = await projectFileService.getProxyFrame(storageKey, frameIndex);
       }
 
       // Fall back to IndexedDB if not found in project folder
       if (!blob) {
-        const frame = await projectDB.getProxyFrame(mediaFileId, frameIndex);
+        // Try with fileHash first, then mediaFileId for backwards compatibility
+        let frame = await projectDB.getProxyFrameByHash(storageKey, frameIndex);
+        if (!frame && storageKey !== mediaFileId) {
+          frame = await projectDB.getProxyFrame(mediaFileId, frameIndex);
+        }
         if (frame) {
           blob = frame.blob;
         }

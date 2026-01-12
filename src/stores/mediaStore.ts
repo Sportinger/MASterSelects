@@ -599,10 +599,21 @@ export const useMediaStore = create<MediaState>()(
           let finalThumbnailUrl = thumbnailUrl;
           if (fileHash) {
             try {
-              const existingThumb = await projectDB.getThumbnail(fileHash);
-              if (existingThumb && existingThumb.blob && existingThumb.blob.size > 0) {
+              // Try local file system first (if project is open), then IndexedDB
+              let existingThumbBlob: Blob | null = null;
+              if (projectFileService.isProjectOpen()) {
+                existingThumbBlob = await projectFileService.getThumbnail(fileHash);
+              }
+              if (!existingThumbBlob) {
+                const existingThumb = await projectDB.getThumbnail(fileHash);
+                if (existingThumb?.blob?.size > 0) {
+                  existingThumbBlob = existingThumb.blob;
+                }
+              }
+
+              if (existingThumbBlob && existingThumbBlob.size > 0) {
                 // Reuse existing thumbnail
-                finalThumbnailUrl = URL.createObjectURL(existingThumb.blob);
+                finalThumbnailUrl = URL.createObjectURL(existingThumbBlob);
                 console.log('[MediaStore] Reusing existing thumbnail for hash:', fileHash.slice(0, 8));
               } else if (thumbnailUrl) {
                 // Save new thumbnail by hash
@@ -615,11 +626,17 @@ export const useMediaStore = create<MediaState>()(
                   thumbBlob = await response.blob();
                 }
                 if (thumbBlob && thumbBlob.size > 0) {
-                  await projectDB.saveThumbnail({
-                    fileHash,
-                    blob: thumbBlob,
-                    createdAt: Date.now(),
-                  });
+                  // Save to local file system if project is open, otherwise to IndexedDB
+                  if (projectFileService.isProjectOpen()) {
+                    await projectFileService.saveThumbnail(fileHash, thumbBlob);
+                    console.log('[MediaStore] Saved thumbnail to project folder:', fileHash.slice(0, 8));
+                  } else {
+                    await projectDB.saveThumbnail({
+                      fileHash,
+                      blob: thumbBlob,
+                      createdAt: Date.now(),
+                    });
+                  }
                 }
               }
             } catch (e) {
@@ -1363,9 +1380,20 @@ export const useMediaStore = create<MediaState>()(
             let finalThumbnailUrl = thumbnailUrl;
             if (fileHash) {
               try {
-                const existingThumb = await projectDB.getThumbnail(fileHash);
-                if (existingThumb && existingThumb.blob && existingThumb.blob.size > 0) {
-                  finalThumbnailUrl = URL.createObjectURL(existingThumb.blob);
+                // Try local file system first (if project is open), then IndexedDB
+                let existingThumbBlob: Blob | null = null;
+                if (projectFileService.isProjectOpen()) {
+                  existingThumbBlob = await projectFileService.getThumbnail(fileHash);
+                }
+                if (!existingThumbBlob) {
+                  const existingThumb = await projectDB.getThumbnail(fileHash);
+                  if (existingThumb?.blob?.size > 0) {
+                    existingThumbBlob = existingThumb.blob;
+                  }
+                }
+
+                if (existingThumbBlob && existingThumbBlob.size > 0) {
+                  finalThumbnailUrl = URL.createObjectURL(existingThumbBlob);
                   console.log('[MediaStore] Reusing existing thumbnail for hash:', fileHash.slice(0, 8));
                 } else if (thumbnailUrl) {
                   let thumbBlob: Blob | null = null;
@@ -1377,11 +1405,17 @@ export const useMediaStore = create<MediaState>()(
                     thumbBlob = await response.blob();
                   }
                   if (thumbBlob && thumbBlob.size > 0) {
-                    await projectDB.saveThumbnail({
-                      fileHash,
-                      blob: thumbBlob,
-                      createdAt: Date.now(),
-                    });
+                    // Save to local file system if project is open, otherwise to IndexedDB
+                    if (projectFileService.isProjectOpen()) {
+                      await projectFileService.saveThumbnail(fileHash, thumbBlob);
+                      console.log('[MediaStore] Saved thumbnail to project folder:', fileHash.slice(0, 8));
+                    } else {
+                      await projectDB.saveThumbnail({
+                        fileHash,
+                        blob: thumbBlob,
+                        createdAt: Date.now(),
+                      });
+                    }
                   }
                 }
               } catch (e) {

@@ -800,18 +800,26 @@ class ProjectFileService {
   // ============================================
 
   /**
-   * Save thumbnail for a media file
+   * Save thumbnail by file hash (for deduplication)
    */
-  async saveThumbnail(mediaId: string, blob: Blob): Promise<boolean> {
-    return this.writeFile('CACHE_THUMBNAILS', `${mediaId}.jpg`, blob);
+  async saveThumbnail(fileHash: string, blob: Blob): Promise<boolean> {
+    return this.writeFile('CACHE_THUMBNAILS', `${fileHash}.jpg`, blob);
   }
 
   /**
-   * Get thumbnail for a media file
+   * Get thumbnail by file hash
    */
-  async getThumbnail(mediaId: string): Promise<Blob | null> {
-    const file = await this.readFile('CACHE_THUMBNAILS', `${mediaId}.jpg`);
+  async getThumbnail(fileHash: string): Promise<Blob | null> {
+    const file = await this.readFile('CACHE_THUMBNAILS', `${fileHash}.jpg`);
     return file;
+  }
+
+  /**
+   * Check if thumbnail exists by file hash
+   */
+  async hasThumbnail(fileHash: string): Promise<boolean> {
+    const thumb = await this.getThumbnail(fileHash);
+    return thumb !== null && thumb.size > 0;
   }
 
   /**
