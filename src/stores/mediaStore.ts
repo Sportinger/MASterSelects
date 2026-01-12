@@ -1237,12 +1237,14 @@ export const useMediaStore = create<MediaState>()(
           // Use fileHash for folder naming (for deduplication), fallback to mediaFileId
           const storageKey = mediaFile.fileHash || mediaFileId;
           console.log('[Proxy] Storage key:', storageKey, 'Project open:', projectFileService.isProjectOpen());
+          let savedCount = 0;
           const saveFrame = async (frame: { id: string; mediaFileId: string; frameIndex: number; blob: Blob; fileHash?: string }) => {
             // Save to project folder ONLY (no IndexedDB fallback)
             if (projectFileService.isProjectOpen()) {
               const success = await projectFileService.saveProxyFrame(storageKey, frame.frameIndex, frame.blob);
-              if (frame.frameIndex === 0) {
-                console.log('[Proxy] Saved first frame to project folder:', success);
+              savedCount++;
+              if (savedCount <= 3 || savedCount % 50 === 0) {
+                console.log(`[Proxy] Saved frame ${frame.frameIndex} to project folder: ${success} (total: ${savedCount})`);
               }
             } else {
               console.error('[Proxy] PROJECT NOT OPEN - cannot save proxy frame!');
