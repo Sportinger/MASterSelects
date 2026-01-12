@@ -1,6 +1,5 @@
 // Proxy frame cache - loads and caches WebP frames for fast playback
 
-import { projectDB } from './projectDB';
 import { projectFileService } from './projectFileService';
 import { useMediaStore } from '../stores/mediaStore';
 
@@ -115,7 +114,7 @@ class ProxyFrameCache {
     }
   }
 
-  // Load a single frame - check project folder first, then IndexedDB
+  // Load a single frame - ONLY from project folder (no browser cache)
   private async loadFrame(mediaFileId: string, frameIndex: number): Promise<HTMLImageElement | null> {
     try {
       let blob: Blob | null = null;
@@ -124,21 +123,9 @@ class ProxyFrameCache {
       const mediaFile = useMediaStore.getState().files.find(f => f.id === mediaFileId);
       const storageKey = mediaFile?.fileHash || mediaFileId;
 
-      // Try project folder first if a project is open
+      // Load from project folder ONLY (no IndexedDB fallback)
       if (projectFileService.isProjectOpen()) {
         blob = await projectFileService.getProxyFrame(storageKey, frameIndex);
-      }
-
-      // Fall back to IndexedDB if not found in project folder
-      if (!blob) {
-        // Try with fileHash first, then mediaFileId for backwards compatibility
-        let frame = await projectDB.getProxyFrameByHash(storageKey, frameIndex);
-        if (!frame && storageKey !== mediaFileId) {
-          frame = await projectDB.getProxyFrame(mediaFileId, frameIndex);
-        }
-        if (frame) {
-          blob = frame.blob;
-        }
       }
 
       if (!blob) return null;

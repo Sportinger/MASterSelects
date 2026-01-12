@@ -505,27 +505,15 @@ async function generateProxyFrames(
 
     // Use fileHash for deduplication, fallback to mediaFile.id
     const storageKey = mediaFile.fileHash || mediaFile.id;
-    const frameId = `${storageKey}_${frameIndex.toString().padStart(6, '0')}`;
-    batch.push({
-      id: frameId,
-      mediaFileId: mediaFile.id, // Keep for backwards compatibility
-      fileHash: mediaFile.fileHash, // Add hash for deduplication
-      frameIndex,
-      blob,
-    });
 
-    // Also save to file system if folder is selected
-    if (fileSystemService.hasProxyFolder()) {
-      await fileSystemService.saveProxyFrame(storageKey, frameIndex, blob);
+    // Save to project folder ONLY (no browser cache)
+    if (projectFileService.isProjectOpen()) {
+      await projectFileService.saveProxyFrame(storageKey, frameIndex, blob);
+    } else {
+      console.warn('[Proxy] No project open - cannot save proxy frame');
     }
 
     generatedCount++;
-
-    // Save batch when full
-    if (batch.length >= BATCH_SIZE) {
-      await projectDB.saveProxyFramesBatch(batch);
-      batch = [];
-    }
 
     // Update progress
     const progress = Math.round((generatedCount / totalFrames) * 100);
@@ -535,11 +523,6 @@ async function generateProxyFrames(
     if (frameIndex % 5 === 0) {
       await new Promise((r) => setTimeout(r, 0));
     }
-  }
-
-  // Save remaining batch
-  if (batch.length > 0) {
-    await projectDB.saveProxyFramesBatch(batch);
   }
 
   URL.revokeObjectURL(video.src);
@@ -1250,20 +1233,16 @@ export const useMediaStore = create<MediaState>()(
             ),
           });
 
-          // Helper to save frames to storage
+          // Helper to save frames to storage - ONLY local project folder, no browser cache
           // Use fileHash for folder naming (for deduplication), fallback to mediaFileId
           const storageKey = mediaFile.fileHash || mediaFileId;
           const saveFrame = async (frame: { id: string; mediaFileId: string; frameIndex: number; blob: Blob; fileHash?: string }) => {
-            // Save to project folder if a project is open (primary storage)
+            // Save to project folder ONLY (no IndexedDB fallback)
             if (projectFileService.isProjectOpen()) {
               await projectFileService.saveProxyFrame(storageKey, frame.frameIndex, frame.blob);
+            } else {
+              console.warn('[Proxy] No project open - cannot save proxy frame');
             }
-            // Also save to IndexedDB for redundancy and faster access
-            await projectDB.saveProxyFrame({
-              ...frame,
-              id: `${storageKey}_${frame.frameIndex.toString().padStart(6, '0')}`,
-              fileHash: mediaFile.fileHash,
-            });
           };
 
           try {
