@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { FrameExporter, downloadBlob } from '../../engine/FrameExporter';
-import type { ExportProgress } from '../../engine/FrameExporter';
+import type { ExportProgress, VideoCodec, ContainerFormat } from '../../engine/FrameExporter';
 import { useTimelineStore } from '../../stores/timeline';
 import { useMediaStore } from '../../stores/mediaStore';
 
@@ -20,10 +20,16 @@ export function ExportDialog({ onClose }: ExportDialogProps) {
   const [width, setWidth] = useState(composition?.width ?? 1920);
   const [height, setHeight] = useState(composition?.height ?? 1080);
   const [fps, setFps] = useState(composition?.frameRate ?? 30);
+  const [container, setContainer] = useState<ContainerFormat>('mp4');
+  const [codec, setCodec] = useState<VideoCodec>('h264');
   const [bitrate, setBitrate] = useState(15_000_000);
+  const [useCustomBitrate, setUseCustomBitrate] = useState(false);
   const [startTime, setStartTime] = useState(0);
   const [endTime, setEndTime] = useState(duration);
   const [filename, setFilename] = useState('export');
+  const [codecSupport, setCodecSupport] = useState<Record<VideoCodec, boolean>>({
+    h264: true, h265: false, vp9: true, av1: false
+  });
 
   // Audio settings
   const [includeAudio, setIncludeAudio] = useState(true);
@@ -43,10 +49,34 @@ export function ExportDialog({ onClose }: ExportDialogProps) {
     setIsSupported(FrameExporter.isSupported());
   }, []);
 
-  // Update recommended bitrate when resolution changes
+  // Check codec support when resolution changes
   useEffect(() => {
-    setBitrate(FrameExporter.getRecommendedBitrate(width, height, fps));
-  }, [width, height, fps]);
+    const checkSupport = async () => {
+      const support: Record<VideoCodec, boolean> = {
+        h264: await FrameExporter.checkCodecSupport('h264', width, height),
+        h265: await FrameExporter.checkCodecSupport('h265', width, height),
+        vp9: await FrameExporter.checkCodecSupport('vp9', width, height),
+        av1: await FrameExporter.checkCodecSupport('av1', width, height),
+      };
+      setCodecSupport(support);
+    };
+    checkSupport();
+  }, [width, height]);
+
+  // Update recommended bitrate when resolution changes (only if not using custom)
+  useEffect(() => {
+    if (!useCustomBitrate) {
+      setBitrate(FrameExporter.getRecommendedBitrate(width, height, fps));
+    }
+  }, [width, height, fps, useCustomBitrate]);
+
+  // Handle container change - reset codec if incompatible
+  useEffect(() => {
+    const availableCodecs = FrameExporter.getVideoCodecs(container);
+    if (!availableCodecs.find(c => c.id === codec)) {
+      setCodec(availableCodecs[0].id);
+    }
+  }, [container, codec]);
 
   // Handle resolution preset change
   const handleResolutionChange = useCallback((value: string) => {
@@ -63,11 +93,15 @@ export function ExportDialog({ onClose }: ExportDialogProps) {
     setError(null);
     setProgress(null);
 
+    const containerInfo = FrameExporter.getContainerFormats().find(c => c.id === container);
+    const extension = containerInfo?.extension ?? '.mp4';
+
     const exp = new FrameExporter({
       width,
       height,
       fps,
-      codec: 'h264',
+      codec,
+      container,
       bitrate,
       startTime,
       endTime,
@@ -85,7 +119,7 @@ export function ExportDialog({ onClose }: ExportDialogProps) {
       });
 
       if (blob) {
-        downloadBlob(blob, `${filename}.mp4`);
+        downloadBlob(blob, `${filename}${extension}`);
         onClose();
       }
     } catch (e) {
@@ -95,7 +129,7 @@ export function ExportDialog({ onClose }: ExportDialogProps) {
       setIsExporting(false);
       setExporter(null);
     }
-  }, [width, height, fps, bitrate, startTime, endTime, filename, isExporting, onClose, includeAudio, audioSampleRate, audioBitrate, normalizeAudio]);
+  }, [width, height, fps, codec, container, bitrate, startTime, endTime, filename, isExporting, onClose, includeAudio, audioSampleRate, audioBitrate, normalizeAudio]);
 
   // Handle cancel
   const handleCancel = useCallback(() => {

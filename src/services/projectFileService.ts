@@ -49,6 +49,9 @@ export interface ProjectFile {
   activeCompositionId: string | null;
   openCompositionIds: string[];
   expandedFolderIds: string[];
+
+  // Media source folders (for relinking after cache clear)
+  mediaSourceFolders?: string[];
 }
 
 export interface ProjectMediaFile {

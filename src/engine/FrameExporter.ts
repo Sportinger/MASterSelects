@@ -11,11 +11,15 @@ import { AudioExportPipeline, type AudioExportProgress, type EncodedAudioResult,
 
 // ============ TYPES ============
 
+export type VideoCodec = 'h264' | 'h265' | 'vp9' | 'av1';
+export type ContainerFormat = 'mp4' | 'webm';
+
 export interface ExportSettings {
   width: number;
   height: number;
   fps: number;
-  codec: 'h264' | 'vp9';
+  codec: VideoCodec;
+  container: ContainerFormat;
   bitrate: number;
   startTime: number;
   endTime: number;
@@ -53,11 +57,13 @@ class VideoEncoderWrapper {
   private isClosed = false;
   private hasAudio = false;
   private audioCodec: AudioCodec = 'aac';
-  private containerFormat: 'mp4' | 'webm' = 'mp4';
+  private containerFormat: ContainerFormat = 'mp4';
+  private effectiveVideoCodec: VideoCodec = 'h264';
 
   constructor(settings: ExportSettings) {
     this.settings = settings;
     this.hasAudio = settings.includeAudio ?? false;
+    this.containerFormat = settings.container ?? 'mp4';
   }
 
   async init(): Promise<boolean> {
@@ -66,24 +72,40 @@ class VideoEncoderWrapper {
       return false;
     }
 
-    // Detect audio codec if audio is enabled
+    // Determine audio codec based on container
     if (this.hasAudio) {
-      const detectedCodec = await AudioEncoderWrapper.detectSupportedCodec();
-      if (detectedCodec) {
-        this.audioCodec = detectedCodec.codec;
-        // Use WebM container for Opus, MP4 for AAC
-        this.containerFormat = detectedCodec.codec === 'opus' ? 'webm' : 'mp4';
+      if (this.containerFormat === 'webm') {
+        // WebM uses Opus
+        const opusSupported = await AudioEncoderWrapper.detectSupportedCodec();
+        if (opusSupported?.codec === 'opus') {
+          this.audioCodec = 'opus';
+        } else {
+          console.warn('[VideoEncoder] Opus not supported, disabling audio for WebM');
+          this.hasAudio = false;
+        }
       } else {
-        console.warn('[VideoEncoder] No audio codec supported, disabling audio');
-        this.hasAudio = false;
+        // MP4 uses AAC
+        const aacSupported = await AudioEncoderWrapper.detectSupportedCodec();
+        if (aacSupported?.codec === 'aac') {
+          this.audioCodec = 'aac';
+        } else {
+          console.warn('[VideoEncoder] AAC not supported, disabling audio for MP4');
+          this.hasAudio = false;
+        }
       }
     }
 
-    // Force VP9 for WebM container (H.264 not supported in WebM)
-    const effectiveVideoCodec = this.containerFormat === 'webm' ? 'vp9' : this.settings.codec;
-    const codecString = effectiveVideoCodec === 'h264'
-      ? 'avc1.640028'
-      : 'vp09.00.10.08';
+    // Determine effective video codec based on container compatibility
+    this.effectiveVideoCodec = this.settings.codec;
+
+    // WebM only supports VP9 and AV1
+    if (this.containerFormat === 'webm' && (this.settings.codec === 'h264' || this.settings.codec === 'h265')) {
+      console.warn(`[VideoEncoder] ${this.settings.codec} not supported in WebM, using VP9`);
+      this.effectiveVideoCodec = 'vp9';
+    }
+
+    // MP4 supports H264, H265, VP9, AV1
+    const codecString = this.getCodecString(this.effectiveVideoCodec);
 
     try {
       const support = await VideoEncoder.isConfigSupported({
@@ -104,13 +126,16 @@ class VideoEncoderWrapper {
     }
 
     // Create appropriate muxer based on container format
+    const webmVideoCodec = this.effectiveVideoCodec === 'av1' ? 'V_AV1' : 'V_VP9';
+    const mp4VideoCodec = this.getMp4MuxerCodec(this.effectiveVideoCodec);
+
     if (this.containerFormat === 'webm') {
-      // WebM muxer for Opus audio
+      // WebM muxer (VP9 or AV1 video, Opus audio)
       if (this.hasAudio) {
         this.muxer = new WebmMuxer({
           target: new WebmTarget(),
           video: {
-            codec: 'V_VP9',
+            codec: webmVideoCodec,
             width: this.settings.width,
             height: this.settings.height,
           },
@@ -124,20 +149,20 @@ class VideoEncoderWrapper {
         this.muxer = new WebmMuxer({
           target: new WebmTarget(),
           video: {
-            codec: 'V_VP9',
+            codec: webmVideoCodec,
             width: this.settings.width,
             height: this.settings.height,
           },
         });
       }
-      console.log(`[VideoEncoder] Using WebM container with ${this.hasAudio ? 'Opus' : 'no'} audio`);
+      console.log(`[VideoEncoder] Using WebM/${this.effectiveVideoCodec.toUpperCase()} with ${this.hasAudio ? 'Opus' : 'no'} audio`);
     } else {
-      // MP4 muxer for AAC audio
+      // MP4 muxer (H264, H265, VP9, AV1 video, AAC audio)
       if (this.hasAudio) {
         this.muxer = new Mp4Muxer({
           target: new Mp4Target(),
           video: {
-            codec: effectiveVideoCodec === 'h264' ? 'avc' : 'vp9',
+            codec: mp4VideoCodec,
             width: this.settings.width,
             height: this.settings.height,
           },
@@ -152,14 +177,14 @@ class VideoEncoderWrapper {
         this.muxer = new Mp4Muxer({
           target: new Mp4Target(),
           video: {
-            codec: effectiveVideoCodec === 'h264' ? 'avc' : 'vp9',
+            codec: mp4VideoCodec,
             width: this.settings.width,
             height: this.settings.height,
           },
           fastStart: 'in-memory',
         });
       }
-      console.log(`[VideoEncoder] Using MP4 container with ${this.hasAudio ? 'AAC' : 'no'} audio`);
+      console.log(`[VideoEncoder] Using MP4/${this.effectiveVideoCodec.toUpperCase()} with ${this.hasAudio ? 'AAC' : 'no'} audio`);
     }
 
     this.encoder = new VideoEncoder({
@@ -264,6 +289,38 @@ class VideoEncoderWrapper {
       try {
         this.encoder.close();
       } catch {}
+    }
+  }
+
+  // Get WebCodecs codec string for VideoEncoder
+  private getCodecString(codec: VideoCodec): string {
+    switch (codec) {
+      case 'h264':
+        return 'avc1.640028'; // High Profile, Level 4.0
+      case 'h265':
+        return 'hvc1.1.6.L93.B0'; // Main Profile, Level 3.1
+      case 'vp9':
+        return 'vp09.00.10.08'; // Profile 0, Level 1.0, 8-bit
+      case 'av1':
+        return 'av01.0.04M.08'; // Main Profile, Level 3.0, 8-bit
+      default:
+        return 'avc1.640028';
+    }
+  }
+
+  // Get mp4-muxer codec identifier
+  private getMp4MuxerCodec(codec: VideoCodec): 'avc' | 'hevc' | 'vp9' | 'av1' {
+    switch (codec) {
+      case 'h264':
+        return 'avc';
+      case 'h265':
+        return 'hevc';
+      case 'vp9':
+        return 'vp9';
+      case 'av1':
+        return 'av1';
+      default:
+        return 'avc';
     }
   }
 }
@@ -812,6 +869,64 @@ export class FrameExporter {
     if (width >= 1920) return 15_000_000;
     if (width >= 1280) return 8_000_000;
     return 5_000_000;
+  }
+
+  static getContainerFormats(): Array<{ id: ContainerFormat; label: string; extension: string }> {
+    return [
+      { id: 'mp4', label: 'MP4', extension: '.mp4' },
+      { id: 'webm', label: 'WebM', extension: '.webm' },
+    ];
+  }
+
+  static getVideoCodecs(container: ContainerFormat): Array<{ id: VideoCodec; label: string; description: string }> {
+    if (container === 'webm') {
+      return [
+        { id: 'vp9', label: 'VP9', description: 'Good quality, widely supported' },
+        { id: 'av1', label: 'AV1', description: 'Best quality, slow encoding' },
+      ];
+    }
+    // MP4 container
+    return [
+      { id: 'h264', label: 'H.264 (AVC)', description: 'Most compatible, fast encoding' },
+      { id: 'h265', label: 'H.265 (HEVC)', description: 'Better compression, limited support' },
+      { id: 'vp9', label: 'VP9', description: 'Good quality, open codec' },
+      { id: 'av1', label: 'AV1', description: 'Best quality, slow encoding' },
+    ];
+  }
+
+  static async checkCodecSupport(codec: VideoCodec, width: number, height: number): Promise<boolean> {
+    if (!('VideoEncoder' in window)) return false;
+
+    const codecStrings: Record<VideoCodec, string> = {
+      h264: 'avc1.640028',
+      h265: 'hvc1.1.6.L93.B0',
+      vp9: 'vp09.00.10.08',
+      av1: 'av01.0.04M.08',
+    };
+
+    try {
+      const support = await VideoEncoder.isConfigSupported({
+        codec: codecStrings[codec],
+        width,
+        height,
+        bitrate: 10_000_000,
+        framerate: 30,
+      });
+      return support.supported ?? false;
+    } catch {
+      return false;
+    }
+  }
+
+  static getBitrateRange(): { min: number; max: number; step: number } {
+    return { min: 1_000_000, max: 100_000_000, step: 500_000 };
+  }
+
+  static formatBitrate(bitrate: number): string {
+    if (bitrate >= 1_000_000) {
+      return `${(bitrate / 1_000_000).toFixed(1)} Mbps`;
+    }
+    return `${(bitrate / 1_000).toFixed(0)} Kbps`;
   }
 }
 
