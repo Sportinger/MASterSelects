@@ -87,11 +87,13 @@ export function TimelineNavigator({
       } else if (isDragging === 'left') {
         // Resize from left - handle follows mouse 1:1
         // New thumb width = original width minus the delta (drag left = wider thumb)
-        const newThumbWidth = Math.max(40, dragStartThumbWidth - deltaX);
+        // Cap at trackWidth to prevent zooming out beyond duration
+        const newThumbWidth = Math.max(40, Math.min(trackWidth, dragStartThumbWidth - deltaX));
 
         // Calculate zoom from thumb width: thumbWidth = (viewportWidth / (duration * zoom)) * trackWidth
         // Rearranged: zoom = viewportWidth * trackWidth / (duration * thumbWidth)
-        const newZoom = Math.max(minZoom, Math.min(maxZoom, (viewportWidth * trackWidth) / (duration * newThumbWidth)));
+        const dynamicMinZoom = viewportWidth / duration;
+        const newZoom = Math.max(dynamicMinZoom, Math.min(maxZoom, (viewportWidth * trackWidth) / (duration * newThumbWidth)));
         onZoomChange(newZoom);
 
         // Adjust scroll to keep right edge stable
@@ -103,10 +105,12 @@ export function TimelineNavigator({
       } else if (isDragging === 'right') {
         // Resize from right - handle follows mouse 1:1
         // New thumb width = original width plus the delta (drag right = wider thumb)
-        const newThumbWidth = Math.max(40, dragStartThumbWidth + deltaX);
+        // Cap at trackWidth to prevent zooming out beyond duration
+        const newThumbWidth = Math.max(40, Math.min(trackWidth, dragStartThumbWidth + deltaX));
 
         // Calculate zoom from thumb width
-        const newZoom = Math.max(minZoom, Math.min(maxZoom, (viewportWidth * trackWidth) / (duration * newThumbWidth)));
+        const dynamicMinZoom = viewportWidth / duration;
+        const newZoom = Math.max(dynamicMinZoom, Math.min(maxZoom, (viewportWidth * trackWidth) / (duration * newThumbWidth)));
         onZoomChange(newZoom);
 
         // Keep left edge stable

@@ -52,20 +52,37 @@ export function useTimelineZoom({
     setScrollX(0); // Reset scroll to start
   }, [timelineBodyRef, duration, setZoom, setScrollX]);
 
-  // Wrapper for setZoom that enforces MIN_ZOOM/MAX_ZOOM bounds
-  const handleSetZoom = useCallback((newZoom: number) => {
-    setZoom(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom)));
-  }, [setZoom]);
+  // Calculate dynamic minimum zoom to prevent zooming out beyond duration
+  const getDynamicMinZoom = useCallback(() => {
+    const trackLanes = timelineBodyRef.current?.querySelector('.track-lanes');
+    const viewportWidth = trackLanes?.clientWidth ?? 800;
+    // Minimum zoom ensures duration * zoom >= viewportWidth (no empty space on right)
+    return Math.max(MIN_ZOOM, viewportWidth / duration);
+  }, [timelineBodyRef, duration]);
 
-  // Clamp scrollX when zoom or duration changes to prevent scrolling past duration
+  // Wrapper for setZoom that enforces dynamic min zoom
+  const handleSetZoom = useCallback((newZoom: number) => {
+    const dynamicMinZoom = getDynamicMinZoom();
+    setZoom(Math.max(dynamicMinZoom, Math.min(MAX_ZOOM, newZoom)));
+  }, [setZoom, getDynamicMinZoom]);
+
+  // Clamp zoom and scrollX when duration or viewport changes
   useEffect(() => {
     const trackLanes = timelineBodyRef.current?.querySelector('.track-lanes');
     const viewportWidth = trackLanes?.clientWidth ?? 800;
+    const dynamicMinZoom = Math.max(MIN_ZOOM, viewportWidth / duration);
+
+    // Clamp zoom to dynamic minimum
+    if (zoom < dynamicMinZoom) {
+      setZoom(dynamicMinZoom);
+    }
+
+    // Clamp scrollX to max
     const maxScrollX = Math.max(0, duration * zoom - viewportWidth);
     if (scrollX > maxScrollX) {
       setScrollX(maxScrollX);
     }
-  }, [timelineBodyRef, zoom, duration, scrollX, setScrollX]);
+  }, [timelineBodyRef, zoom, duration, scrollX, setZoom, setScrollX]);
 
   // Zoom with mouse wheel, also handle vertical scroll
   // Use native event listener with { passive: false } to allow preventDefault
@@ -80,11 +97,14 @@ export function useTimelineZoom({
         const trackLanes = el.querySelector('.track-lanes');
         const viewportWidth = trackLanes?.clientWidth ?? el.clientWidth - 120; // 120 = track headers width
 
+        // Calculate dynamic minimum zoom to prevent zooming out beyond duration
+        const dynamicMinZoom = Math.max(MIN_ZOOM, viewportWidth / duration);
+
         // Adjust delta based on current zoom level for smoother zooming
         // Use smaller steps at low zoom levels for precision
         const zoomFactor = zoom < 1 ? 0.1 : zoom < 10 ? 1 : 5;
         const delta = e.deltaY > 0 ? -zoomFactor : zoomFactor;
-        const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom + delta));
+        const newZoom = Math.max(dynamicMinZoom, Math.min(MAX_ZOOM, zoom + delta));
 
         // Calculate max scroll to prevent scrolling past duration
         const maxScrollX = Math.max(0, duration * newZoom - viewportWidth);
