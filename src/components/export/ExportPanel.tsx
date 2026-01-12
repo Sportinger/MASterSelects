@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { FrameExporter, downloadBlob } from '../../engine/FrameExporter';
-import type { ExportProgress } from '../../engine/FrameExporter';
+import type { ExportProgress, VideoCodec, ContainerFormat } from '../../engine/FrameExporter';
 import { AudioExportPipeline, AudioEncoderWrapper, type AudioCodec } from '../../engine/audio';
 import { useTimelineStore } from '../../stores/timeline';
 import { useMediaStore } from '../../stores/mediaStore';
@@ -40,7 +40,13 @@ export function ExportPanel() {
   const [isSupported, setIsSupported] = useState(true);
   const [isAudioSupported, setIsAudioSupported] = useState(true);
   const [audioCodec, setAudioCodec] = useState<AudioCodec | null>(null);
-  const [containerFormat, setContainerFormat] = useState<'mp4' | 'webm'>('mp4');
+  const [containerFormat, setContainerFormat] = useState<ContainerFormat>('mp4');
+  const [videoCodec, setVideoCodec] = useState<VideoCodec>('h264');
+  const [codecSupport, setCodecSupport] = useState<Record<VideoCodec, boolean>>({
+    h264: true, h265: false, vp9: false, av1: false
+  });
+  const [useCustomBitrate, setUseCustomBitrate] = useState(false);
+
   useEffect(() => {
     setIsSupported(FrameExporter.isSupported());
     // Check audio encoder support and detect codec
@@ -48,7 +54,6 @@ export function ExportPanel() {
       if (result) {
         setIsAudioSupported(true);
         setAudioCodec(result.codec);
-        setContainerFormat(result.codec === 'opus' ? 'webm' : 'mp4');
         console.log(`[ExportPanel] Audio codec detected: ${result.codec.toUpperCase()}`);
       } else {
         setIsAudioSupported(false);
@@ -57,6 +62,40 @@ export function ExportPanel() {
       }
     });
   }, []);
+
+  // Check codec support when resolution changes
+  useEffect(() => {
+    const checkSupport = async () => {
+      const actualWidth = useCustomResolution ? customWidth : width;
+      const actualHeight = useCustomResolution ? customHeight : height;
+
+      const support: Record<VideoCodec, boolean> = {
+        h264: await FrameExporter.checkCodecSupport('h264', actualWidth, actualHeight),
+        h265: await FrameExporter.checkCodecSupport('h265', actualWidth, actualHeight),
+        vp9: await FrameExporter.checkCodecSupport('vp9', actualWidth, actualHeight),
+        av1: await FrameExporter.checkCodecSupport('av1', actualWidth, actualHeight),
+      };
+      setCodecSupport(support);
+
+      // If current codec is not supported, select first supported one
+      const availableCodecs = FrameExporter.getVideoCodecs(containerFormat);
+      if (!support[videoCodec]) {
+        const firstSupported = availableCodecs.find(c => support[c.id]);
+        if (firstSupported) {
+          setVideoCodec(firstSupported.id);
+        }
+      }
+    };
+    checkSupport();
+  }, [width, height, customWidth, customHeight, useCustomResolution, containerFormat, videoCodec]);
+
+  // Update video codec when container changes
+  useEffect(() => {
+    const availableCodecs = FrameExporter.getVideoCodecs(containerFormat);
+    if (!availableCodecs.find(c => c.id === videoCodec)) {
+      setVideoCodec(availableCodecs[0].id);
+    }
+  }, [containerFormat, videoCodec]);
 
   // Compute actual start/end based on In/Out markers
   const startTime = useInOut && inPoint !== null ? inPoint : 0;
@@ -85,15 +124,15 @@ export function ExportPanel() {
     const actualWidth = useCustomResolution ? customWidth : width;
     const actualHeight = useCustomResolution ? customHeight : height;
 
-    // Use VP9 for WebM container (H.264 not supported in WebM)
-    const videoCodec = (includeAudio && containerFormat === 'webm') ? 'vp9' : 'h264';
-    const fileExtension = (includeAudio && containerFormat === 'webm') ? 'webm' : 'mp4';
+    // Get file extension from container format
+    const fileExtension = containerFormat === 'webm' ? 'webm' : 'mp4';
 
     const exp = new FrameExporter({
       width: actualWidth,
       height: actualHeight,
       fps,
       codec: videoCodec,
+      container: containerFormat,
       bitrate,
       startTime,
       endTime,
@@ -120,7 +159,7 @@ export function ExportPanel() {
       setIsExporting(false);
       setExporter(null);
     }
-  }, [width, height, customWidth, customHeight, useCustomResolution, fps, bitrate, startTime, endTime, filename, isExporting, includeAudio, audioSampleRate, audioBitrate, normalizeAudio, containerFormat]);
+  }, [width, height, customWidth, customHeight, useCustomResolution, fps, bitrate, startTime, endTime, filename, isExporting, includeAudio, audioSampleRate, audioBitrate, normalizeAudio, containerFormat, videoCodec]);
 
   // Handle cancel
   const handleCancel = useCallback(() => {
@@ -337,8 +376,38 @@ export function ExportPanel() {
                 onChange={(e) => setFilename(e.target.value)}
                 placeholder="export"
               />
-              <span className="export-extension">.{includeAudio && containerFormat === 'webm' ? 'webm' : 'mp4'}</span>
+              <span className="export-extension">.{containerFormat}</span>
             </div>
+          </div>
+
+          {/* Container Format */}
+          <div className="control-row">
+            <label>Container</label>
+            <select
+              value={containerFormat}
+              onChange={(e) => setContainerFormat(e.target.value as ContainerFormat)}
+            >
+              {FrameExporter.getContainerFormats().map(({ id, label }) => (
+                <option key={id} value={id}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Video Codec */}
+          <div className="control-row">
+            <label>Codec</label>
+            <select
+              value={videoCodec}
+              onChange={(e) => setVideoCodec(e.target.value as VideoCodec)}
+            >
+              {FrameExporter.getVideoCodecs(containerFormat).map(({ id, label, description }) => (
+                <option key={id} value={id} disabled={!codecSupport[id]}>
+                  {label} {!codecSupport[id] ? '(not supported)' : ''}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* Resolution */}
@@ -422,17 +491,55 @@ export function ExportPanel() {
           {/* Quality */}
           <div className="control-row">
             <label>Quality</label>
-            <select
-              value={bitrate}
-              onChange={(e) => setBitrate(Number(e.target.value))}
-            >
-              <option value={5_000_000}>Low (5 Mbps)</option>
-              <option value={10_000_000}>Medium (10 Mbps)</option>
-              <option value={15_000_000}>High (15 Mbps)</option>
-              <option value={25_000_000}>Very High (25 Mbps)</option>
-              <option value={35_000_000}>Maximum (35 Mbps)</option>
-            </select>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              {!useCustomBitrate ? (
+                <select
+                  value={bitrate}
+                  onChange={(e) => setBitrate(Number(e.target.value))}
+                  style={{ flex: 1 }}
+                >
+                  <option value={5_000_000}>Low (5 Mbps)</option>
+                  <option value={10_000_000}>Medium (10 Mbps)</option>
+                  <option value={15_000_000}>High (15 Mbps)</option>
+                  <option value={25_000_000}>Very High (25 Mbps)</option>
+                  <option value={35_000_000}>Maximum (35 Mbps)</option>
+                </select>
+              ) : (
+                <span style={{ flex: 1, fontSize: '12px', color: 'var(--text-secondary)' }}>
+                  {FrameExporter.formatBitrate(bitrate)}
+                </span>
+              )}
+              <label style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <input
+                  type="checkbox"
+                  checked={useCustomBitrate}
+                  onChange={(e) => setUseCustomBitrate(e.target.checked)}
+                />
+                Custom
+              </label>
+            </div>
           </div>
+
+          {/* Custom Bitrate Slider */}
+          {useCustomBitrate && (
+            <div className="control-row">
+              <label>Bitrate</label>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flex: 1 }}>
+                <input
+                  type="range"
+                  min={FrameExporter.getBitrateRange().min}
+                  max={FrameExporter.getBitrateRange().max}
+                  step={FrameExporter.getBitrateRange().step}
+                  value={bitrate}
+                  onChange={(e) => setBitrate(Number(e.target.value))}
+                  style={{ flex: 1 }}
+                />
+                <span style={{ minWidth: '70px', fontSize: '12px', textAlign: 'right' }}>
+                  {FrameExporter.formatBitrate(bitrate)}
+                </span>
+              </div>
+            </div>
+          )}
           </div>
 
           {/* Audio Settings */}

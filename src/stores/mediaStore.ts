@@ -802,33 +802,42 @@ export const useMediaStore = create<MediaState>()(
 
           let dirHandle: FileSystemDirectoryHandle | null = null;
 
-          // First, try to use saved media source folder from IndexedDB
-          try {
-            console.log('[MediaStore] Checking for saved media source folder...');
-            const savedHandle = await projectDB.getStoredHandle('mediaSourceFolder');
-            console.log('[MediaStore] Saved handle:', savedHandle ? `${savedHandle.kind} - ${savedHandle.name}` : 'not found');
+          // First, try to use the project folder (we already have permission from opening the project)
+          const projectHandle = projectFileService.getProjectHandle();
+          if (projectHandle) {
+            console.log('[MediaStore] Trying project folder first:', projectHandle.name);
+            dirHandle = projectHandle;
+          }
 
-            if (savedHandle && savedHandle.kind === 'directory') {
-              // Check if we still have permission
-              const permission = await (savedHandle as FileSystemDirectoryHandle).queryPermission({ mode: 'read' });
-              console.log('[MediaStore] Current permission:', permission);
+          // If no project handle, try saved media source folder from IndexedDB
+          if (!dirHandle) {
+            try {
+              console.log('[MediaStore] Checking for saved media source folder...');
+              const savedHandle = await projectDB.getStoredHandle('mediaSourceFolder');
+              console.log('[MediaStore] Saved handle:', savedHandle ? `${savedHandle.kind} - ${savedHandle.name}` : 'not found');
 
-              if (permission === 'granted') {
-                dirHandle = savedHandle as FileSystemDirectoryHandle;
-                console.log('[MediaStore] Using saved media source folder:', dirHandle.name);
-              } else {
-                // Try to request permission (this shows a prompt)
-                console.log('[MediaStore] Requesting permission for saved folder...');
-                const newPermission = await (savedHandle as FileSystemDirectoryHandle).requestPermission({ mode: 'read' });
-                console.log('[MediaStore] New permission:', newPermission);
-                if (newPermission === 'granted') {
+              if (savedHandle && savedHandle.kind === 'directory') {
+                // Check if we still have permission
+                const permission = await (savedHandle as FileSystemDirectoryHandle).queryPermission({ mode: 'read' });
+                console.log('[MediaStore] Current permission:', permission);
+
+                if (permission === 'granted') {
                   dirHandle = savedHandle as FileSystemDirectoryHandle;
-                  console.log('[MediaStore] Re-granted permission to saved folder:', dirHandle.name);
+                  console.log('[MediaStore] Using saved media source folder:', dirHandle.name);
+                } else {
+                  // Try to request permission (this shows a prompt)
+                  console.log('[MediaStore] Requesting permission for saved folder...');
+                  const newPermission = await (savedHandle as FileSystemDirectoryHandle).requestPermission({ mode: 'read' });
+                  console.log('[MediaStore] New permission:', newPermission);
+                  if (newPermission === 'granted') {
+                    dirHandle = savedHandle as FileSystemDirectoryHandle;
+                    console.log('[MediaStore] Re-granted permission to saved folder:', dirHandle.name);
+                  }
                 }
               }
+            } catch (e) {
+              console.log('[MediaStore] No saved media source folder or permission denied:', e);
             }
-          } catch (e) {
-            console.log('[MediaStore] No saved media source folder or permission denied:', e);
           }
 
           // If no saved handle, prompt user to pick a folder
