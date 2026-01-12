@@ -8,6 +8,20 @@ import { projectDB } from './projectDB';
 // PROJECT STRUCTURE TYPES
 // ============================================
 
+/**
+ * Analysis cache file structure (stored in Analysis/{mediaId}.json)
+ */
+interface StoredAnalysisFile {
+  mediaFileId: string;
+  analyses: {
+    [rangeKey: string]: {
+      frames: unknown[];
+      sampleInterval: number;
+      createdAt: number;
+    };
+  };
+}
+
 export interface ProjectFile {
   version: 1;
   name: string;
@@ -908,30 +922,101 @@ class ProjectFileService {
   }
 
   // ============================================
-  // ANALYSIS OPERATIONS
+  // ANALYSIS OPERATIONS (Range-based caching)
   // ============================================
 
   /**
-   * Save analysis data for a media file
+   * Get range key for analysis caching (matches format: "inPoint-outPoint")
    */
-  async saveAnalysis(mediaId: string, analysisData: unknown): Promise<boolean> {
-    const json = JSON.stringify(analysisData, null, 2);
-    return this.writeFile('ANALYSIS', `${mediaId}.json`, json);
+  private getAnalysisRangeKey(inPoint: number, outPoint: number): string {
+    return `${inPoint.toFixed(3)}-${outPoint.toFixed(3)}`;
   }
 
   /**
-   * Get analysis data for a media file
+   * Analysis cache structure stored in file
    */
-  async getAnalysis(mediaId: string): Promise<unknown | null> {
+  private async getAnalysisRecord(mediaId: string): Promise<StoredAnalysisFile | null> {
     const file = await this.readFile('ANALYSIS', `${mediaId}.json`);
     if (!file) return null;
 
     try {
       const text = await file.text();
-      return JSON.parse(text);
+      return JSON.parse(text) as StoredAnalysisFile;
     } catch (e) {
       return null;
     }
+  }
+
+  /**
+   * Save analysis data for a media file with range-based caching
+   */
+  async saveAnalysis(
+    mediaId: string,
+    inPoint: number,
+    outPoint: number,
+    frames: unknown[],
+    sampleInterval: number
+  ): Promise<boolean> {
+    const rangeKey = this.getAnalysisRangeKey(inPoint, outPoint);
+
+    // Get existing record or create new
+    const existing = await this.getAnalysisRecord(mediaId);
+    const record: StoredAnalysisFile = existing || {
+      mediaFileId: mediaId,
+      analyses: {},
+    };
+
+    // Add/update this range
+    record.analyses[rangeKey] = {
+      frames,
+      sampleInterval,
+      createdAt: Date.now(),
+    };
+
+    const json = JSON.stringify(record, null, 2);
+    return this.writeFile('ANALYSIS', `${mediaId}.json`, json);
+  }
+
+  /**
+   * Get analysis data for a specific time range
+   */
+  async getAnalysis(
+    mediaId: string,
+    inPoint: number,
+    outPoint: number
+  ): Promise<{ frames: unknown[]; sampleInterval: number } | null> {
+    const record = await this.getAnalysisRecord(mediaId);
+    if (!record) return null;
+
+    const rangeKey = this.getAnalysisRangeKey(inPoint, outPoint);
+    const analysis = record.analyses[rangeKey];
+
+    if (!analysis) return null;
+    return { frames: analysis.frames, sampleInterval: analysis.sampleInterval };
+  }
+
+  /**
+   * Check if analysis exists for a specific time range
+   */
+  async hasAnalysis(mediaId: string, inPoint: number, outPoint: number): Promise<boolean> {
+    const analysis = await this.getAnalysis(mediaId, inPoint, outPoint);
+    return analysis !== null;
+  }
+
+  /**
+   * Get all cached analysis ranges for a media file
+   */
+  async getAnalysisRanges(mediaId: string): Promise<string[]> {
+    const record = await this.getAnalysisRecord(mediaId);
+    if (!record) return [];
+    return Object.keys(record.analyses);
+  }
+
+  /**
+   * Delete all analysis for a media file
+   */
+  async deleteAnalysis(mediaId: string): Promise<boolean> {
+    return this.deleteFile('ANALYSIS', `${mediaId}.json`);
   }
 
   // ============================================

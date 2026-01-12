@@ -3,7 +3,7 @@
 
 import { useTimelineStore } from '../stores/timeline';
 import { triggerTimelineSave } from '../stores/mediaStore';
-import { projectDB } from './projectDB';
+import { projectFileService } from './projectFileService';
 import { engine } from '../engine/WebGPUEngine';
 import {
   OpticalFlowAnalyzer,
@@ -309,16 +309,16 @@ export async function analyzeClip(clipId: string): Promise<void> {
   // Update status to analyzing
   updateClipAnalysis(clipId, { status: 'analyzing', progress: 0 });
 
-  // Check for cached analysis first
+  // Check for cached analysis first (from project folder, not browser cache)
   const mediaFileId = clip.source?.mediaFileId;
   const inPoint = clip.inPoint ?? 0;
   const outPoint = clip.outPoint ?? clip.duration;
 
-  if (mediaFileId) {
+  if (mediaFileId && projectFileService.isProjectOpen()) {
     try {
-      const cachedAnalysis = await projectDB.getAnalysis(mediaFileId, inPoint, outPoint);
+      const cachedAnalysis = await projectFileService.getAnalysis(mediaFileId, inPoint, outPoint);
       if (cachedAnalysis) {
-        console.log('[ClipAnalyzer] Found cached analysis, loading...');
+        console.log('[ClipAnalyzer] Found cached analysis in project folder, loading...');
 
         const analysis: ClipAnalysis = {
           frames: cachedAnalysis.frames as FrameAnalysisData[],
@@ -337,7 +337,7 @@ export async function analyzeClip(clipId: string): Promise<void> {
         return;
       }
     } catch (err) {
-      console.warn('[ClipAnalyzer] Failed to check cache:', err);
+      console.warn('[ClipAnalyzer] Failed to check analysis cache:', err);
     }
   }
 
@@ -478,19 +478,19 @@ export async function analyzeClip(clipId: string): Promise<void> {
       analysis,
     });
 
-    // Save to cache if we have a mediaFileId
-    if (mediaFileId) {
+    // Save to project folder (not browser cache)
+    if (mediaFileId && projectFileService.isProjectOpen()) {
       try {
-        await projectDB.saveAnalysis(
+        await projectFileService.saveAnalysis(
           mediaFileId,
           analysisStartTime,
           analysisEndTime,
           frames,
           SAMPLE_INTERVAL_MS
         );
-        console.log('[ClipAnalyzer] Analysis saved to cache');
+        console.log('[ClipAnalyzer] Analysis saved to project folder');
       } catch (err) {
-        console.warn('[ClipAnalyzer] Failed to save to cache:', err);
+        console.warn('[ClipAnalyzer] Failed to save analysis to project folder:', err);
       }
     }
 

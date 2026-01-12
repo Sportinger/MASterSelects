@@ -15,7 +15,7 @@ import { createPlaybackSlice } from './playbackSlice';
 import { createSelectionSlice } from './selectionSlice';
 import { createKeyframeSlice } from './keyframeSlice';
 import { createMaskSlice } from './maskSlice';
-import { projectDB } from '../../services/projectDB';
+import { projectFileService } from '../../services/projectFileService';
 import type { ClipAnalysis, FrameAnalysisData } from '../../types';
 
 // Re-export types for convenience
@@ -831,15 +831,15 @@ export const useTimelineStore = create<TimelineStore>()(
             clips: [...state.clips, clip],
           }));
 
-          // Check for cached analysis if clip doesn't have analysis but has mediaFileId
-          if (!serializedClip.analysis && serializedClip.mediaFileId) {
-            projectDB.getAnalysis(
+          // Check for cached analysis in project folder if clip doesn't have analysis but has mediaFileId
+          if (!serializedClip.analysis && serializedClip.mediaFileId && projectFileService.isProjectOpen()) {
+            projectFileService.getAnalysis(
               serializedClip.mediaFileId,
               serializedClip.inPoint,
               serializedClip.outPoint
             ).then(cachedAnalysis => {
               if (cachedAnalysis) {
-                console.log('[Timeline] Loaded analysis from cache for:', serializedClip.name);
+                console.log('[Timeline] Loaded analysis from project folder for:', serializedClip.name);
                 const analysis: ClipAnalysis = {
                   frames: cachedAnalysis.frames as FrameAnalysisData[],
                   sampleInterval: cachedAnalysis.sampleInterval,
@@ -853,7 +853,7 @@ export const useTimelineStore = create<TimelineStore>()(
                 }));
               }
             }).catch(err => {
-              console.warn('[Timeline] Failed to load cached analysis:', err);
+              console.warn('[Timeline] Failed to load analysis from project folder:', err);
             });
           }
 
