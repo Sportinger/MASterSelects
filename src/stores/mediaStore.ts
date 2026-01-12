@@ -92,6 +92,7 @@ interface MediaState {
   removeFile: (id: string) => void;
   renameFile: (id: string, name: string) => void;
   reloadFile: (id: string) => Promise<boolean>; // Re-request file permission after refresh
+  reloadAllFiles: () => Promise<number>; // Reload all files that need permission, returns count
 
   // Actions - Compositions
   createComposition: (name: string, settings?: Partial<Composition>) => Composition;
@@ -774,6 +775,27 @@ export const useMediaStore = create<MediaState>()(
             console.error('[MediaStore] Failed to reload file:', mediaFile.name, e);
             return false;
           }
+        },
+
+        reloadAllFiles: async () => {
+          const filesToReload = get().files.filter(f => !f.file);
+          if (filesToReload.length === 0) {
+            console.log('[MediaStore] No files need reloading');
+            return 0;
+          }
+
+          console.log('[MediaStore] Reloading', filesToReload.length, 'files...');
+          let reloadedCount = 0;
+
+          for (const mediaFile of filesToReload) {
+            const success = await get().reloadFile(mediaFile.id);
+            if (success) {
+              reloadedCount++;
+            }
+          }
+
+          console.log('[MediaStore] Reloaded', reloadedCount, '/', filesToReload.length, 'files');
+          return reloadedCount;
         },
 
         createComposition: (name: string, settings?: Partial<Composition>) => {

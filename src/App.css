@@ -2269,6 +2269,18 @@ input, textarea {
   color: #fff;
 }
 
+.btn-reload-all {
+  background: var(--warning);
+  border-color: var(--warning);
+  color: #000;
+  font-weight: 500;
+}
+
+.btn-reload-all:hover {
+  background: #cc8800;
+  border-color: #cc8800;
+}
+
 /* MIDI */
 .midi-unsupported {
   font-size: 12px;

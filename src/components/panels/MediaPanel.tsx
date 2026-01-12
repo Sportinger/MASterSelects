@@ -57,6 +57,7 @@ export function MediaPanel() {
     renameFile,
     renameFolder,
     reloadFile,
+    reloadAllFiles,
     toggleFolderExpanded,
     setSelection,
     addToSelection,
@@ -648,6 +649,16 @@ export function MediaPanel() {
   const rootItems = getItemsByFolder(null);
   const totalItems = files.length + compositions.length;
 
+  // Check if any files need reload (lost permission after refresh)
+  const filesNeedReload = files.some(f => !f.file);
+  const filesNeedReloadCount = files.filter(f => !f.file).length;
+
+  // Handle reload all
+  const handleReloadAll = useCallback(async () => {
+    const reloaded = await reloadAllFiles();
+    console.log(`[MediaPanel] Reloaded ${reloaded} files`);
+  }, [reloadAllFiles]);
+
   return (
     <div
       className={`media-panel ${isExternalDragOver ? 'drop-target' : ''}`}
@@ -661,6 +672,15 @@ export function MediaPanel() {
         <span className="media-panel-title">Project</span>
         <span className="media-panel-count">{totalItems} items</span>
         <div className="media-panel-actions">
+          {filesNeedReload && (
+            <button
+              className="btn btn-sm btn-reload-all"
+              onClick={handleReloadAll}
+              title={`Reload ${filesNeedReloadCount} file${filesNeedReloadCount > 1 ? 's' : ''} (requires permission)`}
+            >
+              Reload All ({filesNeedReloadCount})
+            </button>
+          )}
           <button className="btn btn-sm" onClick={handleImport} title="Import Media">
             Import
           </button>
