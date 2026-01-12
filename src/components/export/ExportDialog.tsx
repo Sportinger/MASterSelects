@@ -192,8 +192,45 @@ export function ExportDialog({ onClose }: ExportDialogProps) {
                     onChange={(e) => setFilename(e.target.value)}
                     placeholder="export"
                   />
-                  <span className="export-extension">.mp4</span>
+                  <span className="export-extension">
+                    {FrameExporter.getContainerFormats().find(c => c.id === container)?.extension ?? '.mp4'}
+                  </span>
                 </div>
+              </div>
+
+              {/* Container Format */}
+              <div className="export-row">
+                <label>Container</label>
+                <select
+                  value={container}
+                  onChange={(e) => setContainer(e.target.value as ContainerFormat)}
+                >
+                  {FrameExporter.getContainerFormats().map(({ id, label }) => (
+                    <option key={id} value={id}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Video Codec */}
+              <div className="export-row">
+                <label>Codec</label>
+                <select
+                  value={codec}
+                  onChange={(e) => setCodec(e.target.value as VideoCodec)}
+                >
+                  {FrameExporter.getVideoCodecs(container).map(({ id, label, description }) => (
+                    <option
+                      key={id}
+                      value={id}
+                      disabled={!codecSupport[id]}
+                      title={description}
+                    >
+                      {label} {!codecSupport[id] ? '(not supported)' : ''}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {/* Resolution */}
@@ -229,16 +266,41 @@ export function ExportDialog({ onClose }: ExportDialogProps) {
               {/* Bitrate */}
               <div className="export-row">
                 <label>Quality</label>
-                <select
-                  value={bitrate}
-                  onChange={(e) => setBitrate(Number(e.target.value))}
-                >
-                  <option value={5_000_000}>Low (5 Mbps)</option>
-                  <option value={10_000_000}>Medium (10 Mbps)</option>
-                  <option value={15_000_000}>High (15 Mbps)</option>
-                  <option value={25_000_000}>Very High (25 Mbps)</option>
-                  <option value={35_000_000}>Maximum (35 Mbps)</option>
-                </select>
+                <div className="export-bitrate-group">
+                  {!useCustomBitrate ? (
+                    <select
+                      value={bitrate}
+                      onChange={(e) => setBitrate(Number(e.target.value))}
+                    >
+                      <option value={5_000_000}>Low (5 Mbps)</option>
+                      <option value={10_000_000}>Medium (10 Mbps)</option>
+                      <option value={15_000_000}>High (15 Mbps)</option>
+                      <option value={25_000_000}>Very High (25 Mbps)</option>
+                      <option value={35_000_000}>Maximum (35 Mbps)</option>
+                      <option value={50_000_000}>Ultra (50 Mbps)</option>
+                    </select>
+                  ) : (
+                    <div className="export-custom-bitrate">
+                      <input
+                        type="range"
+                        min={FrameExporter.getBitrateRange().min}
+                        max={FrameExporter.getBitrateRange().max}
+                        step={FrameExporter.getBitrateRange().step}
+                        value={bitrate}
+                        onChange={(e) => setBitrate(Number(e.target.value))}
+                      />
+                      <span className="bitrate-value">{FrameExporter.formatBitrate(bitrate)}</span>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    className="bitrate-toggle"
+                    onClick={() => setUseCustomBitrate(!useCustomBitrate)}
+                    title={useCustomBitrate ? 'Use presets' : 'Custom bitrate'}
+                  >
+                    {useCustomBitrate ? 'Presets' : 'Custom'}
+                  </button>
+                </div>
               </div>
 
               {/* Time Range */}
@@ -495,6 +557,58 @@ export function ExportDialog({ onClose }: ExportDialogProps) {
 
         .export-time-range span {
           color: var(--text-secondary);
+        }
+
+        .export-bitrate-group {
+          flex: 1;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .export-bitrate-group select {
+          flex: 1;
+        }
+
+        .export-custom-bitrate {
+          flex: 1;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .export-custom-bitrate input[type="range"] {
+          flex: 1;
+          height: 4px;
+          background: var(--bg-tertiary);
+          border-radius: 2px;
+          cursor: pointer;
+          accent-color: var(--accent);
+        }
+
+        .bitrate-value {
+          min-width: 70px;
+          text-align: right;
+          color: var(--text-primary);
+          font-size: 13px;
+          font-family: monospace;
+        }
+
+        .bitrate-toggle {
+          padding: 6px 10px;
+          background: var(--bg-tertiary);
+          border: 1px solid var(--border-color);
+          border-radius: 4px;
+          color: var(--text-secondary);
+          font-size: 12px;
+          cursor: pointer;
+          transition: all 0.15s;
+          white-space: nowrap;
+        }
+
+        .bitrate-toggle:hover {
+          background: var(--bg-hover);
+          color: var(--text-primary);
           font-size: 13px;
         }
 
