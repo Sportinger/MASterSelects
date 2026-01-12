@@ -1093,6 +1093,10 @@ export const useMediaStore = create<MediaState>()(
             if (syncedPlayhead !== null && syncedPlayhead >= 0) {
               timelineStore.setPlayheadPosition(syncedPlayhead);
             }
+
+            // Reset zoom to fully zoomed out and scroll to start
+            timelineStore.setZoom(0.1); // MIN_ZOOM
+            timelineStore.setScrollX(0);
           } else {
             // No composition selected - clear timeline
             timelineStore.clearTimeline();
