@@ -13,6 +13,7 @@ import {
   type ProjectFolder,
 } from './projectFileService';
 import { fileSystemService } from './fileSystemService';
+import { projectDB } from './projectDB';
 
 // ============================================
 // EXPORT FROM STORES TO PROJECT FILE
@@ -190,17 +191,39 @@ async function convertProjectMediaToStore(projectMedia: ProjectMediaFile[]): Pro
   const files: MediaFile[] = [];
 
   for (const pm of projectMedia) {
-    // Try to get file handle from storage
-    const handle = fileSystemService.getFileHandle(pm.id);
+    // Try to get file handle from in-memory storage first
+    let handle = fileSystemService.getFileHandle(pm.id);
     let file: File | undefined;
     let url = '';
     let thumbnailUrl: string | undefined;
 
+    // If not in memory, try to get from IndexedDB
+    if (!handle) {
+      try {
+        const storedHandle = await projectDB.getStoredHandle(`media_${pm.id}`);
+        if (storedHandle && storedHandle.kind === 'file') {
+          handle = storedHandle as FileSystemFileHandle;
+          // Cache in memory for future use
+          fileSystemService.storeFileHandle(pm.id, handle);
+          console.log('[ProjectSync] Retrieved handle from IndexedDB for:', pm.name);
+        }
+      } catch (e) {
+        console.warn('[ProjectSync] Failed to get handle from IndexedDB:', pm.name, e);
+      }
+    }
+
     if (handle) {
       try {
-        file = await handle.getFile();
-        url = URL.createObjectURL(file);
-        // TODO: Load thumbnail from project cache folder
+        // Check permission first
+        const permission = await handle.queryPermission({ mode: 'read' });
+        if (permission === 'granted') {
+          file = await handle.getFile();
+          url = URL.createObjectURL(file);
+          console.log('[ProjectSync] Restored file from handle:', pm.name);
+        } else {
+          // Permission needs to be requested - will be done by reloadFile
+          console.log('[ProjectSync] File needs permission:', pm.name);
+        }
       } catch (e) {
         console.warn(`[ProjectSync] Could not access file: ${pm.name}`, e);
       }
