@@ -422,8 +422,8 @@ export class FrameExporter {
 
         const avgFrameTime = this.frameTimes.reduce((a, b) => a + b, 0) / this.frameTimes.length;
         const remainingFrames = totalFrames - frame - 1;
-        // If audio is included, video is ~70% of total work
-        const videoWeight = includeAudio ? 0.7 : 1.0;
+        // If audio is included, video is ~95% of total work (audio encoding is fast)
+        const videoWeight = includeAudio ? 0.95 : 1.0;
         const videoPercent = ((frame + 1) / totalFrames) * 100 * videoWeight;
         const estimatedTimeRemaining = (remainingFrames * avgFrameTime) / 1000;
 
@@ -453,8 +453,8 @@ export class FrameExporter {
           (audioProgress) => {
             if (this.isCancelled) return;
 
-            // Audio is ~30% of total work (70-100%)
-            const audioPercent = 70 + (audioProgress.percent * 0.3);
+            // Audio is ~5% of total work (95-100%)
+            const audioPercent = 95 + (audioProgress.percent * 0.05);
 
             onProgress({
               phase: 'audio',
