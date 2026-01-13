@@ -334,6 +334,10 @@ export class FrameExporter {
   private isCancelled = false;
   private frameTimes: number[] = [];
 
+  // Sequential export tracking - maps clip ID to last exported source time
+  private clipExportState: Map<string, { lastSourceTime: number; isSequential: boolean }> = new Map();
+  private exportPrepared = false;
+
   constructor(settings: FullExportSettings) {
     this.settings = settings;
   }
@@ -368,6 +372,9 @@ export class FrameExporter {
     engine.setExporting(true);
 
     try {
+      // Prepare all clips for sequential export (avoids decoder reset on each frame)
+      await this.prepareClipsForExport(startTime);
+
       // Phase 1: Encode video frames
       for (let frame = 0; frame < totalFrames; frame++) {
         if (this.isCancelled) {
@@ -479,11 +486,13 @@ export class FrameExporter {
 
       const blob = await this.encoder.finish();
       console.log(`[FrameExporter] Export complete: ${(blob.size / 1024 / 1024).toFixed(2)}MB`);
+      this.cleanupExportMode();
       engine.setExporting(false);
       engine.setResolution(originalDimensions.width, originalDimensions.height);
       return blob;
     } catch (error) {
       console.error('[FrameExporter] Export error:', error);
+      this.cleanupExportMode();
       engine.setExporting(false);
       engine.setResolution(originalDimensions.width, originalDimensions.height);
       return null;
@@ -493,6 +502,115 @@ export class FrameExporter {
   cancel(): void {
     this.isCancelled = true;
     this.audioPipeline?.cancel();
+    this.cleanupExportMode();
+  }
+
+  /**
+   * Prepare all video clips for sequential export.
+   * This initializes WebCodecsPlayers in export mode so they can decode
+   * frames sequentially without resetting the decoder each time.
+   */
+  private async prepareClipsForExport(startTime: number): Promise<void> {
+    const clips = useTimelineStore.getState().clips;
+    const tracks = useTimelineStore.getState().tracks;
+
+    console.log('[FrameExporter] Preparing clips for sequential export...');
+
+    for (const clip of clips) {
+      const track = tracks.find(t => t.id === clip.trackId);
+      if (!track?.visible) continue;
+
+      // Handle nested compositions
+      if (clip.isComposition && clip.nestedClips) {
+        for (const nestedClip of clip.nestedClips) {
+          if (nestedClip.source?.webCodecsPlayer) {
+            // Calculate start time for nested clip
+            const clipLocalTime = Math.max(0, startTime - clip.startTime);
+            const nestedTime = clipLocalTime + (clip.inPoint || 0);
+            if (nestedTime >= nestedClip.startTime && nestedTime < nestedClip.startTime + nestedClip.duration) {
+              const nestedLocalTime = nestedTime - nestedClip.startTime;
+              const nestedClipTime = nestedClip.reversed
+                ? nestedClip.outPoint - nestedLocalTime
+                : nestedLocalTime + nestedClip.inPoint;
+
+              await nestedClip.source.webCodecsPlayer.prepareForSequentialExport(nestedClipTime);
+              this.clipExportState.set(nestedClip.id, {
+                lastSourceTime: nestedClipTime,
+                isSequential: !nestedClip.reversed,
+              });
+            }
+          }
+        }
+        continue;
+      }
+
+      // Handle regular video clips
+      if (clip.source?.type === 'video' && clip.source.webCodecsPlayer) {
+        // Calculate start time for this clip
+        const clipLocalTime = Math.max(0, startTime - clip.startTime);
+
+        // Check if clip uses speed keyframes or is reversed
+        let clipTime: number;
+        let isSequential = !clip.reversed;
+
+        try {
+          const sourceTime = useTimelineStore.getState().getSourceTimeForClip(clip.id, clipLocalTime);
+          const initialSpeed = useTimelineStore.getState().getInterpolatedSpeed(clip.id, 0);
+          const startPoint = initialSpeed >= 0 ? clip.inPoint : clip.outPoint;
+          clipTime = Math.max(clip.inPoint, Math.min(clip.outPoint, startPoint + sourceTime));
+
+          // Check if clip has non-standard speed (speed keyframes make it non-sequential)
+          const hasSpeedKeyframes = useTimelineStore.getState().hasKeyframes(clip.id, 'speed');
+          if (hasSpeedKeyframes || initialSpeed !== 1) {
+            isSequential = false;
+          }
+        } catch {
+          clipTime = clip.reversed
+            ? clip.outPoint - clipLocalTime
+            : clipLocalTime + clip.inPoint;
+          clipTime = Math.max(clip.inPoint, Math.min(clip.outPoint, clipTime));
+        }
+
+        await clip.source.webCodecsPlayer.prepareForSequentialExport(clipTime);
+        this.clipExportState.set(clip.id, {
+          lastSourceTime: clipTime,
+          isSequential,
+        });
+
+        console.log(`[FrameExporter] Prepared clip "${clip.name}" for export (sequential: ${isSequential})`);
+      }
+    }
+
+    this.exportPrepared = true;
+    console.log(`[FrameExporter] ${this.clipExportState.size} clips prepared for sequential export`);
+  }
+
+  /**
+   * Cleanup export mode for all clips
+   */
+  private cleanupExportMode(): void {
+    if (!this.exportPrepared) return;
+
+    const clips = useTimelineStore.getState().clips;
+
+    for (const clip of clips) {
+      if (clip.isComposition && clip.nestedClips) {
+        for (const nestedClip of clip.nestedClips) {
+          if (nestedClip.source?.webCodecsPlayer?.isExportMode()) {
+            nestedClip.source.webCodecsPlayer.endSequentialExport();
+          }
+        }
+        continue;
+      }
+
+      if (clip.source?.webCodecsPlayer?.isExportMode()) {
+        clip.source.webCodecsPlayer.endSequentialExport();
+      }
+    }
+
+    this.clipExportState.clear();
+    this.exportPrepared = false;
+    console.log('[FrameExporter] Export mode cleanup complete');
   }
 
   private async seekAllClipsToTime(time: number): Promise<void> {
@@ -530,9 +648,19 @@ export class FrameExporter {
                 ? nestedClip.outPoint - nestedLocalTime
                 : nestedLocalTime + nestedClip.inPoint;
 
-              // Prefer WebCodecs async seek for guaranteed frame accuracy
               if (nestedClip.source.webCodecsPlayer) {
-                seekPromises.push(nestedClip.source.webCodecsPlayer.seekAsync(nestedClipTime));
+                // Use sequential export if prepared
+                const exportState = this.clipExportState.get(nestedClip.id);
+                if (exportState && nestedClip.source.webCodecsPlayer.isExportMode()) {
+                  seekPromises.push(this.seekClipSequential(
+                    nestedClip.source.webCodecsPlayer,
+                    nestedClipTime,
+                    exportState,
+                    nestedClip.id
+                  ));
+                } else {
+                  seekPromises.push(nestedClip.source.webCodecsPlayer.seekAsync(nestedClipTime));
+                }
               } else {
                 seekPromises.push(this.seekVideo(nestedClip.source.videoElement, nestedClipTime));
               }
@@ -562,10 +690,21 @@ export class FrameExporter {
           clipTime = Math.max(clip.inPoint, Math.min(clip.outPoint, clipTime));
         }
 
-        // Prefer WebCodecs async seek for guaranteed frame accuracy
         if (clip.source.webCodecsPlayer) {
-          seekDescriptions.push(`WebCodecs:${clip.name}`);
-          seekPromises.push(clip.source.webCodecsPlayer.seekAsync(clipTime));
+          // Use sequential export if prepared
+          const exportState = this.clipExportState.get(clip.id);
+          if (exportState && clip.source.webCodecsPlayer.isExportMode()) {
+            seekDescriptions.push(`Sequential:${clip.name}`);
+            seekPromises.push(this.seekClipSequential(
+              clip.source.webCodecsPlayer,
+              clipTime,
+              exportState,
+              clip.id
+            ));
+          } else {
+            seekDescriptions.push(`WebCodecs:${clip.name}`);
+            seekPromises.push(clip.source.webCodecsPlayer.seekAsync(clipTime));
+          }
         } else {
           seekDescriptions.push(`HTMLVideo:${clip.name}`);
           seekPromises.push(this.seekVideo(clip.source.videoElement, clipTime));
@@ -578,6 +717,41 @@ export class FrameExporter {
       await Promise.all(seekPromises);
       console.log(`[FrameExporter] All seeks completed`);
     }
+  }
+
+  /**
+   * Seek a clip using sequential export optimization.
+   * If the clip can be decoded sequentially (next frame), use decodeNextFrameForExport().
+   * Otherwise, fall back to seekDuringExport() which still avoids full reset when possible.
+   */
+  private async seekClipSequential(
+    player: import('./WebCodecsPlayer').WebCodecsPlayer,
+    targetTime: number,
+    exportState: { lastSourceTime: number; isSequential: boolean },
+    clipId: string
+  ): Promise<void> {
+    // Calculate frame duration (assume ~30fps for tolerance calculation)
+    const frameDuration = 1 / 30;
+    const timeDelta = targetTime - exportState.lastSourceTime;
+
+    // Check if we can use sequential decode:
+    // - Clip must be marked as sequential (not reversed, no speed keyframes)
+    // - Time must be moving forward by approximately one frame
+    const isNextFrame = exportState.isSequential &&
+      timeDelta > 0 &&
+      timeDelta < frameDuration * 2; // Allow some tolerance
+
+    if (isNextFrame) {
+      // Sequential decode - just get the next frame
+      await player.decodeNextFrameForExport();
+    } else {
+      // Need to jump - use seekDuringExport which is still optimized
+      await player.seekDuringExport(targetTime);
+    }
+
+    // Update last source time
+    exportState.lastSourceTime = targetTime;
+    this.clipExportState.set(clipId, exportState);
   }
 
   private seekVideo(video: HTMLVideoElement, time: number): Promise<void> {

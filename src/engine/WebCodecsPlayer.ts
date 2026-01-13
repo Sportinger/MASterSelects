@@ -84,6 +84,9 @@ export class WebCodecsPlayer {
   private streamReader: ReadableStreamDefaultReader<VideoFrame> | null = null;
   private streamActive = false;
 
+  // Sequential export mode - avoids decoder reset on each frame
+  private isInExportMode = false;
+
   constructor(options: WebCodecsPlayerOptions = {}) {
     this.loop = options.loop ?? true;
     this.onFrame = options.onFrame;
@@ -818,6 +821,212 @@ export class WebCodecsPlayer {
     await this.decoder.flush();
 
     this.sampleIndex = targetIndex + 1;
+  }
+
+  /**
+   * Prepare for sequential export - seeks to start time and enters export mode.
+   * In export mode, subsequent calls to decodeNextFrameForExport() will decode
+   * frames sequentially without resetting the decoder (much faster).
+   */
+  async prepareForSequentialExport(startTimeSeconds: number): Promise<void> {
+    // Simple mode doesn't benefit from sequential decoding - browser handles it
+    if (this.useSimpleMode) {
+      this.isInExportMode = true;
+      return;
+    }
+
+    // Full mode: seek to start time and enter export mode
+    if (!this.videoTrack || this.samples.length === 0 || !this.decoder) {
+      return;
+    }
+
+    const targetTime = startTimeSeconds * this.videoTrack.timescale;
+
+    // Find the nearest keyframe before the target time
+    let keyframeIndex = 0;
+    let targetIndex = 0;
+    for (let i = 0; i < this.samples.length; i++) {
+      if (this.samples[i].cts > targetTime) break;
+      targetIndex = i;
+      if (this.samples[i].is_sync) {
+        keyframeIndex = i;
+      }
+    }
+
+    // Reset decoder once at the start
+    this.decoder.reset();
+    this.decoder.configure(this.codecConfig!);
+
+    // Decode from keyframe up to target frame
+    for (let i = keyframeIndex; i <= targetIndex; i++) {
+      const sample = this.samples[i];
+      const chunk = new EncodedVideoChunk({
+        type: sample.is_sync ? 'key' : 'delta',
+        timestamp: (sample.cts * 1_000_000) / sample.timescale,
+        duration: (sample.duration * 1_000_000) / sample.timescale,
+        data: sample.data,
+      });
+      try {
+        this.decoder.decode(chunk);
+      } catch {
+        // Skip decode errors
+      }
+    }
+
+    // Flush to ensure the start frame is ready
+    await this.decoder.flush();
+
+    this.sampleIndex = targetIndex + 1;
+    this.isInExportMode = true;
+
+    console.log(`[WebCodecs] Export mode: started at sample ${targetIndex}, decoded ${targetIndex - keyframeIndex + 1} frames from keyframe`);
+  }
+
+  /**
+   * Decode the next frame sequentially for export.
+   * Much faster than seekAsync because it doesn't reset the decoder.
+   * Must call prepareForSequentialExport() first.
+   */
+  async decodeNextFrameForExport(): Promise<void> {
+    // Simple mode: capture current frame (browser already decoded it)
+    if (this.useSimpleMode && this.videoElement) {
+      this.captureCurrentFrame();
+      return;
+    }
+
+    // Full mode: decode just the next sample
+    if (!this.decoder || this.samples.length === 0 || !this.isInExportMode) {
+      return;
+    }
+
+    // Check if we need to decode more frames
+    if (this.sampleIndex >= this.samples.length) {
+      console.warn('[WebCodecs] Export: reached end of samples');
+      return;
+    }
+
+    const sample = this.samples[this.sampleIndex];
+    this.sampleIndex++;
+
+    const chunk = new EncodedVideoChunk({
+      type: sample.is_sync ? 'key' : 'delta',
+      timestamp: (sample.cts * 1_000_000) / sample.timescale,
+      duration: (sample.duration * 1_000_000) / sample.timescale,
+      data: sample.data,
+    });
+
+    try {
+      this.decoder.decode(chunk);
+      // Flush to ensure the frame is available immediately
+      await this.decoder.flush();
+    } catch (e) {
+      console.warn('[WebCodecs] Export decode error:', e);
+    }
+  }
+
+  /**
+   * Seek to a specific time during export.
+   * Use this for non-sequential access (e.g., reversed clips, speed changes).
+   * Falls back to full seek but stays in export mode.
+   */
+  async seekDuringExport(timeSeconds: number): Promise<void> {
+    if (this.useSimpleMode && this.videoElement) {
+      // Simple mode: use normal seek
+      await this.seekAsync(timeSeconds);
+      return;
+    }
+
+    if (!this.videoTrack || this.samples.length === 0 || !this.decoder) {
+      return;
+    }
+
+    const targetTime = timeSeconds * this.videoTrack.timescale;
+
+    // Find target sample index
+    let targetIndex = 0;
+    for (let i = 0; i < this.samples.length; i++) {
+      if (this.samples[i].cts > targetTime) break;
+      targetIndex = i;
+    }
+
+    // Check if we can continue sequentially (target is current or next sample)
+    if (this.isInExportMode && targetIndex >= this.sampleIndex - 1 && targetIndex <= this.sampleIndex + 1) {
+      // Close enough - decode sequentially to target
+      while (this.sampleIndex <= targetIndex) {
+        await this.decodeNextFrameForExport();
+      }
+      return;
+    }
+
+    // Need to jump - find keyframe and decode from there
+    let keyframeIndex = 0;
+    for (let i = 0; i <= targetIndex; i++) {
+      if (this.samples[i].is_sync) {
+        keyframeIndex = i;
+      }
+    }
+
+    // Reset decoder for the jump
+    this.decoder.reset();
+    this.decoder.configure(this.codecConfig!);
+
+    // Decode from keyframe up to target frame
+    for (let i = keyframeIndex; i <= targetIndex; i++) {
+      const sample = this.samples[i];
+      const chunk = new EncodedVideoChunk({
+        type: sample.is_sync ? 'key' : 'delta',
+        timestamp: (sample.cts * 1_000_000) / sample.timescale,
+        duration: (sample.duration * 1_000_000) / sample.timescale,
+        data: sample.data,
+      });
+      try {
+        this.decoder.decode(chunk);
+      } catch {
+        // Skip decode errors
+      }
+    }
+
+    await this.decoder.flush();
+    this.sampleIndex = targetIndex + 1;
+  }
+
+  /**
+   * Get the sample index for a given time (for checking if sequential decode is possible)
+   */
+  getSampleIndexForTime(timeSeconds: number): number {
+    if (this.useSimpleMode || !this.videoTrack || this.samples.length === 0) {
+      return -1;
+    }
+
+    const targetTime = timeSeconds * this.videoTrack.timescale;
+    let targetIndex = 0;
+    for (let i = 0; i < this.samples.length; i++) {
+      if (this.samples[i].cts > targetTime) break;
+      targetIndex = i;
+    }
+    return targetIndex;
+  }
+
+  /**
+   * Get current sample index (for sequential export tracking)
+   */
+  getCurrentSampleIndex(): number {
+    return this.sampleIndex;
+  }
+
+  /**
+   * Check if currently in export mode
+   */
+  isExportMode(): boolean {
+    return this.isInExportMode;
+  }
+
+  /**
+   * End sequential export mode
+   */
+  endSequentialExport(): void {
+    this.isInExportMode = false;
+    console.log('[WebCodecs] Export mode: ended');
   }
 
   get duration(): number {
