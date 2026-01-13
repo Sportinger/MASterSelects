@@ -103,6 +103,7 @@ class NativeHelperClientImpl {
     return new Promise((resolve) => {
       try {
         this.ws = new WebSocket(`ws://127.0.0.1:${this.config.port}`);
+        this.ws.binaryType = 'arraybuffer'; // Ensure binary data comes as ArrayBuffer, not Blob
 
         this.ws.onopen = async () => {
           console.log('[NativeHelper] Connected to native helper');

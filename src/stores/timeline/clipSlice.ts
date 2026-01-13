@@ -196,6 +196,10 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
 
           console.log(`[Timeline] Native Helper ready: ${nativeDecoder.width}x${nativeDecoder.height} @ ${nativeDecoder.fps}fps, ${naturalDuration.toFixed(2)}s`);
 
+          // Decode initial frame so preview isn't black
+          await nativeDecoder.seekToFrame(0);
+          console.log(`[Timeline] Initial frame decoded for ${file.name}`);
+
           // Update clip with NativeDecoder
           updateClip(clipId, {
             duration: naturalDuration,

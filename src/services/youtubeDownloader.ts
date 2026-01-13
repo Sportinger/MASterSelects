@@ -95,7 +95,7 @@ export async function downloadYouTubeVideo(
     const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
     // Request download from Native Helper
-    console.log('[YouTubeDownloader] Requesting download via Native Helper...');
+    console.log('[YouTubeDownloader] Starting download:', videoId);
 
     const result = await NativeHelperClient.downloadYouTube(youtubeUrl, (percent) => {
       progress.progress = 5 + (percent * 0.9); // 5% to 95%
@@ -110,29 +110,15 @@ export async function downloadYouTubeVideo(
     progress.progress = 95;
     notifySubscribers(progress);
 
-    // Read the downloaded file
-    const response = await fetch(`file://${result.path}`);
-    if (!response.ok) {
-      // If file:// doesn't work, Native Helper should serve it
-      const fileResponse = await NativeHelperClient.getDownloadedFile(result.path);
-      if (!fileResponse) {
-        throw new Error('Failed to read downloaded file');
-      }
-
-      const sanitizedTitle = title.replace(/[^a-zA-Z0-9\s-]/g, '').substring(0, 100);
-      const file = new File([fileResponse], `${sanitizedTitle}.mp4`, { type: 'video/mp4' });
-
-      progress.status = 'complete';
-      progress.progress = 100;
-      progress.file = file;
-      notifySubscribers(progress);
-
-      return file;
+    // Read the downloaded file via Native Helper
+    console.log('[YouTubeDownloader] Fetching file from helper:', result.path);
+    const fileResponse = await NativeHelperClient.getDownloadedFile(result.path!);
+    if (!fileResponse) {
+      throw new Error('Failed to read downloaded file from helper');
     }
 
-    const blob = await response.blob();
     const sanitizedTitle = title.replace(/[^a-zA-Z0-9\s-]/g, '').substring(0, 100);
-    const file = new File([blob], `${sanitizedTitle}.mp4`, { type: 'video/mp4' });
+    const file = new File([fileResponse], `${sanitizedTitle}.mp4`, { type: 'video/mp4' });
 
     progress.status = 'complete';
     progress.progress = 100;
