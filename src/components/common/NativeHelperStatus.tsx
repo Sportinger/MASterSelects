@@ -64,26 +64,16 @@ export function NativeHelperStatus() {
     <>
       <button
         onClick={() => setShowDialog(true)}
-        className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-xs transition-colors ${
-          isConnected
-            ? 'hover:bg-green-500/20'
-            : 'hover:bg-white/10'
-        }`}
-        title={isConnected ? 'Native Helper connected - Turbo Mode active' : 'Click to enable Turbo Mode'}
-        style={{ background: 'transparent' }}
+        className="p-1 rounded hover:bg-white/10 transition-colors"
+        title={isConnected ? 'Turbo Mode active' : 'Turbo Mode'}
+        style={{ background: 'transparent', lineHeight: 1 }}
       >
         {isConnected ? (
-          <>
-            <span className="text-yellow-400 text-sm">⚡</span>
-            <span className="text-green-400 font-medium">Turbo</span>
-          </>
+          <span style={{ fontSize: '14px', color: '#facc15' }}>⚡</span>
         ) : (
-          <>
-            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="#52525b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-            </svg>
-            <span className="text-zinc-600">Turbo</span>
-          </>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#52525b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+          </svg>
         )}
       </button>
 
