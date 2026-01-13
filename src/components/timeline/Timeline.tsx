@@ -1053,6 +1053,16 @@ export function Timeline() {
         }
       }
 
+      // Try to get file path from URI list (Linux file managers include this)
+      const uriList = e.dataTransfer.getData('text/uri-list');
+      let filePath: string | undefined;
+      if (uriList) {
+        const uri = uriList.split('\n')[0]?.trim();
+        if (uri?.startsWith('file://')) {
+          filePath = decodeURIComponent(uri.replace('file://', ''));
+        }
+      }
+
       // Handle external file drop - try to get file handle for persistence
       const items = e.dataTransfer.items;
       if (items && items.length > 0) {
@@ -1066,6 +1076,7 @@ export function Timeline() {
               const handle = await (item as any).getAsFileSystemHandle();
               if (handle && handle.kind === 'file') {
                 const file = await handle.getFile();
+                if (filePath) (file as any).path = filePath;
                 if (file.type.startsWith('video/') || file.type.startsWith('audio/') || file.type.startsWith('image/') || file.name.endsWith('.mov') || file.name.endsWith('.mxf')) {
                   const imported = await mediaStore.importFilesWithHandles([{ file, handle }]);
                   if (imported.length > 0) {
@@ -1082,6 +1093,7 @@ export function Timeline() {
 
           // Fallback to regular file (no handle)
           const file = item.getAsFile();
+          if (file && filePath) (file as any).path = filePath;
           if (file && (file.type.startsWith('video/') || file.type.startsWith('audio/') || file.type.startsWith('image/') || file.name.endsWith('.mov') || file.name.endsWith('.mxf'))) {
             const importedFile = await mediaStore.importFile(file);
             addClip(newTrackId, file, startTime, cachedDuration, importedFile?.id);
@@ -1155,6 +1167,18 @@ export function Timeline() {
       // Handle external file drop - try to get file handle for persistence
       const items = e.dataTransfer.items;
       console.log('[Timeline] External drop - items:', items?.length);
+
+      // Try to get file path from URI list (Linux file managers include this)
+      const uriList = e.dataTransfer.getData('text/uri-list');
+      let filePath: string | undefined;
+      if (uriList) {
+        const uri = uriList.split('\n')[0]?.trim();
+        if (uri?.startsWith('file://')) {
+          filePath = decodeURIComponent(uri.replace('file://', ''));
+          console.log('[Timeline] Got file path from URI:', filePath);
+        }
+      }
+
       if (items && items.length > 0) {
         const item = items[0];
         console.log('[Timeline] Item kind:', item.kind, 'type:', item.type);
@@ -1171,7 +1195,11 @@ export function Timeline() {
               const handle = await (item as any).getAsFileSystemHandle();
               if (handle && handle.kind === 'file') {
                 const file = await handle.getFile();
-                console.log('[Timeline] File from handle:', file.name, 'type:', file.type, 'size:', file.size);
+                // Attach file path if we got it from URI list
+                if (filePath) {
+                  (file as any).path = filePath;
+                }
+                console.log('[Timeline] File from handle:', file.name, 'type:', file.type, 'size:', file.size, 'path:', filePath);
                 if (file.type.startsWith('video/') || file.type.startsWith('audio/') || file.type.startsWith('image/') || file.name.endsWith('.mov') || file.name.endsWith('.mxf')) {
                   // Validate track type
                   const fileIsAudio = isAudioFile(file);
@@ -1199,7 +1227,10 @@ export function Timeline() {
 
           // Fallback to regular file (no handle)
           const file = item.getAsFile();
-          console.log('[Timeline] Fallback file:', file?.name, 'type:', file?.type);
+          if (file && filePath) {
+            (file as any).path = filePath;
+          }
+          console.log('[Timeline] Fallback file:', file?.name, 'type:', file?.type, 'path:', filePath);
           if (file && (file.type.startsWith('video/') || file.type.startsWith('audio/') || file.type.startsWith('image/') || file.name.endsWith('.mov') || file.name.endsWith('.mxf'))) {
             const fileIsAudio = isAudioFile(file);
             if (fileIsAudio && isVideoTrack) {
