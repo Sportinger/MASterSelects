@@ -7339,6 +7339,38 @@ input[type="checkbox"] {
 }
 
 /* ===== What's New Dialog ===== */
+
+/* Backdrop without entrance animation for smooth close transition */
+.whats-new-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10002;
+  backdrop-filter: blur(10px);
+  opacity: 1;
+  transition: backdrop-filter 120ms ease-out, opacity 120ms ease-out;
+}
+
+.whats-new-backdrop.closing {
+  backdrop-filter: blur(0px);
+  opacity: 0;
+}
+
+.whats-new-backdrop .welcome-overlay {
+  transition: opacity 120ms ease-out, transform 120ms ease-out;
+}
+
+.whats-new-backdrop.closing .welcome-overlay {
+  opacity: 0;
+  transform: scale(0.96);
+}
+
 .whats-new-dialog {
   width: 420px;
   max-height: 80vh;

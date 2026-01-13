@@ -42,7 +42,7 @@ export function WhatsNewDialog({ onClose }: WhatsNewDialogProps) {
 
   return (
     <div
-      className={`welcome-overlay-backdrop ${isClosing ? 'closing' : ''}`}
+      className={`whats-new-backdrop ${isClosing ? 'closing' : ''}`}
       onClick={handleBackdropClick}
     >
       <div className="welcome-overlay whats-new-dialog">
