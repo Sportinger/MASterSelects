@@ -4,6 +4,8 @@
 import type { CodecInfo, FFmpegContainer, PlatformPreset } from './types';
 
 // All available video codecs with metadata
+// NOTE: This build uses ASYNCIFY (single-threaded) and includes only native FFmpeg encoders
+// External libs (libx264, libvpx, libsnappy) require pkg-config which doesn't work in Emscripten
 export const FFMPEG_CODECS: CodecInfo[] = [
   // === Professional Intermediate ===
   {
@@ -27,23 +29,13 @@ export const FFMPEG_CODECS: CodecInfo[] = [
     defaultPixelFormat: 'yuv422p',
   },
 
-  // === Real-time / VJ ===
-  {
-    id: 'hap',
-    name: 'HAP',
-    description: 'GPU-accelerated codec for VJ and media servers',
-    category: 'realtime',
-    containers: ['mov', 'avi'],
-    supportsAlpha: true,
-    supports10bit: false,
-    defaultPixelFormat: 'rgba',
-  },
+  // === Real-time / Intermediate ===
   {
     id: 'mjpeg',
     name: 'Motion JPEG',
-    description: 'Simple frame-by-frame JPEG compression',
+    description: 'Simple frame-by-frame compression, widely compatible',
     category: 'realtime',
-    containers: ['mov', 'avi'],
+    containers: ['mov', 'avi', 'mkv'],
     supportsAlpha: false,
     supports10bit: false,
     defaultPixelFormat: 'yuv422p',
@@ -65,52 +57,10 @@ export const FFMPEG_CODECS: CodecInfo[] = [
     name: 'Ut Video',
     description: 'Fast lossless codec with alpha support',
     category: 'lossless',
-    containers: ['avi', 'mkv'],
+    containers: ['avi', 'mkv', 'mov'],
     supportsAlpha: true,
     supports10bit: false,
     defaultPixelFormat: 'rgba',
-  },
-
-  // === Delivery ===
-  {
-    id: 'libx264',
-    name: 'H.264 (x264)',
-    description: 'Universal delivery codec, wide compatibility',
-    category: 'delivery',
-    containers: ['mp4', 'mkv', 'mov'],
-    supportsAlpha: false,
-    supports10bit: true,
-    defaultPixelFormat: 'yuv420p',
-  },
-  {
-    id: 'libx265',
-    name: 'H.265/HEVC (x265)',
-    description: 'High efficiency codec with HDR support',
-    category: 'delivery',
-    containers: ['mp4', 'mkv', 'mov'],
-    supportsAlpha: false,
-    supports10bit: true,
-    defaultPixelFormat: 'yuv420p',
-  },
-  {
-    id: 'libvpx_vp9',
-    name: 'VP9',
-    description: 'Open web codec with alpha support',
-    category: 'delivery',
-    containers: ['webm', 'mkv'],
-    supportsAlpha: true,
-    supports10bit: true,
-    defaultPixelFormat: 'yuv420p',
-  },
-  {
-    id: 'libsvtav1',
-    name: 'AV1 (SVT)',
-    description: 'Next-generation open codec',
-    category: 'delivery',
-    containers: ['mp4', 'mkv', 'webm'],
-    supportsAlpha: false,
-    supports10bit: true,
-    defaultPixelFormat: 'yuv420p',
   },
 ];
 
@@ -133,81 +83,27 @@ export const DNXHR_PROFILES = [
   { id: 'dnxhr_444', name: 'DNxHR 444', description: '10-bit 4:4:4 RGB' },
 ] as const;
 
-// HAP format variants
+// HAP format variants (NOT AVAILABLE in ASYNCIFY build - requires snappy)
+// Kept for type compatibility but should not be used
 export const HAP_FORMATS = [
-  { id: 'hap', name: 'HAP', description: 'Good quality, smallest size' },
-  { id: 'hap_alpha', name: 'HAP Alpha', description: 'With alpha channel' },
-  { id: 'hap_q', name: 'HAP Q', description: 'Higher quality, larger size' },
+  { id: 'hap', name: 'HAP', description: 'Not available' },
+  { id: 'hap_alpha', name: 'HAP Alpha', description: 'Not available' },
+  { id: 'hap_q', name: 'HAP Q', description: 'Not available' },
 ] as const;
 
 // Container format info
+// NOTE: webm removed - requires VP9/VP8 which needs libvpx (pkg-config issue)
 export const CONTAINER_FORMATS = [
-  { id: 'mov', name: 'QuickTime (.mov)', description: 'Apple/Professional' },
-  { id: 'mp4', name: 'MP4 (.mp4)', description: 'Universal delivery' },
-  { id: 'mkv', name: 'Matroska (.mkv)', description: 'Open format, all codecs' },
-  { id: 'webm', name: 'WebM (.webm)', description: 'Web optimized' },
-  { id: 'avi', name: 'AVI (.avi)', description: 'Legacy Windows' },
-  { id: 'mxf', name: 'MXF (.mxf)', description: 'Broadcast standard' },
+  { id: 'mov', name: 'QuickTime (.mov)', description: 'Apple/Professional - ProRes, DNxHR, MJPEG' },
+  { id: 'mkv', name: 'Matroska (.mkv)', description: 'Open format - FFV1, MJPEG, UTVideo' },
+  { id: 'avi', name: 'AVI (.avi)', description: 'Legacy - MJPEG, UTVideo, FFV1' },
+  { id: 'mxf', name: 'MXF (.mxf)', description: 'Broadcast - DNxHR' },
 ] as const;
 
 // Platform and workflow presets
+// NOTE: Social media presets use ProRes - user should use WebCodecs for H.264 delivery
+// FFmpeg ASYNCIFY build is optimized for professional intermediate codecs
 export const PLATFORM_PRESETS: Record<string, PlatformPreset> = {
-  // === Social Media ===
-  youtube: {
-    name: 'YouTube',
-    codec: 'libx264',
-    container: 'mp4',
-    pixelFormat: 'yuv420p',
-    quality: 18,
-    audioCodec: 'aac',
-    audioBitrate: 256000,
-  },
-  youtube_hdr: {
-    name: 'YouTube HDR',
-    codec: 'libx265',
-    container: 'mp4',
-    pixelFormat: 'yuv420p10le',
-    quality: 20,
-    audioCodec: 'aac',
-    audioBitrate: 256000,
-  },
-  vimeo: {
-    name: 'Vimeo',
-    codec: 'libx264',
-    container: 'mp4',
-    pixelFormat: 'yuv420p',
-    quality: 16,
-    audioCodec: 'aac',
-    audioBitrate: 320000,
-  },
-  instagram: {
-    name: 'Instagram',
-    codec: 'libx264',
-    container: 'mp4',
-    pixelFormat: 'yuv420p',
-    bitrate: 3500000,
-    audioCodec: 'aac',
-    audioBitrate: 128000,
-  },
-  tiktok: {
-    name: 'TikTok',
-    codec: 'libx264',
-    container: 'mp4',
-    pixelFormat: 'yuv420p',
-    bitrate: 2500000,
-    audioCodec: 'aac',
-    audioBitrate: 128000,
-  },
-  twitter: {
-    name: 'Twitter/X',
-    codec: 'libx264',
-    container: 'mp4',
-    pixelFormat: 'yuv420p',
-    bitrate: 5000000,
-    audioCodec: 'aac',
-    audioBitrate: 128000,
-  },
-
   // === Professional Workflows ===
   premiere: {
     name: 'Adobe Premiere',
@@ -238,21 +134,41 @@ export const PLATFORM_PRESETS: Record<string, PlatformPreset> = {
     audioCodec: 'pcm_s24le',
   },
 
-  // === Special Use Cases ===
-  vj: {
-    name: 'VJ / Media Server',
-    codec: 'hap',
+  // === Quality Levels ===
+  prores_proxy: {
+    name: 'ProRes Proxy',
+    codec: 'prores',
     container: 'mov',
-    hapFormat: 'hap_q',
-    audioCodec: 'none',
+    proresProfile: 'proxy',
+    audioCodec: 'aac',
+    audioBitrate: 128000,
   },
-  vj_alpha: {
-    name: 'VJ with Alpha',
-    codec: 'hap',
+  prores_lt: {
+    name: 'ProRes LT',
+    codec: 'prores',
     container: 'mov',
-    hapFormat: 'hap_alpha',
-    audioCodec: 'none',
+    proresProfile: 'lt',
+    audioCodec: 'aac',
+    audioBitrate: 192000,
   },
+  prores_hq: {
+    name: 'ProRes HQ',
+    codec: 'prores',
+    container: 'mov',
+    proresProfile: 'hq',
+    audioCodec: 'aac',
+    audioBitrate: 256000,
+  },
+  prores_4444: {
+    name: 'ProRes 4444 (Alpha)',
+    codec: 'prores',
+    container: 'mov',
+    proresProfile: '4444',
+    audioCodec: 'aac',
+    audioBitrate: 256000,
+  },
+
+  // === Lossless / Archive ===
   archive: {
     name: 'Archive (Lossless)',
     codec: 'ffv1',
@@ -260,13 +176,21 @@ export const PLATFORM_PRESETS: Record<string, PlatformPreset> = {
     pixelFormat: 'yuv444p10le',
     audioCodec: 'flac',
   },
-  web_transparent: {
-    name: 'Web with Alpha',
-    codec: 'libvpx_vp9',
-    container: 'webm',
-    pixelFormat: 'yuva420p',
-    quality: 20,
-    audioCodec: 'libopus',
+  utvideo_alpha: {
+    name: 'UTVideo (Alpha)',
+    codec: 'utvideo',
+    container: 'mov',
+    pixelFormat: 'rgba',
+    audioCodec: 'pcm_s16le',
+  },
+
+  // === Quick Preview ===
+  mjpeg_preview: {
+    name: 'MJPEG Preview',
+    codec: 'mjpeg',
+    container: 'mov',
+    quality: 5,
+    audioCodec: 'aac',
     audioBitrate: 128000,
   },
 };

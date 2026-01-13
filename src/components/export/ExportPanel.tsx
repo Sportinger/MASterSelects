@@ -12,7 +12,6 @@ import {
   FFmpegBridge,
   PRORES_PROFILES,
   DNXHR_PROFILES,
-  HAP_FORMATS,
   CONTAINER_FORMATS,
   PLATFORM_PRESETS,
   getCodecInfo,
@@ -36,18 +35,12 @@ async function seekAllClipsToTime(time: number): Promise<void> {
   const { clips, tracks, getSourceTimeForClip, getInterpolatedSpeed } = useTimelineStore.getState();
   const seekPromises: Promise<void>[] = [];
 
-  // Add timeout wrapper to prevent hanging - critical for WebCodecs seekAsync
-  const withTimeout = (promise: Promise<void>, ms: number): Promise<void> => {
-    return Promise.race([
-      promise,
-      new Promise<void>(resolve => setTimeout(resolve, ms))
-    ]);
-  };
-
   // Get clips at this time
   const clipsAtTime = clips.filter(
     c => time >= c.startTime && time < c.startTime + c.duration
   );
+
+  console.log(`[seekAllClipsToTime] time=${time.toFixed(3)}, total clips=${clips.length}, clips at time=${clipsAtTime.length}`);
 
   for (const clip of clipsAtTime) {
     const track = tracks.find(t => t.id === clip.trackId);
@@ -66,12 +59,8 @@ async function seekAllClipsToTime(time: number): Promise<void> {
               ? nestedClip.outPoint - nestedLocalTime
               : nestedLocalTime + nestedClip.inPoint;
 
-            if (nestedClip.source.webCodecsPlayer) {
-              // Use timeout to prevent WebCodecs seekAsync from hanging
-              seekPromises.push(withTimeout(nestedClip.source.webCodecsPlayer.seekAsync(nestedClipTime), 500));
-            } else {
-              seekPromises.push(seekVideo(nestedClip.source.videoElement, nestedClipTime));
-            }
+            // Always seek the HTMLVideoElement since that's what we use for texture rendering
+            seekPromises.push(seekVideo(nestedClip.source.videoElement, nestedClipTime));
           }
         }
       }
@@ -95,16 +84,14 @@ async function seekAllClipsToTime(time: number): Promise<void> {
         clipTime = Math.max(clip.inPoint, Math.min(clip.outPoint, clipTime));
       }
 
-      if (clip.source.webCodecsPlayer) {
-        // Use timeout to prevent WebCodecs seekAsync from hanging
-        seekPromises.push(withTimeout(clip.source.webCodecsPlayer.seekAsync(clipTime), 500));
-      } else {
-        seekPromises.push(seekVideo(clip.source.videoElement, clipTime));
-      }
+      // Always seek the HTMLVideoElement since that's what we use for texture rendering
+      seekPromises.push(seekVideo(clip.source.videoElement, clipTime));
     }
   }
 
+  console.log(`[seekAllClipsToTime] Waiting for ${seekPromises.length} seek promises...`);
   await Promise.all(seekPromises);
+  console.log(`[seekAllClipsToTime] All seeks complete`);
 }
 
 // Helper: Seek HTMLVideoElement to exact time
@@ -154,11 +141,12 @@ function buildLayersAtTime(time: number): Layer[] {
     c => time >= c.startTime && time < c.startTime + c.duration
   );
 
-  // Sort by track order (bottom to top)
+  // Sort by track order - lower index tracks should be first in array (render on top)
+  // WebGPU renders layers[0] on top, layers[end] on bottom
   const sortedTracks = [...videoTracks].sort((a, b) => {
     const aIndex = tracks.indexOf(a);
     const bIndex = tracks.indexOf(b);
-    return bIndex - aIndex; // Higher index = lower track = rendered first
+    return aIndex - bIndex; // Lower index (top track) first = renders on top
   });
 
   for (const track of sortedTracks) {
@@ -197,27 +185,33 @@ function buildLayerFromClip(
 
   // Handle video/image clips
   if (clip.source?.videoElement || clip.source?.imageElement) {
-    const source = clip.source.videoElement || clip.source.imageElement;
-    if (!source) return null;
+    // For export, we need to use HTMLVideoElement (not WebCodecsPlayer)
+    // because we control seeking via video.currentTime
+    // WebCodecsPlayer has its own playback and doesn't follow currentTime
+    const exportSource = {
+      ...clip.source,
+      webCodecsPlayer: undefined,  // Force HTMLVideoElement path during export
+    };
 
     return {
       id: clip.id,
-      source,
-      sourceType: clip.source.videoElement ? 'video' : 'image',
+      name: clip.name || clip.id,
+      source: exportSource,
       visible: true,
       opacity: transform.opacity ?? 1,
       blendMode: transform.blendMode ?? 'normal',
-      transform: {
+      // Compositor expects position/scale/rotation in this format
+      position: {
         x: transform.x ?? 0,
         y: transform.y ?? 0,
-        scaleX: transform.scaleX ?? 1,
-        scaleY: transform.scaleY ?? 1,
-        rotation: transform.rotation ?? 0,
-        anchorX: transform.anchorX ?? 0.5,
-        anchorY: transform.anchorY ?? 0.5,
+        z: 0,
       },
+      scale: {
+        x: transform.scaleX ?? 1,
+        y: transform.scaleY ?? 1,
+      },
+      rotation: transform.rotation ?? 0,
       effects: effects || [],
-      crop: clip.crop,
     };
   }
 
@@ -253,14 +247,13 @@ export function ExportPanel() {
   });
   const [rateControl, setRateControl] = useState<'vbr' | 'cbr'>('vbr');
 
-  // FFmpeg settings
-  const [ffmpegCodec, setFfmpegCodec] = useState<FFmpegVideoCodec>('libx264');
-  const [ffmpegContainer, setFfmpegContainer] = useState<FFmpegContainer>('mp4');
+  // FFmpeg settings (default to ProRes which is most universally useful)
+  const [ffmpegCodec, setFfmpegCodec] = useState<FFmpegVideoCodec>('prores');
+  const [ffmpegContainer, setFfmpegContainer] = useState<FFmpegContainer>('mov');
   const [ffmpegPreset, setFfmpegPreset] = useState<string>('');
   const [proresProfile, setProresProfile] = useState<ProResProfile>('hq');
   const [dnxhrProfile, setDnxhrProfile] = useState<DnxhrProfile>('dnxhr_hq');
-  const [hapFormat, setHapFormat] = useState<HapFormat>('hap_q');
-  const [hapChunks, setHapChunks] = useState(4);
+  const [hapFormat, setHapFormat] = useState<HapFormat>('hap_q'); // Kept for type compat, HAP not available
   const [ffmpegQuality, setFfmpegQuality] = useState(18);
   const [ffmpegBitrate, setFfmpegBitrate] = useState(20_000_000);
   const [ffmpegRateControl, setFfmpegRateControl] = useState<'crf' | 'cbr' | 'vbr'>('crf');
@@ -280,7 +273,7 @@ export function ExportPanel() {
   const [isExporting, setIsExporting] = useState(false);
   const [progress, setProgress] = useState<ExportProgress | null>(null);
   const [ffmpegProgress, setFfmpegProgress] = useState<FFmpegProgress | null>(null);
-  const [exportPhase, setExportPhase] = useState<'idle' | 'rendering' | 'encoding'>('idle');
+  const [exportPhase, setExportPhase] = useState<'idle' | 'rendering' | 'audio' | 'encoding'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [exporter, setExporter] = useState<FrameExporter | null>(null);
 
@@ -412,18 +405,20 @@ export function ExportPanel() {
   }, []);
 
   // Handle FFmpeg container change
+  // NOTE: ASYNCIFY build only supports mov, mkv, avi, mxf
   const handleFFmpegContainerChange = useCallback((newContainer: FFmpegContainer) => {
     setFfmpegContainer(newContainer);
     setFfmpegPreset('');
 
     const codecInfo = getCodecInfo(ffmpegCodec);
     if (codecInfo && !codecInfo.containers.includes(newContainer)) {
-      if (newContainer === 'webm') {
-        setFfmpegCodec('libvpx_vp9');
-      } else if (newContainer === 'mxf') {
+      // Select appropriate codec for container
+      if (newContainer === 'mxf') {
         setFfmpegCodec('dnxhd');
-      } else {
-        setFfmpegCodec('libx264');
+      } else if (newContainer === 'mov') {
+        setFfmpegCodec('prores');
+      } else if (newContainer === 'mkv' || newContainer === 'avi') {
+        setFfmpegCodec('mjpeg');
       }
     }
   }, [ffmpegCodec]);
@@ -547,12 +542,11 @@ export function ExportPanel() {
         fps: exportFps,
         startTime,
         endTime,
-        quality: ffmpegRateControl === 'crf' ? ffmpegQuality : undefined,
-        bitrate: ffmpegRateControl !== 'crf' ? ffmpegBitrate : undefined,
+        quality: ffmpegCodec === 'mjpeg' ? ffmpegQuality : undefined,
+        bitrate: undefined, // Bitrate not used for available codecs
         proresProfile: ffmpegCodec === 'prores' ? proresProfile : undefined,
         dnxhrProfile: ffmpegCodec === 'dnxhd' ? dnxhrProfile : undefined,
-        hapFormat: ffmpegCodec === 'hap' ? hapFormat : undefined,
-        hapChunks: ffmpegCodec === 'hap' ? hapChunks : undefined,
+        // HAP not available in ASYNCIFY build
       };
 
       // Render frames
@@ -572,19 +566,22 @@ export function ExportPanel() {
       for (let i = 0; i < totalFrames; i++) {
         const time = startTime + i * frameDuration;
 
+        if (i === 0) console.log('[ExportPanel] Frame 0: Starting seek...');
+
         // Seek all video clips to the exact frame time
         await seekAllClipsToTime(time);
 
-        // Small delay to ensure video frame is decoded (browser needs time after seek)
-        await new Promise(resolve => setTimeout(resolve, 10));
+        if (i === 0) console.log('[ExportPanel] Frame 0: Seek complete, waiting for decode...');
 
-        // Wait for frame to be rendered - use two rAFs to ensure texture update
-        await new Promise(resolve => requestAnimationFrame(() => {
-          requestAnimationFrame(resolve);
-        }));
+        // Small delay to ensure video frame is decoded (browser needs time after seek)
+        await new Promise(resolve => setTimeout(resolve, 16));
+
+        if (i === 0) console.log('[ExportPanel] Frame 0: Building layers...');
 
         // Build layers at this time and render
         const layers = buildLayersAtTime(time);
+
+        if (i === 0) console.log(`[ExportPanel] Frame 0: Got ${layers.length} layers`);
 
         if (layers.length === 0) {
           console.warn(`[ExportPanel] No layers at time ${time.toFixed(3)}`);
@@ -592,21 +589,34 @@ export function ExportPanel() {
 
         engine.render(layers);
 
+        if (i === 0) console.log('[ExportPanel] Frame 0: Render complete, reading pixels...');
+
         // Read pixels
         const pixels = await engine.readPixels();
+
+        if (i === 0) console.log(`[ExportPanel] Frame 0: Got pixels: ${pixels ? pixels.length : 'null'}`);
         if (pixels) {
-          frames.push(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
+          // Make a COPY of pixels (not a view) to ensure each frame is unique
+          const frameCopy = new Uint8Array(pixels.length);
+          frameCopy.set(pixels);
+          frames.push(frameCopy);
+
+          // Debug: check first few pixels to see if content changes
+          if (i < 3 || i % 30 === 0) {
+            const sample = [pixels[0], pixels[1], pixels[2], pixels[3], pixels[1000], pixels[2000]];
+            console.log(`[ExportPanel] Frame ${i} sample pixels: [${sample.join(', ')}]`);
+          }
         }
 
         // Log progress every 30 frames or on first frame
         if (i === 0 || i % 30 === 0) {
           const elapsed = (performance.now() - frameStartTime) / 1000;
-          const fps = (i + 1) / elapsed;
-          console.log(`[ExportPanel] Frame ${i + 1}/${totalFrames} at ${time.toFixed(3)}s, ${fps.toFixed(1)} fps, ${layers.length} layers`);
+          const renderFps = (i + 1) / elapsed;
+          console.log(`[ExportPanel] Frame ${i + 1}/${totalFrames} at ${time.toFixed(3)}s, ${renderFps.toFixed(1)} fps, ${layers.length} layers`);
         }
 
-        // Update progress during rendering (0-60% of total)
-        const percent = ((i + 1) / totalFrames) * 60;
+        // Update progress during rendering (0-30% - frame capture is fast, encoding is slow)
+        const percent = ((i + 1) / totalFrames) * 30;
         setFfmpegProgress({
           percent,
           frame: i + 1,
@@ -646,8 +656,8 @@ export function ExportPanel() {
             startTime,
             endTime,
             (audioProgress) => {
-              // Audio extraction is 60-70% of total progress
-              const percent = 60 + (audioProgress.percent * 0.1);
+              // Audio extraction: 30-40%
+              const percent = 30 + (audioProgress.percent * 0.1);
               setFfmpegProgress({
                 percent,
                 frame: frames.length,
@@ -662,33 +672,49 @@ export function ExportPanel() {
             }
           );
 
-          if (audioBuffer) {
-            console.log(`[ExportPanel] Audio extracted: ${audioBuffer.duration.toFixed(2)}s, ${audioBuffer.numberOfChannels}ch`);
+          if (audioBuffer && audioBuffer.length > 0) {
+            console.log(`[ExportPanel] Audio extracted: ${audioBuffer.duration.toFixed(2)}s, ${audioBuffer.numberOfChannels}ch, ${audioBuffer.length} samples`);
           } else {
-            console.log('[ExportPanel] No audio clips found in timeline');
+            console.warn('[ExportPanel] Audio extraction returned empty or null buffer');
           }
         } catch (audioError) {
           console.warn('[ExportPanel] Audio extraction failed, continuing without audio:', audioError);
         }
       }
 
-      // Encode with FFmpeg
+      // Encode with FFmpeg - this is the slow part (40-100%)
       setExportPhase('encoding');
       console.log(`[ExportPanel] Encoding ${frames.length} frames with FFmpeg...`);
 
+      // Show 40% while encoding starts
+      setFfmpegProgress({
+        percent: 40,
+        frame: frames.length,
+        fps: 0,
+        time: endTime,
+        speed: 0,
+        bitrate: 0,
+        size: 0,
+        eta: 0,
+      });
+      setExportProgress(40, endTime);
+
+      // Allow React to render "Encoding..." before FFmpeg blocks the main thread
+      await new Promise(resolve => setTimeout(resolve, 50));
+
       const ffmpeg = getFFmpegBridge();
-      // Encoding is 70-100% (or 60-100% if no audio)
-      const encodeStart = includeAudio ? 70 : 60;
-      const encodeRange = includeAudio ? 30 : 40;
 
       const blob = await ffmpeg.encode(frames, settings, (p: FFmpegProgress) => {
-        const totalPercent = encodeStart + (p.percent / 100) * encodeRange;
+        // Encoding is 40-100% (60% of the progress bar - this is the slow part)
+        const totalPercent = 40 + (p.percent / 100) * 60;
         setFfmpegProgress({
           ...p,
           percent: totalPercent,
         });
-        // Update timeline export progress
         setExportProgress(totalPercent, endTime);
+
+        // Force UI update during encoding (callMain blocks main thread)
+        // Note: This may not work due to WASM blocking, but worth trying
       }, audioBuffer);
 
       // Download the file
@@ -717,7 +743,7 @@ export function ExportPanel() {
   }, [
     isExporting, isFFmpegReady, loadFFmpeg, useCustomResolution, customWidth, customHeight,
     width, height, fps, customFps, useCustomFps, startTime, endTime, ffmpegCodec, ffmpegContainer,
-    ffmpegRateControl, ffmpegQuality, ffmpegBitrate, proresProfile, dnxhrProfile, hapFormat, hapChunks, filename,
+    ffmpegQuality, proresProfile, dnxhrProfile, filename,
     includeAudio, audioSampleRate, audioBitrate, normalizeAudio,
     startExport, setExportProgress, endExport,
   ]);
@@ -900,7 +926,8 @@ export function ExportPanel() {
 
   // Get codec info for FFmpeg display
   const ffmpegCodecInfo = getCodecInfo(ffmpegCodec);
-  const showFFmpegQualityControl = ['libx264', 'libx265', 'libvpx_vp9', 'libsvtav1'].includes(ffmpegCodec);
+  // Only MJPEG has quality slider (q:v), professional codecs use profiles
+  const showFFmpegQualityControl = ffmpegCodec === 'mjpeg';
 
   // If neither encoder is supported, show error
   if (!webCodecsAvailable && !ffmpegAvailable) {
@@ -1042,25 +1069,24 @@ export function ExportPanel() {
                 <label>Preset</label>
                 <select value={ffmpegPreset} onChange={(e) => applyFFmpegPreset(e.target.value)}>
                   <option value="">Custom</option>
-                  <optgroup label="Social Media">
-                    <option value="youtube">YouTube</option>
-                    <option value="youtube_hdr">YouTube HDR</option>
-                    <option value="vimeo">Vimeo</option>
-                    <option value="instagram">Instagram</option>
-                    <option value="tiktok">TikTok</option>
-                    <option value="twitter">Twitter/X</option>
-                  </optgroup>
-                  <optgroup label="Professional">
+                  <optgroup label="Professional NLEs">
                     <option value="premiere">Adobe Premiere</option>
                     <option value="finalcut">Final Cut Pro</option>
                     <option value="davinci">DaVinci Resolve</option>
                     <option value="avid">Avid Media Composer</option>
                   </optgroup>
-                  <optgroup label="Special">
-                    <option value="vj">VJ / Media Server</option>
-                    <option value="vj_alpha">VJ with Alpha</option>
-                    <option value="archive">Archive (Lossless)</option>
-                    <option value="web_transparent">Web with Alpha</option>
+                  <optgroup label="ProRes Quality">
+                    <option value="prores_proxy">ProRes Proxy</option>
+                    <option value="prores_lt">ProRes LT</option>
+                    <option value="prores_hq">ProRes HQ</option>
+                    <option value="prores_4444">ProRes 4444 (Alpha)</option>
+                  </optgroup>
+                  <optgroup label="Lossless / Archive">
+                    <option value="archive">Archive (FFV1)</option>
+                    <option value="utvideo_alpha">UTVideo (Alpha)</option>
+                  </optgroup>
+                  <optgroup label="Quick Export">
+                    <option value="mjpeg_preview">MJPEG Preview</option>
                   </optgroup>
                 </select>
               </div>
@@ -1132,40 +1158,7 @@ export function ExportPanel() {
               </div>
             )}
 
-            {/* FFmpeg HAP Settings */}
-            {encoder === 'ffmpeg' && ffmpegCodec === 'hap' && (
-              <>
-                <div className="control-row">
-                  <label>Format</label>
-                  <select
-                    value={hapFormat}
-                    onChange={(e) => setHapFormat(e.target.value as HapFormat)}
-                  >
-                    {HAP_FORMATS.map((f) => (
-                      <option key={f.id} value={f.id}>
-                        {f.name} - {f.description}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="control-row">
-                  <label>Chunks</label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <input
-                      type="number"
-                      value={hapChunks}
-                      onChange={(e) => setHapChunks(Math.max(1, Math.min(64, parseInt(e.target.value) || 4)))}
-                      min={1}
-                      max={64}
-                      style={{ width: '80px' }}
-                    />
-                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                      (parallel decode)
-                    </span>
-                  </div>
-                </div>
-              </>
-            )}
+            {/* HAP codec removed - requires snappy which doesn't build with ASYNCIFY */}
 
             {/* Resolution */}
             <div className="control-row">
@@ -1325,79 +1318,23 @@ export function ExportPanel() {
                 </div>
               </>
             ) : showFFmpegQualityControl && (
-              <>
-                {/* Rate Control Mode */}
-                <div className="control-row">
-                  <label>Rate Control</label>
-                  <select
-                    value={ffmpegRateControl}
-                    onChange={(e) => setFfmpegRateControl(e.target.value as 'crf' | 'cbr' | 'vbr')}
-                  >
-                    <option value="crf">CRF (Quality-based)</option>
-                    <option value="vbr">VBR (Variable Bitrate)</option>
-                    <option value="cbr">CBR (Constant Bitrate)</option>
-                  </select>
+              /* MJPEG Quality Control - lower values = higher quality */
+              <div className="control-row">
+                <label>Quality</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+                  <input
+                    type="range"
+                    min={1}
+                    max={31}
+                    value={ffmpegQuality}
+                    onChange={(e) => setFfmpegQuality(parseInt(e.target.value))}
+                    style={{ flex: 1 }}
+                  />
+                  <span style={{ minWidth: '60px', textAlign: 'right', fontSize: '12px' }}>
+                    {ffmpegQuality} {ffmpegQuality <= 5 ? '(High)' : ffmpegQuality <= 10 ? '(Good)' : ffmpegQuality <= 20 ? '(Med)' : '(Low)'}
+                  </span>
                 </div>
-
-                {/* CRF Quality Slider */}
-                {ffmpegRateControl === 'crf' && (
-                  <div className="control-row">
-                    <label>CRF</label>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
-                      <input
-                        type="range"
-                        min={0}
-                        max={51}
-                        value={ffmpegQuality}
-                        onChange={(e) => setFfmpegQuality(parseInt(e.target.value))}
-                        style={{ flex: 1 }}
-                      />
-                      <span style={{ minWidth: '50px', textAlign: 'right', fontSize: '12px' }}>
-                        {ffmpegQuality} {ffmpegQuality <= 18 ? '(High)' : ffmpegQuality <= 23 ? '(Good)' : ffmpegQuality <= 28 ? '(Med)' : '(Low)'}
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                {/* VBR/CBR Bitrate */}
-                {(ffmpegRateControl === 'vbr' || ffmpegRateControl === 'cbr') && (
-                  <>
-                    <div className="control-row">
-                      <label>{ffmpegRateControl === 'cbr' ? 'Bitrate' : 'Target Bitrate'}</label>
-                      <select
-                        value={ffmpegBitrate}
-                        onChange={(e) => setFfmpegBitrate(Number(e.target.value))}
-                      >
-                        <option value={5_000_000}>5 Mbps (Low)</option>
-                        <option value={10_000_000}>10 Mbps (Medium)</option>
-                        <option value={15_000_000}>15 Mbps (High)</option>
-                        <option value={20_000_000}>20 Mbps</option>
-                        <option value={25_000_000}>25 Mbps (Very High)</option>
-                        <option value={35_000_000}>35 Mbps</option>
-                        <option value={50_000_000}>50 Mbps</option>
-                        <option value={80_000_000}>80 Mbps (Max)</option>
-                      </select>
-                    </div>
-                    <div className="control-row">
-                      <label></label>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
-                        <input
-                          type="range"
-                          min={1_000_000}
-                          max={100_000_000}
-                          step={500_000}
-                          value={ffmpegBitrate}
-                          onChange={(e) => setFfmpegBitrate(parseInt(e.target.value))}
-                          style={{ flex: 1 }}
-                        />
-                        <span style={{ minWidth: '60px', textAlign: 'right', fontSize: '12px' }}>
-                          {(ffmpegBitrate / 1_000_000).toFixed(1)} Mbps
-                        </span>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </>
+              </div>
             )}
           </div>
 
@@ -1452,9 +1389,9 @@ export function ExportPanel() {
                   <div className="control-row">
                     <label>Audio Codec</label>
                     <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                      {ffmpegContainer === 'mov' || ffmpegContainer === 'mp4' ? 'AAC' :
-                       ffmpegContainer === 'webm' ? 'Opus' :
-                       ffmpegContainer === 'avi' ? 'MP3' :
+                      {ffmpegContainer === 'mov' ? 'AAC' :
+                       ffmpegContainer === 'mkv' ? 'FLAC' :
+                       ffmpegContainer === 'avi' ? 'PCM' :
                        ffmpegContainer === 'mxf' ? 'PCM' : 'AAC'} (auto)
                     </span>
                   </div>
@@ -1514,7 +1451,8 @@ export function ExportPanel() {
             ) : (
               <>
                 {exportPhase === 'rendering' && 'Rendering frames...'}
-                {exportPhase === 'encoding' && 'Encoding video...'}
+                {exportPhase === 'audio' && 'Processing audio...'}
+                {exportPhase === 'encoding' && 'Encoding video (please wait)...'}
               </>
             )}
           </div>

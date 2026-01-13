@@ -338,6 +338,89 @@ class NativeHelperClientImpl {
     }
   }
 
+  /**
+   * Download a YouTube video using yt-dlp
+   */
+  async downloadYouTube(
+    url: string,
+    onProgress?: (percent: number) => void
+  ): Promise<{ success: boolean; path?: string; error?: string }> {
+    const id = this.nextId();
+
+    return new Promise((resolve, reject) => {
+      // Set timeout (5 minutes for large videos)
+      const timeout = setTimeout(() => {
+        this.pendingRequests.delete(id);
+        reject(new Error('Download timeout'));
+      }, 300000);
+
+      // Register callback
+      this.pendingRequests.set(id, (response: any) => {
+        clearTimeout(timeout);
+        if (response.ok) {
+          resolve({
+            success: true,
+            path: response.path,
+          });
+        } else {
+          resolve({
+            success: false,
+            error: response.error?.message || 'Download failed',
+          });
+        }
+      });
+
+      // Send download command
+      const cmd = {
+        cmd: 'download_youtube',
+        id,
+        url,
+      };
+
+      this.sendRaw(JSON.stringify(cmd)).catch((err) => {
+        clearTimeout(timeout);
+        this.pendingRequests.delete(id);
+        reject(err);
+      });
+    });
+  }
+
+  /**
+   * Get a downloaded file from the Native Helper
+   */
+  async getDownloadedFile(path: string): Promise<ArrayBuffer | null> {
+    const id = this.nextId();
+
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        this.pendingRequests.delete(id);
+        resolve(null);
+      }, 30000);
+
+      // For file requests, we expect binary data back
+      this.pendingRequests.set(id, (response: any) => {
+        clearTimeout(timeout);
+        if (response.ok && response.data) {
+          resolve(response.data);
+        } else {
+          resolve(null);
+        }
+      });
+
+      const cmd = {
+        cmd: 'get_file',
+        id,
+        path,
+      };
+
+      this.sendRaw(JSON.stringify(cmd)).catch(() => {
+        clearTimeout(timeout);
+        this.pendingRequests.delete(id);
+        resolve(null);
+      });
+    });
+  }
+
   // Private methods
 
   private nextId(): string {

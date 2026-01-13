@@ -1,18 +1,7 @@
-// YouTube video downloader service
-// Uses multiple backends to find a working download source
+// YouTube video downloader service using Native Helper + yt-dlp
+// Downloads videos locally without third-party web services
 
-// Cobalt API instances (some community instances may have CORS enabled)
-const COBALT_INSTANCES = [
-  'https://api.cobalt.tools',
-  'https://co.eepy.today',
-  'https://cobalt.api.timelessnesses.me',
-];
-
-// Alternative: use saveservall API (has CORS support)
-const SAVESERVALL_API = 'https://api.saveservall.xyz/download';
-
-// For download URLs that need CORS proxy
-const DOWNLOAD_PROXY = 'https://corsproxy.io/?';
+import { NativeHelperClient } from './nativeHelper';
 
 export interface DownloadProgress {
   videoId: string;
@@ -60,7 +49,12 @@ export function getDownloadStatus(videoId: string): DownloadProgress | undefined
   return activeDownloads.get(videoId);
 }
 
-// Download video from YouTube using Cobalt API
+// Check if Native Helper is available for downloads
+export function isDownloadAvailable(): boolean {
+  return NativeHelperClient.isConnected();
+}
+
+// Download video from YouTube using Native Helper + yt-dlp
 export async function downloadYouTubeVideo(
   videoId: string,
   title: string,
@@ -89,171 +83,54 @@ export async function downloadYouTubeVideo(
   notifySubscribers(progress);
 
   try {
-    // Request video URL from download APIs
+    // Check Native Helper connection
+    if (!NativeHelperClient.isConnected()) {
+      throw new Error('Native Helper not connected. Please start the helper application.');
+    }
+
     progress.status = 'downloading';
-    progress.progress = 10;
+    progress.progress = 5;
     notifySubscribers(progress);
 
     const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
-    let downloadUrl: string | null = null;
-    let lastError: Error | null = null;
 
-    // Method 1: Try Cobalt instances
-    for (const instance of COBALT_INSTANCES) {
-      try {
-        console.log(`[YouTubeDownloader] Trying Cobalt: ${instance}...`);
-        const response = await fetch(instance, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-          },
-          body: JSON.stringify({
-            url: youtubeUrl,
-            videoQuality: '720',
-            filenameStyle: 'basic',
-          }),
-        });
+    // Request download from Native Helper
+    console.log('[YouTubeDownloader] Requesting download via Native Helper...');
 
-        if (response.ok) {
-          const data = await response.json();
-          if (data.url) {
-            downloadUrl = data.url;
-            console.log(`[YouTubeDownloader] Cobalt success: ${instance}`);
-            break;
-          } else if (data.status === 'picker' && data.picker?.[0]?.url) {
-            downloadUrl = data.picker[0].url;
-            console.log(`[YouTubeDownloader] Cobalt picker success: ${instance}`);
-            break;
-          } else if (data.status === 'error') {
-            lastError = new Error(data.text || 'Cobalt error');
-          }
-        }
-      } catch (e) {
-        console.log(`[YouTubeDownloader] Cobalt failed: ${instance}`, (e as Error).message);
-        lastError = e as Error;
-      }
+    const result = await NativeHelperClient.downloadYouTube(youtubeUrl, (percent) => {
+      progress.progress = 5 + (percent * 0.9); // 5% to 95%
+      notifySubscribers(progress);
+    });
+
+    if (!result.success) {
+      throw new Error(result.error || 'Download failed');
     }
-
-    // Method 2: Try SaveServAll API (has CORS)
-    if (!downloadUrl) {
-      try {
-        console.log('[YouTubeDownloader] Trying SaveServAll API...');
-        const response = await fetch(SAVESERVALL_API, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            url: youtubeUrl,
-            quality: '720p',
-          }),
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          if (data.url || data.download_url) {
-            downloadUrl = data.url || data.download_url;
-            console.log('[YouTubeDownloader] SaveServAll success');
-          }
-        }
-      } catch (e) {
-        console.log('[YouTubeDownloader] SaveServAll failed:', (e as Error).message);
-        lastError = e as Error;
-      }
-    }
-
-    // Method 3: Try y2mate-style API via CORS proxy
-    if (!downloadUrl) {
-      try {
-        console.log('[YouTubeDownloader] Trying fallback API...');
-        // Use a simple video info API that might work
-        const infoUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(youtubeUrl)}&format=json`;
-        const infoResponse = await fetch(infoUrl);
-        if (infoResponse.ok) {
-          // oEmbed works but doesn't give download URL
-          // At this point we need to inform user to use external tool
-          throw new Error('Browser download blocked. Use yt-dlp or cobalt.tools directly.');
-        }
-      } catch (e) {
-        if ((e as Error).message.includes('Browser download')) {
-          throw e;
-        }
-        lastError = e as Error;
-      }
-    }
-
-    if (!downloadUrl) {
-      throw new Error(
-        lastError?.message ||
-        'Download service unavailable. Try using cobalt.tools or yt-dlp directly.'
-      );
-    }
-
-    progress.progress = 30;
-    notifySubscribers(progress);
-
-    // Download the video file (try direct, then with CORS proxy)
-    let videoResponse: Response | null = null;
-
-    try {
-      console.log('[YouTubeDownloader] Downloading from:', downloadUrl.substring(0, 50) + '...');
-      videoResponse = await fetch(downloadUrl);
-      if (!videoResponse.ok) {
-        videoResponse = null;
-      }
-    } catch {
-      console.log('[YouTubeDownloader] Direct download failed, trying CORS proxy...');
-    }
-
-    // Try CORS proxy for download if direct failed
-    if (!videoResponse) {
-      const proxyDownloadUrl = DOWNLOAD_PROXY + encodeURIComponent(downloadUrl);
-      videoResponse = await fetch(proxyDownloadUrl);
-    }
-
-    if (!videoResponse || !videoResponse.ok) {
-      throw new Error(`Failed to download video: ${videoResponse?.status || 'no response'}`);
-    }
-
-    // Get content length for progress tracking
-    const contentLength = videoResponse.headers.get('content-length');
-    const totalBytes = contentLength ? parseInt(contentLength) : 0;
 
     progress.status = 'processing';
-    progress.progress = 40;
+    progress.progress = 95;
     notifySubscribers(progress);
 
-    // Read the response as a stream if supported, otherwise as blob
-    let blob: Blob;
-
-    if (videoResponse.body && totalBytes > 0) {
-      const reader = videoResponse.body.getReader();
-      const chunks: Uint8Array[] = [];
-      let receivedBytes = 0;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        chunks.push(value);
-        receivedBytes += value.length;
-
-        // Update progress (40% to 90% during download)
-        const downloadProgress = (receivedBytes / totalBytes) * 50;
-        progress.progress = Math.min(90, 40 + downloadProgress);
-        notifySubscribers(progress);
+    // Read the downloaded file
+    const response = await fetch(`file://${result.path}`);
+    if (!response.ok) {
+      // If file:// doesn't work, Native Helper should serve it
+      const fileResponse = await NativeHelperClient.getDownloadedFile(result.path);
+      if (!fileResponse) {
+        throw new Error('Failed to read downloaded file');
       }
 
-      blob = new Blob(chunks as BlobPart[], { type: 'video/mp4' });
-    } else {
-      // Fallback: load entire blob at once
-      blob = await videoResponse.blob();
-      progress.progress = 90;
+      const sanitizedTitle = title.replace(/[^a-zA-Z0-9\s-]/g, '').substring(0, 100);
+      const file = new File([fileResponse], `${sanitizedTitle}.mp4`, { type: 'video/mp4' });
+
+      progress.status = 'complete';
+      progress.progress = 100;
+      progress.file = file;
       notifySubscribers(progress);
+
+      return file;
     }
 
-    // Create File object
+    const blob = await response.blob();
     const sanitizedTitle = title.replace(/[^a-zA-Z0-9\s-]/g, '').substring(0, 100);
     const file = new File([blob], `${sanitizedTitle}.mp4`, { type: 'video/mp4' });
 
@@ -271,13 +148,14 @@ export async function downloadYouTubeVideo(
   }
 }
 
-// Cancel a download (not really possible with fetch, but marks it as cancelled)
+// Cancel a download
 export function cancelDownload(videoId: string) {
   const progress = activeDownloads.get(videoId);
   if (progress && progress.status === 'downloading') {
     progress.status = 'error';
     progress.error = 'Download cancelled';
     notifySubscribers(progress);
+    // TODO: Tell Native Helper to cancel
   }
 }
 

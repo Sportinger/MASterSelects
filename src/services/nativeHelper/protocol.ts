@@ -102,6 +102,19 @@ export interface PingCommand {
   id: string;
 }
 
+export interface DownloadYouTubeCommand {
+  cmd: 'download_youtube';
+  id: string;
+  url: string;
+  output_dir?: string;
+}
+
+export interface GetFileCommand {
+  cmd: 'get_file';
+  id: string;
+  path: string;
+}
+
 export type Command =
   | AuthCommand
   | OpenCommand
@@ -114,7 +127,9 @@ export type Command =
   | CancelEncodeCommand
   | CloseCommand
   | InfoCommand
-  | PingCommand;
+  | PingCommand
+  | DownloadYouTubeCommand
+  | GetFileCommand;
 
 // Encode settings
 export interface EncodeOutput {

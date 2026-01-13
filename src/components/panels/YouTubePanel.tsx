@@ -1,10 +1,11 @@
 // YouTube Search Panel
 // Supports YouTube Data API (with key) and direct URL paste (no key)
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useTimelineStore } from '../../stores/timeline';
-import { downloadYouTubeVideo, subscribeToDownload, type DownloadProgress } from '../../services/youtubeDownloader';
+import { downloadYouTubeVideo, subscribeToDownload, isDownloadAvailable, type DownloadProgress } from '../../services/youtubeDownloader';
+import { NativeHelperClient } from '../../services/nativeHelper';
 import './YouTubePanel.css';
 
 interface YouTubeVideo {
@@ -61,9 +62,18 @@ export function YouTubePanel() {
   const [draggingVideo, setDraggingVideo] = useState<string | null>(null);
   const [autoDownload, setAutoDownload] = useState(false);
   const [downloadingVideos, setDownloadingVideos] = useState<Set<string>>(new Set());
+  const [helperConnected, setHelperConnected] = useState(isDownloadAvailable());
 
   const { apiKeys, openSettings } = useSettingsStore();
   const youtubeApiKey = apiKeys.youtube || '';
+
+  // Track Native Helper connection status
+  useEffect(() => {
+    const unsubscribe = NativeHelperClient.onStatusChange((status) => {
+      setHelperConnected(status === 'connected');
+    });
+    return unsubscribe;
+  }, []);
 
   // Timeline store actions
   const addPendingDownloadClip = useTimelineStore(s => s.addPendingDownloadClip);
@@ -343,17 +353,28 @@ export function YouTubePanel() {
               </button>
             </>
           )}
-          <label className="auto-download-toggle">
+          {helperConnected ? (
+            <span className="api-status api-active">yt-dlp Ready</span>
+          ) : (
+            <span className="api-status api-warning">No Helper</span>
+          )}
+          <label className="auto-download-toggle" title={helperConnected ? "Auto-download when URL pasted" : "Native Helper required"}>
             <input
               type="checkbox"
               checked={autoDownload}
               onChange={(e) => setAutoDownload(e.target.checked)}
+              disabled={!helperConnected}
             />
             <span>Auto Download</span>
           </label>
         </div>
 
-        {!youtubeApiKey && (
+        {!helperConnected && (
+          <div className="youtube-hint youtube-hint-warning">
+            Native Helper required for downloads. Start helper or use yt-dlp manually.
+          </div>
+        )}
+        {!youtubeApiKey && helperConnected && (
           <div className="youtube-hint">
             Paste YouTube URLs to add videos. Add API key for search.
           </div>
@@ -395,10 +416,10 @@ export function YouTubePanel() {
                   {/* Action buttons */}
                   <div className="video-actions">
                     <button
-                      className="btn-download"
+                      className={`btn-download ${!helperConnected ? 'disabled' : ''}`}
                       onClick={(e) => { e.stopPropagation(); downloadVideoOnly(video); }}
-                      title="Download video"
-                      disabled={downloadingVideos.has(video.id)}
+                      title={helperConnected ? "Download video" : "Native Helper required for download"}
+                      disabled={downloadingVideos.has(video.id) || !helperConnected}
                     >
                       {downloadingVideos.has(video.id) ? '...' : '↓'}
                     </button>
