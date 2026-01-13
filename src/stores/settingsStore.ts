@@ -15,6 +15,7 @@ interface APIKeys {
   assemblyai: string;
   deepgram: string;
   piapi: string;  // PiAPI key for AI video generation (Kling, Luma, etc.)
+  youtube: string; // YouTube Data API v3 key (optional, Invidious works without)
   // Legacy Kling keys (deprecated, use piapi instead)
   klingAccessKey: string;
   klingSecretKey: string;
@@ -38,6 +39,11 @@ interface SettingsState {
   autosaveEnabled: boolean;
   autosaveInterval: AutosaveInterval;  // in minutes
 
+  // Native Helper (Turbo Mode)
+  turboModeEnabled: boolean;  // Use native helper for decoding when available
+  nativeHelperPort: number;   // WebSocket port (default 9876)
+  nativeHelperConnected: boolean;  // Current connection status
+
   // First-run state
   hasCompletedSetup: boolean;
 
@@ -51,6 +57,9 @@ interface SettingsState {
   setShowTransparencyGrid: (show: boolean) => void;
   setAutosaveEnabled: (enabled: boolean) => void;
   setAutosaveInterval: (interval: AutosaveInterval) => void;
+  setTurboModeEnabled: (enabled: boolean) => void;
+  setNativeHelperPort: (port: number) => void;
+  setNativeHelperConnected: (connected: boolean) => void;
   setHasCompletedSetup: (completed: boolean) => void;
   openSettings: () => void;
   closeSettings: () => void;
@@ -70,6 +79,7 @@ export const useSettingsStore = create<SettingsState>()(
         assemblyai: '',
         deepgram: '',
         piapi: '',
+        youtube: '',
         klingAccessKey: '',
         klingSecretKey: '',
       },
@@ -78,6 +88,9 @@ export const useSettingsStore = create<SettingsState>()(
       showTransparencyGrid: false, // Don't show checkerboard by default
       autosaveEnabled: false, // Autosave disabled by default
       autosaveInterval: 5, // 5 minutes default interval
+      turboModeEnabled: true, // Try to use native helper by default
+      nativeHelperPort: 9876, // Default WebSocket port
+      nativeHelperConnected: false, // Not connected initially
       hasCompletedSetup: false, // Show welcome overlay on first run
       isSettingsOpen: false,
 
@@ -109,6 +122,18 @@ export const useSettingsStore = create<SettingsState>()(
 
       setAutosaveInterval: (interval) => {
         set({ autosaveInterval: interval });
+      },
+
+      setTurboModeEnabled: (enabled) => {
+        set({ turboModeEnabled: enabled });
+      },
+
+      setNativeHelperPort: (port) => {
+        set({ nativeHelperPort: port });
+      },
+
+      setNativeHelperConnected: (connected) => {
+        set({ nativeHelperConnected: connected });
       },
 
       setHasCompletedSetup: (completed) => {

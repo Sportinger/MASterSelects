@@ -79,6 +79,7 @@ const DEFAULT_LAYOUT: DockLayout = {
               { id: 'clip-properties', type: 'clip-properties', title: 'Properties' },
               { id: 'ai-chat', type: 'ai-chat', title: 'AI Chat' },
               { id: 'ai-video', type: 'ai-video', title: 'AI Video' },
+              { id: 'youtube', type: 'youtube', title: 'YouTube' },
             ],
             activeIndex: 0, // Media active
           },

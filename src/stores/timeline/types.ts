@@ -65,6 +65,12 @@ export interface TimelineState {
   isRamPreviewing: boolean;
   cachedFrameTimes: Set<number>;
 
+  // Export progress state
+  isExporting: boolean;
+  exportProgress: number | null;  // 0-100 percentage
+  exportCurrentTime: number | null;  // Current time being rendered
+  exportRange: { start: number; end: number } | null;
+
   // Performance toggles
   thumbnailsEnabled: boolean;
   waveformsEnabled: boolean;
@@ -128,6 +134,11 @@ export interface ClipActions {
   // Text clip actions
   addTextClip: (trackId: string, startTime: number, duration?: number) => Promise<string | null>;
   updateTextProperties: (clipId: string, props: Partial<TextClipProperties>) => void;
+  // YouTube pending download clips
+  addPendingDownloadClip: (trackId: string, startTime: number, videoId: string, title: string, thumbnail: string, estimatedDuration?: number) => string;
+  updateDownloadProgress: (clipId: string, progress: number) => void;
+  completeDownload: (clipId: string, file: File) => Promise<void>;
+  setDownloadError: (clipId: string, error: string) => void;
 }
 
 // Playback actions interface
@@ -162,6 +173,13 @@ export interface RamPreviewActions {
   // Performance toggles
   toggleThumbnailsEnabled: () => void;
   toggleWaveformsEnabled: () => void;
+}
+
+// Export progress actions interface
+export interface ExportActions {
+  setExportProgress: (progress: number | null, currentTime: number | null) => void;
+  startExport: (start: number, end: number) => void;
+  endExport: () => void;
 }
 
 // Selection actions interface
@@ -250,6 +268,7 @@ export interface TimelineStore extends
   ClipActions,
   PlaybackActions,
   RamPreviewActions,
+  ExportActions,
   SelectionActions,
   KeyframeActions,
   MaskActions,

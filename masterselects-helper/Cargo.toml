@@ -1,0 +1,52 @@
+[package]
+name = "masterselects-helper"
+version = "0.1.0"
+edition = "2021"
+authors = ["MasterSelects Team"]
+description = "Video codec helper for MasterSelects web application"
+license = "MIT"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# WebSocket
+tokio-tungstenite = "0.24"
+futures-util = "0.3"
+
+# FFmpeg bindings - disable filters since libavfilter isn't available
+ffmpeg-next = { version = "7", default-features = false, features = ["codec", "format", "software-scaling"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Utilities
+anyhow = "1"
+thiserror = "1"
+lz4_flex = "0.11"
+linked-hash-map = "0.5"
+dirs = "5"
+rand = "0.8"
+uuid = { version = "1", features = ["v4"] }
+parking_lot = "0.12"
+base64 = "0.22"
+
+# HTTP for headers parsing
+http = "1"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+
+[profile.release.package."*"]
+opt-level = 3

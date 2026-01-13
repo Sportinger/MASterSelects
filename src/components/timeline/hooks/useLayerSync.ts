@@ -79,6 +79,10 @@ export function useLayerSync({
   const lastSeekRef = useRef<{ [clipId: string]: number }>({});
   const pendingSeekRef = useRef<{ [clipId: string]: number }>({});
 
+  // Native decoder throttling
+  const nativeDecoderLastFrameRef = useRef<{ [clipId: string]: number }>({});
+  const nativeDecoderPendingRef = useRef<{ [clipId: string]: boolean }>({});
+
   // Track which clips are currently active (to detect clip changes)
   const activeClipIdsRef = useRef<string>('');
 
@@ -388,6 +392,82 @@ export function useLayerSync({
             newLayers[layerIndex] = undefined as unknown as (typeof newLayers)[0];
             layersChanged = true;
           }
+        }
+      } else if (clip?.source?.nativeDecoder) {
+        // Native Helper decoder for ProRes/DNxHD (turbo mode)
+        const nativeDecoder = clip.source.nativeDecoder;
+        const clipLocalTime = playheadPosition - clip.startTime;
+        const keyframeLocalTime = clipLocalTime;
+
+        // Calculate source time using speed integration (handles keyframes)
+        const sourceTime = getSourceTimeForClip(clip.id, clipLocalTime);
+        const initialSpeed = getInterpolatedSpeed(clip.id, 0);
+        const startPoint = initialSpeed >= 0 ? clip.inPoint : clip.outPoint;
+        const clipTime = Math.max(clip.inPoint, Math.min(clip.outPoint, startPoint + sourceTime));
+
+        // Calculate target frame and throttle seeks
+        const fps = nativeDecoder.fps || 25;
+        const targetFrame = Math.round(clipTime * fps);
+        const lastFrame = nativeDecoderLastFrameRef.current[clip.id] ?? -1;
+        const isPending = nativeDecoderPendingRef.current[clip.id] || false;
+
+        // Only seek if frame changed and no pending seek
+        if (targetFrame !== lastFrame && !isPending) {
+          nativeDecoderLastFrameRef.current[clip.id] = targetFrame;
+          nativeDecoderPendingRef.current[clip.id] = true;
+
+          // Use fast scrub (scaled down) during playhead drag for smoother scrubbing
+          nativeDecoder.seekToFrame(targetFrame, isDraggingPlayhead)
+            .then(() => {
+              nativeDecoderPendingRef.current[clip.id] = false;
+            })
+            .catch((err) => {
+              nativeDecoderPendingRef.current[clip.id] = false;
+              console.warn('[NativeDecoder] Seek failed:', err);
+            });
+        }
+
+        const transform = getInterpolatedTransform(clip.id, keyframeLocalTime);
+        const nativeInterpolatedEffects = getInterpolatedEffects(clip.id, keyframeLocalTime);
+        const trackVisible = isVideoTrackVisible(track);
+
+        const needsUpdate =
+          !layer ||
+          layer.visible !== trackVisible ||
+          layer.source?.nativeDecoder !== nativeDecoder ||
+          layer.opacity !== transform.opacity ||
+          layer.blendMode !== transform.blendMode ||
+          layer.position.x !== transform.position.x ||
+          layer.position.y !== transform.position.y ||
+          layer.position.z !== transform.position.z ||
+          layer.scale.x !== transform.scale.x ||
+          layer.scale.y !== transform.scale.y ||
+          (layer.rotation as { z?: number })?.z !== (transform.rotation.z * Math.PI) / 180 ||
+          (layer.rotation as { x?: number })?.x !== (transform.rotation.x * Math.PI) / 180 ||
+          (layer.rotation as { y?: number })?.y !== (transform.rotation.y * Math.PI) / 180 ||
+          effectsChanged(layer.effects, nativeInterpolatedEffects);
+
+        if (needsUpdate) {
+          newLayers[layerIndex] = {
+            id: `timeline_layer_${layerIndex}`,
+            name: clip.name,
+            visible: trackVisible,
+            opacity: transform.opacity,
+            blendMode: transform.blendMode,
+            source: {
+              type: 'video',
+              nativeDecoder: nativeDecoder,
+            },
+            effects: nativeInterpolatedEffects,
+            position: { x: transform.position.x, y: transform.position.y, z: transform.position.z },
+            scale: { x: transform.scale.x, y: transform.scale.y },
+            rotation: {
+              x: (transform.rotation.x * Math.PI) / 180,
+              y: (transform.rotation.y * Math.PI) / 180,
+              z: (transform.rotation.z * Math.PI) / 180,
+            },
+          };
+          layersChanged = true;
         }
       } else if (clip?.source?.videoElement) {
         const clipLocalTime = playheadPosition - clip.startTime;

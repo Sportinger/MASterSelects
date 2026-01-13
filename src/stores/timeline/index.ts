@@ -1050,6 +1050,12 @@ export const useTimelineStore = create<TimelineStore>()(
       isRamPreviewing: false,
       cachedFrameTimes: new Set<number>(),
 
+      // Export progress state
+      isExporting: false,
+      exportProgress: null as number | null,
+      exportCurrentTime: null as number | null,
+      exportRange: null as { start: number; end: number } | null,
+
       // Performance toggles (enabled by default)
       thumbnailsEnabled: true,
       waveformsEnabled: true,
@@ -1069,11 +1075,25 @@ export const useTimelineStore = create<TimelineStore>()(
       maskDrawStart: null as { x: number; y: number } | null,
     };
 
+    // Export actions (inline since they're simple)
+    const exportActions = {
+      setExportProgress: (progress: number | null, currentTime: number | null) => {
+        set({ exportProgress: progress, exportCurrentTime: currentTime });
+      },
+      startExport: (start: number, end: number) => {
+        set({ isExporting: true, exportProgress: 0, exportCurrentTime: start, exportRange: { start, end } });
+      },
+      endExport: () => {
+        set({ isExporting: false, exportProgress: null, exportCurrentTime: null, exportRange: null });
+      },
+    };
+
     return {
       ...initialState,
       ...trackActions,
       ...clipActions,
       ...playbackActions,
+      ...exportActions,
       ...selectionActions,
       ...keyframeActions,
       ...maskActions,

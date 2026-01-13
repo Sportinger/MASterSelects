@@ -2887,6 +2887,10 @@ input[type="checkbox"] {
   overflow-y: visible;
 }
 
+.track-lanes-scroll {
+  position: relative;
+}
+
 .time-ruler {
   height: 30px;
   background: var(--bg-tertiary);
@@ -3060,6 +3064,101 @@ input[type="checkbox"] {
   animation: clip-spinner 0.8s linear infinite;
   margin-right: 6px;
   flex-shrink: 0;
+}
+
+/* Pending download state for YouTube clips */
+.timeline-clip.pending-download {
+  background: linear-gradient(180deg, rgba(255, 0, 0, 0.2), rgba(180, 0, 0, 0.15)) !important;
+  border: 2px dashed #ff0000 !important;
+  box-shadow: none !important;
+}
+
+.timeline-clip.pending-download .clip-thumbnails,
+.timeline-clip.pending-download .clip-waveform {
+  display: none;
+}
+
+.timeline-clip.pending-download .clip-content {
+  background: transparent !important;
+}
+
+.timeline-clip.pending-download .clip-name {
+  opacity: 0.9;
+}
+
+/* YouTube thumbnail preview in pending clip */
+.clip-youtube-preview {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  opacity: 0.5;
+  z-index: 1;
+}
+
+/* Download progress bar at bottom */
+.clip-download-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 15;
+}
+
+.clip-download-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #ff0000, #ff4444);
+  transition: width 0.2s ease-out;
+  box-shadow: 0 0 4px rgba(255, 0, 0, 0.6);
+}
+
+/* Download status text */
+.clip-download-status {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.clip-download-status .download-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #ff0000;
+  border-radius: 50%;
+  animation: clip-spinner 0.8s linear infinite;
+}
+
+/* Download error state */
+.timeline-clip.download-error {
+  background: rgba(239, 68, 68, 0.2) !important;
+  border: 2px dashed #ef4444 !important;
+}
+
+.clip-download-error-badge {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 10px;
+  font-weight: bold;
+  padding: 1px 5px;
+  border-radius: 2px;
+  z-index: 20;
+  cursor: help;
 }
 
 /* Proxy progress bar in timeline clips */
@@ -4189,6 +4288,30 @@ input[type="checkbox"] {
   opacity: 0.6;
   pointer-events: none;
   z-index: 89;
+}
+
+/* Timeline export progress overlay */
+.timeline-export-overlay {
+  position: absolute;
+  top: 0;
+  height: 500px;
+  background: rgba(250, 204, 21, 0.4);
+  border-right: 3px solid rgba(250, 204, 21, 1);
+  pointer-events: none;
+  z-index: 200;
+}
+
+/* Timeline export percentage */
+.timeline-export-text {
+  position: absolute;
+  top: 50px;
+  font-size: 24px;
+  font-weight: bold;
+  color: rgba(250, 204, 21, 0.9);
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  z-index: 201;
+  white-space: nowrap;
 }
 
 /* Audio Waveform */
@@ -6466,12 +6589,25 @@ input[type="checkbox"] {
 
 .welcome-overlay-backdrop.closing {
   backdrop-filter: blur(0px);
+  transition: backdrop-filter 120ms ease-out;
 }
 
 .welcome-overlay-backdrop.closing .welcome-overlay {
   opacity: 0;
   transform: scale(0.96);
-  transition: opacity 0.2s ease-in, transform 0.2s ease-in;
+  transition: opacity 120ms ease-out, transform 120ms ease-out;
+}
+
+/* No fade when another dialog will show immediately after */
+.welcome-overlay-backdrop.closing.no-fade {
+  backdrop-filter: blur(10px);
+  transition: none;
+}
+
+.welcome-overlay-backdrop.closing.no-fade .welcome-overlay {
+  opacity: 0;
+  transform: scale(0.96);
+  transition: opacity 80ms ease-out, transform 80ms ease-out;
 }
 
 .welcome-overlay {
@@ -7200,4 +7336,167 @@ input[type="checkbox"] {
     opacity: 0;
     transform: translate(-50%, -50%) scale(0.95);
   }
+}
+
+/* ===== What's New Dialog ===== */
+
+/* Backdrop without entrance animation for smooth close transition */
+.whats-new-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10002;
+  backdrop-filter: blur(10px);
+  opacity: 1;
+  transition: backdrop-filter 120ms ease-out, opacity 120ms ease-out;
+}
+
+.whats-new-backdrop.closing {
+  backdrop-filter: blur(0px);
+  opacity: 0;
+}
+
+.whats-new-backdrop .welcome-overlay {
+  transition: opacity 120ms ease-out, transform 120ms ease-out;
+}
+
+.whats-new-backdrop.closing .welcome-overlay {
+  opacity: 0;
+  transform: scale(0.96);
+}
+
+.whats-new-dialog {
+  width: 420px;
+  max-height: 80vh;
+  padding: 28px 32px 24px;
+  text-align: left;
+  overflow-y: auto;
+}
+
+.whats-new-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.whats-new-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.5px;
+}
+
+.whats-new-version {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-timeline);
+  background: rgba(0, 212, 255, 0.1);
+  padding: 4px 10px;
+  border-radius: 12px;
+}
+
+.whats-new-date {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 20px;
+}
+
+.whats-new-section {
+  margin-bottom: 20px;
+}
+
+.whats-new-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+  margin: 0 0 12px;
+}
+
+.whats-new-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.whats-new-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.whats-new-tag {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-top: 1px;
+}
+
+.whats-new-tag-new {
+  background: rgba(81, 207, 102, 0.15);
+  color: #51cf66;
+}
+
+.whats-new-tag-fix {
+  background: rgba(77, 171, 247, 0.15);
+  color: #4dabf7;
+}
+
+.whats-new-tag-improve {
+  background: rgba(255, 170, 0, 0.15);
+  color: #ffaa00;
+}
+
+/* Known Issues Section */
+.whats-new-issues {
+  background: rgba(255, 68, 68, 0.05);
+  border: 1px solid rgba(255, 68, 68, 0.15);
+  border-radius: 12px;
+  padding: 16px;
+  margin-top: 8px;
+}
+
+.whats-new-issues .whats-new-section-title {
+  color: #ff6b6b;
+}
+
+.whats-new-issue-item {
+  color: var(--text-secondary);
+}
+
+.whats-new-issue-icon {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 68, 68, 0.2);
+  color: #ff6b6b;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 50%;
+}
+
+.whats-new-dialog .welcome-enter {
+  margin-top: 8px;
+  align-self: stretch;
 }

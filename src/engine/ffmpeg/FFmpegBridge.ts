@@ -82,14 +82,38 @@ export class FFmpegBridge {
       const baseURL = `${window.location.origin}/ffmpeg`;
 
       console.log('[FFmpegBridge] Fetching ffmpeg-core.js...');
-      const coreModule = await import(/* @vite-ignore */ `${baseURL}/ffmpeg-core.js`);
+
+      // Load via script tag since it's a UMD module, not ES module
+      await new Promise<void>((resolve, reject) => {
+        // Check if already loaded
+        if ((window as unknown as Record<string, unknown>).createFFmpegCore) {
+          resolve();
+          return;
+        }
+
+        const script = document.createElement('script');
+        script.src = `${baseURL}/ffmpeg-core.js`;
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error('Failed to load ffmpeg-core.js'));
+        document.head.appendChild(script);
+      });
+
+      // Get the global createFFmpegCore function
+      const createFFmpegCore = (window as unknown as Record<string, unknown>).createFFmpegCore as (
+        options: Record<string, unknown>
+      ) => Promise<FFmpegCore>;
+
+      if (!createFFmpegCore) {
+        throw new Error('createFFmpegCore not found after script load');
+      }
 
       console.log('[FFmpegBridge] Fetching ffmpeg-core.wasm...');
       const wasmBinary = await fetch(`${baseURL}/ffmpeg-core.wasm`).then(r => r.arrayBuffer());
 
       console.log('[FFmpegBridge] Initializing FFmpeg core...');
-      const core = await coreModule.default({
+      const core = await createFFmpegCore({
         wasmBinary,
+        locateFile: (path: string) => `${baseURL}/${path}`,
         // Capture stdout/stderr
         print: (message: string) => {
           console.log('[FFmpeg]', message);
@@ -161,32 +185,54 @@ export class FFmpegBridge {
     this.logs.push(entry);
     this.onLog?.(entry);
 
-    // Parse progress from FFmpeg output if not getting progress events
+    // Parse progress from FFmpeg output
+    // FFmpeg outputs: "frame=  123 fps= 45 q=2.0 size=   1234kB time=00:00:04.10 ..."
     const frameMatch = message.match(/frame=\s*(\d+)/);
+    const fpsMatch = message.match(/fps=\s*([\d.]+)/);
+    const sizeMatch = message.match(/size=\s*(\d+)/);
+    const timeMatch = message.match(/time=(\d+):(\d+):([\d.]+)/);
+
     if (frameMatch && this.onProgress && this.totalFrames > 0) {
       const frame = parseInt(frameMatch[1]);
       const percent = (frame / this.totalFrames) * 100;
+      const fps = fpsMatch ? parseFloat(fpsMatch[1]) : 0;
+      const size = sizeMatch ? parseInt(sizeMatch[1]) * 1024 : 0;
+
+      let time = frame / 30; // Default estimate
+      if (timeMatch) {
+        const hours = parseInt(timeMatch[1]);
+        const minutes = parseInt(timeMatch[2]);
+        const seconds = parseFloat(timeMatch[3]);
+        time = hours * 3600 + minutes * 60 + seconds;
+      }
+
+      console.log(`[FFmpegBridge] Progress: frame=${frame}/${this.totalFrames} (${percent.toFixed(1)}%)`);
 
       this.onProgress({
         frame,
-        fps: 0,
-        time: frame / 30,
-        speed: 0,
+        fps,
+        time,
+        speed: fps / 30, // Approximate speed multiplier
         bitrate: 0,
-        size: 0,
+        size,
         percent,
-        eta: 0,
+        eta: fps > 0 ? (this.totalFrames - frame) / fps : 0,
       });
     }
   }
 
   /**
    * Encode frames to video using FFmpeg
+   * @param frames - Array of raw RGBA frame data
+   * @param settings - Export settings (resolution, codec, etc.)
+   * @param onProgress - Progress callback
+   * @param audioBuffer - Optional mixed audio buffer to include
    */
   async encode(
     frames: Uint8Array[],
     settings: FFmpegExportSettings,
-    onProgress?: (progress: FFmpegProgress) => void
+    onProgress?: (progress: FFmpegProgress) => void,
+    audioBuffer?: AudioBuffer | null
   ): Promise<Blob> {
     if (!this.ffmpeg) {
       await this.load();
@@ -204,50 +250,70 @@ export class FFmpegBridge {
     const fs = this.ffmpeg.FS;
 
     try {
-      // Create directories
+      // Clean up any previous files first to reset FFmpeg state
+      this.cleanup();
+
+      // Create directories (they may already exist)
       try { fs.mkdir('/input'); } catch { /* exists */ }
       try { fs.mkdir('/output'); } catch { /* exists */ }
 
-      // Write frames to virtual filesystem
-      console.log(`[FFmpegBridge] Writing ${frames.length} frames...`);
+      // Concatenate all frames into a single raw file
+      // This bypasses the pattern matching issue in WASM FFmpeg's image2 demuxer
+      const frameSize = frames[0].byteLength;
+      const totalSize = frameSize * frames.length;
+      console.log(`[FFmpegBridge] Writing ${frames.length} frames (${(totalSize / 1024 / 1024).toFixed(1)} MB)...`);
+      console.log(`[FFmpegBridge] Frame size: ${frameSize} bytes (expected: ${settings.width * settings.height * 4})`);
+
+      // Debug: check if frames have unique content
+      if (frames.length >= 2) {
+        let sameCount = 0;
+        for (let i = 0; i < Math.min(100, frameSize); i++) {
+          if (frames[0][i] === frames[1][i]) sameCount++;
+        }
+        console.log(`[FFmpegBridge] Frame 0 vs 1: ${sameCount}/100 bytes identical (should be <90 if different)`);
+      }
+
+      const allFrames = new Uint8Array(totalSize);
       for (let i = 0; i < frames.length; i++) {
         if (this.cancelled) throw new Error('Cancelled');
-        const filename = `/input/frame_${String(i).padStart(6, '0')}.raw`;
-        fs.writeFile(filename, frames[i]);
-
-        // Report write progress
-        if (onProgress && i % 10 === 0) {
-          onProgress({
-            frame: i,
-            fps: 0,
-            time: 0,
-            speed: 0,
-            bitrate: 0,
-            size: 0,
-            percent: (i / frames.length) * 10, // First 10% is writing
-            eta: 0,
-          });
-        }
+        allFrames.set(frames[i], i * frameSize);
       }
 
-      // Build FFmpeg arguments
-      const args = this.buildArgs(settings);
+      fs.writeFile('/input/frames.raw', allFrames);
+      console.log(`[FFmpegBridge] Wrote /input/frames.raw: ${allFrames.byteLength} bytes`);
+
+      // Write audio if provided
+      let hasAudio = false;
+      if (audioBuffer && audioBuffer.length > 0) {
+        const audioData = this.audioBufferToPCM(audioBuffer);
+        fs.writeFile('/input/audio.raw', new Uint8Array(audioData.buffer));
+        hasAudio = true;
+        console.log(`[FFmpegBridge] Audio: ${audioBuffer.duration.toFixed(2)}s, ${audioBuffer.sampleRate}Hz`);
+      }
+
+      // Build FFmpeg arguments (using single file input)
+      const args = this.buildArgs(settings, frames.length, hasAudio ? audioBuffer : null);
       console.log('[FFmpegBridge] Running: ffmpeg', args.join(' '));
 
-      // Reset state before running
-      if (this.ffmpeg.reset) {
-        this.ffmpeg.reset();
-      }
+      // NOTE: Do NOT call reset() here - it clears the virtual filesystem!
+      // The files we just wrote would be deleted.
 
       // Execute FFmpeg (callMain is synchronous but may take a while)
+      console.log('[FFmpegBridge] Starting FFmpeg encode...');
+      const encodeStart = performance.now();
       const exitCode = this.ffmpeg.callMain(args);
+      const encodeTime = ((performance.now() - encodeStart) / 1000).toFixed(2);
+      console.log(`[FFmpegBridge] FFmpeg finished in ${encodeTime}s with exit code ${exitCode}`);
+
       if (exitCode !== 0) {
+        console.error('[FFmpegBridge] FFmpeg logs:', this.logs.map(l => l.message).join('\n'));
         throw new Error(`FFmpeg exited with code ${exitCode}`);
       }
 
       // Read output file
       const outputPath = `/output/output.${settings.container}`;
       const data = fs.readFile(outputPath);
+      console.log(`[FFmpegBridge] Output file size: ${(data.byteLength / 1024 / 1024).toFixed(2)} MB`);
 
       // Create a copy of the data to ensure it's a standard ArrayBuffer
       const buffer = new ArrayBuffer(data.byteLength);
@@ -261,21 +327,49 @@ export class FFmpegBridge {
   /**
    * Build FFmpeg command line arguments
    */
-  private buildArgs(settings: FFmpegExportSettings): string[] {
+  private buildArgs(settings: FFmpegExportSettings, frameCount?: number, audioBuffer?: AudioBuffer | null): string[] {
+    // Calculate duration from frame count for rawvideo input
+    const duration = frameCount && settings.fps ? frameCount / settings.fps : undefined;
+
     const args: string[] = [
+      '-nostdin',                      // Don't read from stdin (prevents prompt in browser)
       '-y',                            // Overwrite output
-      '-f', 'rawvideo',                // Input format
+      '-v', 'info',                    // Verbose output for progress parsing
+      '-stats',                        // Force progress stats output
+      '-f', 'rawvideo',                // Input format for video
       '-pix_fmt', 'rgba',              // Input pixel format (from canvas)
       '-s', `${settings.width}x${settings.height}`,
       '-r', String(settings.fps),
-      '-i', '/input/frame_%06d.raw',   // Input pattern
+      '-i', '/input/frames.raw',       // Video input
     ];
+
+    // Add audio input if available
+    if (audioBuffer) {
+      args.push(
+        '-f', 'f32le',                 // Raw PCM float32 little-endian
+        '-ar', String(audioBuffer.sampleRate),
+        '-ac', String(audioBuffer.numberOfChannels),
+        '-i', '/input/audio.raw'       // Audio input
+      );
+    }
 
     // Video codec settings
     args.push(...this.buildVideoArgs(settings));
 
-    // Audio (none for now - frames only)
-    args.push('-an');
+    // Audio codec settings
+    if (audioBuffer) {
+      args.push(...this.buildAudioArgs(settings));
+    } else {
+      args.push('-an'); // No audio
+    }
+
+    // Explicitly set output frame count/duration (critical for rawvideo input)
+    if (frameCount) {
+      args.push('-frames:v', String(frameCount));
+    }
+    if (duration) {
+      args.push('-t', String(duration.toFixed(6)));
+    }
 
     // Output file
     args.push(`/output/output.${settings.container}`);
@@ -284,7 +378,70 @@ export class FFmpegBridge {
   }
 
   /**
+   * Build audio codec arguments based on container
+   * NOTE: ASYNCIFY build only has aac, flac, alac, pcm_s16le, pcm_s24le, pcm_f32le, ac3
+   */
+  private buildAudioArgs(settings: FFmpegExportSettings): string[] {
+    const args: string[] = [];
+
+    // Choose audio codec based on container
+    switch (settings.container) {
+      case 'mov':
+        // AAC for MOV (widely compatible)
+        args.push('-c:a', 'aac');
+        args.push('-b:a', '256k');
+        break;
+
+      case 'mkv':
+        // FLAC for MKV (lossless, well supported)
+        args.push('-c:a', 'flac');
+        break;
+
+      case 'avi':
+        // PCM for AVI (libmp3lame not available)
+        args.push('-c:a', 'pcm_s16le');
+        break;
+
+      case 'mxf':
+        // PCM for MXF (professional standard)
+        args.push('-c:a', 'pcm_s16le');
+        break;
+
+      default:
+        args.push('-c:a', 'aac');
+        args.push('-b:a', '256k');
+    }
+
+    return args;
+  }
+
+  /**
+   * Convert AudioBuffer to interleaved PCM Float32 data
+   */
+  private audioBufferToPCM(audioBuffer: AudioBuffer): Float32Array {
+    const channels = audioBuffer.numberOfChannels;
+    const length = audioBuffer.length;
+    const interleaved = new Float32Array(length * channels);
+
+    // Get channel data
+    const channelData: Float32Array[] = [];
+    for (let ch = 0; ch < channels; ch++) {
+      channelData.push(audioBuffer.getChannelData(ch));
+    }
+
+    // Interleave samples
+    for (let i = 0; i < length; i++) {
+      for (let ch = 0; ch < channels; ch++) {
+        interleaved[i * channels + ch] = channelData[ch][i];
+      }
+    }
+
+    return interleaved;
+  }
+
+  /**
    * Build video codec-specific arguments
+   * NOTE: ASYNCIFY build only has prores_ks, dnxhd, ffv1, utvideo, mjpeg
    */
   private buildVideoArgs(settings: FFmpegExportSettings): string[] {
     const args: string[] = [];
@@ -295,13 +452,6 @@ export class FFmpegBridge {
         args.push('-profile:v', this.getProResProfileNumber(settings.proresProfile || 'hq'));
         args.push('-pix_fmt', settings.proresProfile?.includes('4444') ? 'yuva444p10le' : 'yuv422p10le');
         args.push('-vendor', 'apl0');
-        break;
-
-      case 'hap':
-        args.push('-c:v', 'hap');
-        args.push('-format', settings.hapFormat || 'hap');
-        args.push('-compressor', settings.hapCompressor || 'snappy');
-        args.push('-chunks', String(settings.hapChunks || 4));
         break;
 
       case 'dnxhd':
@@ -336,56 +486,12 @@ export class FFmpegBridge {
         args.push('-pix_fmt', 'yuvj422p');
         break;
 
-      case 'libx264':
-        args.push('-c:v', 'libx264');
-        args.push('-preset', 'medium');
-        args.push('-pix_fmt', settings.pixelFormat || 'yuv420p');
-        if (settings.quality !== undefined) {
-          args.push('-crf', String(settings.quality));
-        } else if (settings.bitrate) {
-          args.push('-b:v', String(settings.bitrate));
-        } else {
-          args.push('-crf', '18');
-        }
-        break;
-
-      case 'libx265':
-        args.push('-c:v', 'libx265');
-        args.push('-preset', 'medium');
-        args.push('-pix_fmt', settings.pixelFormat || 'yuv420p');
-        if (settings.quality !== undefined) {
-          args.push('-crf', String(settings.quality));
-        } else {
-          args.push('-crf', '22');
-        }
-        break;
-
-      case 'libvpx_vp9':
-        args.push('-c:v', 'libvpx-vp9');
-        args.push('-pix_fmt', settings.pixelFormat || 'yuv420p');
-        if (settings.quality !== undefined) {
-          args.push('-crf', String(settings.quality));
-          args.push('-b:v', '0');
-        } else if (settings.bitrate) {
-          args.push('-b:v', String(settings.bitrate));
-        }
-        args.push('-row-mt', '1'); // Enable row-based multithreading
-        break;
-
-      case 'libsvtav1':
-        args.push('-c:v', 'libsvtav1');
-        args.push('-preset', '6');
-        args.push('-pix_fmt', settings.pixelFormat || 'yuv420p');
-        if (settings.quality !== undefined) {
-          args.push('-crf', String(settings.quality));
-        } else {
-          args.push('-crf', '30');
-        }
-        break;
-
       default:
-        // Fallback to codec name
-        args.push('-c:v', settings.codec);
+        // Fallback to mjpeg as it's most widely compatible
+        console.warn(`[FFmpegBridge] Unknown codec "${settings.codec}", falling back to mjpeg`);
+        args.push('-c:v', 'mjpeg');
+        args.push('-q:v', '2');
+        args.push('-pix_fmt', 'yuvj422p');
     }
 
     return args;
@@ -566,31 +672,18 @@ export class FFmpegBridge {
 
   /**
    * Check which codecs are available in the loaded FFmpeg build
+   * NOTE: ASYNCIFY build includes only native FFmpeg encoders
    */
   async getAvailableCodecs(): Promise<FFmpegVideoCodec[]> {
-    // The standard @ffmpeg/ffmpeg build includes:
-    // - libx264 (H.264)
-    // - libvpx (VP8/VP9)
-    // Custom builds may add more
-    const standardCodecs: FFmpegVideoCodec[] = [
-      'libx264',
-      'libvpx_vp9',
-      'mjpeg',
+    // ASYNCIFY build with native encoders only
+    // External libs (libx264, libvpx, libsnappy) require pkg-config which fails in Emscripten
+    return [
+      'prores',    // Apple ProRes (prores_ks)
+      'dnxhd',     // Avid DNxHR
+      'ffv1',      // FFV1 lossless
+      'utvideo',   // UTVideo lossless
+      'mjpeg',     // Motion JPEG
     ];
-
-    // Professional codecs require custom WASM build
-    // These will fail with standard build but we list them for UI
-    const professionalCodecs: FFmpegVideoCodec[] = [
-      'prores',
-      'hap',
-      'dnxhd',
-      'ffv1',
-      'utvideo',
-      'libx265',
-      'libsvtav1',
-    ];
-
-    return [...standardCodecs, ...professionalCodecs];
   }
 }
 

@@ -10,37 +10,33 @@ export type HapFormat = 'hap' | 'hap_alpha' | 'hap_q';
 // DNxHR profiles (Avid broadcast codec)
 export type DnxhrProfile = 'dnxhr_lb' | 'dnxhr_sq' | 'dnxhr_hq' | 'dnxhr_hqx' | 'dnxhr_444';
 
-// Video codecs available in FFmpeg WASM
+// Video codecs available in FFmpeg WASM (ASYNCIFY build)
+// NOTE: This build only includes native FFmpeg encoders
+// External libs (libx264, libvpx, libsnappy) require pkg-config which fails in Emscripten
 export type FFmpegVideoCodec =
   | 'prores'      // Apple ProRes (professional)
-  | 'hap'         // HAP (realtime/VJ)
   | 'dnxhd'       // Avid DNxHR (broadcast)
   | 'ffv1'        // FFV1 (lossless archival)
   | 'utvideo'     // Ut Video (fast lossless)
-  | 'mjpeg'       // Motion JPEG
-  | 'libx264'     // H.264 (delivery)
-  | 'libx265'     // H.265/HEVC (delivery)
-  | 'libvpx_vp9'  // VP9 (web)
-  | 'libsvtav1';  // AV1 (next-gen)
+  | 'mjpeg';      // Motion JPEG
 
-// Audio codecs
+// Audio codecs available in ASYNCIFY build
+// NOTE: libopus and libmp3lame require pkg-config
 export type FFmpegAudioCodec =
   | 'aac'         // AAC (universal)
-  | 'libmp3lame'  // MP3
-  | 'libopus'     // Opus (web)
   | 'flac'        // FLAC (lossless)
   | 'alac'        // Apple Lossless
   | 'pcm_s16le'   // PCM 16-bit
   | 'pcm_s24le'   // PCM 24-bit
+  | 'pcm_f32le'   // PCM 32-bit float
   | 'ac3'         // Dolby AC-3
   | 'none';       // No audio
 
 // Container formats
+// NOTE: webm removed - requires VP9/VP8 which needs libvpx
 export type FFmpegContainer =
   | 'mov'   // QuickTime (Apple/Pro)
-  | 'mp4'   // MPEG-4 (universal)
   | 'mkv'   // Matroska (open)
-  | 'webm'  // WebM (web)
   | 'avi'   // AVI (legacy)
   | 'mxf';  // MXF (broadcast)
 

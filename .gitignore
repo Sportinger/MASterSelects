@@ -47,7 +47,7 @@ tmp
 temp
 *.tmp
 
-# FFmpeg WASM build outputs
+# FFmpeg WASM build outputs (build artifacts, not the final WASM)
 ffmpeg-wasm-build/build/
 ffmpeg-wasm-build/dist/
-public/ffmpeg/
+ffmpeg-wasm-build/build.log

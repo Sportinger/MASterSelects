@@ -19,6 +19,12 @@ class LayerBuilderService {
   private lastSeekRef: { [clipId: string]: number } = {};
   private proxyFramesRef: Map<string, { frameIndex: number; image: HTMLImageElement }> = new Map();
 
+  // Native decoder throttling - avoid overwhelming the decoder with seeks
+  private nativeDecoderLastSeekTime: Map<string, number> = new Map();
+  private nativeDecoderLastSeekFrame: Map<string, number> = new Map();
+  private nativeDecoderPendingSeek: Map<string, boolean> = new Map();
+  private readonly NATIVE_SEEK_THROTTLE_MS = 16; // ~60fps max seek rate
+
   // Audio sync throttling - don't sync every frame to avoid glitches
   private lastAudioSyncTime = 0;
   private readonly AUDIO_SYNC_INTERVAL = 50; // Check audio sync every 50ms (balance between drift and glitches)
@@ -133,6 +139,48 @@ class LayerBuilderService {
 
           layers[layerIndex] = nestedCompLayer;
         }
+      } else if (clip?.source?.nativeDecoder) {
+        // Handle Native Helper decoded clip (ProRes/DNxHD turbo mode)
+        const nativeDecoder = clip.source.nativeDecoder;
+        const clipLocalTime = playheadPosition - clip.startTime;
+        const keyframeLocalTime = clipLocalTime;
+
+        // Calculate source time using speed integration (handles keyframes)
+        const sourceTime = getSourceTimeForClip(clip.id, clipLocalTime);
+        const initialSpeed = getInterpolatedSpeed(clip.id, 0);
+        const startPoint = initialSpeed >= 0 ? clip.inPoint : clip.outPoint;
+        const clipTime = Math.max(clip.inPoint, Math.min(clip.outPoint, startPoint + sourceTime));
+
+        const transform = getInterpolatedTransform(clip.id, keyframeLocalTime);
+        const nativeInterpolatedEffects = getInterpolatedEffects(clip.id, keyframeLocalTime);
+
+        const nativeLayer: Layer = {
+          id: `${activeCompId}_layer_${layerIndex}`,
+          name: clip.name,
+          visible: true,
+          opacity: transform.opacity,
+          blendMode: transform.blendMode,
+          source: {
+            type: 'video',
+            nativeDecoder: nativeDecoder,
+          },
+          effects: nativeInterpolatedEffects,
+          position: { x: transform.position.x, y: transform.position.y, z: transform.position.z },
+          scale: { x: transform.scale.x, y: transform.scale.y },
+          rotation: {
+            x: (transform.rotation.x * Math.PI) / 180,
+            y: (transform.rotation.y * Math.PI) / 180,
+            z: (transform.rotation.z * Math.PI) / 180,
+          },
+        };
+
+        // Add mask properties if native clip has masks
+        if (clip.masks && clip.masks.length > 0) {
+          nativeLayer.maskClipId = clip.id;
+          nativeLayer.maskInvert = clip.masks.some(m => m.inverted);
+        }
+
+        layers[layerIndex] = nativeLayer;
       } else if (clip?.source?.videoElement) {
         // Handle video clip
         const layer = this.buildVideoLayer(
@@ -396,6 +444,48 @@ class LayerBuilderService {
     );
 
     clipsAtTime.forEach(clip => {
+      // Handle Native Helper decoder (ProRes/DNxHD turbo mode)
+      if (clip.source?.nativeDecoder) {
+        const nativeDecoder = clip.source.nativeDecoder;
+        const clipLocalTime = playheadPosition - clip.startTime;
+        const sourceTime = getSourceTimeForClip(clip.id, clipLocalTime);
+        const initialSpeed = getInterpolatedSpeed(clip.id, 0);
+        const startPoint = initialSpeed >= 0 ? clip.inPoint : clip.outPoint;
+        const clipTime = Math.max(clip.inPoint, Math.min(clip.outPoint, startPoint + sourceTime));
+
+        // Calculate target frame number
+        const fps = nativeDecoder.fps || 25;
+        const targetFrame = Math.round(clipTime * fps);
+
+        // Throttle seeks to avoid overwhelming the decoder
+        const now = performance.now();
+        const lastSeekTime = this.nativeDecoderLastSeekTime.get(clip.id) || 0;
+        const lastSeekFrame = this.nativeDecoderLastSeekFrame.get(clip.id) ?? -1;
+        const isPending = this.nativeDecoderPendingSeek.get(clip.id) || false;
+
+        // Skip if same frame or throttled (unless it's been too long)
+        const timeSinceLastSeek = now - lastSeekTime;
+        const shouldSeek = !isPending &&
+          (targetFrame !== lastSeekFrame || timeSinceLastSeek > 100);
+
+        if (shouldSeek && timeSinceLastSeek >= this.NATIVE_SEEK_THROTTLE_MS) {
+          this.nativeDecoderLastSeekTime.set(clip.id, now);
+          this.nativeDecoderLastSeekFrame.set(clip.id, targetFrame);
+          this.nativeDecoderPendingSeek.set(clip.id, true);
+
+          // Use fast scrub (scaled down) during playhead drag for smoother scrubbing
+          nativeDecoder.seekToFrame(targetFrame, isDraggingPlayhead)
+            .then(() => {
+              this.nativeDecoderPendingSeek.set(clip.id, false);
+            })
+            .catch((err) => {
+              this.nativeDecoderPendingSeek.set(clip.id, false);
+              console.warn('[NativeDecoder] Seek failed:', err);
+            });
+        }
+        return; // Skip other decoders for this clip
+      }
+
       if (clip.source?.videoElement) {
         const video = clip.source.videoElement;
         const clipLocalTime = playheadPosition - clip.startTime;

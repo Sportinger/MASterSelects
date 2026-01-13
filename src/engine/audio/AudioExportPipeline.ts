@@ -144,6 +144,84 @@ export class AudioExportPipeline {
   }
 
   /**
+   * Export raw audio (mixed but not encoded) for use with external encoders like FFmpeg
+   * @param startTime - Export start time
+   * @param endTime - Export end time
+   * @param onProgress - Progress callback
+   * @returns Mixed AudioBuffer as raw PCM data
+   */
+  async exportRawAudio(
+    startTime: number,
+    endTime: number,
+    onProgress?: AudioExportProgressCallback
+  ): Promise<AudioBuffer | null> {
+    this.cancelled = false;
+
+    const { clips, tracks, clipKeyframes } = useTimelineStore.getState();
+    const duration = endTime - startTime;
+
+    console.log(`[AudioExportPipeline] Starting raw audio export: ${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s`);
+
+    // 1. Find all clips with audio in the export range
+    const audioClips = this.getClipsWithAudio(clips, tracks, startTime, endTime);
+
+    if (audioClips.length === 0) {
+      console.log('[AudioExportPipeline] No audio clips found in export range');
+      return null;
+    }
+
+    console.log(`[AudioExportPipeline] Found ${audioClips.length} clips with audio`);
+
+    try {
+      // 2. Extract audio from all clips
+      onProgress?.({ phase: 'extracting', percent: 0, message: 'Extracting audio...' });
+      const extractedBuffers = await this.extractAllAudio(audioClips, onProgress);
+
+      if (this.cancelled) return null;
+
+      // 3. Process speed/pitch for each clip
+      onProgress?.({ phase: 'processing', percent: 0, message: 'Processing speed changes...' });
+      const processedBuffers = await this.processAllSpeed(
+        audioClips,
+        extractedBuffers,
+        clipKeyframes,
+        onProgress
+      );
+
+      if (this.cancelled) return null;
+
+      // 4. Render effects for each clip
+      onProgress?.({ phase: 'effects', percent: 0, message: 'Applying effects...' });
+      const effectBuffers = await this.renderAllEffects(
+        audioClips,
+        processedBuffers,
+        clipKeyframes,
+        onProgress
+      );
+
+      if (this.cancelled) return null;
+
+      // 5. Mix all tracks
+      onProgress?.({ phase: 'mixing', percent: 0, message: 'Mixing tracks...' });
+      const trackData = this.prepareTrackData(audioClips, effectBuffers, tracks, startTime);
+      const mixedBuffer = await this.mixer.mixTracks(trackData, duration);
+
+      // 6. Cleanup
+      this.extractor.clearCache();
+
+      onProgress?.({ phase: 'complete', percent: 100, message: 'Audio mixing complete' });
+
+      console.log(`[AudioExportPipeline] Raw audio export complete: ${mixedBuffer.duration.toFixed(2)}s, ${mixedBuffer.numberOfChannels}ch`);
+      return mixedBuffer;
+
+    } catch (error) {
+      console.error('[AudioExportPipeline] Raw audio export failed:', error);
+      this.extractor.clearCache();
+      throw error;
+    }
+  }
+
+  /**
    * Cancel the export
    */
   cancel(): void {

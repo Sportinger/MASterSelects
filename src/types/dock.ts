@@ -2,7 +2,7 @@
 
 // Panel types that can be docked
 // Note: Effects, Transcript, Analysis are now integrated into Properties panel
-export type PanelType = 'preview' | 'timeline' | 'slots' | 'clip-properties' | 'media' | 'export' | 'multicam' | 'ai-chat' | 'ai-video';
+export type PanelType = 'preview' | 'timeline' | 'slots' | 'clip-properties' | 'media' | 'export' | 'multicam' | 'ai-chat' | 'ai-video' | 'youtube';
 
 // Panel-specific data for configurable panels
 export interface PreviewPanelData {
@@ -144,6 +144,13 @@ export const PANEL_CONFIGS: Record<PanelType, PanelConfig> = {
   'ai-video': {
     type: 'ai-video',
     title: 'AI Video',
+    minWidth: 300,
+    minHeight: 400,
+    closable: false,
+  },
+  youtube: {
+    type: 'youtube',
+    title: 'YouTube',
     minWidth: 300,
     minHeight: 400,
     closable: false,

@@ -12,7 +12,7 @@ interface ExportDialogProps {
 }
 
 export function ExportDialog({ onClose }: ExportDialogProps) {
-  const { duration } = useTimelineStore();
+  const { duration, startExport, setExportProgress, endExport } = useTimelineStore();
   const { getActiveComposition } = useMediaStore();
   const composition = getActiveComposition();
 
@@ -113,9 +113,14 @@ export function ExportDialog({ onClose }: ExportDialogProps) {
     });
     setExporter(exp);
 
+    // Start export progress in timeline
+    startExport(startTime, endTime);
+
     try {
       const blob = await exp.export((p) => {
         setProgress(p);
+        // Update timeline export progress
+        setExportProgress(p.percent, p.currentTime);
       });
 
       if (blob) {
@@ -128,8 +133,10 @@ export function ExportDialog({ onClose }: ExportDialogProps) {
     } finally {
       setIsExporting(false);
       setExporter(null);
+      // End export progress in timeline
+      endExport();
     }
-  }, [width, height, fps, codec, container, bitrate, startTime, endTime, filename, isExporting, onClose, includeAudio, audioSampleRate, audioBitrate, normalizeAudio]);
+  }, [width, height, fps, codec, container, bitrate, startTime, endTime, filename, isExporting, onClose, includeAudio, audioSampleRate, audioBitrate, normalizeAudio, startExport, setExportProgress, endExport]);
 
   // Handle cancel
   const handleCancel = useCallback(() => {
@@ -138,7 +145,9 @@ export function ExportDialog({ onClose }: ExportDialogProps) {
     }
     setIsExporting(false);
     setExporter(null);
-  }, [exporter]);
+    // End export progress in timeline
+    endExport();
+  }, [exporter, endExport]);
 
   // Format time as MM:SS
   const formatTime = (seconds: number) => {

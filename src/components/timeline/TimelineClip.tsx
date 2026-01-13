@@ -515,6 +515,8 @@ function TimelineClipComponent({
     clip.transcriptStatus === 'ready' ? 'has-transcript' : '',
     clip.waveformGenerating ? 'generating-waveform' : '',
     clip.parentClipId ? 'has-parent' : '',
+    clip.isPendingDownload ? 'pending-download' : '',
+    clip.downloadError ? 'download-error' : '',
   ]
     .filter(Boolean)
     .join(' ');
@@ -531,6 +533,34 @@ function TimelineClipComponent({
       onDoubleClick={onDoubleClick}
       onContextMenu={onContextMenu}
     >
+      {/* YouTube pending download preview */}
+      {clip.isPendingDownload && clip.youtubeThumbnail && (
+        <div
+          className="clip-youtube-preview"
+          style={{ backgroundImage: `url(${clip.youtubeThumbnail})` }}
+        />
+      )}
+      {/* Download progress bar */}
+      {clip.isPendingDownload && !clip.downloadError && (
+        <>
+          <div className="clip-download-progress">
+            <div
+              className="clip-download-progress-bar"
+              style={{ width: `${clip.downloadProgress || 0}%` }}
+            />
+          </div>
+          <div className="clip-download-status">
+            <div className="download-spinner" />
+            <span>Downloading {clip.downloadProgress || 0}%</span>
+          </div>
+        </>
+      )}
+      {/* Download error badge */}
+      {clip.downloadError && (
+        <div className="clip-download-error-badge" title={clip.downloadError}>
+          Error
+        </div>
+      )}
       {/* Proxy generating indicator - fill badge */}
       {isGeneratingProxy && (
         <div className="clip-proxy-generating" title={`Generating proxy: ${proxyProgress}%`}>

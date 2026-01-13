@@ -10,6 +10,7 @@ import { useMIDI } from '../../hooks/useMIDI';
 import { SettingsDialog } from './SettingsDialog';
 import { SavedToast } from './SavedToast';
 import { InfoDialog } from './InfoDialog';
+import { NativeHelperStatus } from './NativeHelperStatus';
 import { projectFileService } from '../../services/projectFileService';
 import {
   createNewProject,
@@ -682,6 +683,7 @@ export function Toolbar() {
 
       {/* Status */}
       <div className="toolbar-section toolbar-right">
+        <NativeHelperStatus toolbar />
         <span className={`status ${isEngineReady ? 'ready' : 'loading'}`}>
           {isEngineReady ? '● WebGPU Ready' : '○ Loading...'}
         </span>

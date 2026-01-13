@@ -1,0 +1,568 @@
+/**
+ * Native Helper WebSocket Client
+ *
+ * Manages the connection to the native helper application and provides
+ * methods for video decoding and encoding operations.
+ */
+
+import type {
+  Command,
+  Response,
+  FileMetadata,
+  SystemInfo,
+  EncodeOutput,
+  FrameHeader,
+} from './protocol';
+
+import {
+  parseFrameHeader,
+  isCompressed,
+} from './protocol';
+
+// LZ4 decompression (we'll use a simple implementation or skip for now)
+// In production, use a proper LZ4 library like 'lz4js'
+
+export interface NativeHelperConfig {
+  port?: number;
+  autoReconnect?: boolean;
+  reconnectInterval?: number;
+  token?: string;
+  /** Only reconnect if we were previously connected */
+  onlyReconnectIfWasConnected?: boolean;
+}
+
+export interface DecodedFrame {
+  width: number;
+  height: number;
+  frameNum: number;
+  data: Uint8ClampedArray;
+  requestId: number;
+}
+
+export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
+
+type ResponseCallback = (response: Response) => void;
+type FrameCallback = (frame: DecodedFrame) => void;
+
+/**
+ * Singleton client for communicating with the Native Helper
+ */
+class NativeHelperClientImpl {
+  private ws: WebSocket | null = null;
+  private config: Required<NativeHelperConfig>;
+  private status: ConnectionStatus = 'disconnected';
+  private requestId = 0;
+  private pendingRequests = new Map<string, ResponseCallback>();
+  private frameCallbacks = new Map<string, FrameCallback>();
+  private statusListeners = new Set<(status: ConnectionStatus) => void>();
+  private reconnectTimer: number | null = null;
+  private wasEverConnected = false;
+
+  constructor() {
+    this.config = {
+      port: 9876,
+      autoReconnect: true,
+      reconnectInterval: 10000, // 10 seconds between reconnect attempts
+      token: '',
+      onlyReconnectIfWasConnected: true, // Don't spam reconnects if never connected
+    };
+  }
+
+  /**
+   * Configure the client
+   */
+  configure(config: NativeHelperConfig): void {
+    this.config = { ...this.config, ...config };
+  }
+
+  /**
+   * Get current connection status
+   */
+  getStatus(): ConnectionStatus {
+    return this.status;
+  }
+
+  /**
+   * Add a status change listener
+   */
+  onStatusChange(listener: (status: ConnectionStatus) => void): () => void {
+    this.statusListeners.add(listener);
+    return () => this.statusListeners.delete(listener);
+  }
+
+  /**
+   * Connect to the native helper
+   */
+  async connect(): Promise<boolean> {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      return true;
+    }
+
+    this.setStatus('connecting');
+
+    return new Promise((resolve) => {
+      try {
+        this.ws = new WebSocket(`ws://127.0.0.1:${this.config.port}`);
+        this.ws.binaryType = 'arraybuffer'; // Ensure binary data comes as ArrayBuffer, not Blob
+
+        this.ws.onopen = async () => {
+          console.log('[NativeHelper] Connected to native helper');
+          this.wasEverConnected = true;
+
+          // Authenticate if token provided
+          if (this.config.token) {
+            try {
+              await this.send({ cmd: 'auth', id: this.nextId(), token: this.config.token });
+            } catch {
+              console.warn('[NativeHelper] Auth failed');
+            }
+          }
+
+          this.setStatus('connected');
+          resolve(true);
+        };
+
+        this.ws.onclose = () => {
+          if (this.wasEverConnected) {
+            console.log('[NativeHelper] Disconnected');
+          }
+          this.setStatus('disconnected');
+          this.handleDisconnect();
+          if (this.status === 'connecting') {
+            resolve(false);
+          }
+        };
+
+        this.ws.onerror = () => {
+          // Don't log errors when helper isn't running - it's optional
+          this.setStatus('disconnected');
+          if (this.status === 'connecting') {
+            resolve(false);
+          }
+        };
+
+        this.ws.onmessage = (event) => {
+          this.handleMessage(event.data);
+        };
+      } catch {
+        // Silent fail - helper is optional
+        this.setStatus('disconnected');
+        resolve(false);
+      }
+    });
+  }
+
+  /**
+   * Disconnect from the native helper
+   */
+  disconnect(): void {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+
+    this.setStatus('disconnected');
+  }
+
+  /**
+   * Check if connected
+   */
+  isConnected(): boolean {
+    return this.ws?.readyState === WebSocket.OPEN;
+  }
+
+  /**
+   * Open a video file
+   */
+  async openFile(path: string): Promise<FileMetadata> {
+    const id = this.nextId();
+    const response = await this.send({ cmd: 'open', id, path });
+
+    if (!response.ok) {
+      throw new Error((response as any).error?.message || 'Failed to open file');
+    }
+
+    return response as unknown as FileMetadata;
+  }
+
+  /**
+   * Decode a single frame
+   */
+  async decodeFrame(
+    fileId: string,
+    frame: number,
+    options?: {
+      format?: 'rgba8' | 'rgb8' | 'yuv420';
+      scale?: number;
+      compression?: 'lz4';
+    }
+  ): Promise<DecodedFrame> {
+    const id = this.nextId();
+
+    return new Promise((resolve, reject) => {
+      // Register frame callback
+      this.frameCallbacks.set(id, resolve);
+
+      // Set timeout
+      const timeout = setTimeout(() => {
+        this.frameCallbacks.delete(id);
+        reject(new Error('Decode timeout'));
+      }, 10000);
+
+      // Send decode command
+      const cmd: Command = {
+        cmd: 'decode',
+        id,
+        file_id: fileId,
+        frame,
+        format: options?.format,
+        scale: options?.scale,
+        compression: options?.compression,
+      };
+
+      this.sendRaw(JSON.stringify(cmd)).catch((err) => {
+        clearTimeout(timeout);
+        this.frameCallbacks.delete(id);
+        reject(err);
+      });
+
+      // Clear timeout on success (handled in handleMessage)
+    });
+  }
+
+  /**
+   * Prefetch frames around a position (fire and forget)
+   */
+  prefetch(fileId: string, aroundFrame: number, radius = 50): void {
+    if (!this.isConnected()) return;
+
+    const cmd: Command = {
+      cmd: 'prefetch',
+      file_id: fileId,
+      around_frame: aroundFrame,
+      radius,
+    };
+
+    this.sendRaw(JSON.stringify(cmd)).catch(() => {
+      // Ignore prefetch errors
+    });
+  }
+
+  /**
+   * Start an encode job
+   */
+  async startEncode(output: EncodeOutput, frameCount: number): Promise<string> {
+    const id = this.nextId();
+    const response = await this.send({ cmd: 'start_encode', id, output, frame_count: frameCount });
+
+    if (!response.ok) {
+      throw new Error((response as any).error?.message || 'Failed to start encode');
+    }
+
+    return id;
+  }
+
+  /**
+   * Send a frame for encoding
+   */
+  async encodeFrame(encodeId: string, frameNum: number, frameData: Uint8Array): Promise<void> {
+    // Send text command first
+    const cmd: Command = {
+      cmd: 'encode_frame',
+      id: encodeId,
+      frame_num: frameNum,
+    };
+
+    await this.sendRaw(JSON.stringify(cmd));
+
+    // Then send binary frame data
+    await this.sendRaw(frameData);
+  }
+
+  /**
+   * Finish encoding
+   */
+  async finishEncode(encodeId: string): Promise<string> {
+    const response = await this.send({ cmd: 'finish_encode', id: encodeId });
+
+    if (!response.ok) {
+      throw new Error((response as any).error?.message || 'Failed to finish encode');
+    }
+
+    return (response as any).output_path;
+  }
+
+  /**
+   * Cancel encoding
+   */
+  async cancelEncode(encodeId: string): Promise<void> {
+    await this.send({ cmd: 'cancel_encode', id: encodeId });
+  }
+
+  /**
+   * Close a file
+   */
+  async closeFile(fileId: string): Promise<void> {
+    const id = this.nextId();
+    await this.send({ cmd: 'close', id, file_id: fileId });
+  }
+
+  /**
+   * Get system info
+   */
+  async getInfo(): Promise<SystemInfo> {
+    const id = this.nextId();
+    const response = await this.send({ cmd: 'info', id });
+
+    if (!response.ok) {
+      throw new Error((response as any).error?.message || 'Failed to get info');
+    }
+
+    return response as unknown as SystemInfo;
+  }
+
+  /**
+   * Ping the server
+   */
+  async ping(): Promise<boolean> {
+    try {
+      const id = this.nextId();
+      const response = await this.send({ cmd: 'ping', id });
+      return response.ok === true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Download a YouTube video using yt-dlp
+   */
+  async downloadYouTube(
+    url: string,
+    onProgress?: (percent: number) => void
+  ): Promise<{ success: boolean; path?: string; error?: string }> {
+    const id = this.nextId();
+
+    return new Promise((resolve, reject) => {
+      // Set timeout (5 minutes for large videos)
+      const timeout = setTimeout(() => {
+        this.pendingRequests.delete(id);
+        reject(new Error('Download timeout'));
+      }, 300000);
+
+      // Register callback
+      this.pendingRequests.set(id, (response: any) => {
+        clearTimeout(timeout);
+        if (response.ok) {
+          resolve({
+            success: true,
+            path: response.path,
+          });
+        } else {
+          resolve({
+            success: false,
+            error: response.error?.message || 'Download failed',
+          });
+        }
+      });
+
+      // Send download command
+      const cmd = {
+        cmd: 'download_youtube',
+        id,
+        url,
+      };
+
+      this.sendRaw(JSON.stringify(cmd)).catch((err) => {
+        clearTimeout(timeout);
+        this.pendingRequests.delete(id);
+        reject(err);
+      });
+    });
+  }
+
+  /**
+   * Get a downloaded file from the Native Helper
+   */
+  async getDownloadedFile(path: string): Promise<ArrayBuffer | null> {
+    const id = this.nextId();
+
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        this.pendingRequests.delete(id);
+        resolve(null);
+      }, 60000); // 60 seconds for large files
+
+      // For file requests, we expect base64 data in the response
+      this.pendingRequests.set(id, (response: any) => {
+        clearTimeout(timeout);
+        if (response.ok && response.data) {
+          // Decode base64 to ArrayBuffer
+          try {
+            const binaryString = atob(response.data);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            resolve(bytes.buffer);
+          } catch (e) {
+            console.error('[NativeHelper] Failed to decode base64 data:', e);
+            resolve(null);
+          }
+        } else {
+          resolve(null);
+        }
+      });
+
+      const cmd = {
+        cmd: 'get_file',
+        id,
+        path,
+      };
+
+      this.sendRaw(JSON.stringify(cmd)).catch(() => {
+        clearTimeout(timeout);
+        this.pendingRequests.delete(id);
+        resolve(null);
+      });
+    });
+  }
+
+  // Private methods
+
+  private nextId(): string {
+    return `req_${++this.requestId}`;
+  }
+
+  private setStatus(status: ConnectionStatus): void {
+    if (this.status !== status) {
+      this.status = status;
+      this.statusListeners.forEach((listener) => listener(status));
+    }
+  }
+
+  private handleDisconnect(): void {
+    // Reject all pending requests
+    this.pendingRequests.forEach((callback) => {
+      callback({ id: '', ok: false, error: { code: 'DISCONNECTED', message: 'Connection lost' } });
+    });
+    this.pendingRequests.clear();
+    this.frameCallbacks.clear();
+
+    // Auto-reconnect only if:
+    // 1. autoReconnect is enabled
+    // 2. Not already trying to connect
+    // 3. Either we were connected before OR onlyReconnectIfWasConnected is false
+    const shouldReconnect =
+      this.config.autoReconnect &&
+      this.status !== 'connecting' &&
+      (!this.config.onlyReconnectIfWasConnected || this.wasEverConnected);
+
+    if (shouldReconnect) {
+      this.reconnectTimer = window.setTimeout(() => {
+        console.log('[NativeHelper] Attempting reconnect...');
+        this.connect();
+      }, this.config.reconnectInterval);
+    }
+  }
+
+  private async handleMessage(data: string | ArrayBuffer): Promise<void> {
+    if (typeof data === 'string') {
+      // JSON response
+      try {
+        const response: Response = JSON.parse(data);
+        const callback = this.pendingRequests.get(response.id);
+
+        if (callback) {
+          this.pendingRequests.delete(response.id);
+          callback(response);
+        }
+      } catch (err) {
+        console.error('[NativeHelper] Failed to parse response:', err);
+      }
+    } else {
+      // Binary frame data
+      const header = parseFrameHeader(data);
+
+      if (!header) {
+        console.error('[NativeHelper] Invalid frame header');
+        return;
+      }
+
+      // Extract payload
+      const payloadStart = 16;
+      let payload = new Uint8Array(data, payloadStart);
+
+      // Decompress if needed
+      if (isCompressed(header.flags)) {
+        // TODO: Use proper LZ4 decompression
+        console.warn('[NativeHelper] LZ4 decompression not implemented, using raw data');
+      }
+
+      const frame: DecodedFrame = {
+        width: header.width,
+        height: header.height,
+        frameNum: header.frameNum,
+        data: new Uint8ClampedArray(payload),
+        requestId: header.requestId,
+      };
+
+      // Find callback by request ID pattern
+      // The request ID in the header maps to our string IDs
+      for (const [id, callback] of this.frameCallbacks) {
+        // Match by checking if any pending decode could be this frame
+        callback(frame);
+        this.frameCallbacks.delete(id);
+        break;
+      }
+    }
+  }
+
+  private async send(cmd: Command): Promise<Response> {
+    if (!this.isConnected()) {
+      throw new Error('Not connected');
+    }
+
+    return new Promise((resolve, reject) => {
+      const id = (cmd as any).id;
+
+      // Set timeout
+      const timeout = setTimeout(() => {
+        this.pendingRequests.delete(id);
+        reject(new Error('Request timeout'));
+      }, 30000);
+
+      // Register callback
+      this.pendingRequests.set(id, (response) => {
+        clearTimeout(timeout);
+        resolve(response);
+      });
+
+      // Send command
+      this.sendRaw(JSON.stringify(cmd)).catch((err) => {
+        clearTimeout(timeout);
+        this.pendingRequests.delete(id);
+        reject(err);
+      });
+    });
+  }
+
+  private async sendRaw(data: string | ArrayBuffer | Uint8Array): Promise<void> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      throw new Error('Not connected');
+    }
+
+    this.ws.send(data);
+  }
+}
+
+// Singleton instance
+export const NativeHelperClient = new NativeHelperClientImpl();
+
+// Also export the class for testing
+export { NativeHelperClientImpl };

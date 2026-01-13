@@ -390,8 +390,8 @@ export class FrameExporter {
         await this.seekAllClipsToTime(time);
         console.log(`[FrameExporter] Frame ${frame}: seek done`);
 
-        // Small delay to let video frames fully decode after seeking
-        await new Promise(r => requestAnimationFrame(r));
+        // Wait for all video elements to be ready after seeking
+        await this.waitForAllVideosReady(time);
 
         console.log(`[FrameExporter] Frame ${frame}: building layers...`);
         const layers = this.buildLayersAtTime(time);
@@ -422,8 +422,8 @@ export class FrameExporter {
 
         const avgFrameTime = this.frameTimes.reduce((a, b) => a + b, 0) / this.frameTimes.length;
         const remainingFrames = totalFrames - frame - 1;
-        // If audio is included, video is ~70% of total work
-        const videoWeight = includeAudio ? 0.7 : 1.0;
+        // If audio is included, video is ~95% of total work (audio encoding is fast)
+        const videoWeight = includeAudio ? 0.95 : 1.0;
         const videoPercent = ((frame + 1) / totalFrames) * 100 * videoWeight;
         const estimatedTimeRemaining = (remainingFrames * avgFrameTime) / 1000;
 
@@ -453,8 +453,8 @@ export class FrameExporter {
           (audioProgress) => {
             if (this.isCancelled) return;
 
-            // Audio is ~30% of total work (70-100%)
-            const audioPercent = 70 + (audioProgress.percent * 0.3);
+            // Audio is ~5% of total work (95-100%)
+            const audioPercent = 95 + (audioProgress.percent * 0.05);
 
             onProgress({
               phase: 'audio',
@@ -637,6 +637,53 @@ export class FrameExporter {
     });
   }
 
+  /**
+   * Wait for all video clips at a given time to have their frames ready
+   */
+  private async waitForAllVideosReady(time: number): Promise<void> {
+    const clips = useTimelineStore.getState().getClipsAtTime(time);
+    const tracks = useTimelineStore.getState().tracks;
+
+    const videoClips = clips.filter(clip => {
+      const track = tracks.find(t => t.id === clip.trackId);
+      return track?.visible && clip.source?.type === 'video' && clip.source.videoElement;
+    });
+
+    if (videoClips.length === 0) return;
+
+    // Wait for all videos to be ready (with timeout)
+    const maxWaitTime = 2000;
+    const startTime = performance.now();
+
+    while (performance.now() - startTime < maxWaitTime) {
+      let allReady = true;
+
+      for (const clip of videoClips) {
+        const video = clip.source!.videoElement!;
+        const webCodecsPlayer = clip.source!.webCodecsPlayer;
+
+        const videoReady = video.readyState >= 2 && !video.seeking;
+        const hasWebCodecsFrame = webCodecsPlayer?.hasFrame() ?? false;
+
+        if (!videoReady && !hasWebCodecsFrame) {
+          allReady = false;
+          break;
+        }
+      }
+
+      if (allReady) {
+        // Give one more frame for GPU texture upload
+        await new Promise(r => requestAnimationFrame(r));
+        return;
+      }
+
+      // Wait one frame and check again
+      await new Promise(r => requestAnimationFrame(r));
+    }
+
+    console.warn('[FrameExporter] Timeout waiting for videos to be ready at time', time);
+  }
+
   private buildLayersAtTime(time: number): Layer[] {
     const timelineState = useTimelineStore.getState();
     const { clips, tracks, getInterpolatedTransform, getInterpolatedEffects } = timelineState;
@@ -742,18 +789,25 @@ export class FrameExporter {
       // Handle video clips
       if (clip.source?.type === 'video' && clip.source.videoElement) {
         const video = clip.source.videoElement;
-        // Only use video if it's ready
-        if (video.readyState >= 2) {
+        const webCodecsPlayer = clip.source.webCodecsPlayer;
+
+        // Check if video is ready:
+        // - HTMLVideoElement has readyState >= 2 (HAVE_CURRENT_DATA), OR
+        // - WebCodecsPlayer has a decoded frame available
+        const videoReady = video.readyState >= 2;
+        const hasWebCodecsFrame = webCodecsPlayer?.hasFrame() ?? false;
+
+        if (videoReady || hasWebCodecsFrame) {
           layers.push({
             ...baseLayerProps,
             source: {
               type: 'video',
               videoElement: video,
-              webCodecsPlayer: clip.source.webCodecsPlayer,
+              webCodecsPlayer: webCodecsPlayer,
             },
           });
         } else {
-          console.warn('[FrameExporter] Video not ready for clip', clip.id, 'readyState:', video.readyState);
+          console.warn('[FrameExporter] Video not ready for clip', clip.id, 'readyState:', video.readyState, 'hasWebCodecsFrame:', hasWebCodecsFrame);
         }
       }
       // Handle image clips

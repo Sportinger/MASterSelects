@@ -47,13 +47,14 @@ RUN git clone --depth 1 https://code.videolan.org/videolan/x264.git && \
         --extra-cflags="-O3" && \
     emmake make -j$(nproc) && emmake make install
 
-# libvpx (VP9 encoder)
+# libvpx (VP9 only - VP8 fully disabled)
 RUN git clone --depth 1 https://chromium.googlesource.com/webm/libvpx.git && \
     cd libvpx && \
     emconfigure ./configure --prefix=/opt/vpx --target=generic-gnu \
         --enable-static --disable-shared --disable-examples --disable-tools \
-        --disable-docs --disable-unit-tests --enable-vp9-encoder \
-        --disable-vp8-encoder --disable-vp8-decoder && \
+        --disable-docs --disable-unit-tests \
+        --enable-vp9-encoder --enable-vp9-decoder \
+        --disable-vp8-encoder --disable-vp8-decoder --disable-vp8 && \
     emmake make -j$(nproc) && emmake make install
 
 # LAME (MP3 encoder)
@@ -65,12 +66,14 @@ RUN wget https://sourceforge.net/projects/lame/files/lame/3.100/lame-3.100.tar.g
     emmake make -j$(nproc) && emmake make install
 
 # Opus (modern audio codec) - with manual pkg-config
+# Using -fno-stack-protector in both CFLAGS and CPPFLAGS
+# Also passing flags directly to make to ensure they're used
 RUN git clone --depth 1 --branch v1.4 https://github.com/xiph/opus.git && \
     cd opus && ./autogen.sh && \
-    emconfigure ./configure --prefix=/opt/opus --host=i686-gnu \
+    CFLAGS="-O3 -fno-stack-protector" CPPFLAGS="-fno-stack-protector" emconfigure ./configure --prefix=/opt/opus --host=i686-gnu \
         --enable-static --disable-shared --disable-doc --disable-extra-programs \
-        --disable-rtcd --disable-intrinsics && \
-    emmake make -j$(nproc) && emmake make install && \
+        --disable-rtcd --disable-intrinsics --disable-hardening && \
+    emmake make CFLAGS="-O3 -fno-stack-protector" -j$(nproc) && emmake make install && \
     mkdir -p /opt/opus/lib/pkgconfig && \
     echo 'prefix=/opt/opus' > /opt/opus/lib/pkgconfig/opus.pc && \
     echo 'exec_prefix=${prefix}' >> /opt/opus/lib/pkgconfig/opus.pc && \
@@ -98,12 +101,14 @@ RUN git clone --depth 1 https://github.com/xiph/vorbis.git && \
         --with-ogg=/opt/ogg && \
     emmake make -j$(nproc) && emmake make install
 
-# WebP - with manual pkg-config
+# WebP - with animation support and libsharpyuv
 RUN git clone --depth 1 https://chromium.googlesource.com/webm/libwebp && \
     cd libwebp && ./autogen.sh && \
-    emconfigure ./configure --prefix=/opt/webp --host=i686-gnu \
+    CFLAGS="-O3 -fno-stack-protector" emconfigure ./configure --prefix=/opt/webp --host=i686-gnu \
         --enable-static --disable-shared \
-        --disable-threading && \
+        --disable-threading \
+        --enable-libwebpmux \
+        --enable-libsharpyuv && \
     emmake make -j$(nproc) && emmake make install && \
     mkdir -p /opt/webp/lib/pkgconfig && \
     echo 'prefix=/opt/webp' > /opt/webp/lib/pkgconfig/libwebp.pc && \
@@ -119,7 +124,14 @@ RUN git clone --depth 1 https://chromium.googlesource.com/webm/libwebp && \
 
 # ============ BUILD FFMPEG ============
 
-RUN git clone --depth 1 -b n6.1.1 https://github.com/FFmpeg/FFmpeg.git ffmpeg
+# Using FFmpeg 5.1.4 - better WASM compatibility than 6.x
+RUN git clone --depth 1 -b n5.1.4 https://github.com/FFmpeg/FFmpeg.git ffmpeg
+
+# Create stack protector stub for Opus (Opus uses stack protection that doesn't work in WASM)
+RUN echo '// Stack protector stubs for WASM' > /opt/stack_chk_stub.c && \
+    echo 'unsigned long __stack_chk_guard = 0xDEADBEEF;' >> /opt/stack_chk_stub.c && \
+    echo 'void __stack_chk_fail(void) { }' >> /opt/stack_chk_stub.c && \
+    emcc -c -O3 /opt/stack_chk_stub.c -o /opt/stack_chk_stub.o
 
 WORKDIR /src/ffmpeg
 
@@ -205,19 +217,25 @@ ENV LIBMP3LAME_LIBS="-L/opt/lame/lib -lmp3lame"
 ENV ZLIB_CFLAGS="-I/opt/zlib/include"
 ENV ZLIB_LIBS="-L/opt/zlib/lib -lz"
 
-# Patch FFmpeg configure to skip link tests for emscripten
-# The issue is check_pkg_config does: check_ld "cc" "$@" $extralibs
-# which fails because emcc produces .js not executables
-RUN echo "=== Patching FFmpeg configure ===" && \
-    echo "Looking for check_ld in configure..." && \
-    grep -n 'check_ld "cc"' configure | head -10 && \
-    # Replace check_ld with always-true for pkg_config checks
-    sed -i 's/check_ld "cc" "\$@" \$extralibs/true/g' configure && \
-    echo "=== Verifying patch ===" && \
-    grep -n 'true' configure | grep -v '#' | head -5
+# Patch FFmpeg configure to skip library link tests for emscripten
+# The issue: require_pkg_config calls test_pkg_config which does compile+link tests
+# We need to find and patch test_pkg_config
+RUN echo "=== Finding test_pkg_config function ===" && \
+    grep -n -A30 "^test_pkg_config(){" configure | head -40 && \
+    echo "" && \
+    echo "=== Patching test_pkg_config to skip compile/link tests ===" && \
+    # test_pkg_config likely calls check_func_headers or similar
+    # Replace the compile test with always-true
+    sed -i '/^test_pkg_config(){/,/^}/ s/check_func_headers/true #&/' configure && \
+    # Also check require_pkg_config
+    echo "=== Finding require_pkg_config function ===" && \
+    grep -n -A15 "^require_pkg_config(){" configure | head -20 && \
+    echo "" && \
+    echo "=== After patch ===" && \
+    grep -n -A30 "^test_pkg_config(){" configure | head -40
 
-# Run configure with all libraries enabled
-RUN ./configure \
+# Run configure with emconfigure (now that test_pkg_config is patched)
+RUN emconfigure ./configure \
     --pkg-config=/usr/local/bin/fake-pkg-config \
     --prefix=/opt/ffmpeg \
     --target-os=none \
@@ -286,6 +304,9 @@ RUN ./configure \
     --enable-decoder=h264 \
     --enable-decoder=hevc \
     --enable-decoder=vp9 \
+    --enable-decoder=libvpx_vp9 \
+    --disable-decoder=libvpx_vp8 \
+    --disable-encoder=libvpx_vp8 \
     --enable-decoder=av1 \
     --enable-decoder=prores \
     --enable-decoder=png \
@@ -312,9 +333,9 @@ RUN ./configure \
     --enable-parser=aac \
     --enable-protocol=file \
     --enable-protocol=pipe \
-    --extra-cflags="-O3 -I/opt/x264/include -I/opt/vpx/include -I/opt/snappy/include -I/opt/lame/include -I/opt/opus/include/opus -I/opt/ogg/include -I/opt/vorbis/include -I/opt/webp/include -I/opt/zlib/include -sUSE_PTHREADS=0" \
-    --extra-ldflags="-L/opt/x264/lib -L/opt/vpx/lib -L/opt/snappy/lib -L/opt/lame/lib -L/opt/opus/lib -L/opt/ogg/lib -L/opt/vorbis/lib -L/opt/webp/lib -L/opt/zlib/lib -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=5242880" \
-    --extra-libs="-lx264 -lvpx -lsnappy -lmp3lame -lopus -lvorbis -lvorbisenc -logg -lwebp -lz -lm" \
+    --extra-cflags="-O3 -fno-stack-protector -I/opt/x264/include -I/opt/vpx/include -I/opt/snappy/include -I/opt/lame/include -I/opt/opus/include/opus -I/opt/ogg/include -I/opt/vorbis/include -I/opt/webp/include -I/opt/zlib/include" \
+    --extra-ldflags="-L/opt/x264/lib -L/opt/vpx/lib -L/opt/snappy/lib -L/opt/lame/lib -L/opt/opus/lib -L/opt/ogg/lib -L/opt/vorbis/lib -L/opt/webp/lib -L/opt/zlib/lib -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=5242880 -sINITIAL_MEMORY=67108864" \
+    --extra-libs="/opt/stack_chk_stub.o -lx264 -lvpx -lsnappy -lmp3lame -lopus -lvorbis -lvorbisenc -logg -lwebpmux -lsharpyuv -lwebp -lz -lm" \
     --nm="/emsdk/upstream/bin/llvm-nm" \
     --ar="/emsdk/upstream/emscripten/emar" \
     --ranlib="/emsdk/upstream/emscripten/emranlib" \
@@ -322,6 +343,24 @@ RUN ./configure \
     --cxx="em++"
 
 RUN emmake make -j$(nproc)
+
+# Check what was built
+RUN echo "=== Checking built library files ===" && \
+    ls -la libav*/lib*.a libsw*/lib*.a 2>/dev/null && \
+    echo "" && \
+    echo "=== Looking for ffmpeg binary ===" && \
+    ls -la ffmpeg* 2>/dev/null || echo "No ffmpeg binary found" && \
+    echo "" && \
+    echo "=== Checking if fftools .o files exist ===" && \
+    ls fftools/*.o 2>/dev/null || echo "No fftools .o files found - will compile manually"
+
+# FFmpeg 5.x compiles fftools automatically with emmake make
+# Just verify they exist
+RUN echo "=== Checking fftools .o files ===" && \
+    ls -la fftools/*.o 2>/dev/null || echo "No .o files - build may have failed"
+
+# If ffmpeg_g doesn't exist, build the WASM module directly from libraries
+# This creates a minimal ffmpeg WASM that can be called from JavaScript
 
 # ============ CREATE WASM MODULE ============
 

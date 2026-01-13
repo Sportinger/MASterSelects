@@ -47,6 +47,7 @@ export interface MediaFile extends MediaItem {
   // File System Access API support
   hasFileHandle?: boolean; // True if imported via File System Access API
   filePath?: string; // Display path (folder name / file name)
+  absolutePath?: string; // Full file system path (for native helper decoding)
 }
 
 // Composition (like After Effects comp)
@@ -154,7 +155,7 @@ interface MediaState {
   fileSystemSupported: boolean;
   proxyFolderName: string | null;
   importFilesWithPicker: () => Promise<MediaFile[]>;
-  importFilesWithHandles: (filesWithHandles: Array<{ file: File; handle: FileSystemFileHandle }>) => Promise<MediaFile[]>;
+  importFilesWithHandles: (filesWithHandles: Array<{ file: File; handle: FileSystemFileHandle; absolutePath?: string }>) => Promise<MediaFile[]>;
   pickProxyFolder: () => Promise<boolean>;
   showInExplorer: (type: 'raw' | 'proxy', mediaFileId?: string) => Promise<{ success: boolean; message: string }>;
 }
@@ -1463,7 +1464,7 @@ export const useMediaStore = create<MediaState>()(
         importFilesWithHandles: async (filesWithHandles) => {
           const imported: MediaFile[] = [];
 
-          for (const { file, handle } of filesWithHandles) {
+          for (const { file, handle, absolutePath } of filesWithHandles) {
             const id = generateId();
 
             // Store the file handle in memory and IndexedDB for persistence
@@ -1542,6 +1543,7 @@ export const useMediaStore = create<MediaState>()(
               fileHash,
               hasFileHandle: true,
               filePath: file.name,
+              absolutePath,
               proxyStatus,
               proxyFrameCount,
               proxyFps: proxyFrameCount ? PROXY_FPS : undefined,

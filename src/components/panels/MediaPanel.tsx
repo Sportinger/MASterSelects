@@ -177,6 +177,8 @@ export function MediaPanel() {
     const hasFiles = e.dataTransfer.types.includes('Files');
     const isInternalDrag = e.dataTransfer.types.includes('application/x-media-panel-item');
 
+    console.log('[MediaPanel] DragOver - hasFiles:', hasFiles, 'isInternalDrag:', isInternalDrag, 'types:', e.dataTransfer.types);
+
     if (hasFiles && !isInternalDrag) {
       e.dataTransfer.dropEffect = 'copy';
       setIsExternalDragOver(true);
@@ -439,6 +441,8 @@ export function MediaPanel() {
     e.preventDefault();
     e.stopPropagation();
     setIsExternalDragOver(false);
+
+    console.log('[MediaPanel] Drop event - types:', e.dataTransfer.types, 'files:', e.dataTransfer.files.length);
 
     // Check if this is an external file drop
     if (!e.dataTransfer.types.includes('application/x-media-panel-item')) {

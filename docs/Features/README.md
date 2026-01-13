@@ -22,6 +22,7 @@ MASterSelects is a browser-based professional video editing application built on
 | **Professional Audio** | 10-band parametric EQ with keyframe automation |
 | **Multicam Support** | Audio-based cross-correlation synchronization |
 | **Video Export** | H.264/VP9 WebCodecs + FFmpeg WASM (ProRes, DNxHR, HAP) |
+| **Native Helper** | Optional 10x faster ProRes/DNxHD decode with hardware accel |
 | **Local Storage** | Project folder with autosave, backups, and smart media relinking |
 
 ---
@@ -60,6 +61,7 @@ UI Framework      Custom dockable panel system
 | [GPU Engine](./GPU-Engine.md) | WebGPU architecture, optical flow, texture management |
 | [Project Persistence](./Project-Persistence.md) | Auto-save, IndexedDB, file handles |
 | [Proxy System](./Proxy-System.md) | GPU-accelerated proxy generation |
+| [Native Helper](./Native-Helper.md) | Optional Turbo Mode for ProRes/DNxHD |
 | [Keyboard Shortcuts](./Keyboard-Shortcuts.md) | Complete shortcut reference |
 
 ---
@@ -168,6 +170,17 @@ UI Framework      Custom dockable panel system
 | Multicam EDL | ✅ | AI-generated edit decision lists |
 | Context Awareness | ✅ | AI knows timeline state |
 
+### YouTube Integration
+
+| Feature | Status | Details |
+|---------|--------|---------|
+| YouTube Search | ✅ | Search videos via Invidious or YouTube Data API |
+| Video Thumbnails | ✅ | Display thumbnails, titles, channels, duration |
+| Drag to Timeline | ✅ | Drag videos to timeline to download |
+| Cobalt Download | ✅ | Download videos via Cobalt API |
+| Pending Clip State | ✅ | Dashed preview with download progress |
+| Dual API Support | ✅ | Invidious (no key) or YouTube Data API (optional) |
+
 ### Audio
 
 | Feature | Status | Details |
@@ -224,12 +237,25 @@ UI Framework      Custom dockable panel system
 | Proxy Generation | ✅ | GPU-accelerated, Windows/Linux/Mac |
 | Hash Deduplication | ✅ | Same files share proxies/thumbnails |
 
+### Native Helper (Turbo Mode)
+
+| Feature | Status | Details |
+|---------|--------|---------|
+| ProRes Decoding | ✅ | All profiles at native speed |
+| DNxHD/DNxHR Decoding | ✅ | All profiles at native speed |
+| Hardware Acceleration | ✅ | VAAPI (Intel/AMD), NVDEC (NVIDIA) |
+| Frame Cache | ✅ | LRU cache up to 2GB |
+| Background Prefetch | ✅ | Frames loaded ahead of playhead |
+| Native Encoding | ✅ | 10x faster ProRes/DNxHD export |
+| Auto-Detection | ✅ | Toolbar shows "⚡ Turbo" when connected |
+| Download Link | ✅ | Click indicator for helper download |
+
 ### User Interface
 
 | Feature | Status | Details |
 |---------|--------|---------|
 | Dockable Panels | ✅ | Drag, resize, tab grouping |
-| 8 Panel Types | ✅ | Preview, Timeline, Media, Properties, Export, Multicam, AI Chat, Slots |
+| 9 Panel Types | ✅ | Preview, Timeline, Media, Properties, Export, Multicam, AI Chat, AI Video, YouTube |
 | Unified Properties Panel | ✅ | Transform, Effects, Masks, Volume tabs |
 | Menu Bar | ✅ | File, Edit, View, Output, Window |
 | Context Menus | ✅ | Right-click operations |

@@ -700,29 +700,64 @@ export class WebCodecsPlayer {
           resolve();
         };
 
-        // Timeout fallback - requestVideoFrameCallback may not fire when video is paused
+        // Longer timeout for export - we need accurate frames
         const timeout = setTimeout(() => {
           if (!resolved) {
+            console.warn('[WebCodecs] seekAsync timeout at', timeSeconds, 'readyState:', video.readyState);
             doResolve();
           }
-        }, 100);
+        }, 2000);
+
+        // Wait for video to have enough data (readyState >= 2 means HAVE_CURRENT_DATA)
+        const waitForReady = (callback: () => void) => {
+          if (video.readyState >= 2 && !video.seeking) {
+            callback();
+            return;
+          }
+          // Poll until ready or timeout
+          let retries = 0;
+          const maxRetries = 60; // 60 * 16ms ≈ 1 second
+          const checkReady = () => {
+            retries++;
+            if (video.readyState >= 2 && !video.seeking) {
+              callback();
+            } else if (retries < maxRetries) {
+              requestAnimationFrame(checkReady);
+            } else {
+              // Give up waiting for readyState, proceed anyway
+              console.warn('[WebCodecs] waitForReady gave up after', retries, 'retries, readyState:', video.readyState);
+              callback();
+            }
+          };
+          requestAnimationFrame(checkReady);
+        };
 
         const waitForFrame = () => {
-          // Use requestVideoFrameCallback if available, but with timeout fallback
-          if ('requestVideoFrameCallback' in video) {
-            (video as any).requestVideoFrameCallback(() => {
-              clearTimeout(timeout);
-              doResolve();
-            });
-          } else {
-            // Fallback: wait for readyState
-            requestAnimationFrame(() => {
-              requestAnimationFrame(() => {
+          // First ensure video has data, then wait for frame callback
+          waitForReady(() => {
+            // Use requestVideoFrameCallback if available for precise frame timing
+            if ('requestVideoFrameCallback' in video) {
+              (video as any).requestVideoFrameCallback(() => {
                 clearTimeout(timeout);
                 doResolve();
               });
-            });
-          }
+              // Also set a shorter backup timeout since rvfc may not fire when paused
+              setTimeout(() => {
+                if (!resolved && video.readyState >= 2) {
+                  clearTimeout(timeout);
+                  doResolve();
+                }
+              }, 100);
+            } else {
+              // Fallback: wait two animation frames
+              requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                  clearTimeout(timeout);
+                  doResolve();
+                });
+              });
+            }
+          });
         };
 
         const onSeeked = () => {
@@ -731,7 +766,7 @@ export class WebCodecsPlayer {
         };
 
         if (Math.abs(video.currentTime - timeSeconds) < 0.01 && !video.seeking) {
-          // Already at position, just capture frame
+          // Already at position, just wait for frame
           waitForFrame();
           return;
         }
