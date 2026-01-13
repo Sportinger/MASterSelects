@@ -82,14 +82,38 @@ export class FFmpegBridge {
       const baseURL = `${window.location.origin}/ffmpeg`;
 
       console.log('[FFmpegBridge] Fetching ffmpeg-core.js...');
-      const coreModule = await import(/* @vite-ignore */ `${baseURL}/ffmpeg-core.js`);
+
+      // Load via script tag since it's a UMD module, not ES module
+      await new Promise<void>((resolve, reject) => {
+        // Check if already loaded
+        if ((window as unknown as Record<string, unknown>).createFFmpegCore) {
+          resolve();
+          return;
+        }
+
+        const script = document.createElement('script');
+        script.src = `${baseURL}/ffmpeg-core.js`;
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error('Failed to load ffmpeg-core.js'));
+        document.head.appendChild(script);
+      });
+
+      // Get the global createFFmpegCore function
+      const createFFmpegCore = (window as unknown as Record<string, unknown>).createFFmpegCore as (
+        options: Record<string, unknown>
+      ) => Promise<FFmpegCore>;
+
+      if (!createFFmpegCore) {
+        throw new Error('createFFmpegCore not found after script load');
+      }
 
       console.log('[FFmpegBridge] Fetching ffmpeg-core.wasm...');
       const wasmBinary = await fetch(`${baseURL}/ffmpeg-core.wasm`).then(r => r.arrayBuffer());
 
       console.log('[FFmpegBridge] Initializing FFmpeg core...');
-      const core = await coreModule.default({
+      const core = await createFFmpegCore({
         wasmBinary,
+        locateFile: (path: string) => `${baseURL}/${path}`,
         // Capture stdout/stderr
         print: (message: string) => {
           console.log('[FFmpeg]', message);
@@ -182,11 +206,16 @@ export class FFmpegBridge {
 
   /**
    * Encode frames to video using FFmpeg
+   * @param frames - Array of raw RGBA frame data
+   * @param settings - Export settings (resolution, codec, etc.)
+   * @param onProgress - Progress callback
+   * @param audioBuffer - Optional mixed audio buffer to include
    */
   async encode(
     frames: Uint8Array[],
     settings: FFmpegExportSettings,
-    onProgress?: (progress: FFmpegProgress) => void
+    onProgress?: (progress: FFmpegProgress) => void,
+    audioBuffer?: AudioBuffer | null
   ): Promise<Blob> {
     if (!this.ffmpeg) {
       await this.load();
@@ -204,18 +233,44 @@ export class FFmpegBridge {
     const fs = this.ffmpeg.FS;
 
     try {
-      // Create directories
-      try { fs.mkdir('/input'); } catch { /* exists */ }
-      try { fs.mkdir('/output'); } catch { /* exists */ }
+      // Debug: Check FS availability
+      console.log('[FFmpegBridge] FS object:', fs);
+      console.log('[FFmpegBridge] FS methods:', fs ? Object.keys(fs) : 'FS is null/undefined');
 
-      // Write frames to virtual filesystem
-      console.log(`[FFmpegBridge] Writing ${frames.length} frames...`);
+      // Create directories
+      try {
+        fs.mkdir('/input');
+        console.log('[FFmpegBridge] Created /input directory');
+      } catch (e) {
+        console.log('[FFmpegBridge] /input exists or error:', e);
+      }
+      try {
+        fs.mkdir('/output');
+        console.log('[FFmpegBridge] Created /output directory');
+      } catch (e) {
+        console.log('[FFmpegBridge] /output exists or error:', e);
+      }
+
+      // Verify directories exist
+      try {
+        const rootDir = fs.readdir('/');
+        console.log('[FFmpegBridge] Root directory contents:', rootDir);
+      } catch (e) {
+        console.error('[FFmpegBridge] Cannot read root directory:', e);
+      }
+
+      // Concatenate all frames into a single raw file
+      // This bypasses the pattern matching issue in WASM FFmpeg's image2 demuxer
+      const frameSize = frames[0].byteLength;
+      const totalSize = frameSize * frames.length;
+      console.log(`[FFmpegBridge] Writing ${frames.length} frames (${(totalSize / 1024 / 1024).toFixed(1)} MB) as single file...`);
+
+      const allFrames = new Uint8Array(totalSize);
       for (let i = 0; i < frames.length; i++) {
         if (this.cancelled) throw new Error('Cancelled');
-        const filename = `/input/frame_${String(i).padStart(6, '0')}.raw`;
-        fs.writeFile(filename, frames[i]);
+        allFrames.set(frames[i], i * frameSize);
 
-        // Report write progress
+        // Report write progress (first 10%)
         if (onProgress && i % 10 === 0) {
           onProgress({
             frame: i,
@@ -224,20 +279,33 @@ export class FFmpegBridge {
             speed: 0,
             bitrate: 0,
             size: 0,
-            percent: (i / frames.length) * 10, // First 10% is writing
+            percent: (i / frames.length) * 10,
             eta: 0,
           });
         }
       }
 
-      // Build FFmpeg arguments
-      const args = this.buildArgs(settings);
+      fs.writeFile('/input/frames.raw', allFrames);
+      console.log('[FFmpegBridge] Wrote frames.raw successfully');
+
+      // Write audio if provided
+      let hasAudio = false;
+      if (audioBuffer && audioBuffer.length > 0) {
+        console.log(`[FFmpegBridge] Writing audio: ${audioBuffer.duration.toFixed(2)}s, ${audioBuffer.sampleRate}Hz, ${audioBuffer.numberOfChannels}ch`);
+
+        // Convert AudioBuffer to interleaved PCM Float32
+        const audioData = this.audioBufferToPCM(audioBuffer);
+        fs.writeFile('/input/audio.raw', new Uint8Array(audioData.buffer));
+        hasAudio = true;
+        console.log(`[FFmpegBridge] Wrote audio.raw: ${(audioData.byteLength / 1024 / 1024).toFixed(1)} MB`);
+      }
+
+      // Build FFmpeg arguments (using single file input)
+      const args = this.buildArgs(settings, frames.length, hasAudio ? audioBuffer : null);
       console.log('[FFmpegBridge] Running: ffmpeg', args.join(' '));
 
-      // Reset state before running
-      if (this.ffmpeg.reset) {
-        this.ffmpeg.reset();
-      }
+      // NOTE: Do NOT call reset() here - it clears the virtual filesystem!
+      // The files we just wrote would be deleted.
 
       // Execute FFmpeg (callMain is synchronous but may take a while)
       const exitCode = this.ffmpeg.callMain(args);
@@ -261,26 +329,111 @@ export class FFmpegBridge {
   /**
    * Build FFmpeg command line arguments
    */
-  private buildArgs(settings: FFmpegExportSettings): string[] {
+  private buildArgs(settings: FFmpegExportSettings, _frameCount?: number, audioBuffer?: AudioBuffer | null): string[] {
     const args: string[] = [
+      '-nostdin',                      // Don't read from stdin (prevents prompt in browser)
       '-y',                            // Overwrite output
-      '-f', 'rawvideo',                // Input format
+      '-f', 'rawvideo',                // Input format for video
       '-pix_fmt', 'rgba',              // Input pixel format (from canvas)
       '-s', `${settings.width}x${settings.height}`,
       '-r', String(settings.fps),
-      '-i', '/input/frame_%06d.raw',   // Input pattern
+      '-i', '/input/frames.raw',       // Video input
     ];
+
+    // Add audio input if available
+    if (audioBuffer) {
+      args.push(
+        '-f', 'f32le',                 // Raw PCM float32 little-endian
+        '-ar', String(audioBuffer.sampleRate),
+        '-ac', String(audioBuffer.numberOfChannels),
+        '-i', '/input/audio.raw'       // Audio input
+      );
+    }
 
     // Video codec settings
     args.push(...this.buildVideoArgs(settings));
 
-    // Audio (none for now - frames only)
-    args.push('-an');
+    // Audio codec settings
+    if (audioBuffer) {
+      args.push(...this.buildAudioArgs(settings));
+    } else {
+      args.push('-an'); // No audio
+    }
 
     // Output file
     args.push(`/output/output.${settings.container}`);
 
     return args;
+  }
+
+  /**
+   * Build audio codec arguments based on container
+   */
+  private buildAudioArgs(settings: FFmpegExportSettings): string[] {
+    const args: string[] = [];
+
+    // Choose audio codec based on container
+    switch (settings.container) {
+      case 'mov':
+      case 'mp4':
+        // AAC for MOV/MP4
+        args.push('-c:a', 'aac');
+        args.push('-b:a', '256k');
+        break;
+
+      case 'webm':
+        // Opus for WebM
+        args.push('-c:a', 'libopus');
+        args.push('-b:a', '192k');
+        break;
+
+      case 'mkv':
+        // AAC or FLAC for MKV
+        args.push('-c:a', 'aac');
+        args.push('-b:a', '256k');
+        break;
+
+      case 'avi':
+        // MP3 for AVI
+        args.push('-c:a', 'libmp3lame');
+        args.push('-b:a', '256k');
+        break;
+
+      case 'mxf':
+        // PCM for MXF (professional)
+        args.push('-c:a', 'pcm_s16le');
+        break;
+
+      default:
+        args.push('-c:a', 'aac');
+        args.push('-b:a', '256k');
+    }
+
+    return args;
+  }
+
+  /**
+   * Convert AudioBuffer to interleaved PCM Float32 data
+   */
+  private audioBufferToPCM(audioBuffer: AudioBuffer): Float32Array {
+    const channels = audioBuffer.numberOfChannels;
+    const length = audioBuffer.length;
+    const interleaved = new Float32Array(length * channels);
+
+    // Get channel data
+    const channelData: Float32Array[] = [];
+    for (let ch = 0; ch < channels; ch++) {
+      channelData.push(audioBuffer.getChannelData(ch));
+    }
+
+    // Interleave samples
+    for (let i = 0; i < length; i++) {
+      for (let ch = 0; ch < channels; ch++) {
+        interleaved[i * channels + ch] = channelData[ch][i];
+      }
+    }
+
+    return interleaved;
   }
 
   /**

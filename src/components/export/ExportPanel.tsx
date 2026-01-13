@@ -374,11 +374,11 @@ export function ExportPanel() {
         if (pixels) {
           frames.push(new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength));
         }
-        // Update progress during rendering
-        const percent = (i / totalFrames) * 50; // First 50% is rendering
+        // Update progress during rendering (0-60% of total)
+        const percent = ((i + 1) / totalFrames) * 60;
         setFfmpegProgress({
           percent,
-          frame: i,
+          frame: i + 1,
           fps: 0,
           time: time,
           speed: 0,
@@ -394,20 +394,68 @@ export function ExportPanel() {
         throw new Error('No frames rendered');
       }
 
+      // Extract audio from timeline (if enabled)
+      let audioBuffer: AudioBuffer | null = null;
+
+      if (includeAudio) {
+        setExportPhase('audio');
+        console.log('[ExportPanel] Extracting audio for FFmpeg...');
+
+        try {
+          const audioPipeline = new AudioExportPipeline({
+            sampleRate: audioSampleRate,
+            bitrate: audioBitrate,
+            normalize: normalizeAudio,
+          });
+
+          audioBuffer = await audioPipeline.exportRawAudio(
+            startTime,
+            endTime,
+            (audioProgress) => {
+              // Audio extraction is 60-70% of total progress
+              const percent = 60 + (audioProgress.percent * 0.1);
+              setFfmpegProgress({
+                percent,
+                frame: frames.length,
+                fps: 0,
+                time: endTime,
+                speed: 0,
+                bitrate: 0,
+                size: 0,
+                eta: 0,
+              });
+              setExportProgress(percent, endTime);
+            }
+          );
+
+          if (audioBuffer) {
+            console.log(`[ExportPanel] Audio extracted: ${audioBuffer.duration.toFixed(2)}s, ${audioBuffer.numberOfChannels}ch`);
+          } else {
+            console.log('[ExportPanel] No audio clips found in timeline');
+          }
+        } catch (audioError) {
+          console.warn('[ExportPanel] Audio extraction failed, continuing without audio:', audioError);
+        }
+      }
+
       // Encode with FFmpeg
       setExportPhase('encoding');
       console.log(`[ExportPanel] Encoding ${frames.length} frames with FFmpeg...`);
 
       const ffmpeg = getFFmpegBridge();
+      // Encoding is 70-100% (or 60-100% if no audio)
+      const encodeStart = includeAudio ? 70 : 60;
+      const encodeRange = includeAudio ? 30 : 40;
+
       const blob = await ffmpeg.encode(frames, settings, (p: FFmpegProgress) => {
-        const totalPercent = 50 + (p.percent / 2); // Second 50% is encoding
+        const totalPercent = encodeStart + (p.percent / 100) * encodeRange;
         setFfmpegProgress({
           ...p,
           percent: totalPercent,
         });
         // Update timeline export progress
         setExportProgress(totalPercent, endTime);
-      });
+      }, audioBuffer);
 
       // Download the file
       const url = URL.createObjectURL(blob);
@@ -434,6 +482,7 @@ export function ExportPanel() {
     isExporting, isFFmpegReady, loadFFmpeg, useCustomResolution, customWidth, customHeight,
     width, height, fps, customFps, useCustomFps, startTime, endTime, ffmpegCodec, ffmpegContainer,
     ffmpegRateControl, ffmpegQuality, ffmpegBitrate, proresProfile, dnxhrProfile, hapFormat, hapChunks, filename,
+    includeAudio, audioSampleRate, audioBitrate, normalizeAudio,
     startExport, setExportProgress, endExport,
   ]);
 
@@ -1116,68 +1165,78 @@ export function ExportPanel() {
             )}
           </div>
 
-          {/* Audio Settings - only for WebCodecs */}
-          {encoder === 'webcodecs' && (
-            <div className="export-section">
-              <div className="export-section-header">Audio</div>
+          {/* Audio Settings */}
+          <div className="export-section">
+            <div className="export-section-header">Audio</div>
 
-              <div className="control-row">
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={includeAudio}
-                    onChange={(e) => setIncludeAudio(e.target.checked)}
-                    disabled={!isAudioSupported}
-                  />
-                  Include Audio ({audioCodec?.toUpperCase() || 'AAC'})
-                </label>
-                {!isAudioSupported && (
-                  <span style={{ color: 'var(--warning)', fontSize: '11px', marginLeft: '8px' }}>
-                    Not supported
-                  </span>
-                )}
-              </div>
-
-              {includeAudio && (
-                <>
-                  <div className="control-row">
-                    <label>Sample Rate</label>
-                    <select
-                      value={audioSampleRate}
-                      onChange={(e) => setAudioSampleRate(Number(e.target.value) as 44100 | 48000)}
-                    >
-                      <option value={48000}>48 kHz (Video)</option>
-                      <option value={44100}>44.1 kHz (CD)</option>
-                    </select>
-                  </div>
-
-                  <div className="control-row">
-                    <label>Audio Quality</label>
-                    <select
-                      value={audioBitrate}
-                      onChange={(e) => setAudioBitrate(Number(e.target.value))}
-                    >
-                      <option value={128000}>128 kbps</option>
-                      <option value={192000}>192 kbps</option>
-                      <option value={256000}>256 kbps (High)</option>
-                      <option value={320000}>320 kbps (Max)</option>
-                    </select>
-                  </div>
-
-                  <div className="control-row">
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={normalizeAudio}
-                        onChange={(e) => setNormalizeAudio(e.target.checked)}
-                      />
-                      Normalize (prevent clipping)
-                    </label>
-                  </div>
-                </>
+            <div className="control-row">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={includeAudio}
+                  onChange={(e) => setIncludeAudio(e.target.checked)}
+                  disabled={encoder === 'webcodecs' && !isAudioSupported}
+                />
+                Include Audio
+              </label>
+              {encoder === 'webcodecs' && !isAudioSupported && (
+                <span style={{ color: 'var(--warning)', fontSize: '11px', marginLeft: '8px' }}>
+                  Not supported
+                </span>
               )}
             </div>
-          )}
+
+            {includeAudio && (
+              <>
+                <div className="control-row">
+                  <label>Sample Rate</label>
+                  <select
+                    value={audioSampleRate}
+                    onChange={(e) => setAudioSampleRate(Number(e.target.value) as 44100 | 48000)}
+                  >
+                    <option value={48000}>48 kHz (Video)</option>
+                    <option value={44100}>44.1 kHz (CD)</option>
+                  </select>
+                </div>
+
+                <div className="control-row">
+                  <label>Audio Quality</label>
+                  <select
+                    value={audioBitrate}
+                    onChange={(e) => setAudioBitrate(Number(e.target.value))}
+                  >
+                    <option value={128000}>128 kbps</option>
+                    <option value={192000}>192 kbps</option>
+                    <option value={256000}>256 kbps (High)</option>
+                    <option value={320000}>320 kbps (Max)</option>
+                  </select>
+                </div>
+
+                {encoder === 'ffmpeg' && (
+                  <div className="control-row">
+                    <label>Audio Codec</label>
+                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                      {ffmpegContainer === 'mov' || ffmpegContainer === 'mp4' ? 'AAC' :
+                       ffmpegContainer === 'webm' ? 'Opus' :
+                       ffmpegContainer === 'avi' ? 'MP3' :
+                       ffmpegContainer === 'mxf' ? 'PCM' : 'AAC'} (auto)
+                    </span>
+                  </div>
+                )}
+
+                <div className="control-row">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={normalizeAudio}
+                      onChange={(e) => setNormalizeAudio(e.target.checked)}
+                    />
+                    Normalize (prevent clipping)
+                  </label>
+                </div>
+              </>
+            )}
+          </div>
 
           {/* Range Settings */}
           <div className="export-section">
