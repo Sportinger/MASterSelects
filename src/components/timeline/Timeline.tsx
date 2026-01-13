@@ -1053,13 +1053,21 @@ export function Timeline() {
         }
       }
 
-      // Try to get file path from URI list (Linux file managers include this)
-      const uriList = e.dataTransfer.getData('text/uri-list');
+      // Try to get file path from various drag data formats
       let filePath: string | undefined;
+      const uriList = e.dataTransfer.getData('text/uri-list');
       if (uriList) {
         const uri = uriList.split('\n')[0]?.trim();
         if (uri?.startsWith('file://')) {
           filePath = decodeURIComponent(uri.replace('file://', ''));
+        }
+      }
+      if (!filePath) {
+        const plainText = e.dataTransfer.getData('text/plain');
+        if (plainText?.startsWith('/') || plainText?.startsWith('file://')) {
+          filePath = plainText.startsWith('file://')
+            ? decodeURIComponent(plainText.replace('file://', ''))
+            : plainText;
         }
       }
 
@@ -1166,18 +1174,42 @@ export function Timeline() {
 
       // Handle external file drop - try to get file handle for persistence
       const items = e.dataTransfer.items;
-      console.log('[Timeline] External drop - items:', items?.length);
+      console.log('[Timeline] External drop - items:', items?.length, 'types:', Array.from(e.dataTransfer.types));
 
-      // Try to get file path from URI list (Linux file managers include this)
-      const uriList = e.dataTransfer.getData('text/uri-list');
+      // Try to get file path from various drag data formats
       let filePath: string | undefined;
+
+      // Try text/uri-list (Nautilus, Dolphin)
+      const uriList = e.dataTransfer.getData('text/uri-list');
       if (uriList) {
         const uri = uriList.split('\n')[0]?.trim();
         if (uri?.startsWith('file://')) {
           filePath = decodeURIComponent(uri.replace('file://', ''));
-          console.log('[Timeline] Got file path from URI:', filePath);
+          console.log('[Timeline] Got file path from URI list:', filePath);
         }
       }
+
+      // Try text/plain (some file managers)
+      if (!filePath) {
+        const plainText = e.dataTransfer.getData('text/plain');
+        if (plainText?.startsWith('/') || plainText?.startsWith('file://')) {
+          filePath = plainText.startsWith('file://')
+            ? decodeURIComponent(plainText.replace('file://', ''))
+            : plainText;
+          console.log('[Timeline] Got file path from text/plain:', filePath);
+        }
+      }
+
+      // Try text/x-moz-url (Firefox)
+      if (!filePath) {
+        const mozUrl = e.dataTransfer.getData('text/x-moz-url');
+        if (mozUrl?.startsWith('file://')) {
+          filePath = decodeURIComponent(mozUrl.split('\n')[0].replace('file://', ''));
+          console.log('[Timeline] Got file path from moz-url:', filePath);
+        }
+      }
+
+      console.log('[Timeline] Final file path:', filePath || 'NOT AVAILABLE');
 
       if (items && items.length > 0) {
         const item = items[0];
