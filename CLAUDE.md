@@ -18,11 +18,13 @@ git add . && git commit -m "description" && git push origin staging
 
 # NUR wenn User "merge zu master" oder "PR zu master" sagt:
 # 1. Version in src/version.ts erhöhen (z.B. 1.0.5 -> 1.0.6)
-# 2. Commit & Push auf staging
-# 3. PR erstellen und mergen:
+# 2. CHANGELOG in src/version.ts aktualisieren (neuer Eintrag mit allen Änderungen)
+# 3. KNOWN_ISSUES in src/version.ts prüfen und aktualisieren
+# 4. Commit & Push auf staging
+# 5. PR erstellen und mergen:
 gh pr create --base master --head staging --title "..." --body "..."
 gh pr merge --merge
-# 4. Staging mit master synchronisieren:
+# 6. Staging mit master synchronisieren:
 git fetch origin && git merge origin/master && git push origin staging
 ```
 
@@ -31,6 +33,39 @@ git fetch origin && git merge origin/master && git push origin staging
 - Format: `MAJOR.MINOR.PATCH`
 - VOR dem Merge zu master: PATCH um 1 erhöhen
 - Version wird oben rechts neben "WebGPU Ready" angezeigt
+
+**What's New Dialog aktualisieren bei MERGE zu master!**
+- Datei: `src/version.ts`
+- `CHANGELOG` Array: Neuen Eintrag am ANFANG hinzufügen mit:
+  - `version`: Die neue Version (z.B. '1.0.8')
+  - `date`: Aktuelles Datum (z.B. '2026-01-15')
+  - `changes`: Array mit allen Änderungen seit letztem Release
+    - `type`: 'new' (grün), 'fix' (blau), oder 'improve' (orange)
+    - `description`: Kurze Beschreibung der Änderung
+- `KNOWN_ISSUES` Array: Aktuelle Bugs/Einschränkungen pflegen
+  - Behobene Issues entfernen
+  - Neue bekannte Probleme hinzufügen
+
+```typescript
+// Beispiel für neuen CHANGELOG Eintrag:
+export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '1.0.8',
+    date: '2026-01-15',
+    changes: [
+      { type: 'new', description: 'Neue Feature Beschreibung' },
+      { type: 'fix', description: 'Behobener Bug' },
+      { type: 'improve', description: 'Verbesserung' },
+    ],
+  },
+  // ... ältere Einträge
+];
+
+export const KNOWN_ISSUES: string[] = [
+  'Aktuelles Problem 1',
+  'Aktuelles Problem 2',
+];
+```
 
 **Documentation: docs/Features/ pflegen!**
 - Bei jedem Commit mit neuen/geänderten Features: `docs/Features/` aktualisieren
