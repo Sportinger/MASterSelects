@@ -6589,12 +6589,25 @@ input[type="checkbox"] {
 
 .welcome-overlay-backdrop.closing {
   backdrop-filter: blur(0px);
+  transition: backdrop-filter 120ms ease-out;
 }
 
 .welcome-overlay-backdrop.closing .welcome-overlay {
   opacity: 0;
   transform: scale(0.96);
-  transition: opacity 0.2s ease-in, transform 0.2s ease-in;
+  transition: opacity 120ms ease-out, transform 120ms ease-out;
+}
+
+/* No fade when another dialog will show immediately after */
+.welcome-overlay-backdrop.closing.no-fade {
+  backdrop-filter: blur(10px);
+  transition: none;
+}
+
+.welcome-overlay-backdrop.closing.no-fade .welcome-overlay {
+  opacity: 0;
+  transform: scale(0.96);
+  transition: opacity 80ms ease-out, transform 80ms ease-out;
 }
 
 .welcome-overlay {

@@ -91,7 +91,7 @@ function App() {
       <Toolbar />
       <DockContainer />
       {showWelcome && (
-        <WelcomeOverlay onComplete={handleWelcomeComplete} />
+        <WelcomeOverlay onComplete={handleWelcomeComplete} noFadeOnClose />
       )}
       {showWhatsNew && (
         <WhatsNewDialog onClose={handleWhatsNewClose} />

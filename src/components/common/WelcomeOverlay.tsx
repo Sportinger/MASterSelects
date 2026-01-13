@@ -62,6 +62,7 @@ function detectOS(): { name: string; isLinux: boolean } {
 
 interface WelcomeOverlayProps {
   onComplete: () => void;
+  noFadeOnClose?: boolean; // Don't fade blur when another dialog follows
 }
 
 // Typewriter sequence with typo correction
@@ -81,7 +82,7 @@ const TYPEWRITER_SEQUENCE = [
   { action: 'hideCursor' },
 ];
 
-export function WelcomeOverlay({ onComplete }: WelcomeOverlayProps) {
+export function WelcomeOverlay({ onComplete, noFadeOnClose = false }: WelcomeOverlayProps) {
   const [isSelecting, setIsSelecting] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
@@ -217,7 +218,7 @@ export function WelcomeOverlay({ onComplete }: WelcomeOverlayProps) {
           setIsClosing(true);
           setTimeout(() => {
             onComplete();
-          }, 200);
+          }, noFadeOnClose ? 80 : 120);
         } else {
           setError('Failed to create project. Please try again.');
         }
@@ -232,7 +233,7 @@ export function WelcomeOverlay({ onComplete }: WelcomeOverlayProps) {
     } finally {
       setIsSelecting(false);
     }
-  }, [isSelecting, isClosing, onComplete]);
+  }, [isSelecting, isClosing, onComplete, noFadeOnClose]);
 
   // Open existing project from local folder
   const handleOpenExisting = useCallback(async () => {
@@ -252,7 +253,7 @@ export function WelcomeOverlay({ onComplete }: WelcomeOverlayProps) {
         setIsClosing(true);
         setTimeout(() => {
           onComplete();
-        }, 200);
+        }, noFadeOnClose ? 80 : 120);
       } else {
         // User cancelled or folder has no project.json
         setError('No valid project found. Select a folder containing project.json');
@@ -267,7 +268,7 @@ export function WelcomeOverlay({ onComplete }: WelcomeOverlayProps) {
     } finally {
       setIsSelecting(false);
     }
-  }, [isSelecting, isClosing, onComplete]);
+  }, [isSelecting, isClosing, onComplete, noFadeOnClose]);
 
   const handleContinue = useCallback(() => {
     if (isClosing) return;
@@ -275,8 +276,8 @@ export function WelcomeOverlay({ onComplete }: WelcomeOverlayProps) {
     // Wait for exit animation to complete
     setTimeout(() => {
       onComplete();
-    }, 200);
-  }, [onComplete, isClosing]);
+    }, noFadeOnClose ? 80 : 120);
+  }, [onComplete, isClosing, noFadeOnClose]);
 
   // Check if there's already an open project
   useEffect(() => {
@@ -300,8 +301,10 @@ export function WelcomeOverlay({ onComplete }: WelcomeOverlayProps) {
   }, [handleContinue, isSelecting]);
 
 
+  const backdropClass = `welcome-overlay-backdrop ${isClosing ? 'closing' : ''} ${isClosing && noFadeOnClose ? 'no-fade' : ''}`;
+
   return (
-    <div className={`welcome-overlay-backdrop ${isClosing ? 'closing' : ''}`}>
+    <div className={backdropClass}>
       <div className="welcome-overlay">
         {/* Privacy tagline - Typewriter effect */}
         <div className="welcome-tagline">
