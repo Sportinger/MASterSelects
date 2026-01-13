@@ -3,11 +3,20 @@
 import type { TimelineClip, TimelineTrack, Effect, EffectType, TextClipProperties } from '../../types';
 import type { ClipActions, SliceCreator, Composition } from './types';
 import { useMediaStore } from '../mediaStore';
+import { useSettingsStore } from '../settingsStore';
 import { DEFAULT_TRANSFORM, DEFAULT_TEXT_PROPERTIES, DEFAULT_TEXT_DURATION } from './constants';
 import { generateWaveform, generateThumbnails, getDefaultEffectParams } from './utils';
 import { textRenderer } from '../../services/textRenderer';
 import { googleFontsService } from '../../services/googleFontsService';
 import { WebCodecsPlayer } from '../../engine/WebCodecsPlayer';
+import { NativeDecoder, NativeHelperClient } from '../../services/nativeHelper';
+
+// Check if file is a professional codec that needs Native Helper
+function isProfessionalCodecFile(file: File): boolean {
+  const ext = file.name.toLowerCase().split('.').pop();
+  // ProRes typically in .mov, DNxHD in .mxf or .mov
+  return ext === 'mov' || ext === 'mxf';
+}
 
 // Warm up video decoder by forcing a frame decode
 // This eliminates the "cold start" delay on first play
@@ -151,90 +160,135 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
       updateDuration();
 
       // Now load media in background
-      // Always create HTMLVideoElement for thumbnails and fallback
-      const video = document.createElement('video');
-      video.src = URL.createObjectURL(file);
-      video.preload = 'metadata'; // Only load metadata, not entire file (perf win for large files)
-      video.muted = true;
-      video.crossOrigin = 'anonymous';
+      // Check if this is a professional codec file that needs Native Helper
+      const isProfessional = isProfessionalCodecFile(file);
+      const { turboModeEnabled, nativeHelperConnected } = useSettingsStore.getState();
+      const useNativeDecoder = isProfessional && turboModeEnabled && nativeHelperConnected;
 
-      // Wait for metadata
-      await new Promise<void>((resolve) => {
-        video.onloadedmetadata = () => resolve();
-        video.onerror = () => resolve();
-      });
+      let nativeDecoder: NativeDecoder | null = null;
+      let video: HTMLVideoElement | null = null;
+      let naturalDuration = estimatedDuration;
 
-      const naturalDuration = video.duration || estimatedDuration;
+      if (useNativeDecoder) {
+        // Use Native Helper for professional codecs (ProRes, DNxHD)
+        try {
+          // Get file path - for dropped files we need the path
+          const filePath = (file as any).path || file.name;
+          console.log(`[Timeline] Opening ${file.name} with Native Helper...`);
 
-      // Update clip duration immediately once we know it
-      updateClip(clipId, {
-        duration: naturalDuration,
-        outPoint: naturalDuration,
-        source: { type: 'video', videoElement: video, naturalDuration, mediaFileId },
-      });
-      if (audioTrackId && audioClipId) {
-        updateClip(audioClipId, {
-          duration: naturalDuration,
-          outPoint: naturalDuration,
-        });
+          nativeDecoder = await NativeDecoder.open(filePath);
+          naturalDuration = nativeDecoder.duration;
+
+          console.log(`[Timeline] Native Helper ready: ${nativeDecoder.width}x${nativeDecoder.height} @ ${nativeDecoder.fps}fps, ${naturalDuration.toFixed(2)}s`);
+
+          // Update clip with NativeDecoder
+          updateClip(clipId, {
+            duration: naturalDuration,
+            outPoint: naturalDuration,
+            source: {
+              type: 'video',
+              naturalDuration,
+              mediaFileId,
+              nativeDecoder,
+              filePath,
+            },
+            isLoading: false,
+          });
+
+          if (audioTrackId && audioClipId) {
+            updateClip(audioClipId, {
+              duration: naturalDuration,
+              outPoint: naturalDuration,
+            });
+          }
+        } catch (err) {
+          console.warn(`[Timeline] Native Helper failed for ${file.name}, falling back to browser:`, err);
+          nativeDecoder = null;
+        }
       }
 
-      // Mark clip as ready immediately - thumbnails will load in background
-      updateClip(clipId, {
-        source: {
-          type: 'video',
-          videoElement: video,
-          naturalDuration,
-          mediaFileId,
-        },
-        isLoading: false,
-      });
+      // Fallback to HTMLVideoElement if not using native decoder
+      if (!nativeDecoder) {
+        video = document.createElement('video');
+        video.src = URL.createObjectURL(file);
+        video.preload = 'metadata';
+        video.muted = true;
+        video.crossOrigin = 'anonymous';
 
-      // Warm up video decoder in background (non-blocking)
-      // This eliminates the "cold start" delay on first play
-      warmUpVideoDecoder(video).then(() => {
-        console.log(`[Timeline] Video decoder warmed up for ${file.name}`);
-      });
+        // Wait for metadata
+        await new Promise<void>((resolve) => {
+          video!.onloadedmetadata = () => resolve();
+          video!.onerror = () => resolve();
+        });
 
-      // Try to initialize WebCodecsPlayer for hardware-accelerated decoding
-      const hasWebCodecs = 'VideoDecoder' in window && 'VideoFrame' in window;
+        naturalDuration = video.duration || estimatedDuration;
 
-      if (hasWebCodecs) {
-        try {
-          console.log(`[Timeline] Initializing WebCodecsPlayer for ${file.name}...`);
-
-          const webCodecsPlayer = new WebCodecsPlayer({
-            loop: false,
-            useSimpleMode: true, // Use VideoFrame from HTMLVideoElement (more compatible)
-            onError: (error) => {
-              console.warn('[Timeline] WebCodecs error:', error.message);
-            },
+        // Update clip duration immediately once we know it
+        updateClip(clipId, {
+          duration: naturalDuration,
+          outPoint: naturalDuration,
+          source: { type: 'video', videoElement: video, naturalDuration, mediaFileId },
+        });
+        if (audioTrackId && audioClipId) {
+          updateClip(audioClipId, {
+            duration: naturalDuration,
+            outPoint: naturalDuration,
           });
+        }
 
-          // Attach to existing video element (Timeline controls playback, WebCodecs captures frames)
-          webCodecsPlayer.attachToVideoElement(video);
-          console.log(`[Timeline] WebCodecsPlayer ready for ${file.name}`);
+        // Mark clip as ready immediately - thumbnails will load in background
+        updateClip(clipId, {
+          source: {
+            type: 'video',
+            videoElement: video,
+            naturalDuration,
+            mediaFileId,
+          },
+          isLoading: false,
+        });
 
-          // Update clip source with webCodecsPlayer
-          const currentClips = get().clips;
-          set({
-            clips: currentClips.map(c => {
-              if (c.id !== clipId || !c.source) return c;
-              return {
-                ...c,
-                source: {
-                  type: c.source.type,
-                  videoElement: c.source.videoElement,
-                  naturalDuration: c.source.naturalDuration,
-                  mediaFileId: c.source.mediaFileId,
-                  webCodecsPlayer,
-                },
-              };
-            }),
-          });
-        } catch (err) {
-          console.warn('[Timeline] WebCodecsPlayer init failed, using HTMLVideoElement:', err);
-          // Fallback to HTMLVideoElement (already set up)
+        // Warm up video decoder in background (non-blocking)
+        warmUpVideoDecoder(video).then(() => {
+          console.log(`[Timeline] Video decoder warmed up for ${file.name}`);
+        });
+
+        // Try to initialize WebCodecsPlayer for hardware-accelerated decoding
+        const hasWebCodecs = 'VideoDecoder' in window && 'VideoFrame' in window;
+
+        if (hasWebCodecs) {
+          try {
+            console.log(`[Timeline] Initializing WebCodecsPlayer for ${file.name}...`);
+
+            const webCodecsPlayer = new WebCodecsPlayer({
+              loop: false,
+              useSimpleMode: true,
+              onError: (error) => {
+                console.warn('[Timeline] WebCodecs error:', error.message);
+              },
+            });
+
+            webCodecsPlayer.attachToVideoElement(video);
+            console.log(`[Timeline] WebCodecsPlayer ready for ${file.name}`);
+
+            const currentClips = get().clips;
+            set({
+              clips: currentClips.map(c => {
+                if (c.id !== clipId || !c.source) return c;
+                return {
+                  ...c,
+                  source: {
+                    type: c.source.type,
+                    videoElement: c.source.videoElement,
+                    naturalDuration: c.source.naturalDuration,
+                    mediaFileId: c.source.mediaFileId,
+                    webCodecsPlayer,
+                  },
+                };
+              }),
+            });
+          } catch (err) {
+            console.warn('[Timeline] WebCodecsPlayer init failed, using HTMLVideoElement:', err);
+          }
         }
       }
 
