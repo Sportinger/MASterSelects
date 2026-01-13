@@ -174,6 +174,16 @@ impl Session {
             Command::Ping { id } => {
                 (Some(Response::ok(&id, serde_json::json!({"pong": true}))), None)
             }
+
+            Command::DownloadYoutube { id, url, output_dir } => {
+                let response = self.handle_download_youtube(&id, &url, output_dir.as_deref()).await;
+                (Some(response), None)
+            }
+
+            Command::GetFile { id, path } => {
+                let response = self.handle_get_file(&id, &path);
+                (Some(response), None)
+            }
         }
     }
 
@@ -426,5 +436,119 @@ impl Session {
         };
 
         Response::ok(id, serde_json::to_value(info).unwrap())
+    }
+
+    async fn handle_download_youtube(&self, id: &str, url: &str, output_dir: Option<&str>) -> Response {
+        use std::process::Stdio;
+        use tokio::process::Command as TokioCommand;
+
+        // Validate URL (basic check for YouTube)
+        if !url.contains("youtube.com") && !url.contains("youtu.be") {
+            return Response::error(id, error_codes::INVALID_URL, "Not a valid YouTube URL");
+        }
+
+        // Determine output directory
+        let download_dir = if let Some(dir) = output_dir {
+            std::path::PathBuf::from(dir)
+        } else {
+            // Default to ~/Downloads/MasterSelects
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+            std::path::PathBuf::from(home).join("Downloads").join("MasterSelects")
+        };
+
+        // Create directory if it doesn't exist
+        if let Err(e) = std::fs::create_dir_all(&download_dir) {
+            return Response::error(id, error_codes::PERMISSION_DENIED, format!("Cannot create download directory: {}", e));
+        }
+
+        info!("Downloading YouTube video: {} to {:?}", url, download_dir);
+
+        // Run yt-dlp
+        let output_template = download_dir.join("%(title)s.%(ext)s").to_string_lossy().to_string();
+
+        let result = TokioCommand::new("yt-dlp")
+            .args([
+                "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+                "--merge-output-format", "mp4",
+                "-o", &output_template,
+                "--print", "after_move:filepath",
+                "--no-playlist",
+                url,
+            ])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await;
+
+        match result {
+            Ok(output) => {
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    let output_path = stdout.lines().last().unwrap_or("").trim();
+
+                    if output_path.is_empty() {
+                        return Response::error(id, error_codes::DOWNLOAD_FAILED, "yt-dlp did not return output path");
+                    }
+
+                    info!("Download complete: {}", output_path);
+                    Response::ok(id, serde_json::json!({
+                        "path": output_path
+                    }))
+                } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    warn!("yt-dlp failed: {}", stderr);
+                    Response::error(id, error_codes::DOWNLOAD_FAILED, format!("yt-dlp error: {}", stderr.lines().last().unwrap_or("Unknown error")))
+                }
+            }
+            Err(e) => {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    Response::error(id, error_codes::YTDLP_NOT_FOUND, "yt-dlp not found. Please install it: pip install yt-dlp")
+                } else {
+                    Response::error(id, error_codes::DOWNLOAD_FAILED, format!("Failed to run yt-dlp: {}", e))
+                }
+            }
+        }
+    }
+
+    fn handle_get_file(&self, id: &str, path: &str) -> Response {
+        use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+
+        let path = std::path::Path::new(path);
+
+        // Security: Only allow absolute paths
+        if !path.is_absolute() {
+            return Response::error(id, error_codes::INVALID_PATH, "Path must be absolute");
+        }
+
+        // Security: Only allow files in allowed directories
+        let allowed_prefixes = [
+            std::env::var("HOME").unwrap_or_default() + "/Downloads",
+            "/tmp".to_string(),
+        ];
+
+        let path_str = path.to_string_lossy();
+        let is_allowed = allowed_prefixes.iter().any(|prefix| path_str.starts_with(prefix));
+
+        if !is_allowed {
+            return Response::error(id, error_codes::PERMISSION_DENIED, "File path not in allowed directory");
+        }
+
+        if !path.exists() {
+            return Response::error(id, error_codes::FILE_NOT_FOUND, format!("File not found: {}", path.display()));
+        }
+
+        // Read file
+        match std::fs::read(path) {
+            Ok(data) => {
+                info!("Serving file: {} ({} bytes)", path.display(), data.len());
+                let data_base64 = BASE64.encode(&data);
+                Response::ok(id, serde_json::json!({
+                    "size": data.len(),
+                    "path": path.display().to_string(),
+                    "data": data_base64
+                }))
+            }
+            Err(e) => Response::error(id, error_codes::FILE_NOT_FOUND, format!("Cannot read file: {}", e)),
+        }
     }
 }

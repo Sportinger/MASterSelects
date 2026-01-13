@@ -87,6 +87,20 @@ pub enum Command {
     Ping {
         id: String,
     },
+
+    /// Download a YouTube video using yt-dlp
+    DownloadYoutube {
+        id: String,
+        url: String,
+        #[serde(default)]
+        output_dir: Option<String>,
+    },
+
+    /// Get a file from local filesystem (for serving downloads)
+    GetFile {
+        id: String,
+        path: String,
+    },
 }
 
 fn default_scale() -> f32 {
@@ -289,4 +303,7 @@ pub mod error_codes {
     pub const FILE_NOT_OPEN: &str = "FILE_NOT_OPEN";
     pub const ENCODE_NOT_STARTED: &str = "ENCODE_NOT_STARTED";
     pub const INTERNAL_ERROR: &str = "INTERNAL_ERROR";
+    pub const YTDLP_NOT_FOUND: &str = "YTDLP_NOT_FOUND";
+    pub const DOWNLOAD_FAILED: &str = "DOWNLOAD_FAILED";
+    pub const INVALID_URL: &str = "INVALID_URL";
 }

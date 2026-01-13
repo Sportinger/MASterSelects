@@ -37,6 +37,7 @@ dirs = "5"
 rand = "0.8"
 uuid = { version = "1", features = ["v4"] }
 parking_lot = "0.12"
+base64 = "0.22"
 
 # HTTP for headers parsing
 http = "1"

@@ -395,13 +395,24 @@ class NativeHelperClientImpl {
       const timeout = setTimeout(() => {
         this.pendingRequests.delete(id);
         resolve(null);
-      }, 30000);
+      }, 60000); // 60 seconds for large files
 
-      // For file requests, we expect binary data back
+      // For file requests, we expect base64 data in the response
       this.pendingRequests.set(id, (response: any) => {
         clearTimeout(timeout);
         if (response.ok && response.data) {
-          resolve(response.data);
+          // Decode base64 to ArrayBuffer
+          try {
+            const binaryString = atob(response.data);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            resolve(bytes.buffer);
+          } catch (e) {
+            console.error('[NativeHelper] Failed to decode base64 data:', e);
+            resolve(null);
+          }
         } else {
           resolve(null);
         }
