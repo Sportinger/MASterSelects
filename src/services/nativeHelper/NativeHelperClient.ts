@@ -11,7 +11,6 @@ import type {
   FileMetadata,
   SystemInfo,
   EncodeOutput,
-  FrameHeader,
 } from './protocol';
 
 import {
@@ -344,7 +343,7 @@ class NativeHelperClientImpl {
    */
   async downloadYouTube(
     url: string,
-    onProgress?: (percent: number) => void
+    _onProgress?: (percent: number) => void // Reserved for future progress reporting
   ): Promise<{ success: boolean; path?: string; error?: string }> {
     const id = this.nextId();
 

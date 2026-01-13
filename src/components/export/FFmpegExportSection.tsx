@@ -7,7 +7,6 @@ import {
   FFmpegBridge,
   PRORES_PROFILES,
   DNXHR_PROFILES,
-  HAP_FORMATS,
   CONTAINER_FORMATS,
   PLATFORM_PRESETS,
   getCodecInfo,
@@ -20,7 +19,6 @@ import type {
   FFmpegContainer,
   ProResProfile,
   DnxhrProfile,
-  HapFormat,
 } from '../../engine/ffmpeg';
 
 interface FFmpegExportSectionProps {
@@ -48,15 +46,16 @@ export function FFmpegExportSection({
   const [loadError, setLoadError] = useState<string | null>(null);
 
   // Export settings
-  const [codec, setCodec] = useState<FFmpegVideoCodec>('libx264');
-  const [container, setContainer] = useState<FFmpegContainer>('mp4');
+  const [codec, setCodec] = useState<FFmpegVideoCodec>('prores');
+  const [container, setContainer] = useState<FFmpegContainer>('mov');
   const [preset, setPreset] = useState<string>('');
 
   // Codec-specific settings
   const [proresProfile, setProresProfile] = useState<ProResProfile>('hq');
   const [dnxhrProfile, setDnxhrProfile] = useState<DnxhrProfile>('dnxhr_hq');
-  const [hapFormat, setHapFormat] = useState<HapFormat>('hap_q');
-  const [hapChunks, setHapChunks] = useState(4);
+  // HAP not available in this FFmpeg build (requires libsnappy)
+  // const [hapFormat, setHapFormat] = useState<HapFormat>('hap_q');
+  // const [hapChunks, setHapChunks] = useState(4);
 
   // Quality settings
   const [useQuality, setUseQuality] = useState(true);
@@ -118,9 +117,10 @@ export function FFmpegExportSection({
     if (presetConfig.dnxhrProfile) {
       setDnxhrProfile(presetConfig.dnxhrProfile);
     }
-    if (presetConfig.hapFormat) {
-      setHapFormat(presetConfig.hapFormat);
-    }
+    // HAP not available
+    // if (presetConfig.hapFormat) {
+    //   setHapFormat(presetConfig.hapFormat);
+    // }
 
     setPreset(presetId);
   }, []);
@@ -134,12 +134,11 @@ export function FFmpegExportSection({
     const codecInfo = getCodecInfo(codec);
     if (codecInfo && !codecInfo.containers.includes(newContainer)) {
       // Switch to a compatible codec
-      if (newContainer === 'webm') {
-        setCodec('libvpx_vp9');
-      } else if (newContainer === 'mxf') {
+      if (newContainer === 'mxf') {
         setCodec('dnxhd');
       } else {
-        setCodec('libx264');
+        // Default to ProRes for other containers
+        setCodec('prores');
       }
     }
   }, [codec]);
@@ -187,8 +186,9 @@ export function FFmpegExportSection({
         bitrate: !useQuality ? bitrate : undefined,
         proresProfile: codec === 'prores' ? proresProfile : undefined,
         dnxhrProfile: codec === 'dnxhd' ? dnxhrProfile : undefined,
-        hapFormat: codec === 'hap' ? hapFormat : undefined,
-        hapChunks: codec === 'hap' ? hapChunks : undefined,
+        // HAP not available in this build
+        hapFormat: undefined,
+        hapChunks: undefined,
       };
 
       // Render frames
@@ -230,7 +230,7 @@ export function FFmpegExportSection({
   }, [
     codec, container, width, height, fps, startTime, endTime,
     quality, bitrate, useQuality, proresProfile, dnxhrProfile,
-    hapFormat, hapChunks, isFFmpegReady, loadFFmpeg, onRenderFrames, filename,
+    isFFmpegReady, loadFFmpeg, onRenderFrames, filename,
   ]);
 
   // Cancel export
@@ -384,39 +384,6 @@ export function FFmpegExportSection({
             ))}
           </select>
         </div>
-      )}
-
-      {/* HAP Settings */}
-      {codec === 'hap' && (
-        <>
-          <div className="control-row">
-            <label>Format</label>
-            <select
-              value={hapFormat}
-              onChange={(e) => setHapFormat(e.target.value as HapFormat)}
-            >
-              {HAP_FORMATS.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.name} - {f.description}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="control-row">
-            <label>Chunks</label>
-            <input
-              type="number"
-              value={hapChunks}
-              onChange={(e) => setHapChunks(Math.max(1, Math.min(64, parseInt(e.target.value) || 4)))}
-              min={1}
-              max={64}
-              style={{ width: '80px' }}
-            />
-            <span style={{ fontSize: '11px', color: 'var(--text-secondary)', marginLeft: '8px' }}>
-              (parallel decode)
-            </span>
-          </div>
-        </>
       )}
 
       {/* Quality/Bitrate Control */}

@@ -24,9 +24,8 @@ import type {
   FFmpegContainer,
   ProResProfile,
   DnxhrProfile,
-  HapFormat,
 } from '../../engine/ffmpeg';
-import type { Layer, TimelineClip, TimelineTrack } from '../../types';
+import type { Layer, LayerSource, TimelineClip, TimelineTrack } from '../../types';
 
 type EncoderType = 'webcodecs' | 'ffmpeg';
 
@@ -188,9 +187,11 @@ function buildLayerFromClip(
     // For export, we need to use HTMLVideoElement (not WebCodecsPlayer)
     // because we control seeking via video.currentTime
     // WebCodecsPlayer has its own playback and doesn't follow currentTime
-    const exportSource = {
-      ...clip.source,
-      webCodecsPlayer: undefined,  // Force HTMLVideoElement path during export
+    const exportSource: LayerSource = {
+      type: clip.source.videoElement ? 'video' : 'image',
+      videoElement: clip.source.videoElement,
+      imageElement: clip.source.imageElement,
+      // webCodecsPlayer explicitly omitted - force HTMLVideoElement path during export
     };
 
     return {
@@ -253,7 +254,7 @@ export function ExportPanel() {
   const [ffmpegPreset, setFfmpegPreset] = useState<string>('');
   const [proresProfile, setProresProfile] = useState<ProResProfile>('hq');
   const [dnxhrProfile, setDnxhrProfile] = useState<DnxhrProfile>('dnxhr_hq');
-  const [hapFormat, setHapFormat] = useState<HapFormat>('hap_q'); // Kept for type compat, HAP not available
+  // HAP not available in this FFmpeg build
   const [ffmpegQuality, setFfmpegQuality] = useState(18);
   const [ffmpegBitrate, setFfmpegBitrate] = useState(20_000_000);
   const [ffmpegRateControl, setFfmpegRateControl] = useState<'crf' | 'cbr' | 'vbr'>('crf');
@@ -397,9 +398,7 @@ export function ExportPanel() {
     if (presetConfig.dnxhrProfile) {
       setDnxhrProfile(presetConfig.dnxhrProfile);
     }
-    if (presetConfig.hapFormat) {
-      setHapFormat(presetConfig.hapFormat);
-    }
+    // HAP not available in this build
 
     setFfmpegPreset(presetId);
   }, []);

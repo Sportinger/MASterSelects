@@ -9,7 +9,7 @@ import { generateWaveform, generateThumbnails, getDefaultEffectParams } from './
 import { textRenderer } from '../../services/textRenderer';
 import { googleFontsService } from '../../services/googleFontsService';
 import { WebCodecsPlayer } from '../../engine/WebCodecsPlayer';
-import { NativeDecoder, NativeHelperClient } from '../../services/nativeHelper';
+import { NativeDecoder } from '../../services/nativeHelper';
 
 // Check if file is a professional codec that needs Native Helper
 function isProfessionalCodecFile(file: File): boolean {

@@ -167,6 +167,7 @@ export interface ErrorResponse {
 
 export interface ProgressResponse {
   id: string;
+  ok?: undefined;  // Distinguish from OkResponse/ErrorResponse
   progress: number;
   frames_done: number;
   frames_total: number;
@@ -174,6 +175,11 @@ export interface ProgressResponse {
 }
 
 export type Response = OkResponse | ErrorResponse | ProgressResponse;
+
+// Type guard for checking if response is a command result (has ok property)
+export function isCommandResponse(response: Response): response is OkResponse | ErrorResponse {
+  return 'ok' in response && response.ok !== undefined;
+}
 
 // File metadata
 export interface FileMetadata {

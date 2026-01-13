@@ -243,7 +243,7 @@ export function YouTubePanel() {
 
     setDownloadingVideos(prev => new Set(prev).add(video.id));
 
-    const unsubscribe = subscribeToDownload(video.id, (progress: DownloadProgress) => {
+    const unsubscribe = subscribeToDownload(video.id, (_progress: DownloadProgress) => {
       // Progress tracked via downloadingVideos set
     });
 
@@ -313,12 +313,12 @@ export function YouTubePanel() {
     }
   };
 
-  // Auto-download when video is added to results
-  const handleVideoAdded = async (video: YouTubeVideo) => {
-    if (autoDownload && !downloadingVideos.has(video.id)) {
-      downloadVideoOnly(video);
-    }
-  };
+  // Auto-download when video is added to results (reserved for future use)
+  // const handleVideoAdded = async (video: YouTubeVideo) => {
+  //   if (autoDownload && !downloadingVideos.has(video.id)) {
+  //     downloadVideoOnly(video);
+  //   }
+  // };
 
   return (
     <div className="youtube-panel">
@@ -335,7 +335,7 @@ export function YouTubePanel() {
           />
           <button
             className="youtube-search-btn"
-            onClick={handleSearch}
+            onClick={() => handleSearch()}
             disabled={loading || !query.trim()}
           >
             {loading ? '...' : youtubeApiKey ? 'Search' : 'Add'}

@@ -208,7 +208,7 @@ export interface EngineStats {
   layerCount: number;
   targetFps: number;
   // Decoder info
-  decoder: 'WebCodecs' | 'HTMLVideo' | 'HTMLVideo(cached)' | 'HTMLVideo(paused-cache)' | 'none';
+  decoder: 'WebCodecs' | 'HTMLVideo' | 'HTMLVideo(cached)' | 'HTMLVideo(paused-cache)' | 'NativeHelper' | 'none';
   // Audio status
   audio: {
     playing: number;       // Number of audio elements currently playing
@@ -275,9 +275,11 @@ export interface TimelineClip {
     audioElement?: HTMLAudioElement;
     imageElement?: HTMLImageElement;
     webCodecsPlayer?: import('../engine/WebCodecsPlayer').WebCodecsPlayer;
+    nativeDecoder?: import('../services/nativeHelper/NativeDecoder').NativeDecoder;
     naturalDuration?: number;
     mediaFileId?: string;  // Reference to MediaFile for proxy lookup
     textCanvas?: HTMLCanvasElement;  // Pre-rendered text canvas for text clips
+    filePath?: string;  // Path to original file (for native helper to access directly)
   } | null;
   thumbnails?: string[];  // Array of data URLs for filmstrip preview
   linkedClipId?: string;  // ID of linked clip (e.g., audio linked to video)

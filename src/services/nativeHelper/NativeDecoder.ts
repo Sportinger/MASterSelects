@@ -7,7 +7,6 @@
  */
 
 import { NativeHelperClient } from './NativeHelperClient';
-import type { DecodedFrame } from './NativeHelperClient';
 import type { FileMetadata } from './protocol';
 
 export interface NativeDecoderOptions {
@@ -208,7 +207,9 @@ export class NativeDecoder {
       });
 
       // Create ImageBitmap from decoded data
-      const imageData = new ImageData(decoded.data, decoded.width, decoded.height);
+      // Ensure we have a proper Uint8ClampedArray with ArrayBuffer (not SharedArrayBuffer)
+      const pixelData = new Uint8ClampedArray(decoded.data);
+      const imageData = new ImageData(pixelData, decoded.width, decoded.height);
       const bitmap = await createImageBitmap(imageData);
 
       // Release old frame
@@ -251,7 +252,8 @@ export async function isNativeHelperAvailable(): Promise<boolean> {
  */
 export async function getNativeCodecs(): Promise<string[]> {
   try {
-    const info = await NativeHelperClient.getInfo();
+    // Check if helper is available by calling getInfo
+    await NativeHelperClient.getInfo();
     // The native helper supports these codecs via FFmpeg
     return ['prores', 'dnxhd', 'dnxhr', 'ffv1', 'utvideo', 'mjpeg', 'h264', 'h265', 'vp9'];
   } catch {

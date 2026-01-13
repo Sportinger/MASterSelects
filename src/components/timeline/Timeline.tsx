@@ -80,7 +80,7 @@ export function Timeline() {
     isRamPreviewing,
     isExporting,
     exportProgress,
-    exportCurrentTime,
+    // exportCurrentTime, - unused, kept in store for future display
     exportRange,
     startRamPreview,
     cancelRamPreview,

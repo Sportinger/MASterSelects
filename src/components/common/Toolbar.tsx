@@ -683,7 +683,7 @@ export function Toolbar() {
 
       {/* Status */}
       <div className="toolbar-section toolbar-right">
-        <NativeHelperStatus toolbar />
+        <NativeHelperStatus />
         <span className={`status ${isEngineReady ? 'ready' : 'loading'}`}>
           {isEngineReady ? '● WebGPU Ready' : '○ Loading...'}
         </span>

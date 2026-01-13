@@ -145,11 +145,7 @@ class LayerBuilderService {
         const clipLocalTime = playheadPosition - clip.startTime;
         const keyframeLocalTime = clipLocalTime;
 
-        // Calculate source time using speed integration (handles keyframes)
-        const sourceTime = getSourceTimeForClip(clip.id, clipLocalTime);
-        const initialSpeed = getInterpolatedSpeed(clip.id, 0);
-        const startPoint = initialSpeed >= 0 ? clip.inPoint : clip.outPoint;
-        const clipTime = Math.max(clip.inPoint, Math.min(clip.outPoint, startPoint + sourceTime));
+        // Note: source time/clipTime calculation happens in syncVideoElements for native decoder
 
         const transform = getInterpolatedTransform(clip.id, keyframeLocalTime);
         const nativeInterpolatedEffects = getInterpolatedEffects(clip.id, keyframeLocalTime);
