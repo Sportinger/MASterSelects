@@ -155,6 +155,29 @@ export function RelinkDialog({ onClose }: RelinkDialogProps) {
           return status;
         }));
 
+        // If there are still missing files after selection, offer to scan the folder
+        const stillMissing = fileStatuses.filter(s =>
+          s.status === 'missing' && !selectedFiles.has(s.name.toLowerCase())
+        );
+
+        if (stillMissing.length > 0 && handles.length > 0) {
+          // Automatically open folder picker starting from the selected file's location
+          try {
+            const dirHandle = await (window as any).showDirectoryPicker({
+              mode: 'read',
+              startIn: handles[0], // Start in same folder as selected file
+            });
+            if (dirHandle) {
+              console.log('[RelinkDialog] Scanning folder for remaining files...');
+              await scanFolder(dirHandle);
+            }
+          } catch (e: any) {
+            // User cancelled - that's fine, we still have the manually selected files
+            if (e.name !== 'AbortError') {
+              console.log('[RelinkDialog] Folder access declined, using manually selected files only');
+            }
+          }
+        }
       }
     } catch (e: any) {
       if (e.name !== 'AbortError') {
