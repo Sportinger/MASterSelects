@@ -92,6 +92,34 @@ export class TextureManager {
     return this.canvasTextures.get(canvas);
   }
 
+  // Create GPU texture from ImageBitmap (for native helper decoded frames)
+  // NOT cached - ImageBitmaps change every frame and are closed after use
+  createImageBitmapTexture(bitmap: ImageBitmap): GPUTexture | null {
+    const width = bitmap.width;
+    const height = bitmap.height;
+
+    if (width === 0 || height === 0) return null;
+
+    try {
+      const texture = this.device.createTexture({
+        size: [width, height],
+        format: 'rgba8unorm',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+      });
+
+      this.device.queue.copyExternalImageToTexture(
+        { source: bitmap },
+        { texture },
+        [width, height]
+      );
+
+      return texture;
+    } catch (e) {
+      console.error('Failed to create ImageBitmap texture:', e);
+      return null;
+    }
+  }
+
   // Get or create a view for a texture
   getImageView(texture: GPUTexture): GPUTextureView {
     let view = this.cachedImageViews.get(texture);

@@ -566,6 +566,10 @@ export class WebGPUEngine {
    */
   setExporting(exporting: boolean): void {
     this.isExporting = exporting;
+    // Clear video time tracking when entering export mode to ensure fresh texture imports
+    if (exporting) {
+      this.lastVideoTime.clear();
+    }
     console.log(`[WebGPUEngine] Export mode: ${exporting ? 'ON' : 'OFF'}`);
   }
 
@@ -719,7 +723,28 @@ export class WebGPUEngine {
       // Skip invisible layers and layers with zero opacity (saves GPU overhead)
       if (!layer || !layer.visible || !layer.source || layer.opacity === 0) continue;
 
-      // Try WebCodecs VideoFrame first (if available)
+      // Try Native Helper decoder first (turbo mode - fastest for ProRes/DNxHD)
+      if (layer.source.nativeDecoder) {
+        const bitmap = layer.source.nativeDecoder.getCurrentFrame();
+        if (bitmap) {
+          // Create texture from ImageBitmap
+          const texture = this.textureManager?.createImageBitmapTexture(bitmap);
+          if (texture) {
+            this.detailedStats.decoder = 'NativeHelper';
+            this.layerRenderData.push({
+              layer,
+              isVideo: false,
+              externalTexture: null,
+              textureView: texture.createView(),
+              sourceWidth: bitmap.width,
+              sourceHeight: bitmap.height,
+            });
+            continue;
+          }
+        }
+      }
+
+      // Try WebCodecs VideoFrame (if available)
       if (layer.source.webCodecsPlayer) {
         const frame = layer.source.webCodecsPlayer.getCurrentFrame();
         if (frame) {
@@ -752,7 +777,8 @@ export class WebGPUEngine {
 
           // OPTIMIZATION: If video time hasn't changed, use cached frame instead of re-importing
           // This saves significant GPU overhead for paused videos
-          if (!videoTimeChanged) {
+          // IMPORTANT: Skip cache during export - we need fresh frames at each seek position
+          if (!videoTimeChanged && !this.isExporting) {
             const lastFrame = this.scrubbingCache?.getLastFrame(video);
             if (lastFrame) {
               this.detailedStats.decoder = 'HTMLVideo(paused-cache)';

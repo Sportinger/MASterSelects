@@ -74,6 +74,10 @@ export interface LayerSource {
   // WebCodecs support for hardware-accelerated video decode
   webCodecsPlayer?: import('../engine/WebCodecsPlayer').WebCodecsPlayer;
   videoFrame?: VideoFrame;
+  // Native Helper decoder for ProRes/DNxHD (turbo mode)
+  nativeDecoder?: import('../services/nativeHelper').NativeDecoder;
+  // Path to original file (for native helper to access directly)
+  filePath?: string;
   // Nested composition support - pre-rendered layers from nested comp
   nestedComposition?: NestedCompositionData;
   // Text clip support
