@@ -80,21 +80,30 @@ class VideoEncoderWrapper {
     if (this.hasAudio) {
       if (this.containerFormat === 'webm') {
         // WebM uses Opus
-        const opusSupported = await AudioEncoderWrapper.detectSupportedCodec();
-        if (opusSupported?.codec === 'opus') {
+        const opusSupported = await AudioEncoderWrapper.isOpusSupported();
+        if (opusSupported) {
           this.audioCodec = 'opus';
+          console.log('[VideoEncoder] Using Opus audio for WebM');
         } else {
           console.warn('[VideoEncoder] Opus not supported, disabling audio for WebM');
           this.hasAudio = false;
         }
       } else {
-        // MP4 uses AAC
-        const aacSupported = await AudioEncoderWrapper.detectSupportedCodec();
-        if (aacSupported?.codec === 'aac') {
+        // MP4 prefers AAC, but can use Opus as fallback (some browsers support Opus in MP4)
+        const aacSupported = await AudioEncoderWrapper.isAACSupported();
+        if (aacSupported) {
           this.audioCodec = 'aac';
+          console.log('[VideoEncoder] Using AAC audio for MP4');
         } else {
-          console.warn('[VideoEncoder] AAC not supported, disabling audio for MP4');
-          this.hasAudio = false;
+          // Try Opus as fallback for MP4 (not ideal but better than no audio)
+          const opusSupported = await AudioEncoderWrapper.isOpusSupported();
+          if (opusSupported) {
+            this.audioCodec = 'opus';
+            console.log('[VideoEncoder] AAC not supported, using Opus audio for MP4 (fallback)');
+          } else {
+            console.warn('[VideoEncoder] No audio codec supported, disabling audio');
+            this.hasAudio = false;
+          }
         }
       }
     }
@@ -161,7 +170,7 @@ class VideoEncoderWrapper {
       }
       console.log(`[VideoEncoder] Using WebM/${this.effectiveVideoCodec.toUpperCase()} with ${this.hasAudio ? 'Opus' : 'no'} audio`);
     } else {
-      // MP4 muxer (H264, H265, VP9, AV1 video, AAC audio)
+      // MP4 muxer (H264, H265, VP9, AV1 video, AAC/Opus audio)
       if (this.hasAudio) {
         this.muxer = new Mp4Muxer({
           target: new Mp4Target(),
@@ -171,7 +180,7 @@ class VideoEncoderWrapper {
             height: this.settings.height,
           },
           audio: {
-            codec: 'aac',
+            codec: this.audioCodec, // Use determined codec (aac or opus)
             sampleRate: this.settings.audioSampleRate ?? 48000,
             numberOfChannels: 2,
           },
@@ -188,7 +197,7 @@ class VideoEncoderWrapper {
           fastStart: 'in-memory',
         });
       }
-      console.log(`[VideoEncoder] Using MP4/${this.effectiveVideoCodec.toUpperCase()} with ${this.hasAudio ? 'AAC' : 'no'} audio`);
+      console.log(`[VideoEncoder] Using MP4/${this.effectiveVideoCodec.toUpperCase()} with ${this.hasAudio ? this.audioCodec.toUpperCase() : 'no'} audio`);
     }
 
     this.encoder = new VideoEncoder({
