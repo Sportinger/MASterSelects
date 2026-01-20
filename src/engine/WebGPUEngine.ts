@@ -744,6 +744,24 @@ export class WebGPUEngine {
         }
       }
 
+      // Try direct VideoFrame (from parallel decoder)
+      if (layer.source.videoFrame) {
+        const frame = layer.source.videoFrame;
+        const extTex = this.textureManager?.importVideoTexture(frame);
+        if (extTex) {
+          this.detailedStats.decoder = 'ParallelDecode';
+          this.layerRenderData.push({
+            layer,
+            isVideo: true,
+            externalTexture: extTex,
+            textureView: null,
+            sourceWidth: frame.displayWidth,
+            sourceHeight: frame.displayHeight,
+          });
+          continue;
+        }
+      }
+
       // Try WebCodecs VideoFrame (if available)
       if (layer.source.webCodecsPlayer) {
         const frame = layer.source.webCodecsPlayer.getCurrentFrame();
@@ -1506,7 +1524,24 @@ export class WebGPUEngine {
       const layer = nestedLayers[i];
       if (!layer || !layer.visible || !layer.source || layer.opacity === 0) continue;
 
-      // Try WebCodecs VideoFrame first
+      // Try direct VideoFrame first (from parallel decoder)
+      if (layer.source.videoFrame) {
+        const frame = layer.source.videoFrame;
+        const extTex = this.textureManager?.importVideoTexture(frame);
+        if (extTex) {
+          nestedLayerData.push({
+            layer,
+            isVideo: true,
+            externalTexture: extTex,
+            textureView: null,
+            sourceWidth: frame.displayWidth,
+            sourceHeight: frame.displayHeight,
+          });
+          continue;
+        }
+      }
+
+      // Try WebCodecs VideoFrame
       if (layer.source.webCodecsPlayer) {
         const frame = layer.source.webCodecsPlayer.getCurrentFrame();
         if (frame) {

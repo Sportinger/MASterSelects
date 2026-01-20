@@ -208,7 +208,7 @@ export interface EngineStats {
   layerCount: number;
   targetFps: number;
   // Decoder info
-  decoder: 'WebCodecs' | 'HTMLVideo' | 'HTMLVideo(cached)' | 'HTMLVideo(paused-cache)' | 'NativeHelper' | 'none';
+  decoder: 'WebCodecs' | 'HTMLVideo' | 'HTMLVideo(cached)' | 'HTMLVideo(paused-cache)' | 'NativeHelper' | 'ParallelDecode' | 'none';
   // Audio status
   audio: {
     playing: number;       // Number of audio elements currently playing

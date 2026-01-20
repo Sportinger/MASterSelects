@@ -9,6 +9,7 @@ import { useMediaStore } from '../stores/mediaStore';
 import type { Layer, TimelineClip, NestedCompositionData } from '../types';
 import { AudioExportPipeline, type AudioExportProgress, type EncodedAudioResult, AudioEncoderWrapper, type AudioCodec } from './audio';
 import { fileSystemService } from '../services/fileSystemService';
+import { ParallelDecodeManager } from './ParallelDecodeManager';
 
 // ============ TYPES ============
 
@@ -357,6 +358,8 @@ export class FrameExporter {
   private frameTimes: number[] = [];
   private clipStates: Map<string, ExportClipState> = new Map();
   private exportMode: ExportMode;
+  private parallelDecoder: ParallelDecodeManager | null = null;
+  private useParallelDecode = false;
 
   constructor(settings: FullExportSettings) {
     this.settings = settings;
@@ -555,73 +558,42 @@ export class FrameExporter {
     // FAST MODE: Use WebCodecs with MP4Box parsing
     const { WebCodecsPlayer } = await import('./WebCodecsPlayer');
 
+    // Separate composition clips from regular video clips
+    const regularVideoClips: typeof videoClips = [];
+    const compositionClips: typeof videoClips = [];
+
     for (const clip of videoClips) {
       if (clip.source?.type !== 'video') continue;
 
-      // Skip composition clips - they don't have video files, they render from nested content
       if (clip.isComposition) {
-        console.log(`[FrameExporter] Clip ${clip.name}: Skipping WebCodecs prep (composition)`);
+        compositionClips.push(clip);
         this.clipStates.set(clip.id, {
           clipId: clip.id,
           webCodecsPlayer: null,
           lastSampleIndex: 0,
           isSequential: false,
         });
-        continue;
+        console.log(`[FrameExporter] Clip ${clip.name}: Skipping WebCodecs prep (composition)`);
+      } else {
+        regularVideoClips.push(clip);
       }
+    }
 
-      const mediaFileId = clip.source.mediaFileId;
+    // Use parallel decoding if we have 2+ regular video clips
+    if (regularVideoClips.length >= 2) {
+      console.log(`[FrameExporter] Using PARALLEL decoding for ${regularVideoClips.length} video clips`);
+      await this.initializeParallelDecoding(regularVideoClips, mediaFiles, startTime);
+      return;
+    }
+
+    // Single clip: use original sequential approach
+    for (const clip of regularVideoClips) {
+      const mediaFileId = clip.source!.mediaFileId;
       const mediaFile = mediaFileId ? mediaFiles.find(f => f.id === mediaFileId) : null;
 
       // Get the file data - try multiple sources (NO FALLBACK TO HTMLVideoElement!)
-      let fileData: ArrayBuffer | null = null;
-      let loadSource = '';
+      const fileData = await this.loadClipFileData(clip, mediaFile);
 
-      // 1. Try media file's file handle via fileSystemService
-      const storedHandle = mediaFile?.hasFileHandle ? fileSystemService.getFileHandle(clip.source?.mediaFileId || '') : null;
-      if (!fileData && storedHandle) {
-        try {
-          const file = await storedHandle.getFile();
-          fileData = await file.arrayBuffer();
-          loadSource = 'media file handle';
-        } catch (e) {
-          console.warn(`[FrameExporter] Media file handle failed for ${clip.name}:`, e);
-        }
-      }
-
-      // 2. Try clip's file property directly
-      if (!fileData && clip.file) {
-        try {
-          fileData = await clip.file.arrayBuffer();
-          loadSource = 'clip.file';
-        } catch (e) {
-          console.warn(`[FrameExporter] Clip file access failed for ${clip.name}:`, e);
-        }
-      }
-
-      // 3. Try media file's blob URL
-      if (!fileData && mediaFile?.url) {
-        try {
-          const response = await fetch(mediaFile.url);
-          fileData = await response.arrayBuffer();
-          loadSource = 'media blob URL';
-        } catch (e) {
-          console.warn(`[FrameExporter] Media blob URL fetch failed for ${clip.name}:`, e);
-        }
-      }
-
-      // 4. Try video element's src (blob URL)
-      if (!fileData && clip.source.videoElement?.src) {
-        try {
-          const response = await fetch(clip.source.videoElement.src);
-          fileData = await response.arrayBuffer();
-          loadSource = 'video.src';
-        } catch (e) {
-          console.warn(`[FrameExporter] Video src fetch failed for ${clip.name}:`, e);
-        }
-      }
-
-      // NO FALLBACK - if we can't load file data, throw error
       if (!fileData) {
         throw new Error(`FAST export failed: Could not load file data for clip "${clip.name}". Try PRECISE mode instead.`);
       }
@@ -632,7 +604,7 @@ export class FrameExporter {
                     (header[8] === 0x71 && header[9] === 0x74); // 'ftyp' + 'qt' = MOV
       const fileType = isMOV ? 'MOV' : 'MP4';
 
-      console.log(`[FrameExporter] Loaded ${clip.name} from ${loadSource} (${(fileData.byteLength / 1024 / 1024).toFixed(1)}MB, ${fileType})`);
+      console.log(`[FrameExporter] Loaded ${clip.name} (${(fileData.byteLength / 1024 / 1024).toFixed(1)}MB, ${fileType})`);
 
       // Create dedicated WebCodecs player for export
       const exportPlayer = new WebCodecsPlayer({
@@ -674,6 +646,13 @@ export class FrameExporter {
    * Cleanup export mode - destroy dedicated export players
    */
   private cleanupExportMode(): void {
+    // Cleanup parallel decoder if used
+    if (this.parallelDecoder) {
+      this.parallelDecoder.cleanup();
+      this.parallelDecoder = null;
+      this.useParallelDecode = false;
+    }
+
     // Destroy all dedicated export WebCodecs players
     for (const state of this.clipStates.values()) {
       if (state.webCodecsPlayer && state.isSequential) {
@@ -689,7 +668,165 @@ export class FrameExporter {
     console.log('[FrameExporter] Export cleanup complete');
   }
 
+  /**
+   * Load file data for a clip from various sources
+   */
+  private async loadClipFileData(clip: TimelineClip, mediaFile: any): Promise<ArrayBuffer | null> {
+    let fileData: ArrayBuffer | null = null;
+
+    // 1. Try media file's file handle via fileSystemService
+    const storedHandle = mediaFile?.hasFileHandle ? fileSystemService.getFileHandle(clip.source?.mediaFileId || '') : null;
+    if (!fileData && storedHandle) {
+      try {
+        const file = await storedHandle.getFile();
+        fileData = await file.arrayBuffer();
+      } catch (e) {
+        console.warn(`[FrameExporter] Media file handle failed for ${clip.name}:`, e);
+      }
+    }
+
+    // 2. Try clip's file property directly
+    if (!fileData && clip.file) {
+      try {
+        fileData = await clip.file.arrayBuffer();
+      } catch (e) {
+        console.warn(`[FrameExporter] Clip file access failed for ${clip.name}:`, e);
+      }
+    }
+
+    // 3. Try media file's blob URL
+    if (!fileData && mediaFile?.url) {
+      try {
+        const response = await fetch(mediaFile.url);
+        fileData = await response.arrayBuffer();
+      } catch (e) {
+        console.warn(`[FrameExporter] Media blob URL fetch failed for ${clip.name}:`, e);
+      }
+    }
+
+    // 4. Try video element's src (blob URL)
+    if (!fileData && clip.source?.videoElement?.src) {
+      try {
+        const response = await fetch(clip.source.videoElement.src);
+        fileData = await response.arrayBuffer();
+      } catch (e) {
+        console.warn(`[FrameExporter] Video src fetch failed for ${clip.name}:`, e);
+      }
+    }
+
+    return fileData;
+  }
+
+  /**
+   * Initialize parallel decoding for multiple video clips
+   */
+  private async initializeParallelDecoding(
+    clips: TimelineClip[],
+    mediaFiles: any[],
+    _startTime: number  // Reserved for future seek optimization
+  ): Promise<void> {
+    this.parallelDecoder = new ParallelDecodeManager();
+
+    // Collect clip info for parallel decoder
+    const clipInfos: Array<{
+      clipId: string;
+      clipName: string;
+      fileData: ArrayBuffer;
+      startTime: number;
+      duration: number;
+      inPoint: number;
+      outPoint: number;
+      reversed: boolean;
+    }> = [];
+
+    // Load all file data in parallel
+    const loadPromises = clips.map(async (clip) => {
+      const mediaFileId = clip.source!.mediaFileId;
+      const mediaFile = mediaFileId ? mediaFiles.find(f => f.id === mediaFileId) : null;
+      const fileData = await this.loadClipFileData(clip, mediaFile);
+
+      if (!fileData) {
+        throw new Error(`FAST export failed: Could not load file data for clip "${clip.name}". Try PRECISE mode instead.`);
+      }
+
+      return {
+        clipId: clip.id,
+        clipName: clip.name,
+        fileData,
+        startTime: clip.startTime,
+        duration: clip.duration,
+        inPoint: clip.inPoint,
+        outPoint: clip.outPoint,
+        reversed: clip.reversed || false,
+      };
+    });
+
+    const loadedClips = await Promise.all(loadPromises);
+    clipInfos.push(...loadedClips);
+
+    console.log(`[FrameExporter] Loaded ${clipInfos.length} clips for parallel decoding`);
+
+    // Initialize parallel decoder
+    await this.parallelDecoder.initialize(clipInfos, this.settings.fps);
+
+    // Mark clips as using parallel decoding
+    for (const clip of clips) {
+      this.clipStates.set(clip.id, {
+        clipId: clip.id,
+        webCodecsPlayer: null,
+        lastSampleIndex: 0,
+        isSequential: false,  // Not using individual sequential mode
+      });
+    }
+
+    this.useParallelDecode = true;
+    console.log(`[FrameExporter] Parallel decoding initialized for ${clips.length} clips`);
+  }
+
   private async seekAllClipsToTime(time: number): Promise<void> {
+    // PARALLEL DECODE MODE: Use parallel decoder for pre-fetched frames
+    if (this.useParallelDecode && this.parallelDecoder) {
+      // Prefetch frames for this time (decodes in parallel across all clips)
+      await this.parallelDecoder.prefetchFramesForTime(time);
+
+      // Also handle composition clips that aren't in parallel decode
+      const clips = useTimelineStore.getState().getClipsAtTime(time);
+      const tracks = useTimelineStore.getState().tracks;
+      const seekPromises: Promise<void>[] = [];
+
+      for (const clip of clips) {
+        const track = tracks.find(t => t.id === clip.trackId);
+        if (!track?.visible) continue;
+
+        // Handle nested composition clips (always use HTMLVideoElement)
+        if (clip.isComposition && clip.nestedClips && clip.nestedTracks) {
+          const clipLocalTime = time - clip.startTime;
+          const nestedTime = clipLocalTime + (clip.inPoint || 0);
+
+          for (const nestedClip of clip.nestedClips) {
+            if (nestedTime >= nestedClip.startTime && nestedTime < nestedClip.startTime + nestedClip.duration) {
+              if (nestedClip.source?.videoElement) {
+                const nestedLocalTime = nestedTime - nestedClip.startTime;
+                const nestedClipTime = nestedClip.reversed
+                  ? nestedClip.outPoint - nestedLocalTime
+                  : nestedLocalTime + nestedClip.inPoint;
+                seekPromises.push(this.seekVideo(nestedClip.source.videoElement, nestedClipTime));
+              }
+            }
+          }
+        }
+      }
+
+      if (seekPromises.length > 0) {
+        await Promise.all(seekPromises);
+      }
+
+      // Advance buffer position for next frame
+      this.parallelDecoder.advanceToTime(time);
+      return;
+    }
+
+    // SEQUENTIAL MODE: Original approach for single video or precise mode
     const clips = useTimelineStore.getState().getClipsAtTime(time);
     const tracks = useTimelineStore.getState().tracks;
     const seekPromises: Promise<void>[] = [];
@@ -967,12 +1104,28 @@ export class FrameExporter {
         continue;
       }
 
-      // Handle video clips - prefer WebCodecs VideoFrame, fall back to HTMLVideoElement
+      // Handle video clips - prefer parallel decode, then WebCodecs, then HTMLVideoElement
       if (clip.source?.type === 'video' && clip.source.videoElement) {
         const video = clip.source.videoElement;
         const clipState = this.clipStates.get(clip.id);
 
-        // Try to use WebCodecs VideoFrame first (much faster)
+        // Try parallel decoder first (fastest for multi-clip exports)
+        if (this.useParallelDecode && this.parallelDecoder && this.parallelDecoder.hasClip(clip.id)) {
+          const videoFrame = this.parallelDecoder.getFrameForClip(clip.id, time);
+          if (videoFrame) {
+            layers.push({
+              ...baseLayerProps,
+              source: {
+                type: 'video',
+                videoElement: video, // Keep as fallback
+                videoFrame: videoFrame, // Direct VideoFrame from parallel decoder
+              },
+            });
+            continue;
+          }
+        }
+
+        // Try sequential WebCodecs VideoFrame (fast for single clip)
         if (clipState?.isSequential && clipState.webCodecsPlayer) {
           const videoFrame = clipState.webCodecsPlayer.getCurrentFrame();
           if (videoFrame) {
