@@ -14,6 +14,8 @@ import { AudioExportPipeline, type AudioExportProgress, type EncodedAudioResult,
 export type VideoCodec = 'h264' | 'h265' | 'vp9' | 'av1';
 export type ContainerFormat = 'mp4' | 'webm';
 
+export type ExportMode = 'fast' | 'precise';
+
 export interface ExportSettings {
   width: number;
   height: number;
@@ -28,6 +30,8 @@ export interface ExportSettings {
   audioSampleRate?: 44100 | 48000;
   audioBitrate?: number;  // 128000 - 320000
   normalizeAudio?: boolean;
+  // Export mode
+  exportMode?: ExportMode;  // 'fast' = WebCodecs sequential, 'precise' = HTMLVideoElement (default: fast)
 }
 
 export interface ExportProgress {
@@ -342,10 +346,11 @@ export class FrameExporter {
   private isCancelled = false;
   private frameTimes: number[] = [];
   private clipStates: Map<string, ExportClipState> = new Map();
-  private useWebCodecs = true; // Try WebCodecs first, fall back to HTMLVideoElement
+  private exportMode: ExportMode;
 
   constructor(settings: FullExportSettings) {
     this.settings = settings;
+    this.exportMode = settings.exportMode ?? 'fast'; // Default to fast mode
   }
 
   async export(onProgress: (progress: ExportProgress) => void): Promise<Blob | null> {
@@ -501,9 +506,10 @@ export class FrameExporter {
   }
 
   /**
-   * Prepare all video clips for export.
-   * Creates dedicated WebCodecs players with MP4Box parsing for fast sequential decoding.
-   * Falls back to HTMLVideoElement seeking only if WebCodecs init fails.
+   * Prepare all video clips for export based on export mode.
+   * FAST mode: WebCodecs with MP4Box parsing - sequential decoding, very fast
+   * PRECISE mode: HTMLVideoElement seeking - frame-accurate but slower
+   * NO FALLBACKS - if the chosen mode fails, export fails with error
    */
   private async prepareClipsForExport(startTime: number): Promise<void> {
     const { clips, tracks } = useTimelineStore.getState();
@@ -518,95 +524,120 @@ export class FrameExporter {
       return clip.startTime < endTime && clipEnd > startTime;
     });
 
-    console.log(`[FrameExporter] Preparing ${videoClips.length} video clips for FAST export...`);
+    console.log(`[FrameExporter] Preparing ${videoClips.length} video clips for ${this.exportMode.toUpperCase()} export...`);
 
-    // Import WebCodecsPlayer dynamically to avoid circular deps
+    if (this.exportMode === 'precise') {
+      // PRECISE MODE: Use HTMLVideoElement seeking (original method)
+      for (const clip of videoClips) {
+        if (clip.source?.type !== 'video') continue;
+        this.clipStates.set(clip.id, {
+          clipId: clip.id,
+          webCodecsPlayer: null,
+          lastSampleIndex: 0,
+          isSequential: false,
+        });
+        console.log(`[FrameExporter] Clip ${clip.name}: PRECISE mode (HTMLVideoElement seeking)`);
+      }
+      console.log(`[FrameExporter] All ${videoClips.length} clips using PRECISE HTMLVideoElement seeking`);
+      return;
+    }
+
+    // FAST MODE: Use WebCodecs with MP4Box parsing
     const { WebCodecsPlayer } = await import('./WebCodecsPlayer');
 
     for (const clip of videoClips) {
       if (clip.source?.type !== 'video') continue;
 
-      // Find the media file to get the actual file data
-      const mediaFile = mediaFiles.find(f => f.id === clip.mediaFileId);
+      const mediaFileId = clip.source.mediaFileId;
+      const mediaFile = mediaFileId ? mediaFiles.find(f => f.id === mediaFileId) : null;
 
-      if (!mediaFile) {
-        console.warn(`[FrameExporter] No media file for clip ${clip.name}, using HTMLVideoElement`);
-        this.clipStates.set(clip.id, {
-          clipId: clip.id,
-          webCodecsPlayer: null,
-          lastSampleIndex: 0,
-          isSequential: false,
-        });
-        continue;
+      // Get the file data - try multiple sources (NO FALLBACK TO HTMLVideoElement!)
+      let fileData: ArrayBuffer | null = null;
+      let loadSource = '';
+
+      // 1. Try media file's file handle
+      if (!fileData && mediaFile?.fileHandle) {
+        try {
+          const file = await mediaFile.fileHandle.getFile();
+          fileData = await file.arrayBuffer();
+          loadSource = 'media file handle';
+        } catch (e) {
+          console.warn(`[FrameExporter] Media file handle failed for ${clip.name}:`, e);
+        }
       }
 
+      // 2. Try clip's file property directly
+      if (!fileData && clip.file) {
+        try {
+          fileData = await clip.file.arrayBuffer();
+          loadSource = 'clip.file';
+        } catch (e) {
+          console.warn(`[FrameExporter] Clip file access failed for ${clip.name}:`, e);
+        }
+      }
+
+      // 3. Try media file's blob URL
+      if (!fileData && mediaFile?.url) {
+        try {
+          const response = await fetch(mediaFile.url);
+          fileData = await response.arrayBuffer();
+          loadSource = 'media blob URL';
+        } catch (e) {
+          console.warn(`[FrameExporter] Media blob URL fetch failed for ${clip.name}:`, e);
+        }
+      }
+
+      // 4. Try video element's src (blob URL)
+      if (!fileData && clip.source.videoElement?.src) {
+        try {
+          const response = await fetch(clip.source.videoElement.src);
+          fileData = await response.arrayBuffer();
+          loadSource = 'video.src';
+        } catch (e) {
+          console.warn(`[FrameExporter] Video src fetch failed for ${clip.name}:`, e);
+        }
+      }
+
+      // NO FALLBACK - if we can't load file data, throw error
+      if (!fileData) {
+        throw new Error(`FAST export failed: Could not load file data for clip "${clip.name}". Try PRECISE mode instead.`);
+      }
+
+      console.log(`[FrameExporter] Loaded ${clip.name} from ${loadSource} (${(fileData.byteLength / 1024 / 1024).toFixed(1)}MB)`);
+
+      // Create dedicated WebCodecs player for export
+      const exportPlayer = new WebCodecsPlayer({
+        useSimpleMode: false,
+        loop: false,
+      });
+
+      // Load and parse with MP4Box - NO FALLBACK on failure
       try {
-        // Create a dedicated WebCodecsPlayer for export (NOT simple mode!)
-        const exportPlayer = new WebCodecsPlayer({
-          useSimpleMode: false, // IMPORTANT: Use full MP4Box parsing mode
-          loop: false,
-        });
-
-        // Get the file data - try file handle first, then blob URL
-        let fileData: ArrayBuffer | null = null;
-
-        if (mediaFile.fileHandle) {
-          try {
-            const file = await mediaFile.fileHandle.getFile();
-            fileData = await file.arrayBuffer();
-            console.log(`[FrameExporter] Loaded ${clip.name} from file handle (${(fileData.byteLength / 1024 / 1024).toFixed(1)}MB)`);
-          } catch (e) {
-            console.warn(`[FrameExporter] File handle access failed for ${clip.name}:`, e);
-          }
-        }
-
-        if (!fileData && mediaFile.url) {
-          try {
-            const response = await fetch(mediaFile.url);
-            fileData = await response.arrayBuffer();
-            console.log(`[FrameExporter] Loaded ${clip.name} from blob URL (${(fileData.byteLength / 1024 / 1024).toFixed(1)}MB)`);
-          } catch (e) {
-            console.warn(`[FrameExporter] Blob URL fetch failed for ${clip.name}:`, e);
-          }
-        }
-
-        if (!fileData) {
-          throw new Error('Could not load file data');
-        }
-
-        // Load into WebCodecs player with full MP4Box parsing
         await exportPlayer.loadArrayBuffer(fileData);
-
-        // Calculate the clip's start time within the export
-        const clipStartInExport = Math.max(0, startTime - clip.startTime);
-        const clipTime = clip.reversed
-          ? clip.outPoint - clipStartInExport
-          : clipStartInExport + clip.inPoint;
-
-        // Initialize sequential decoding at the clip's start position
-        await exportPlayer.prepareForSequentialExport(clipTime);
-
-        this.clipStates.set(clip.id, {
-          clipId: clip.id,
-          webCodecsPlayer: exportPlayer,
-          lastSampleIndex: exportPlayer.getCurrentSampleIndex(),
-          isSequential: true,
-        });
-
-        console.log(`[FrameExporter] Clip ${clip.name}: WebCodecs FAST mode enabled (${exportPlayer.width}x${exportPlayer.height})`);
       } catch (e) {
-        console.warn(`[FrameExporter] Clip ${clip.name}: WebCodecs init failed, using HTMLVideoElement:`, e);
-        this.clipStates.set(clip.id, {
-          clipId: clip.id,
-          webCodecsPlayer: null,
-          lastSampleIndex: 0,
-          isSequential: false,
-        });
+        throw new Error(`FAST export failed: WebCodecs/MP4Box parsing failed for clip "${clip.name}": ${e}. Try PRECISE mode instead.`);
       }
+
+      // Calculate the clip's start time within the export
+      const clipStartInExport = Math.max(0, startTime - clip.startTime);
+      const clipTime = clip.reversed
+        ? clip.outPoint - clipStartInExport
+        : clipStartInExport + clip.inPoint;
+
+      // Initialize sequential decoding
+      await exportPlayer.prepareForSequentialExport(clipTime);
+
+      this.clipStates.set(clip.id, {
+        clipId: clip.id,
+        webCodecsPlayer: exportPlayer,
+        lastSampleIndex: exportPlayer.getCurrentSampleIndex(),
+        isSequential: true,
+      });
+
+      console.log(`[FrameExporter] Clip ${clip.name}: FAST mode enabled (${exportPlayer.width}x${exportPlayer.height})`);
     }
 
-    const wcCount = [...this.clipStates.values()].filter(s => s.isSequential).length;
-    console.log(`[FrameExporter] ${wcCount}/${videoClips.length} clips using WebCodecs FAST sequential decoding`);
+    console.log(`[FrameExporter] All ${videoClips.length} clips using FAST WebCodecs sequential decoding`);
   }
 
   /**
@@ -678,15 +709,14 @@ export class FrameExporter {
           hasSpeedChanges = !!clip.reversed;
         }
 
-        // Check if we have WebCodecs state for this clip
+        // Get export state for this clip
         const clipState = this.clipStates.get(clip.id);
 
         if (clipState?.isSequential && clipState.webCodecsPlayer) {
-          // Use WebCodecs seeking - it automatically uses sequential decoding when possible
-          // seekDuringExport checks if target is close and decodes sequentially if so
+          // FAST MODE: WebCodecs sequential decoding
           seekPromises.push(clipState.webCodecsPlayer.seekDuringExport(clipTime));
         } else {
-          // Fall back to HTMLVideoElement seeking
+          // PRECISE MODE: HTMLVideoElement seeking (frame-accurate but slower)
           seekPromises.push(this.seekVideo(clip.source.videoElement, clipTime));
         }
       }

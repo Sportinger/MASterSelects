@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { FrameExporter, downloadBlob } from '../../engine/FrameExporter';
-import type { ExportProgress, VideoCodec, ContainerFormat } from '../../engine/FrameExporter';
+import type { ExportProgress, VideoCodec, ContainerFormat, ExportMode } from '../../engine/FrameExporter';
 import { AudioExportPipeline, AudioEncoderWrapper, type AudioCodec } from '../../engine/audio';
 import { useTimelineStore } from '../../stores/timeline';
 import { useMediaStore } from '../../stores/mediaStore';
@@ -247,6 +247,7 @@ export function ExportPanel() {
     h264: true, h265: false, vp9: false, av1: false
   });
   const [rateControl, setRateControl] = useState<'vbr' | 'cbr'>('vbr');
+  const [exportMode, setExportMode] = useState<'fast' | 'precise'>('fast');
 
   // FFmpeg settings (default to ProRes which is most universally useful)
   const [ffmpegCodec, setFfmpegCodec] = useState<FFmpegVideoCodec>('prores');
@@ -463,6 +464,8 @@ export function ExportPanel() {
       audioSampleRate,
       audioBitrate,
       normalizeAudio,
+      // Export mode
+      exportMode,
     });
     setExporter(exp);
 
@@ -1268,6 +1271,21 @@ export function ExportPanel() {
             {/* Quality - different controls for each encoder */}
             {encoder === 'webcodecs' ? (
               <>
+                {/* Export Mode */}
+                <div className="control-row">
+                  <label>Export Mode</label>
+                  <select
+                    value={exportMode}
+                    onChange={(e) => setExportMode(e.target.value as ExportMode)}
+                    title={exportMode === 'fast'
+                      ? 'WebCodecs sequential decoding - very fast but may have slight frame timing differences'
+                      : 'HTMLVideoElement seeking - frame-accurate like After Effects, but slower'}
+                  >
+                    <option value="fast">⚡ Fast (WebCodecs)</option>
+                    <option value="precise">🎯 Precise (Frame-accurate)</option>
+                  </select>
+                </div>
+
                 {/* Rate Control */}
                 <div className="control-row">
                   <label>Rate Control</label>
