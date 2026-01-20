@@ -860,7 +860,8 @@ export class FrameExporter {
         const track = tracks.find(t => t.id === clip.trackId);
         if (!track?.visible) continue;
 
-        // Handle nested composition clips (always use HTMLVideoElement)
+        // Handle nested composition clips
+        // Only seek with HTMLVideoElement if the clip is NOT managed by parallel decoder
         if (clip.isComposition && clip.nestedClips && clip.nestedTracks) {
           const clipLocalTime = time - clip.startTime;
           const nestedTime = clipLocalTime + (clip.inPoint || 0);
@@ -868,6 +869,10 @@ export class FrameExporter {
           for (const nestedClip of clip.nestedClips) {
             if (nestedTime >= nestedClip.startTime && nestedTime < nestedClip.startTime + nestedClip.duration) {
               if (nestedClip.source?.videoElement) {
+                // Skip HTMLVideoElement seek if parallel decoder handles this clip
+                if (this.parallelDecoder.hasClip(nestedClip.id)) {
+                  continue;  // Parallel decoder already prefetched this frame
+                }
                 const nestedLocalTime = nestedTime - nestedClip.startTime;
                 const nestedClipTime = nestedClip.reversed
                   ? nestedClip.outPoint - nestedLocalTime

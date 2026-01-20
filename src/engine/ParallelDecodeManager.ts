@@ -451,9 +451,14 @@ export class ParallelDecodeManager {
 
     // Return frame if within reasonable range (100ms = 100000μs)
     if (closestFrame && closestDiff < 100_000) {
+      // Debug: log frame selection
+      if (closestDiff > 50_000) {  // Log if > 50ms difference
+        console.log(`[ParallelDecode] ${clipDecoder.clipName}: frame diff ${(closestDiff/1000).toFixed(1)}ms, buffer size ${clipDecoder.frameBuffer.size}`);
+      }
       return closestFrame.frame;
     }
 
+    console.warn(`[ParallelDecode] ${clipDecoder.clipName}: No frame within 100ms at target ${(targetTimestamp/1_000_000).toFixed(3)}s, buffer size ${clipDecoder.frameBuffer.size}`);
     return null;
   }
 
