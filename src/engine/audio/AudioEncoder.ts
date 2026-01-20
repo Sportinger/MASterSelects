@@ -67,18 +67,23 @@ export class AudioEncoderWrapper {
    */
   static async isAACSupported(): Promise<boolean> {
     if (!('AudioEncoder' in window)) {
+      console.log('[AudioEncoder] AudioEncoder not in window');
       return false;
     }
 
     try {
-      const support = await AudioEncoder.isConfigSupported({
+      const config = {
         codec: 'mp4a.40.2', // AAC-LC
         sampleRate: 48000,
         numberOfChannels: 2,
         bitrate: 256000,
-      });
+      };
+      console.log('[AudioEncoder] Checking AAC support with config:', config);
+      const support = await AudioEncoder.isConfigSupported(config);
+      console.log('[AudioEncoder] AAC support result:', support);
       return support.supported === true;
-    } catch {
+    } catch (e) {
+      console.error('[AudioEncoder] AAC support check error:', e);
       return false;
     }
   }
