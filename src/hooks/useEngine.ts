@@ -222,10 +222,26 @@ export function useEngine() {
       }
     );
 
+    // Subscribe to maskDragging changes
+    // When drag ends (maskDragging: true -> false), regenerate mask textures
+    let wasDragging = false;
+    const unsubscribeDragging = useTimelineStore.subscribe(
+      (state) => state.maskDragging,
+      (maskDragging) => {
+        if (wasDragging && !maskDragging) {
+          // Drag just ended - force texture regeneration by clearing version cache
+          maskVersionRef.current.clear();
+          updateMaskTextures();
+        }
+        wasDragging = maskDragging;
+      }
+    );
+
     return () => {
       unsubscribeClips();
       unsubscribeTracks();
       unsubscribeComp();
+      unsubscribeDragging();
     };
   }, [isEngineReady, updateMaskTextures]);
 
