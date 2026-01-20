@@ -1,6 +1,7 @@
 // Proxy frame cache - loads and caches WebP frames for fast playback
 
 import { projectFileService } from './projectFileService';
+import { fileSystemService } from './fileSystemService';
 import { useMediaStore } from '../stores/mediaStore';
 
 // Cache settings
@@ -366,8 +367,19 @@ class ProxyFrameCache {
   }
 
   // ============================================
-  // INSTANT AUDIO SCRUBBING (Web Audio API)
+  // VARISPEED AUDIO SCRUBBING (Web Audio API)
+  // Like Premiere/Resolve: continuous audio that follows scrub speed
   // ============================================
+
+  // Varispeed scrubbing state
+  private scrubSource: AudioBufferSourceNode | null = null;
+  private scrubSourceGain: GainNode | null = null;
+  private scrubStartTime = 0; // AudioContext time when scrub started
+  private scrubStartPosition = 0; // Audio position when scrub started
+  private scrubCurrentMediaId: string | null = null;
+  private scrubLastPosition = 0;
+  private scrubLastTime = 0;
+  private scrubIsActive = false;
 
   /**
    * Get or create AudioContext for scrubbing
@@ -377,111 +389,209 @@ class ProxyFrameCache {
       this.audioContext = new AudioContext();
       this.scrubGain = this.audioContext.createGain();
       this.scrubGain.connect(this.audioContext.destination);
-      this.scrubGain.gain.value = 1.0; // Full volume for scrubbing
+      this.scrubGain.gain.value = 0.85; // Slightly lower for scrubbing
     }
     return this.audioContext;
   }
 
   /**
    * Get AudioBuffer for a media file (decode on first request)
+   * Works with BOTH proxy audio AND original video files
    */
   async getAudioBuffer(mediaFileId: string): Promise<AudioBuffer | null> {
     // Check cache
     const cached = this.audioBufferCache.get(mediaFileId);
     if (cached) return cached;
 
+    // Check if already loading
+    if (this.audioBufferLoading.has(mediaFileId)) {
+      return null; // Loading in progress
+    }
+    this.audioBufferLoading.add(mediaFileId);
+
     try {
-      // Get storage key
       const mediaStore = useMediaStore.getState();
       const mediaFile = mediaStore.files.find(f => f.id === mediaFileId);
       const storageKey = mediaFile?.fileHash || mediaFileId;
 
-      // Load audio file from project folder
+      let arrayBuffer: ArrayBuffer | null = null;
+
+      // Try 1: Proxy audio file (fastest, smallest)
       const audioFile = await projectFileService.getProxyAudio(storageKey);
-      if (!audioFile) return null;
+      if (audioFile) {
+        console.log(`[AudioBuffer] Loading from proxy audio: ${mediaFileId}`);
+        arrayBuffer = await audioFile.arrayBuffer();
+      }
+
+      // Try 2: Original video file (extract audio from video)
+      if (!arrayBuffer && mediaFile?.blobUrl) {
+        console.log(`[AudioBuffer] Loading from video blob URL: ${mediaFileId}`);
+        try {
+          const response = await fetch(mediaFile.blobUrl);
+          arrayBuffer = await response.arrayBuffer();
+        } catch (e) {
+          console.warn(`[AudioBuffer] Failed to fetch video blob:`, e);
+        }
+      }
+
+      // Try 3: File handle (if available)
+      if (!arrayBuffer) {
+        const fileHandle = fileSystemService.getFileHandle(mediaFileId);
+        if (fileHandle) {
+          console.log(`[AudioBuffer] Loading from file handle: ${mediaFileId}`);
+          try {
+            const file = await fileHandle.getFile();
+            arrayBuffer = await file.arrayBuffer();
+          } catch (e) {
+            console.warn(`[AudioBuffer] Failed to read file handle:`, e);
+          }
+        }
+      }
+
+      if (!arrayBuffer) {
+        console.warn(`[AudioBuffer] No audio source found for ${mediaFileId}`);
+        this.audioBufferLoading.delete(mediaFileId);
+        return null;
+      }
 
       // Decode to AudioBuffer
-      const arrayBuffer = await audioFile.arrayBuffer();
       const audioContext = this.getAudioContext();
-      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0)); // Clone to avoid detached buffer
 
       // Cache it
       this.audioBufferCache.set(mediaFileId, audioBuffer);
-      console.log(`[ProxyFrameCache] Audio buffer decoded for ${mediaFileId}: ${audioBuffer.duration.toFixed(1)}s`);
+      this.audioBufferLoading.delete(mediaFileId);
+      console.log(`[AudioBuffer] Decoded ${mediaFileId}: ${audioBuffer.duration.toFixed(1)}s, ${audioBuffer.numberOfChannels}ch`);
 
       return audioBuffer;
     } catch (e) {
-      console.warn(`[ProxyFrameCache] Failed to decode audio buffer:`, e);
+      console.warn(`[AudioBuffer] Failed to decode:`, e);
+      this.audioBufferLoading.delete(mediaFileId);
       return null;
     }
   }
 
-  // Track active scrub sources for overlapping playback
+  // Track loading state to prevent duplicate loads
+  private audioBufferLoading = new Set<string>();
+
+  // Legacy snippet sources (kept for cleanup)
   private activeScrubSources: AudioBufferSourceNode[] = [];
 
   /**
-   * Play instant scrub audio at a specific time
-   * Uses AudioBuffer for zero-latency seeking
-   * Allows overlapping snippets for continuous sound during fast scrubbing
+   * VARISPEED SCRUBBING - Call this continuously while scrubbing
+   * Audio plays continuously and follows the scrub position/speed
+   * Like Premiere Pro / DaVinci Resolve
    */
-  playScrubAudio(mediaFileId: string, time: number, duration: number = 0.15): void {
+  playScrubAudio(mediaFileId: string, targetTime: number, _duration: number = 0.15): void {
     const buffer = this.audioBufferCache.get(mediaFileId);
     if (!buffer) {
-      // Start loading buffer for next time
+      console.log('[Scrub] No AudioBuffer for', mediaFileId, '- loading...');
       this.getAudioBuffer(mediaFileId);
       return;
     }
 
-    try {
-      const ctx = this.getAudioContext();
-
-      // Resume context if suspended (browser autoplay policy)
-      if (ctx.state === 'suspended') {
-        ctx.resume();
-      }
-
-      // Clean up finished sources (keep max 3 overlapping)
-      // Note: sources auto-remove via onended callback, this is just a safety limit
-      if (this.activeScrubSources.length > 5) {
-        this.activeScrubSources = this.activeScrubSources.slice(-3);
-      }
-
-      // If too many sources, stop oldest
-      while (this.activeScrubSources.length > 3) {
-        const oldest = this.activeScrubSources.shift();
-        if (oldest) {
-          try {
-            oldest.stop();
-            oldest.disconnect();
-          } catch { /* ignore */ }
-        }
-      }
-
-      // Create new source with its own gain for fade
-      const sourceGain = ctx.createGain();
-      sourceGain.connect(this.scrubGain!);
-      sourceGain.gain.value = 1.0;
-
-      const source = ctx.createBufferSource();
-      source.buffer = buffer;
-      source.connect(sourceGain);
-
-      // Calculate valid start time
-      const startTime = Math.max(0, Math.min(time, buffer.duration - duration));
-
-      // Auto-cleanup when done
-      source.onended = () => {
-        const idx = this.activeScrubSources.indexOf(source);
-        if (idx >= 0) this.activeScrubSources.splice(idx, 1);
-        sourceGain.disconnect();
-      };
-
-      // Play snippet
-      source.start(0, startTime, duration);
-      this.activeScrubSources.push(source);
-    } catch {
-      // Ignore scrub errors
+    // Debug: Log that varispeed is active
+    if (!this.scrubIsActive) {
+      console.log('[Scrub] VARISPEED starting at', targetTime.toFixed(2), 's');
     }
+
+    const ctx = this.getAudioContext();
+    if (ctx.state === 'suspended') {
+      ctx.resume();
+    }
+
+    const now = performance.now();
+    const clampedTarget = Math.max(0, Math.min(targetTime, buffer.duration - 0.1));
+
+    // Calculate scrub velocity (how fast user is scrubbing)
+    const timeDelta = (now - this.scrubLastTime) / 1000; // seconds
+    const posDelta = clampedTarget - this.scrubLastPosition;
+    this.scrubLastPosition = clampedTarget;
+    this.scrubLastTime = now;
+
+    // Need new source if: different media, not active, or position jumped too far
+    const needNewSource =
+      !this.scrubIsActive ||
+      this.scrubCurrentMediaId !== mediaFileId ||
+      !this.scrubSource;
+
+    if (needNewSource) {
+      // Stop existing source
+      this.stopScrubAudio();
+
+      // Create new continuous source
+      this.scrubSourceGain = ctx.createGain();
+      this.scrubSourceGain.connect(this.scrubGain!);
+      this.scrubSourceGain.gain.value = 0.9;
+
+      this.scrubSource = ctx.createBufferSource();
+      this.scrubSource.buffer = buffer;
+      this.scrubSource.connect(this.scrubSourceGain);
+      this.scrubSource.playbackRate.value = 1.0;
+
+      // Start playing from target position
+      this.scrubSource.start(0, clampedTarget);
+      this.scrubStartTime = ctx.currentTime;
+      this.scrubStartPosition = clampedTarget;
+      this.scrubCurrentMediaId = mediaFileId;
+      this.scrubIsActive = true;
+
+      this.scrubSource.onended = () => {
+        this.scrubIsActive = false;
+        this.scrubSource = null;
+      };
+    } else if (this.scrubSource && timeDelta > 0.001) {
+      // Calculate where audio SHOULD be vs where it IS
+      const elapsedAudioTime = (ctx.currentTime - this.scrubStartTime) * this.scrubSource.playbackRate.value;
+      const currentAudioPos = this.scrubStartPosition + elapsedAudioTime;
+      const drift = clampedTarget - currentAudioPos;
+
+      // If drift is too large (>300ms), restart at correct position
+      if (Math.abs(drift) > 0.3) {
+        this.stopScrubAudio();
+        // Will restart on next call
+        return;
+      }
+
+      // Calculate target playback rate based on scrub velocity
+      // scrubSpeed = how many seconds of audio per second of real time
+      const scrubSpeed = timeDelta > 0.01 ? Math.abs(posDelta) / timeDelta : 1;
+
+      // Clamp to reasonable range and add drift correction
+      const driftCorrection = drift * 2; // Gentle drift correction
+      let targetRate = Math.max(0.25, Math.min(4.0, scrubSpeed + driftCorrection));
+
+      // If scrubbing backwards, we can't play backwards, so just slow down a lot
+      if (posDelta < -0.001) {
+        targetRate = 0.25; // Minimum speed for backwards feel
+      }
+
+      // Smooth rate changes to avoid clicks
+      const currentRate = this.scrubSource.playbackRate.value;
+      const smoothedRate = currentRate + (targetRate - currentRate) * 0.3;
+      this.scrubSource.playbackRate.value = Math.max(0.25, Math.min(4.0, smoothedRate));
+    }
+  }
+
+  /**
+   * Stop scrub audio - call when scrubbing ends
+   */
+  stopScrubAudio(): void {
+    if (this.scrubSource) {
+      try {
+        this.scrubSource.stop();
+        this.scrubSource.disconnect();
+      } catch { /* ignore */ }
+      this.scrubSource = null;
+    }
+    if (this.scrubSourceGain) {
+      try {
+        this.scrubSourceGain.disconnect();
+      } catch { /* ignore */ }
+      this.scrubSourceGain = null;
+    }
+    this.scrubIsActive = false;
+    this.scrubCurrentMediaId = null;
   }
 
   /**

@@ -457,6 +457,13 @@ export function ExportDialog({ onClose }: ExportDialogProps) {
                   ETA: {formatTime(progress.estimatedTimeRemaining)}
                 </div>
               )}
+
+              {/* Warning for slow clips */}
+              {progress?.slowClipsCount && progress.slowClipsCount > 0 && (
+                <div className="export-warning">
+                  {progress.slowClipsMessage}
+                </div>
+              )}
             </div>
 
             <div className="export-actions">
@@ -746,6 +753,16 @@ export function ExportDialog({ onClose }: ExportDialogProps) {
           margin-top: 8px;
           font-size: 14px;
           color: var(--text-primary);
+        }
+
+        .export-warning {
+          margin-top: 12px;
+          padding: 10px 12px;
+          background: rgba(255, 170, 0, 0.1);
+          border: 1px solid #ffaa00;
+          border-radius: 4px;
+          color: #ffaa00;
+          font-size: 12px;
         }
       `}</style>
     </div>

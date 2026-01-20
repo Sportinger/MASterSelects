@@ -106,13 +106,19 @@ export function RelinkDialog({ onClose }: RelinkDialogProps) {
     }
   }, [scanFolder]);
 
-  // Handle picking individual file
+  // Handle picking individual file - allows multiple selection to relink several at once
   const handlePickFile = useCallback(async (fileStatus: FileStatus) => {
+    // Check how many files are still missing
+    const missingFiles = fileStatuses.filter(s => s.status === 'missing');
+    const allowMultiple = missingFiles.length > 1;
+
     try {
-      const [handle] = await (window as any).showOpenFilePicker({
-        multiple: false,
+      const handles = await (window as any).showOpenFilePicker({
+        multiple: allowMultiple, // Allow multiple selection if there are multiple missing files
         types: [{
-          description: `Locate: ${fileStatus.name}`,
+          description: allowMultiple
+            ? `Select missing files (${missingFiles.length} missing)`
+            : `Locate: ${fileStatus.name}`,
           accept: {
             'video/*': [],
             'audio/*': [],
@@ -121,20 +127,64 @@ export function RelinkDialog({ onClose }: RelinkDialogProps) {
         }],
       });
 
-      if (handle) {
-        const file = await handle.getFile();
-        setFileStatuses(prev => prev.map(s =>
-          s.id === fileStatus.id
-            ? { ...s, status: 'found', newFile: file, newHandle: handle }
-            : s
-        ));
+      if (handles && handles.length > 0) {
+        // Build a map of selected files by name (lowercase for matching)
+        const selectedFiles = new Map<string, { file: File; handle: FileSystemFileHandle }>();
+
+        for (const handle of handles) {
+          const file = await handle.getFile();
+          selectedFiles.set(file.name.toLowerCase(), { file, handle });
+        }
+
+        console.log(`[RelinkDialog] User selected ${selectedFiles.size} file(s)`);
+
+        // Match selected files against missing files
+        setFileStatuses(prev => prev.map(status => {
+          if (status.status === 'missing') {
+            const match = selectedFiles.get(status.name.toLowerCase());
+            if (match) {
+              console.log(`[RelinkDialog] Matched: ${status.name}`);
+              return {
+                ...status,
+                status: 'found',
+                newFile: match.file,
+                newHandle: match.handle,
+              };
+            }
+          }
+          return status;
+        }));
+
+        // If there are still missing files after selection, offer to scan the folder
+        const stillMissing = fileStatuses.filter(s =>
+          s.status === 'missing' && !selectedFiles.has(s.name.toLowerCase())
+        );
+
+        if (stillMissing.length > 0 && handles.length > 0) {
+          // Automatically open folder picker starting from the selected file's location
+          try {
+            const dirHandle = await (window as any).showDirectoryPicker({
+              mode: 'read',
+              startIn: handles[0], // Start in same folder as selected file
+            });
+            if (dirHandle) {
+              console.log('[RelinkDialog] Scanning folder for remaining files...');
+              await scanFolder(dirHandle);
+            }
+          } catch (e: any) {
+            // User cancelled - that's fine, we still have the manually selected files
+            if (e.name !== 'AbortError') {
+              console.log('[RelinkDialog] Folder access declined, using manually selected files only');
+            }
+          }
+        }
       }
     } catch (e: any) {
       if (e.name !== 'AbortError') {
         console.error('[RelinkDialog] Pick file error:', e);
       }
     }
-  }, []);
+  }, [fileStatuses, scanFolder]);
 
   // Apply all found files
   const handleApply = useCallback(async () => {
@@ -207,7 +257,9 @@ export function RelinkDialog({ onClose }: RelinkDialogProps) {
                 )}
               </div>
               {status.status === 'missing' && (
-                <span className="relink-pick-hint">Click to locate</span>
+                <span className="relink-pick-hint">
+                  {missingCount > 1 ? 'Click to select files' : 'Click to locate'}
+                </span>
               )}
             </div>
           ))}

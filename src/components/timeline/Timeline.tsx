@@ -597,12 +597,15 @@ export function Timeline() {
     }
   }, [isPlaying, isDraggingPlayhead, playheadPosition, clips]);
 
-  // Playback loop - using requestAnimationFrame for smooth playback
-  // PERFORMANCE: Uses playheadState for high-frequency updates, only updates store at throttled interval
+  // Playback loop - AUDIO MASTER CLOCK
+  // Audio runs freely without correction, playhead follows audio time
+  // This eliminates audio drift and clicking from constant seeks
   useEffect(() => {
     if (!isPlaying) {
       // Disable internal position tracking when not playing
       playheadState.isUsingInternalPosition = false;
+      playheadState.hasMasterAudio = false;
+      playheadState.masterAudioElement = null;
       return;
     }
 
@@ -616,61 +619,76 @@ export function Timeline() {
     playheadState.isUsingInternalPosition = true;
     playheadState.playbackJustStarted = true; // Signal for initial audio sync
 
-    const getActiveVideoClip = () => {
-      const state = useTimelineStore.getState();
-      const pos = playheadState.position;
-      for (const clip of state.clips) {
-        if (
-          clip.source?.videoElement &&
-          pos >= clip.startTime &&
-          pos < clip.startTime + clip.duration
-        ) {
-          return clip;
-        }
-      }
-      return null;
-    };
-
     const updatePlayhead = (currentTime: number) => {
-      // Calculate actual elapsed time for smooth playback
-      const deltaTime = (currentTime - lastTime) / 1000; // Convert to seconds
-      lastTime = currentTime;
-
-      // Cap delta to prevent huge jumps if tab was inactive
-      const cappedDelta = Math.min(deltaTime, 0.1);
-
       const state = useTimelineStore.getState();
-      const { duration: dur, inPoint: ip, outPoint: op, loopPlayback: lp, pause: ps } = state;
+      const { duration: dur, inPoint: ip, outPoint: op, loopPlayback: lp, pause: ps, clips, tracks } = state;
       const effectiveEnd = op !== null ? op : dur;
       const effectiveStart = ip !== null ? ip : 0;
 
-      // Update high-frequency position (no store update = no subscriber triggers)
-      let newPosition = playheadState.position + cappedDelta;
+      let newPosition: number;
 
+      // AUDIO MASTER CLOCK: If we have an active audio element, derive playhead from its time
+      if (playheadState.hasMasterAudio && playheadState.masterAudioElement) {
+        const audio = playheadState.masterAudioElement;
+        if (!audio.paused && audio.readyState >= 2) {
+          // Calculate timeline position from audio's current time
+          // audioTime = clipInPoint + (timelinePosition - clipStartTime) * speed
+          // So: timelinePosition = clipStartTime + (audioTime - clipInPoint) / speed
+          const audioTime = audio.currentTime;
+          const speed = playheadState.masterClipSpeed || 1;
+          newPosition = playheadState.masterClipStartTime +
+            (audioTime - playheadState.masterClipInPoint) / speed;
+        } else {
+          // Audio paused or not ready, fall back to system time
+          const deltaTime = (currentTime - lastTime) / 1000;
+          const cappedDelta = Math.min(deltaTime, 0.1);
+          newPosition = playheadState.position + cappedDelta;
+        }
+      } else {
+        // No audio master - use system time (fallback for video-only or image clips)
+        const deltaTime = (currentTime - lastTime) / 1000;
+        const cappedDelta = Math.min(deltaTime, 0.1);
+        newPosition = playheadState.position + cappedDelta;
+      }
+      lastTime = currentTime;
+
+      // Handle end of timeline / looping
       if (newPosition >= effectiveEnd) {
         if (lp) {
           newPosition = effectiveStart;
-          const clip = getActiveVideoClip();
-          if (clip?.source?.videoElement) {
-            clip.source.videoElement.currentTime = clip.reversed
-              ? clip.outPoint
-              : clip.inPoint;
-          }
+          // Reset audio master - will be re-established by syncAudioElements
+          playheadState.hasMasterAudio = false;
+          playheadState.masterAudioElement = null;
+          // Seek all audio/video to start
+          clips.forEach(clip => {
+            if (clip.source?.audioElement) {
+              clip.source.audioElement.currentTime = clip.inPoint;
+            }
+            if (clip.source?.videoElement) {
+              clip.source.videoElement.currentTime = clip.reversed ? clip.outPoint : clip.inPoint;
+            }
+          });
         } else {
           newPosition = effectiveEnd;
           ps();
           playheadState.position = newPosition;
           playheadState.isUsingInternalPosition = false;
+          playheadState.hasMasterAudio = false;
+          playheadState.masterAudioElement = null;
           useTimelineStore.setState({ playheadPosition: newPosition });
           return;
         }
+      }
+
+      // Clamp to start
+      if (newPosition < effectiveStart) {
+        newPosition = effectiveStart;
       }
 
       // Update high-frequency position for render loop to read
       playheadState.position = newPosition;
 
       // PERFORMANCE: Only update store at throttled interval
-      // This prevents subscriber cascade (effects, re-renders) every frame
       if (currentTime - lastStateUpdate >= STATE_UPDATE_INTERVAL) {
         useTimelineStore.setState({ playheadPosition: newPosition });
         lastStateUpdate = currentTime;
@@ -684,6 +702,8 @@ export function Timeline() {
     return () => {
       cancelAnimationFrame(rafId);
       playheadState.isUsingInternalPosition = false;
+      playheadState.hasMasterAudio = false;
+      playheadState.masterAudioElement = null;
     };
   }, [isPlaying]);
 
@@ -792,9 +812,40 @@ export function Timeline() {
     getSnapTargetTimes,
   ]);
 
+  // Helper: Check if file is a video by type or extension (case-insensitive)
+  // Accept all common container formats - WebCodecs will check if codec (H.264/H.265) is supported
+  const isVideoFile = (file: File): boolean => {
+    if (file.type.startsWith('video/')) return true;
+    const ext = file.name.split('.').pop()?.toLowerCase() || '';
+    // All containers that might contain H.264/H.265
+    const videoExts = [
+      'mov', 'mp4', 'm4v', 'mxf', 'avi', 'mkv', 'webm',  // Common
+      'ts', 'mts', 'm2ts',                               // Transport streams
+      'wmv', 'asf', 'flv', 'f4v',                        // Windows/Flash
+      '3gp', '3g2', 'ogv', 'vob', 'mpg', 'mpeg',         // Other
+    ];
+    return videoExts.includes(ext);
+  };
+
+  // Helper: Check if file is any media type (video/audio/image)
+  const isMediaFile = (file: File): boolean => {
+    if (file.type.startsWith('video/') || file.type.startsWith('audio/') || file.type.startsWith('image/')) return true;
+    const ext = file.name.split('.').pop()?.toLowerCase() || '';
+    // All containers that might contain H.264/H.265
+    const videoExts = [
+      'mov', 'mp4', 'm4v', 'mxf', 'avi', 'mkv', 'webm',  // Common
+      'ts', 'mts', 'm2ts',                               // Transport streams
+      'wmv', 'asf', 'flv', 'f4v',                        // Windows/Flash
+      '3gp', '3g2', 'ogv', 'vob', 'mpg', 'mpeg',         // Other
+    ];
+    const audioExts = ['mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac', 'wma', 'aiff', 'alac'];
+    const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff', 'tif', 'heic', 'heif'];
+    return videoExts.includes(ext) || audioExts.includes(ext) || imageExts.includes(ext);
+  };
+
   // Quick duration check for dragged video files
   const getVideoDurationQuick = async (file: File): Promise<number | null> => {
-    if (!file.type.startsWith('video/') && !file.name.endsWith('.mov') && !file.name.endsWith('.mxf')) return null;
+    if (!isVideoFile(file)) return null;
 
     return new Promise((resolve) => {
       const video = document.createElement('video');
@@ -853,7 +904,7 @@ export function Timeline() {
             const item = items[i];
             if (item.kind === 'file') {
               const file = item.getAsFile();
-              if (file && (file.type.startsWith('video/') || file.name.endsWith('.mov') || file.name.endsWith('.mxf'))) {
+              if (file && isVideoFile(file)) {
                 const cacheKey = `${file.name}_${file.size}`;
                 if (dragDurationCacheRef.current?.url === cacheKey) {
                   dur = dragDurationCacheRef.current.duration;
@@ -1085,7 +1136,7 @@ export function Timeline() {
               if (handle && handle.kind === 'file') {
                 const file = await handle.getFile();
                 if (filePath) (file as any).path = filePath;
-                if (file.type.startsWith('video/') || file.type.startsWith('audio/') || file.type.startsWith('image/') || file.name.endsWith('.mov') || file.name.endsWith('.mxf')) {
+                if (isMediaFile(file)) {
                   const imported = await mediaStore.importFilesWithHandles([{ file, handle, absolutePath: filePath }]);
                   if (imported.length > 0) {
                     addClip(newTrackId, file, startTime, cachedDuration, imported[0].id);
@@ -1102,7 +1153,7 @@ export function Timeline() {
           // Fallback to regular file (no handle)
           const file = item.getAsFile();
           if (file && filePath) (file as any).path = filePath;
-          if (file && (file.type.startsWith('video/') || file.type.startsWith('audio/') || file.type.startsWith('image/') || file.name.endsWith('.mov') || file.name.endsWith('.mxf'))) {
+          if (file && isMediaFile(file)) {
             const importedFile = await mediaStore.importFile(file);
             addClip(newTrackId, file, startTime, cachedDuration, importedFile?.id);
           }
@@ -1232,7 +1283,7 @@ export function Timeline() {
                   (file as any).path = filePath;
                 }
                 console.log('[Timeline] File from handle:', file.name, 'type:', file.type, 'size:', file.size, 'path:', filePath);
-                if (file.type.startsWith('video/') || file.type.startsWith('audio/') || file.type.startsWith('image/') || file.name.endsWith('.mov') || file.name.endsWith('.mxf')) {
+                if (isMediaFile(file)) {
                   // Validate track type
                   const fileIsAudio = isAudioFile(file);
                   if (fileIsAudio && isVideoTrack) {
@@ -1263,7 +1314,7 @@ export function Timeline() {
             (file as any).path = filePath;
           }
           console.log('[Timeline] Fallback file:', file?.name, 'type:', file?.type, 'path:', filePath);
-          if (file && (file.type.startsWith('video/') || file.type.startsWith('audio/') || file.type.startsWith('image/') || file.name.endsWith('.mov') || file.name.endsWith('.mxf'))) {
+          if (file && isMediaFile(file)) {
             const fileIsAudio = isAudioFile(file);
             if (fileIsAudio && isVideoTrack) {
               console.log('[Timeline] Audio files can only be dropped on audio tracks');

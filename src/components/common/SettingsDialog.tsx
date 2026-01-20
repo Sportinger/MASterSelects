@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import { useSettingsStore, type TranscriptionProvider } from '../../stores/settingsStore';
+import { useIsMobile } from '../../hooks/useIsMobile';
 
 interface SettingsDialogProps {
   onClose: () => void;
@@ -11,9 +12,14 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
   const {
     apiKeys,
     transcriptionProvider,
+    forceDesktopMode,
     setApiKey,
     setTranscriptionProvider,
+    setForceDesktopMode,
   } = useSettingsStore();
+
+  // Check if we're actually on a mobile device
+  const isMobileDevice = useIsMobile();
 
   // Local state for editing (to avoid saving on every keystroke)
   const [localKeys, setLocalKeys] = useState(apiKeys);
@@ -33,6 +39,11 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
     });
     onClose();
   }, [localKeys, setApiKey, onClose]);
+
+  const handleSwitchToMobile = useCallback(() => {
+    setForceDesktopMode(false);
+    window.location.reload();
+  }, [setForceDesktopMode]);
 
   const handleKeyChange = (provider: keyof typeof apiKeys, value: string) => {
     setLocalKeys((prev) => ({ ...prev, [provider]: value }));
@@ -231,6 +242,22 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
               </a>
             </div>
           </div>
+
+          {/* Mobile/Desktop View Toggle - only show on mobile devices */}
+          {isMobileDevice && forceDesktopMode && (
+            <div className="settings-section">
+              <h3>View Mode</h3>
+              <p className="settings-hint">
+                You're viewing the desktop interface on a mobile device.
+              </p>
+              <button
+                className="btn-mobile-switch"
+                onClick={handleSwitchToMobile}
+              >
+                📱 Switch to Mobile View
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="settings-actions">
@@ -478,6 +505,22 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
 
           .btn-save:hover {
             opacity: 0.9;
+          }
+
+          .btn-mobile-switch {
+            width: 100%;
+            padding: 12px 20px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            font-size: 14px;
+            cursor: pointer;
+            transition: background 0.2s;
+          }
+
+          .btn-mobile-switch:hover {
+            background: var(--bg-hover);
           }
         `}</style>
       </div>

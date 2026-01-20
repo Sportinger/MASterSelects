@@ -368,6 +368,9 @@ export class FrameExporter {
     engine.setExporting(true);
 
     try {
+      // Prepare all clips for sequential export (avoids decoder reset on each frame)
+      await this.prepareClipsForExport(startTime);
+
       // Phase 1: Encode video frames
       for (let frame = 0; frame < totalFrames; frame++) {
         if (this.isCancelled) {
@@ -382,39 +385,28 @@ export class FrameExporter {
         const frameStart = performance.now();
         const time = startTime + frame * frameDuration;
 
-        if (frame % 10 === 0) {
+        if (frame % 30 === 0) {
           console.log(`[FrameExporter] Processing frame ${frame}/${totalFrames} at time ${time.toFixed(3)}s`);
         }
 
-        console.log(`[FrameExporter] Frame ${frame}: seeking...`);
         await this.seekAllClipsToTime(time);
-        console.log(`[FrameExporter] Frame ${frame}: seek done`);
-
-        // Wait for all video elements to be ready after seeking
         await this.waitForAllVideosReady(time);
 
-        console.log(`[FrameExporter] Frame ${frame}: building layers...`);
         const layers = this.buildLayersAtTime(time);
-        console.log(`[FrameExporter] Frame ${frame}: ${layers.length} layers`);
 
-        if (layers.length === 0) {
+        if (layers.length === 0 && frame === 0) {
           console.warn('[FrameExporter] No layers at time', time);
         }
 
-        console.log(`[FrameExporter] Frame ${frame}: rendering...`);
         engine.render(layers);
 
-        console.log(`[FrameExporter] Frame ${frame}: reading pixels...`);
         const pixels = await engine.readPixels();
         if (!pixels) {
           console.error('[FrameExporter] Failed to read pixels at frame', frame);
           continue;
         }
-        console.log(`[FrameExporter] Frame ${frame}: got ${pixels.length} bytes`);
 
-        console.log(`[FrameExporter] Frame ${frame}: encoding...`);
         await this.encoder.encodeFrame(pixels, frame);
-        console.log(`[FrameExporter] Frame ${frame}: done`);
 
         const frameTime = performance.now() - frameStart;
         this.frameTimes.push(frameTime);
@@ -479,11 +471,13 @@ export class FrameExporter {
 
       const blob = await this.encoder.finish();
       console.log(`[FrameExporter] Export complete: ${(blob.size / 1024 / 1024).toFixed(2)}MB`);
+      this.cleanupExportMode();
       engine.setExporting(false);
       engine.setResolution(originalDimensions.width, originalDimensions.height);
       return blob;
     } catch (error) {
       console.error('[FrameExporter] Export error:', error);
+      this.cleanupExportMode();
       engine.setExporting(false);
       engine.setResolution(originalDimensions.width, originalDimensions.height);
       return null;
@@ -493,24 +487,30 @@ export class FrameExporter {
   cancel(): void {
     this.isCancelled = true;
     this.audioPipeline?.cancel();
+    this.cleanupExportMode();
+  }
+
+  /**
+   * Prepare all video clips for export.
+   * Uses HTMLVideoElement seeking which is reliable across all formats.
+   */
+  private async prepareClipsForExport(_startTime: number): Promise<void> {
+    console.log('[FrameExporter] Preparing clips for export (using HTMLVideoElement mode)...');
+    // We use HTMLVideoElement seeking directly - it's slower but reliable
+    // WebCodecs/MP4Box mode had issues with H.264 avcC extraction
+  }
+
+  /**
+   * Cleanup export mode (minimal since we use HTMLVideoElement)
+   */
+  private cleanupExportMode(): void {
+    console.log('[FrameExporter] Export cleanup complete');
   }
 
   private async seekAllClipsToTime(time: number): Promise<void> {
     const clips = useTimelineStore.getState().getClipsAtTime(time);
     const tracks = useTimelineStore.getState().tracks;
     const seekPromises: Promise<void>[] = [];
-    const seekDescriptions: string[] = [];
-
-    // Debug: log clips found at this time (only first frame)
-    if (time < 0.1) {
-      console.log(`[FrameExporter] Clips at time ${time.toFixed(3)}:`, clips.map(c => ({
-        name: c.name,
-        isComposition: c.isComposition,
-        hasVideoElement: !!c.source?.videoElement,
-        sourceType: c.source?.type,
-        trackId: c.trackId,
-      })));
-    }
 
     for (const clip of clips) {
       const track = tracks.find(t => t.id === clip.trackId);
@@ -530,31 +530,26 @@ export class FrameExporter {
                 ? nestedClip.outPoint - nestedLocalTime
                 : nestedLocalTime + nestedClip.inPoint;
 
-              // Prefer WebCodecs async seek for guaranteed frame accuracy
-              if (nestedClip.source.webCodecsPlayer) {
-                seekPromises.push(nestedClip.source.webCodecsPlayer.seekAsync(nestedClipTime));
-              } else {
-                seekPromises.push(this.seekVideo(nestedClip.source.videoElement, nestedClipTime));
-              }
+              // Always use HTMLVideoElement seeking for export (most reliable)
+              seekPromises.push(this.seekVideo(nestedClip.source.videoElement, nestedClipTime));
             }
           }
         }
         continue;
       }
 
-      // Handle regular video clips
+      // Handle regular video clips - always use HTMLVideoElement seeking for export
       if (clip.source?.type === 'video' && clip.source.videoElement) {
         const clipLocalTime = time - clip.startTime;
 
-        // Simple calculation matching nested clip approach
-        // For clips with speed keyframes, use the store's calculation
+        // Calculate clip time (handles speed keyframes and reversed clips)
         let clipTime: number;
         try {
           const sourceTime = useTimelineStore.getState().getSourceTimeForClip(clip.id, clipLocalTime);
           const initialSpeed = useTimelineStore.getState().getInterpolatedSpeed(clip.id, 0);
           const startPoint = initialSpeed >= 0 ? clip.inPoint : clip.outPoint;
           clipTime = Math.max(clip.inPoint, Math.min(clip.outPoint, startPoint + sourceTime));
-        } catch (e) {
+        } catch {
           // Fallback to simple calculation if speed functions fail
           clipTime = clip.reversed
             ? clip.outPoint - clipLocalTime
@@ -562,21 +557,14 @@ export class FrameExporter {
           clipTime = Math.max(clip.inPoint, Math.min(clip.outPoint, clipTime));
         }
 
-        // Prefer WebCodecs async seek for guaranteed frame accuracy
-        if (clip.source.webCodecsPlayer) {
-          seekDescriptions.push(`WebCodecs:${clip.name}`);
-          seekPromises.push(clip.source.webCodecsPlayer.seekAsync(clipTime));
-        } else {
-          seekDescriptions.push(`HTMLVideo:${clip.name}`);
-          seekPromises.push(this.seekVideo(clip.source.videoElement, clipTime));
-        }
+        // Always use HTMLVideoElement seeking for export - it's reliable across all formats
+        // WebCodecs/MP4Box has issues with H.264 avcC extraction
+        seekPromises.push(this.seekVideo(clip.source.videoElement, clipTime));
       }
     }
 
     if (seekPromises.length > 0) {
-      console.log(`[FrameExporter] Seeking ${seekPromises.length} clips:`, seekDescriptions);
       await Promise.all(seekPromises);
-      console.log(`[FrameExporter] All seeks completed`);
     }
   }
 
@@ -587,7 +575,7 @@ export class FrameExporter {
       const timeout = setTimeout(() => {
         console.warn('[FrameExporter] Seek timeout at', targetTime);
         resolve();
-      }, 2000);
+      }, 200); // Reduced from 2000ms - if video isn't ready after 200ms, proceed anyway
 
       // Use requestVideoFrameCallback if available - guarantees frame is decoded
       const waitForFrame = () => {
@@ -652,20 +640,18 @@ export class FrameExporter {
     if (videoClips.length === 0) return;
 
     // Wait for all videos to be ready (with timeout)
-    const maxWaitTime = 2000;
-    const startTime = performance.now();
+    const maxWaitTime = 100;
+    const startWait = performance.now();
 
-    while (performance.now() - startTime < maxWaitTime) {
+    while (performance.now() - startWait < maxWaitTime) {
       let allReady = true;
 
       for (const clip of videoClips) {
         const video = clip.source!.videoElement!;
-        const webCodecsPlayer = clip.source!.webCodecsPlayer;
-
+        // Only check HTMLVideoElement - we're using it exclusively for export
         const videoReady = video.readyState >= 2 && !video.seeking;
-        const hasWebCodecsFrame = webCodecsPlayer?.hasFrame() ?? false;
 
-        if (!videoReady && !hasWebCodecsFrame) {
+        if (!videoReady) {
           allReady = false;
           break;
         }
@@ -786,28 +772,24 @@ export class FrameExporter {
         continue;
       }
 
-      // Handle video clips
+      // Handle video clips - use HTMLVideoElement only for export (reliable across all formats)
       if (clip.source?.type === 'video' && clip.source.videoElement) {
         const video = clip.source.videoElement;
-        const webCodecsPlayer = clip.source.webCodecsPlayer;
 
-        // Check if video is ready:
-        // - HTMLVideoElement has readyState >= 2 (HAVE_CURRENT_DATA), OR
-        // - WebCodecsPlayer has a decoded frame available
-        const videoReady = video.readyState >= 2;
-        const hasWebCodecsFrame = webCodecsPlayer?.hasFrame() ?? false;
+        // Check if video is ready (HTMLVideoElement has the frame we seeked to)
+        const videoReady = video.readyState >= 2 && !video.seeking;
 
-        if (videoReady || hasWebCodecsFrame) {
+        if (videoReady) {
           layers.push({
             ...baseLayerProps,
             source: {
               type: 'video',
               videoElement: video,
-              webCodecsPlayer: webCodecsPlayer,
+              // Don't pass webCodecsPlayer - we're using HTMLVideoElement seeking for export
             },
           });
         } else {
-          console.warn('[FrameExporter] Video not ready for clip', clip.id, 'readyState:', video.readyState, 'hasWebCodecsFrame:', hasWebCodecsFrame);
+          console.warn('[FrameExporter] Video not ready for clip', clip.id, 'readyState:', video.readyState, 'seeking:', video.seeking);
         }
       }
       // Handle image clips

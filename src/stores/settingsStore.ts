@@ -44,6 +44,9 @@ interface SettingsState {
   nativeHelperPort: number;   // WebSocket port (default 9876)
   nativeHelperConnected: boolean;  // Current connection status
 
+  // Mobile/Desktop view
+  forceDesktopMode: boolean;  // Show desktop UI even on mobile devices
+
   // First-run state
   hasCompletedSetup: boolean;
 
@@ -60,6 +63,7 @@ interface SettingsState {
   setTurboModeEnabled: (enabled: boolean) => void;
   setNativeHelperPort: (port: number) => void;
   setNativeHelperConnected: (connected: boolean) => void;
+  setForceDesktopMode: (force: boolean) => void;
   setHasCompletedSetup: (completed: boolean) => void;
   openSettings: () => void;
   closeSettings: () => void;
@@ -91,6 +95,7 @@ export const useSettingsStore = create<SettingsState>()(
       turboModeEnabled: true, // Try to use native helper by default
       nativeHelperPort: 9876, // Default WebSocket port
       nativeHelperConnected: false, // Not connected initially
+      forceDesktopMode: false, // Use responsive detection by default
       hasCompletedSetup: false, // Show welcome overlay on first run
       isSettingsOpen: false,
 
@@ -134,6 +139,10 @@ export const useSettingsStore = create<SettingsState>()(
 
       setNativeHelperConnected: (connected) => {
         set({ nativeHelperConnected: connected });
+      },
+
+      setForceDesktopMode: (force) => {
+        set({ forceDesktopMode: force });
       },
 
       setHasCompletedSetup: (completed) => {

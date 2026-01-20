@@ -185,9 +185,29 @@ async function createThumbnail(file: File, type: 'video' | 'image'): Promise<str
       resolve(url);
     } else if (type === 'video') {
       const video = document.createElement('video');
-      video.src = URL.createObjectURL(file);
-      video.currentTime = 1; // Seek to 1 second
-      video.onloadeddata = () => {
+      const url = URL.createObjectURL(file);
+      video.src = url;
+      video.muted = true; // Required for some browsers
+      video.playsInline = true;
+
+      // Timeout to prevent hanging on problematic files
+      const timeout = setTimeout(() => {
+        console.warn('[Thumbnail] Timeout loading video:', file.name);
+        URL.revokeObjectURL(url);
+        resolve(undefined);
+      }, 10000); // 10 second timeout
+
+      const cleanup = () => {
+        clearTimeout(timeout);
+        URL.revokeObjectURL(url);
+      };
+
+      video.onloadedmetadata = () => {
+        // Seek to 1 second or 10% of duration, whichever is smaller
+        video.currentTime = Math.min(1, video.duration * 0.1);
+      };
+
+      video.onseeked = () => {
         const canvas = document.createElement('canvas');
         canvas.width = 160;
         canvas.height = 90;
@@ -198,9 +218,17 @@ async function createThumbnail(file: File, type: 'video' | 'image'): Promise<str
         } else {
           resolve(undefined);
         }
-        URL.revokeObjectURL(video.src);
+        cleanup();
       };
-      video.onerror = () => resolve(undefined);
+
+      video.onerror = (e) => {
+        console.warn('[Thumbnail] Error loading video:', file.name, e);
+        cleanup();
+        resolve(undefined);
+      };
+
+      // Start loading
+      video.load();
     } else {
       resolve(undefined);
     }
@@ -345,21 +373,36 @@ async function getMediaInfo(file: File, type: 'video' | 'audio' | 'image'): Prom
   const codec = await getCodecInfo(file);
 
   return new Promise((resolve) => {
+    // Timeout to prevent hanging
+    const timeout = setTimeout(() => {
+      console.warn('[MediaInfo] Timeout loading:', file.name);
+      resolve({ container, fileSize, codec });
+    }, 15000); // 15 second timeout
+
     if (type === 'image') {
       const img = new Image();
-      img.src = URL.createObjectURL(file);
+      const url = URL.createObjectURL(file);
+      img.src = url;
       img.onload = () => {
+        clearTimeout(timeout);
         resolve({ width: img.width, height: img.height, container, fileSize, codec });
-        URL.revokeObjectURL(img.src);
+        URL.revokeObjectURL(url);
       };
-      img.onerror = () => resolve({ container, fileSize });
+      img.onerror = () => {
+        clearTimeout(timeout);
+        URL.revokeObjectURL(url);
+        resolve({ container, fileSize });
+      };
     } else if (type === 'video') {
       const video = document.createElement('video');
-      video.src = URL.createObjectURL(file);
-      video.onloadedmetadata = () => {
-        // Try to get FPS from filename
-        const fps = parseFpsFromFilename(file.name);
+      const url = URL.createObjectURL(file);
+      video.src = url;
+      video.muted = true;
+      video.playsInline = true;
 
+      video.onloadedmetadata = () => {
+        clearTimeout(timeout);
+        const fps = parseFpsFromFilename(file.name);
         resolve({
           width: video.videoWidth,
           height: video.videoHeight,
@@ -369,18 +412,33 @@ async function getMediaInfo(file: File, type: 'video' | 'audio' | 'image'): Prom
           container,
           fileSize,
         });
-        URL.revokeObjectURL(video.src);
+        URL.revokeObjectURL(url);
       };
-      video.onerror = () => resolve({ container, fileSize });
+      video.onerror = (e) => {
+        clearTimeout(timeout);
+        console.warn('[MediaInfo] Error loading video:', file.name, e);
+        URL.revokeObjectURL(url);
+        resolve({ container, fileSize, codec });
+      };
+
+      // Trigger load
+      video.load();
     } else if (type === 'audio') {
       const audio = document.createElement('audio');
-      audio.src = URL.createObjectURL(file);
+      const url = URL.createObjectURL(file);
+      audio.src = url;
       audio.onloadedmetadata = () => {
+        clearTimeout(timeout);
         resolve({ duration: audio.duration, codec, container, fileSize });
-        URL.revokeObjectURL(audio.src);
+        URL.revokeObjectURL(url);
       };
-      audio.onerror = () => resolve({ container, fileSize });
+      audio.onerror = () => {
+        clearTimeout(timeout);
+        URL.revokeObjectURL(url);
+        resolve({ container, fileSize });
+      };
     } else {
+      clearTimeout(timeout);
       resolve({ container, fileSize });
     }
   });
@@ -429,12 +487,17 @@ export const useMediaStore = create<MediaState>()(
         proxyFolderName: fileSystemService.getProxyFolderName(),
 
         importFile: async (file: File) => {
+          console.log('[Import] Starting import:', file.name, 'type:', file.type, 'size:', file.size);
           const type = getMediaType(file);
+          console.log('[Import] Detected type:', type);
           const url = URL.createObjectURL(file);
+
+          console.log('[Import] Getting media info and thumbnail...');
           const [info, thumbnailUrl] = await Promise.all([
             getMediaInfo(file, type),
             createThumbnail(file, type as 'video' | 'image'),
           ]);
+          console.log('[Import] Info:', info, 'Thumbnail:', !!thumbnailUrl);
 
           // Calculate file hash for deduplication
           const fileHash = await calculateFileHash(file);

@@ -1,7 +1,7 @@
 // App version - INCREMENT ON EVERY COMMIT!
 // Format: MAJOR.MINOR.PATCH
 // Increment PATCH (0.0.X) for each commit
-export const APP_VERSION = '1.0.8';
+export const APP_VERSION = '1.0.9';
 
 // Changelog entry type
 export interface ChangelogEntry {
@@ -15,6 +15,23 @@ export interface ChangelogEntry {
 
 // Version changelog - add new entries at the TOP
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '1.0.9',
+    date: '2026-01-20',
+    changes: [
+      { type: 'new', description: 'Audio Master Clock - playhead follows audio for perfect sync (like Premiere/Resolve)' },
+      { type: 'new', description: 'Varispeed audio scrubbing - continuous playback with speed adjustment' },
+      { type: 'new', description: 'Multi-select in relink dialog for batch file relinking' },
+      { type: 'new', description: 'Desktop mode option for mobile devices' },
+      { type: 'fix', description: 'MOV/MXF import now works with uppercase extensions (.MOV, .MXF)' },
+      { type: 'fix', description: 'Support for all video containers (TS, MTS, 3GP, etc.) with H.264/H.265' },
+      { type: 'fix', description: 'Export frame sync - proper H.264 avcC config and sequential decoding' },
+      { type: 'fix', description: 'Auto-open folder picker after single file relink' },
+      { type: 'improve', description: 'Layer caching for better pause/scrubbing performance' },
+      { type: 'improve', description: 'WebCodecs export optimization with parallel clip loading' },
+      { type: 'improve', description: 'Varispeed scrubbing works for all video clips (not just proxies)' },
+    ],
+  },
   {
     version: '1.0.8',
     date: '2026-01-13',

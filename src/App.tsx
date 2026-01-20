@@ -9,6 +9,7 @@ import { MobileApp } from './components/mobile';
 import { useGlobalHistory } from './hooks/useGlobalHistory';
 import { useClipPanelSync } from './hooks/useClipPanelSync';
 import { useIsMobile, useForceMobile } from './hooks/useIsMobile';
+import { useSettingsStore } from './stores/settingsStore';
 import { projectDB } from './services/projectDB';
 import { projectFileService } from './services/projectFileService';
 import './App.css';
@@ -17,9 +18,12 @@ function App() {
   // Mobile detection
   const isMobile = useIsMobile();
   const forceMobile = useForceMobile();
-  const showMobileUI = isMobile || forceMobile;
+  const forceDesktopMode = useSettingsStore((s) => s.forceDesktopMode);
 
-  // Render mobile UI if on mobile device
+  // Show mobile UI unless user explicitly requested desktop mode
+  const showMobileUI = (isMobile || forceMobile) && !forceDesktopMode;
+
+  // Render mobile UI if on mobile device (and not forcing desktop)
   if (showMobileUI) {
     return <MobileApp />;
   }

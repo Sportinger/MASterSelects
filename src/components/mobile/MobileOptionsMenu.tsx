@@ -4,6 +4,7 @@ import { useCallback, useState, useEffect } from 'react';
 import { undo, redo } from '../../stores/historyStore';
 import { saveCurrentProject, openExistingProject, createNewProject } from '../../services/projectSync';
 import { projectFileService } from '../../services/projectFileService';
+import { useSettingsStore } from '../../stores/settingsStore';
 
 interface MobileOptionsMenuProps {
   isOpen: boolean;
@@ -11,6 +12,7 @@ interface MobileOptionsMenuProps {
 }
 
 export function MobileOptionsMenu({ isOpen, onClose }: MobileOptionsMenuProps) {
+  const setForceDesktopMode = useSettingsStore((s) => s.setForceDesktopMode);
 
   // Project name state
   const [projectName, setProjectName] = useState('Untitled');
@@ -44,6 +46,12 @@ export function MobileOptionsMenu({ isOpen, onClose }: MobileOptionsMenuProps) {
     alert('Export coming soon...');
     onClose();
   }, [onClose]);
+
+  const handleSwitchToDesktop = useCallback(() => {
+    setForceDesktopMode(true);
+    // Force reload to apply the change
+    window.location.reload();
+  }, [setForceDesktopMode]);
 
   return (
     <div
@@ -116,7 +124,12 @@ export function MobileOptionsMenu({ isOpen, onClose }: MobileOptionsMenuProps) {
 
           {/* Settings */}
           <div className="mobile-options-section">
-            <div className="section-title">Settings</div>
+            <div className="section-title">View</div>
+            <button className="mobile-option-btn" onClick={handleSwitchToDesktop}>
+              <span className="option-icon">🖥️</span>
+              <span>Desktop Mode</span>
+              <span className="option-hint">Full UI</span>
+            </button>
             <button className="mobile-option-btn" disabled>
               <span className="option-icon">⚙️</span>
               <span>Preferences</span>
