@@ -368,7 +368,7 @@ export class WebCodecsPlayer {
               configBox.write(stream);
               // The write() includes the box header (8 bytes: size + type), we need to skip it
               description = stream.buffer.slice(8);
-              console.log(`[WebCodecs] Extracted codec description: ${description.byteLength} bytes from ${entry.avcC ? 'avcC' : entry.hvcC ? 'hvcC' : entry.vpcC ? 'vpcC' : 'av1C'}`);
+              console.log(`[WebCodecs] Extracted codec description: ${description!.byteLength} bytes from ${entry.avcC ? 'avcC' : entry.hvcC ? 'hvcC' : entry.vpcC ? 'vpcC' : 'av1C'}`);
             } else {
               console.warn('[WebCodecs] No codec config box found in sample entry:', Object.keys(entry));
             }

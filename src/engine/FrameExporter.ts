@@ -8,6 +8,7 @@ import { useTimelineStore } from '../stores/timeline';
 import { useMediaStore } from '../stores/mediaStore';
 import type { Layer, TimelineClip, NestedCompositionData } from '../types';
 import { AudioExportPipeline, type AudioExportProgress, type EncodedAudioResult, AudioEncoderWrapper, type AudioCodec } from './audio';
+import { fileSystemService } from '../services/fileSystemService';
 
 // ============ TYPES ============
 
@@ -564,10 +565,11 @@ export class FrameExporter {
       let fileData: ArrayBuffer | null = null;
       let loadSource = '';
 
-      // 1. Try media file's file handle
-      if (!fileData && mediaFile?.fileHandle) {
+      // 1. Try media file's file handle via fileSystemService
+      const storedHandle = mediaFile?.hasFileHandle ? fileSystemService.getFileHandle(clip.source?.mediaFileId || '') : null;
+      if (!fileData && storedHandle) {
         try {
-          const file = await mediaFile.fileHandle.getFile();
+          const file = await storedHandle.getFile();
           fileData = await file.arrayBuffer();
           loadSource = 'media file handle';
         } catch (e) {
@@ -702,12 +704,9 @@ export class FrameExporter {
 
         // Calculate clip time (handles speed keyframes and reversed clips)
         let clipTime: number;
-        let hasSpeedChanges = false;
         try {
           const sourceTime = useTimelineStore.getState().getSourceTimeForClip(clip.id, clipLocalTime);
           const initialSpeed = useTimelineStore.getState().getInterpolatedSpeed(clip.id, 0);
-          const currentSpeed = useTimelineStore.getState().getInterpolatedSpeed(clip.id, clipLocalTime);
-          hasSpeedChanges = Math.abs(initialSpeed - 1) > 0.01 || Math.abs(currentSpeed - 1) > 0.01 || !!clip.reversed;
           const startPoint = initialSpeed >= 0 ? clip.inPoint : clip.outPoint;
           clipTime = Math.max(clip.inPoint, Math.min(clip.outPoint, startPoint + sourceTime));
         } catch {
@@ -715,7 +714,6 @@ export class FrameExporter {
             ? clip.outPoint - clipLocalTime
             : clipLocalTime + clip.inPoint;
           clipTime = Math.max(clip.inPoint, Math.min(clip.outPoint, clipTime));
-          hasSpeedChanges = !!clip.reversed;
         }
 
         // Get export state for this clip

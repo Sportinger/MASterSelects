@@ -458,12 +458,6 @@ export function ExportDialog({ onClose }: ExportDialogProps) {
                 </div>
               )}
 
-              {/* Warning for slow clips */}
-              {progress?.slowClipsCount && progress.slowClipsCount > 0 && (
-                <div className="export-warning">
-                  {progress.slowClipsMessage}
-                </div>
-              )}
             </div>
 
             <div className="export-actions">

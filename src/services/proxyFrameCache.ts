@@ -423,14 +423,14 @@ class ProxyFrameCache {
         arrayBuffer = await audioFile.arrayBuffer();
       }
 
-      // Try 2: Original video file (extract audio from video)
-      if (!arrayBuffer && mediaFile?.blobUrl) {
-        console.log(`[AudioBuffer] Loading from video blob URL: ${mediaFileId}`);
+      // Try 2: Original video file URL (extract audio from video)
+      if (!arrayBuffer && mediaFile?.url) {
+        console.log(`[AudioBuffer] Loading from video URL: ${mediaFileId}`);
         try {
-          const response = await fetch(mediaFile.blobUrl);
+          const response = await fetch(mediaFile.url);
           arrayBuffer = await response.arrayBuffer();
         } catch (e) {
-          console.warn(`[AudioBuffer] Failed to fetch video blob:`, e);
+          console.warn(`[AudioBuffer] Failed to fetch video URL:`, e);
         }
       }
 
@@ -474,8 +474,6 @@ class ProxyFrameCache {
   // Track loading state to prevent duplicate loads
   private audioBufferLoading = new Set<string>();
 
-  // Legacy snippet sources (kept for cleanup)
-  private activeScrubSources: AudioBufferSourceNode[] = [];
 
   /**
    * VARISPEED SCRUBBING - Call this continuously while scrubbing

@@ -621,7 +621,7 @@ export function Timeline() {
 
     const updatePlayhead = (currentTime: number) => {
       const state = useTimelineStore.getState();
-      const { duration: dur, inPoint: ip, outPoint: op, loopPlayback: lp, pause: ps, clips, tracks } = state;
+      const { duration: dur, inPoint: ip, outPoint: op, loopPlayback: lp, pause: ps, clips } = state;
       const effectiveEnd = op !== null ? op : dur;
       const effectiveStart = ip !== null ? ip : 0;
 

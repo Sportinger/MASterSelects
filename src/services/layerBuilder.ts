@@ -67,13 +67,6 @@ class LayerBuilderService {
   private cacheMisses = 0;
   private lastStatsLog = 0;
 
-  // === FILTER RESULT CACHING ===
-  // Cache filtered tracks/clips to avoid repeated array operations
-  private cachedVideoTracks: TimelineTrack[] = [];
-  private cachedClipsAtTime: TimelineClip[] = [];
-  private lastFilterFrame = -1;
-  private lastFilterClipsRef: TimelineClip[] | null = null;
-  private lastFilterTracksRef: TimelineTrack[] | null = null;
 
   /**
    * Invalidate the layer cache - call when external changes occur
@@ -123,10 +116,9 @@ class LayerBuilderService {
 
     // During playback with keyframes, we need per-frame updates for smooth animation
     // But for static content, we can skip if same frame
-    const hasKeyframedClips = clips.some(c =>
-      (c.keyframes && Object.keys(c.keyframes).length > 0) ||
-      (c.effects && c.effects.some(e => e.keyframes && Object.keys(e.keyframes).length > 0))
-    );
+    // Check clipKeyframes map in store (keyframes are not stored on clip object)
+    const { hasKeyframes } = timelineState;
+    const hasKeyframedClips = clips.some(c => hasKeyframes(c.id));
 
     const needsRebuild = !this.cacheValid ||
       clipsChanged ||
