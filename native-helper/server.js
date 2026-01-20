@@ -99,6 +99,10 @@ wss.on('connection', (ws) => {
           await handleYouTubeDownload(ws, message);
           break;
 
+        case 'list_formats':
+          await handleListFormats(ws, message);
+          break;
+
         case 'get_file':
           handleGetFile(ws, message);
           break;
