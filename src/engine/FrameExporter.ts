@@ -327,12 +327,22 @@ class VideoEncoderWrapper {
 
 // ============ FRAME EXPORTER ============
 
+// Track which clips are using WebCodecs sequential decoding
+interface ExportClipState {
+  clipId: string;
+  webCodecsPlayer: any; // WebCodecsPlayer
+  lastSampleIndex: number;
+  isSequential: boolean; // true if using sequential decoding
+}
+
 export class FrameExporter {
   private settings: FullExportSettings;
   private encoder: VideoEncoderWrapper | null = null;
   private audioPipeline: AudioExportPipeline | null = null;
   private isCancelled = false;
   private frameTimes: number[] = [];
+  private clipStates: Map<string, ExportClipState> = new Map();
+  private useWebCodecs = true; // Try WebCodecs first, fall back to HTMLVideoElement
 
   constructor(settings: FullExportSettings) {
     this.settings = settings;
@@ -492,18 +502,88 @@ export class FrameExporter {
 
   /**
    * Prepare all video clips for export.
-   * Uses HTMLVideoElement seeking which is reliable across all formats.
+   * Uses WebCodecs sequential decoding when available for much faster exports.
+   * Falls back to HTMLVideoElement seeking for clips without WebCodecs support.
    */
-  private async prepareClipsForExport(_startTime: number): Promise<void> {
-    console.log('[FrameExporter] Preparing clips for export (using HTMLVideoElement mode)...');
-    // We use HTMLVideoElement seeking directly - it's slower but reliable
-    // WebCodecs/MP4Box mode had issues with H.264 avcC extraction
+  private async prepareClipsForExport(startTime: number): Promise<void> {
+    const { clips, tracks } = useTimelineStore.getState();
+    const endTime = this.settings.endTime;
+
+    // Find all video clips that will be in the export range
+    const videoClips = clips.filter(clip => {
+      const track = tracks.find(t => t.id === clip.trackId);
+      if (!track?.visible || track.type !== 'video') return false;
+      // Check if clip overlaps export range
+      const clipEnd = clip.startTime + clip.duration;
+      return clip.startTime < endTime && clipEnd > startTime;
+    });
+
+    console.log(`[FrameExporter] Preparing ${videoClips.length} video clips for export...`);
+
+    for (const clip of videoClips) {
+      if (clip.source?.type !== 'video') continue;
+
+      const webCodecsPlayer = clip.source.webCodecsPlayer;
+
+      // Check if clip has WebCodecs player and it's ready
+      if (this.useWebCodecs && webCodecsPlayer && webCodecsPlayer.ready) {
+        // Calculate the clip's start time within the export
+        const clipStartInExport = Math.max(0, startTime - clip.startTime);
+        const clipTime = clip.reversed
+          ? clip.outPoint - clipStartInExport
+          : clipStartInExport + clip.inPoint;
+
+        try {
+          // Initialize sequential decoding at the clip's start position
+          await webCodecsPlayer.prepareForSequentialExport(clipTime);
+
+          this.clipStates.set(clip.id, {
+            clipId: clip.id,
+            webCodecsPlayer,
+            lastSampleIndex: webCodecsPlayer.getCurrentSampleIndex(),
+            isSequential: true,
+          });
+
+          console.log(`[FrameExporter] Clip ${clip.name}: WebCodecs sequential mode enabled`);
+        } catch (e) {
+          console.warn(`[FrameExporter] Clip ${clip.name}: WebCodecs prep failed, using HTMLVideoElement:`, e);
+          this.clipStates.set(clip.id, {
+            clipId: clip.id,
+            webCodecsPlayer: null,
+            lastSampleIndex: 0,
+            isSequential: false,
+          });
+        }
+      } else {
+        console.log(`[FrameExporter] Clip ${clip.name}: Using HTMLVideoElement (no WebCodecs)`);
+        this.clipStates.set(clip.id, {
+          clipId: clip.id,
+          webCodecsPlayer: null,
+          lastSampleIndex: 0,
+          isSequential: false,
+        });
+      }
+    }
+
+    const wcCount = [...this.clipStates.values()].filter(s => s.isSequential).length;
+    console.log(`[FrameExporter] ${wcCount}/${videoClips.length} clips using WebCodecs sequential decoding`);
   }
 
   /**
-   * Cleanup export mode (minimal since we use HTMLVideoElement)
+   * Cleanup export mode
    */
   private cleanupExportMode(): void {
+    // End sequential export mode for all WebCodecs players
+    for (const state of this.clipStates.values()) {
+      if (state.webCodecsPlayer && state.isSequential) {
+        try {
+          state.webCodecsPlayer.endSequentialExport();
+        } catch (e) {
+          // Ignore cleanup errors
+        }
+      }
+    }
+    this.clipStates.clear();
     console.log('[FrameExporter] Export cleanup complete');
   }
 
@@ -516,21 +596,18 @@ export class FrameExporter {
       const track = tracks.find(t => t.id === clip.trackId);
       if (!track?.visible) continue;
 
-      // Handle nested composition clips
+      // Handle nested composition clips (always use HTMLVideoElement for nested)
       if (clip.isComposition && clip.nestedClips && clip.nestedTracks) {
         const clipLocalTime = time - clip.startTime;
         const nestedTime = clipLocalTime + (clip.inPoint || 0);
 
         for (const nestedClip of clip.nestedClips) {
-          // Check if nested clip is active at this time
           if (nestedTime >= nestedClip.startTime && nestedTime < nestedClip.startTime + nestedClip.duration) {
             if (nestedClip.source?.videoElement) {
               const nestedLocalTime = nestedTime - nestedClip.startTime;
               const nestedClipTime = nestedClip.reversed
                 ? nestedClip.outPoint - nestedLocalTime
                 : nestedLocalTime + nestedClip.inPoint;
-
-              // Always use HTMLVideoElement seeking for export (most reliable)
               seekPromises.push(this.seekVideo(nestedClip.source.videoElement, nestedClipTime));
             }
           }
@@ -538,28 +615,46 @@ export class FrameExporter {
         continue;
       }
 
-      // Handle regular video clips - always use HTMLVideoElement seeking for export
+      // Handle regular video clips
       if (clip.source?.type === 'video' && clip.source.videoElement) {
         const clipLocalTime = time - clip.startTime;
 
         // Calculate clip time (handles speed keyframes and reversed clips)
         let clipTime: number;
+        let hasSpeedChanges = false;
         try {
           const sourceTime = useTimelineStore.getState().getSourceTimeForClip(clip.id, clipLocalTime);
           const initialSpeed = useTimelineStore.getState().getInterpolatedSpeed(clip.id, 0);
+          const currentSpeed = useTimelineStore.getState().getInterpolatedSpeed(clip.id, clipLocalTime);
+          hasSpeedChanges = Math.abs(initialSpeed - 1) > 0.01 || Math.abs(currentSpeed - 1) > 0.01 || !!clip.reversed;
           const startPoint = initialSpeed >= 0 ? clip.inPoint : clip.outPoint;
           clipTime = Math.max(clip.inPoint, Math.min(clip.outPoint, startPoint + sourceTime));
         } catch {
-          // Fallback to simple calculation if speed functions fail
           clipTime = clip.reversed
             ? clip.outPoint - clipLocalTime
             : clipLocalTime + clip.inPoint;
           clipTime = Math.max(clip.inPoint, Math.min(clip.outPoint, clipTime));
+          hasSpeedChanges = !!clip.reversed;
         }
 
-        // Always use HTMLVideoElement seeking for export - it's reliable across all formats
-        // WebCodecs/MP4Box has issues with H.264 avcC extraction
-        seekPromises.push(this.seekVideo(clip.source.videoElement, clipTime));
+        // Check if we have WebCodecs state for this clip
+        const clipState = this.clipStates.get(clip.id);
+
+        if (clipState?.isSequential && clipState.webCodecsPlayer) {
+          // Use WebCodecs sequential decoding (much faster!)
+          const wcp = clipState.webCodecsPlayer;
+
+          if (hasSpeedChanges) {
+            // Non-sequential access needed - use seekDuringExport (still faster than HTMLVideoElement)
+            seekPromises.push(wcp.seekDuringExport(clipTime));
+          } else {
+            // Sequential access - just decode next frame
+            seekPromises.push(wcp.decodeNextFrameForExport());
+          }
+        } else {
+          // Fall back to HTMLVideoElement seeking
+          seekPromises.push(this.seekVideo(clip.source.videoElement, clipTime));
+        }
       }
     }
 
@@ -639,16 +734,26 @@ export class FrameExporter {
 
     if (videoClips.length === 0) return;
 
-    // Wait for all videos to be ready (with timeout)
+    // Filter out clips using WebCodecs (they're already ready)
+    const htmlVideoClips = videoClips.filter(clip => {
+      const clipState = this.clipStates.get(clip.id);
+      return !clipState?.isSequential; // Only wait for HTMLVideoElement clips
+    });
+
+    if (htmlVideoClips.length === 0) {
+      // All clips using WebCodecs - no waiting needed
+      return;
+    }
+
+    // Wait for HTMLVideoElement clips to be ready (with timeout)
     const maxWaitTime = 100;
     const startWait = performance.now();
 
     while (performance.now() - startWait < maxWaitTime) {
       let allReady = true;
 
-      for (const clip of videoClips) {
+      for (const clip of htmlVideoClips) {
         const video = clip.source!.videoElement!;
-        // Only check HTMLVideoElement - we're using it exclusively for export
         const videoReady = video.readyState >= 2 && !video.seeking;
 
         if (!videoReady) {
@@ -772,20 +877,35 @@ export class FrameExporter {
         continue;
       }
 
-      // Handle video clips - use HTMLVideoElement only for export (reliable across all formats)
+      // Handle video clips - prefer WebCodecs VideoFrame, fall back to HTMLVideoElement
       if (clip.source?.type === 'video' && clip.source.videoElement) {
         const video = clip.source.videoElement;
+        const clipState = this.clipStates.get(clip.id);
 
-        // Check if video is ready (HTMLVideoElement has the frame we seeked to)
+        // Try to use WebCodecs VideoFrame first (much faster)
+        if (clipState?.isSequential && clipState.webCodecsPlayer) {
+          const videoFrame = clipState.webCodecsPlayer.getCurrentFrame();
+          if (videoFrame) {
+            layers.push({
+              ...baseLayerProps,
+              source: {
+                type: 'video',
+                videoElement: video, // Keep as fallback
+                webCodecsPlayer: clipState.webCodecsPlayer, // Engine will use VideoFrame from this
+              },
+            });
+            continue;
+          }
+        }
+
+        // Fall back to HTMLVideoElement
         const videoReady = video.readyState >= 2 && !video.seeking;
-
         if (videoReady) {
           layers.push({
             ...baseLayerProps,
             source: {
               type: 'video',
               videoElement: video,
-              // Don't pass webCodecsPlayer - we're using HTMLVideoElement seeking for export
             },
           });
         } else {
