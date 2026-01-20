@@ -65,8 +65,8 @@ interface ClipInfo {
 
 interface DecodedFrame {
   frame: VideoFrame;
-  sourceTime: number;     // Time in source video
-  timelineTime: number;   // Time on timeline
+  sourceTime: number;     // Time in source video (seconds)
+  timestamp: number;      // Original timestamp from VideoFrame (microseconds)
 }
 
 interface ClipDecoder {
@@ -77,8 +77,8 @@ interface ClipDecoder {
   sampleIndex: number;
   videoTrack: MP4VideoTrack;
   codecConfig: VideoDecoderConfig;
-  frameBuffer: Map<number, DecodedFrame>;  // frameIndex -> decoded frame
-  currentFrameIndex: number;
+  frameBuffer: Map<number, DecodedFrame>;  // timestamp (μs) -> decoded frame
+  lastDecodedTimestamp: number;            // Track last decoded timestamp
   clipInfo: ClipInfo;
   isDecoding: boolean;
   pendingDecode: Promise<void> | null;
@@ -196,7 +196,7 @@ export class ParallelDecodeManager {
             videoTrack,
             codecConfig,
             frameBuffer: new Map(),
-            currentFrameIndex: -1,
+            lastDecodedTimestamp: 0,
             clipInfo,
             isDecoding: false,
             pendingDecode: null,
@@ -229,51 +229,32 @@ export class ParallelDecodeManager {
 
   /**
    * Handle a decoded frame from VideoDecoder output callback
+   * Uses the frame's timestamp directly for accurate time mapping
    */
   private handleDecodedFrame(clipDecoder: ClipDecoder, frame: VideoFrame): void {
-    const frameIndex = clipDecoder.currentFrameIndex + clipDecoder.frameBuffer.size + 1;
-    const sample = clipDecoder.samples[clipDecoder.sampleIndex - 1];
+    // Use the frame's timestamp directly (preserved from EncodedVideoChunk)
+    const timestamp = frame.timestamp;  // microseconds
+    const sourceTime = timestamp / 1_000_000;  // convert to seconds
 
-    if (sample) {
-      const sourceTime = sample.cts / sample.timescale;
-      const timelineTime = this.sourceTimeToTimeline(clipDecoder.clipInfo, sourceTime);
+    // Store frame by its timestamp for accurate retrieval
+    clipDecoder.frameBuffer.set(timestamp, {
+      frame,
+      sourceTime,
+      timestamp,
+    });
 
-      clipDecoder.frameBuffer.set(frameIndex, {
-        frame,
-        sourceTime,
-        timelineTime,
-      });
-    } else {
-      frame.close();
-    }
+    clipDecoder.lastDecodedTimestamp = timestamp;
 
     // Cleanup old frames if buffer is too large
     if (clipDecoder.frameBuffer.size > MAX_BUFFER_SIZE) {
-      const oldestKey = Math.min(...clipDecoder.frameBuffer.keys());
-      const oldFrame = clipDecoder.frameBuffer.get(oldestKey);
+      const timestamps = [...clipDecoder.frameBuffer.keys()].sort((a, b) => a - b);
+      const oldestTimestamp = timestamps[0];
+      const oldFrame = clipDecoder.frameBuffer.get(oldestTimestamp);
       if (oldFrame) {
         oldFrame.frame.close();
-        clipDecoder.frameBuffer.delete(oldestKey);
+        clipDecoder.frameBuffer.delete(oldestTimestamp);
       }
     }
-  }
-
-  /**
-   * Convert source video time to timeline time
-   * For nested clips, this returns the time on the MAIN timeline
-   */
-  private sourceTimeToTimeline(clipInfo: ClipInfo, sourceTime: number): number {
-    const relativeTime = sourceTime - clipInfo.inPoint;
-    const clipLocalTime = clipInfo.reversed ? clipInfo.duration - relativeTime : relativeTime;
-
-    if (clipInfo.isNested && clipInfo.parentStartTime !== undefined) {
-      // For nested clips: clipInfo.startTime is relative to composition
-      // Main timeline time = parentStartTime + parentInPoint + clipStartTime + clipLocalTime
-      const compTime = clipInfo.startTime + clipLocalTime;
-      return clipInfo.parentStartTime + (clipInfo.parentInPoint || 0) + compTime;
-    }
-
-    return clipInfo.startTime + clipLocalTime;
   }
 
   /**
@@ -335,8 +316,8 @@ export class ParallelDecodeManager {
       const targetSampleIndex = this.findSampleIndexForTime(clipDecoder, sourceTime);
 
       // Check if we need to decode more frames
-      const bufferedFrameIndex = clipDecoder.currentFrameIndex + clipDecoder.frameBuffer.size;
-      const needsDecoding = targetSampleIndex + BUFFER_AHEAD_FRAMES > bufferedFrameIndex;
+      // We need to decode if sampleIndex (next to decode) is not far enough ahead of target
+      const needsDecoding = clipDecoder.sampleIndex < targetSampleIndex + BUFFER_AHEAD_FRAMES;
 
       if (needsDecoding && !clipDecoder.isDecoding) {
         promises.push(this.decodeAhead(clipDecoder, targetSampleIndex + BUFFER_AHEAD_FRAMES));
@@ -393,7 +374,6 @@ export class ParallelDecodeManager {
             decodedFrame.frame.close();
           }
           clipDecoder.frameBuffer.clear();
-          clipDecoder.currentFrameIndex = keyframeIndex - 1;
         }
 
         // Decode frames
@@ -453,21 +433,25 @@ export class ParallelDecodeManager {
       return null;
     }
 
-    // Find the closest frame in buffer
-    const sourceTime = this.timelineToSourceTime(clipInfo, timelineTime);
+    // Find the closest frame in buffer by source time
+    const targetSourceTime = this.timelineToSourceTime(clipInfo, timelineTime);
+    const targetTimestamp = targetSourceTime * 1_000_000;  // Convert to microseconds
 
-    // Look for frame in buffer closest to target time
+    // Find the frame with closest timestamp
+    let closestFrame: DecodedFrame | null = null;
+    let closestDiff = Infinity;
+
     for (const [, decodedFrame] of clipDecoder.frameBuffer) {
-      // Find frame closest to our target time
-      if (Math.abs(decodedFrame.sourceTime - sourceTime) < 0.05) { // Within 50ms
-        return decodedFrame.frame;
+      const diff = Math.abs(decodedFrame.timestamp - targetTimestamp);
+      if (diff < closestDiff) {
+        closestDiff = diff;
+        closestFrame = decodedFrame;
       }
     }
 
-    // Return most recent frame if exact match not found
-    if (clipDecoder.frameBuffer.size > 0) {
-      const latestIndex = Math.max(...clipDecoder.frameBuffer.keys());
-      return clipDecoder.frameBuffer.get(latestIndex)?.frame || null;
+    // Return frame if within reasonable range (100ms = 100000μs)
+    if (closestFrame && closestDiff < 100_000) {
+      return closestFrame.frame;
     }
 
     return null;
@@ -499,23 +483,28 @@ export class ParallelDecodeManager {
    */
   advanceToTime(timelineTime: number): void {
     for (const [, clipDecoder] of this.clipDecoders) {
-      const sourceTime = this.timelineToSourceTime(clipDecoder.clipInfo, timelineTime);
-      const currentSampleIndex = this.findSampleIndexForTime(clipDecoder, sourceTime);
+      const clipInfo = clipDecoder.clipInfo;
 
-      // Clean up frames that are behind current position
-      const framesToRemove: number[] = [];
-      for (const [frameIndex, decodedFrame] of clipDecoder.frameBuffer) {
-        if (frameIndex < currentSampleIndex - 2) { // Keep a couple frames behind
+      // Skip if time is not in this clip's range
+      if (!this.isTimeInClipRange(clipInfo, timelineTime)) {
+        continue;
+      }
+
+      const sourceTime = this.timelineToSourceTime(clipInfo, timelineTime);
+      const currentTimestamp = sourceTime * 1_000_000;  // Convert to microseconds
+
+      // Clean up frames that are significantly behind current position (> 200ms behind)
+      const timestampsToRemove: number[] = [];
+      for (const [timestamp, decodedFrame] of clipDecoder.frameBuffer) {
+        if (timestamp < currentTimestamp - 200_000) {  // 200ms behind
           decodedFrame.frame.close();
-          framesToRemove.push(frameIndex);
+          timestampsToRemove.push(timestamp);
         }
       }
 
-      for (const frameIndex of framesToRemove) {
-        clipDecoder.frameBuffer.delete(frameIndex);
+      for (const timestamp of timestampsToRemove) {
+        clipDecoder.frameBuffer.delete(timestamp);
       }
-
-      clipDecoder.currentFrameIndex = Math.max(clipDecoder.currentFrameIndex, currentSampleIndex);
     }
   }
 
