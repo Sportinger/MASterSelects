@@ -89,6 +89,7 @@ export class WebCodecsPlayer {
   private frameResolve: (() => void) | null = null; // For waiting on decoded frames
   private decoderInitialized = false; // Flag to track decoder ready state
   private pendingDecodeFirstFrame = false; // Flag to defer first frame decode
+  private loadResolve: (() => void) | null = null; // For waiting on decoder init in loadArrayBuffer
 
   constructor(options: WebCodecsPlayerOptions = {}) {
     this.loop = options.loop ?? true;
@@ -409,21 +410,22 @@ export class WebCodecsPlayer {
       mp4File.onSamples = (_trackId, _ref, samples) => {
         this.samples.push(...samples);
 
-        // Signal ready after first batch of samples
-        if (!this.ready && this.samples.length > 0) {
+        // Signal ready after first batch of samples AND decoder is initialized
+        if (!this.ready && this.samples.length > 0 && this.decoderInitialized) {
           this.ready = true;
           clearTimeout(timeout);
           console.log(`[WebCodecs] READY: ${this.width}x${this.height} @ ${this.frameRate.toFixed(1)}fps, ${this.samples.length} samples`);
 
-          // Decode first frame - either now if decoder ready, or defer until decoder initializes
-          if (this.decoderInitialized) {
-            this.decodeFirstFrame();
-          } else {
-            this.pendingDecodeFirstFrame = true;
-          }
-
+          this.decodeFirstFrame();
           this.onReady?.(this.width, this.height);
           resolve();
+        } else if (!this.ready && this.samples.length > 0) {
+          // Samples received but decoder not ready yet - store resolve for initDecoder
+          this.pendingDecodeFirstFrame = true;
+          this.loadResolve = () => {
+            clearTimeout(timeout);
+            resolve();
+          };
         }
       };
 
@@ -497,10 +499,20 @@ export class WebCodecsPlayer {
     this.decoder.configure(this.codecConfig);
     this.decoderInitialized = true;
 
-    // Handle any deferred first frame decode
-    if (this.pendingDecodeFirstFrame) {
+    // Handle any deferred first frame decode and resolve loadArrayBuffer promise
+    if (this.pendingDecodeFirstFrame && this.samples.length > 0) {
       this.pendingDecodeFirstFrame = false;
+      this.ready = true;
+      console.log(`[WebCodecs] READY (deferred): ${this.width}x${this.height} @ ${this.frameRate.toFixed(1)}fps, ${this.samples.length} samples`);
+
       this.decodeFirstFrame();
+      this.onReady?.(this.width, this.height);
+
+      // Resolve the loadArrayBuffer promise
+      if (this.loadResolve) {
+        this.loadResolve();
+        this.loadResolve = null;
+      }
     }
   }
 
