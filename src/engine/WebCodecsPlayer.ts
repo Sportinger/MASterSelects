@@ -90,6 +90,7 @@ export class WebCodecsPlayer {
   private decoderInitialized = false; // Flag to track decoder ready state
   private pendingDecodeFirstFrame = false; // Flag to defer first frame decode
   private loadResolve: (() => void) | null = null; // For waiting on decoder init in loadArrayBuffer
+  private needsKeyframe = false; // Track if decoder needs a keyframe after flush/configure
 
   constructor(options: WebCodecsPlayerOptions = {}) {
     this.loop = options.loop ?? true;
@@ -940,6 +941,7 @@ export class WebCodecsPlayer {
 
     this.sampleIndex = targetIndex + 1;
     this.isInExportMode = true;
+    this.needsKeyframe = true; // After flush, decoder needs a keyframe before delta frames
 
     console.log(`[WebCodecs] Export mode: started at sample ${targetIndex}, decoded ${targetIndex - keyframeIndex + 1} frames from keyframe`);
   }
@@ -968,6 +970,36 @@ export class WebCodecsPlayer {
     }
 
     const sample = this.samples[this.sampleIndex];
+
+    // After flush(), decoder needs a keyframe before it can decode delta frames
+    if (this.needsKeyframe && !sample.is_sync) {
+      // Find the previous keyframe and decode from there up to current sample
+      let keyframeIndex = this.sampleIndex;
+      for (let i = this.sampleIndex; i >= 0; i--) {
+        if (this.samples[i].is_sync) {
+          keyframeIndex = i;
+          break;
+        }
+      }
+
+      // Decode from keyframe up to (but not including) current sample
+      for (let i = keyframeIndex; i < this.sampleIndex; i++) {
+        const kfSample = this.samples[i];
+        const kfChunk = new EncodedVideoChunk({
+          type: kfSample.is_sync ? 'key' : 'delta',
+          timestamp: (kfSample.cts * 1_000_000) / kfSample.timescale,
+          duration: (kfSample.duration * 1_000_000) / kfSample.timescale,
+          data: kfSample.data,
+        });
+        try {
+          this.decoder.decode(kfChunk);
+        } catch {
+          // Skip errors on catch-up frames
+        }
+      }
+      this.needsKeyframe = false;
+    }
+
     this.sampleIndex++;
 
     const chunk = new EncodedVideoChunk({
