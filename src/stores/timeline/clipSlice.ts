@@ -1864,8 +1864,15 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
       });
     }
 
-    // Reset to start
+    // Reset to start and wait for video to be ready
     video.currentTime = 0;
+    await new Promise<void>(resolve => {
+      if (video.readyState >= 2) {
+        resolve();
+      } else {
+        video.addEventListener('canplay', () => resolve(), { once: true });
+      }
+    });
 
     // Update the clip with actual video data
     set({
@@ -1893,11 +1900,18 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
     updateDuration();
     invalidateCache();
 
-    // Import to media store
+    // Import to media store and get the mediaFileId
     const mediaStore = useMediaStore.getState();
-    mediaStore.importFile(file);
+    const mediaFile = await mediaStore.importFile(file);
 
-    console.log(`[Timeline] Download complete for clip: ${clipId}, duration: ${naturalDuration}s`);
+    // Update clip with mediaFileId so audio can be loaded
+    set({
+      clips: get().clips.map(c =>
+        c.id === clipId ? { ...c, mediaFileId: mediaFile.id } : c
+      ),
+    });
+
+    console.log(`[Timeline] Download complete for clip: ${clipId}, duration: ${naturalDuration}s, mediaFileId: ${mediaFile.id}`);
   },
 
   // Set download error for a clip
