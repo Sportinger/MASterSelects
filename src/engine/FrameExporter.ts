@@ -311,7 +311,7 @@ class VideoEncoderWrapper {
   private getCodecString(codec: VideoCodec): string {
     switch (codec) {
       case 'h264':
-        return 'avc1.640028'; // High Profile, Level 4.0
+        return 'avc1.4d0028'; // Main Profile, Level 4.0 (better VLC compatibility)
       case 'h265':
         return 'hvc1.1.6.L93.B0'; // Main Profile, Level 3.1
       case 'vp9':
@@ -1001,7 +1001,7 @@ export class FrameExporter {
       const timeout = setTimeout(() => {
         console.warn('[FrameExporter] Seek timeout at', targetTime);
         resolve();
-      }, 200); // Reduced from 2000ms - if video isn't ready after 200ms, proceed anyway
+      }, 500); // 500ms for AV1 and other slow-decoding codecs
 
       // Use requestVideoFrameCallback if available - guarantees frame is decoded
       const waitForFrame = () => {
@@ -1439,7 +1439,7 @@ export class FrameExporter {
     if (!('VideoEncoder' in window)) return false;
 
     const codecStrings: Record<VideoCodec, string> = {
-      h264: 'avc1.640028',
+      h264: 'avc1.4d0028',
       h265: 'hvc1.1.6.L93.B0',
       vp9: 'vp09.00.10.08',
       av1: 'av01.0.04M.08',
