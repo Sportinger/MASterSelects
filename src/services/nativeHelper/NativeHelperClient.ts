@@ -446,17 +446,15 @@ class NativeHelperClientImpl {
       }, 60000); // 60 seconds for large files
 
       // For file requests, we expect base64 data in the response
-      this.pendingRequests.set(id, (response: any) => {
+      this.pendingRequests.set(id, async (response: any) => {
         clearTimeout(timeout);
         if (response.ok && response.data) {
-          // Decode base64 to ArrayBuffer
+          // Decode base64 to ArrayBuffer using fetch (much faster than manual loop)
           try {
-            const binaryString = atob(response.data);
-            const bytes = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) {
-              bytes[i] = binaryString.charCodeAt(i);
-            }
-            resolve(bytes.buffer);
+            const dataUrl = `data:application/octet-stream;base64,${response.data}`;
+            const fetchResponse = await fetch(dataUrl);
+            const buffer = await fetchResponse.arrayBuffer();
+            resolve(buffer);
           } catch (e) {
             console.error('[NativeHelper] Failed to decode base64 data:', e);
             resolve(null);
