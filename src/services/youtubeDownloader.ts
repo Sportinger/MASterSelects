@@ -111,39 +111,14 @@ export async function downloadYouTubeVideo(
     progress.progress = 95;
     notifySubscribers(progress);
 
-    // Try to get file via File System Access API (instant) or fall back to WebSocket transfer (slow)
-    let file: File;
-
-    // Try showOpenFilePicker - user selects the downloaded file (1 click, instant)
-    if ('showOpenFilePicker' in window) {
-      try {
-        console.log('[YouTubeDownloader] Opening file picker for:', result.path);
-        const [fileHandle] = await (window as any).showOpenFilePicker({
-          startIn: 'downloads',
-          types: [{ description: 'Video', accept: { 'video/*': ['.mp4', '.webm', '.mkv'] } }],
-        });
-        file = await fileHandle.getFile();
-        console.log('[YouTubeDownloader] File selected via picker:', file.name);
-      } catch (pickerError) {
-        // User cancelled or picker failed - fall back to WebSocket transfer
-        console.log('[YouTubeDownloader] File picker cancelled, falling back to WebSocket transfer');
-        const fileResponse = await NativeHelperClient.getDownloadedFile(result.path!);
-        if (!fileResponse) {
-          throw new Error('Failed to read downloaded file from helper');
-        }
-        const sanitizedTitle = title.replace(/[^a-zA-Z0-9\s-]/g, '').substring(0, 100);
-        file = new File([fileResponse], `${sanitizedTitle}.mp4`, { type: 'video/mp4' });
-      }
-    } else {
-      // No File System Access API - use WebSocket transfer
-      console.log('[YouTubeDownloader] Fetching file from helper:', result.path);
-      const fileResponse = await NativeHelperClient.getDownloadedFile(result.path!);
-      if (!fileResponse) {
-        throw new Error('Failed to read downloaded file from helper');
-      }
-      const sanitizedTitle = title.replace(/[^a-zA-Z0-9\s-]/g, '').substring(0, 100);
-      file = new File([fileResponse], `${sanitizedTitle}.mp4`, { type: 'video/mp4' });
+    // Transfer file from helper via WebSocket
+    console.log('[YouTubeDownloader] Fetching file from helper:', result.path);
+    const fileResponse = await NativeHelperClient.getDownloadedFile(result.path!);
+    if (!fileResponse) {
+      throw new Error('Failed to read downloaded file from helper');
     }
+    const sanitizedTitle = title.replace(/[^a-zA-Z0-9\s-]/g, '').substring(0, 100);
+    const file = new File([fileResponse], `${sanitizedTitle}.mp4`, { type: 'video/mp4' });
 
     progress.status = 'complete';
     progress.progress = 100;
