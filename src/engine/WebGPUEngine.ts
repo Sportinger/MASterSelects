@@ -488,6 +488,13 @@ export class WebGPUEngine {
     console.log('[WebGPU] Cleared all caches');
   }
 
+  // Clear video-specific caches to prevent stale external texture references
+  clearVideoCache(): void {
+    this.lastVideoTime.clear();
+    this.cachedExternalTexture.clear();
+    console.log('[WebGPU] Cleared video texture cache');
+  }
+
   cacheFrameAtTime(video: HTMLVideoElement, time: number): void {
     this.scrubbingCache?.cacheFrameAtTime(video, time);
   }
@@ -2087,6 +2094,8 @@ if (hot) {
   const existing = hot.data.engine as WebGPUEngine | undefined;
   if (existing) {
     console.log('[WebGPU] Reusing existing engine instance from HMR');
+    // Clear stale video texture caches to prevent external texture errors
+    existing.clearVideoCache();
     engineInstance = existing;
   } else {
     console.log('[WebGPU] Creating new engine instance');

@@ -50,6 +50,12 @@ export class WebGPUContext {
       this.device.lost.then((info) => {
         console.error('WebGPU device lost:', info.message);
         this.isInitialized = false;
+        // Attempt auto-recovery after a short delay
+        if (info.reason !== 'destroyed') {
+          console.log('[WebGPU] Attempting device recovery...');
+          this.initPromise = null;
+          setTimeout(() => this.initialize(), 100);
+        }
       });
 
       this.isInitialized = true;
