@@ -132,17 +132,25 @@ export class WebGPUContext {
     return null;
   }
 
+  // Get the preferred canvas format for this GPU
+  getPreferredCanvasFormat(): GPUTextureFormat {
+    return navigator.gpu.getPreferredCanvasFormat();
+  }
+
   // Create and configure a canvas context
   configureCanvas(canvas: HTMLCanvasElement): GPUCanvasContext | null {
     if (!this.device) return null;
 
     const context = canvas.getContext('webgpu');
     if (context) {
+      // Use the GPU's preferred format to avoid extra copies
+      const preferredFormat = navigator.gpu.getPreferredCanvasFormat();
       context.configure({
         device: this.device,
-        format: 'bgra8unorm',
+        format: preferredFormat,
         alphaMode: 'premultiplied',
       });
+      console.log(`[WebGPU] Canvas configured with preferred format: ${preferredFormat}`);
     }
     return context;
   }
