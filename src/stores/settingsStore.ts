@@ -10,6 +10,9 @@ export type TranscriptionProvider = 'local' | 'openai' | 'assemblyai' | 'deepgra
 // Preview quality options (multiplier on base resolution)
 export type PreviewQuality = 1 | 0.5 | 0.25;
 
+// GPU power preference options
+export type GPUPowerPreference = 'high-performance' | 'low-power';
+
 interface APIKeys {
   openai: string;
   assemblyai: string;
@@ -47,6 +50,9 @@ interface SettingsState {
   // Mobile/Desktop view
   forceDesktopMode: boolean;  // Show desktop UI even on mobile devices
 
+  // GPU preference
+  gpuPowerPreference: GPUPowerPreference;  // 'high-performance' (dGPU) or 'low-power' (iGPU)
+
   // First-run state
   hasCompletedSetup: boolean;
 
@@ -64,6 +70,7 @@ interface SettingsState {
   setNativeHelperPort: (port: number) => void;
   setNativeHelperConnected: (connected: boolean) => void;
   setForceDesktopMode: (force: boolean) => void;
+  setGpuPowerPreference: (preference: GPUPowerPreference) => void;
   setHasCompletedSetup: (completed: boolean) => void;
   openSettings: () => void;
   closeSettings: () => void;
@@ -96,6 +103,7 @@ export const useSettingsStore = create<SettingsState>()(
       nativeHelperPort: 9876, // Default WebSocket port
       nativeHelperConnected: false, // Not connected initially
       forceDesktopMode: false, // Use responsive detection by default
+      gpuPowerPreference: 'high-performance', // Prefer dGPU by default
       hasCompletedSetup: false, // Show welcome overlay on first run
       isSettingsOpen: false,
 
@@ -143,6 +151,10 @@ export const useSettingsStore = create<SettingsState>()(
 
       setForceDesktopMode: (force) => {
         set({ forceDesktopMode: force });
+      },
+
+      setGpuPowerPreference: (preference) => {
+        set({ gpuPowerPreference: preference });
       },
 
       setHasCompletedSetup: (completed) => {

@@ -4,10 +4,12 @@ import { projectFileService } from './projectFileService';
 import { fileSystemService } from './fileSystemService';
 import { useMediaStore } from '../stores/mediaStore';
 
-// Cache settings
-const MAX_CACHE_SIZE = 300; // Maximum frames to keep in memory (10s at 30fps)
-const PRELOAD_AHEAD_FRAMES = 30; // Preload this many frames ahead for smooth playback (1s at 30fps)
-const PARALLEL_LOAD_COUNT = 8; // Load this many frames in parallel for faster preload
+// Cache settings - tuned for fast scrubbing
+const MAX_CACHE_SIZE = 900; // 30 seconds at 30fps - larger cache for scrubbing
+const PRELOAD_AHEAD_FRAMES = 60; // 2 seconds ahead for playback
+const PRELOAD_BEHIND_FRAMES = 30; // 1 second behind for reverse scrubbing
+const PARALLEL_LOAD_COUNT = 16; // More parallel loads for faster preload
+const SCRUB_PRELOAD_RANGE = 90; // 3 seconds around scrub position
 
 // Frame cache entry
 interface CachedFrame {
@@ -49,14 +51,17 @@ class ProxyFrameCache {
 
     if (cached) {
       cached.timestamp = Date.now(); // Update for LRU
+      this.cacheHits++;
       return cached.image;
     }
+    this.cacheMisses++;
     return null;
   }
 
   // Get nearest cached frame for scrubbing fallback
   // Returns the closest frame within maxDistance frames
-  getNearestCachedFrame(mediaFileId: string, frameIndex: number, maxDistance: number = 15): HTMLImageElement | null {
+  // Searches in scrub direction first for smoother scrubbing
+  getNearestCachedFrame(mediaFileId: string, frameIndex: number, maxDistance: number = 30): HTMLImageElement | null {
     // Check exact frame first
     const exactKey = this.getKey(mediaFileId, frameIndex);
     const exact = this.cache.get(exactKey);
@@ -65,23 +70,31 @@ class ProxyFrameCache {
       return exact.image;
     }
 
-    // Search nearby frames (prefer recent frames, then earlier)
+    // Search in scrub direction first for visual continuity
+    const searchForward = this.scrubDirection >= 0;
+
     for (let d = 1; d <= maxDistance; d++) {
-      // Check frame ahead first (more recent content)
-      const aheadKey = this.getKey(mediaFileId, frameIndex + d);
-      const ahead = this.cache.get(aheadKey);
-      if (ahead) {
-        ahead.timestamp = Date.now();
-        return ahead.image;
+      // Search primary direction first
+      const primaryOffset = searchForward ? d : -d;
+      const primaryFrame = frameIndex + primaryOffset;
+      if (primaryFrame >= 0) {
+        const primaryKey = this.getKey(mediaFileId, primaryFrame);
+        const primary = this.cache.get(primaryKey);
+        if (primary) {
+          primary.timestamp = Date.now();
+          return primary.image;
+        }
       }
 
-      // Then check frame behind
-      if (frameIndex - d >= 0) {
-        const behindKey = this.getKey(mediaFileId, frameIndex - d);
-        const behind = this.cache.get(behindKey);
-        if (behind) {
-          behind.timestamp = Date.now();
-          return behind.image;
+      // Then search opposite direction
+      const secondaryOffset = searchForward ? -d : d;
+      const secondaryFrame = frameIndex + secondaryOffset;
+      if (secondaryFrame >= 0) {
+        const secondaryKey = this.getKey(mediaFileId, secondaryFrame);
+        const secondary = this.cache.get(secondaryKey);
+        if (secondary) {
+          secondary.timestamp = Date.now();
+          return secondary.image;
         }
       }
     }
@@ -206,12 +219,58 @@ class ProxyFrameCache {
     }
   }
 
-  // Schedule preloading of current and upcoming frames
+  // Scrub tracking for smart preloading
+  private lastScrubFrame = -1;
+  private scrubDirection = 0; // -1 = backward, 0 = stopped, 1 = forward
+  private isScrubbing = false;
+
+  // Schedule preloading of frames around current position (bidirectional)
   private schedulePreload(mediaFileId: string, currentFrameIndex: number, _fps: number) {
-    // Add current frame first (highest priority for nested comp entry)
-    // Then add upcoming frames to preload queue
-    for (let i = 0; i <= PRELOAD_AHEAD_FRAMES; i++) {
-      const frameIndex = currentFrameIndex + i;
+    // Detect scrub direction
+    if (this.lastScrubFrame >= 0) {
+      const delta = currentFrameIndex - this.lastScrubFrame;
+      if (Math.abs(delta) > 0 && Math.abs(delta) < 100) {
+        this.scrubDirection = delta > 0 ? 1 : -1;
+        this.isScrubbing = true;
+      }
+    }
+    this.lastScrubFrame = currentFrameIndex;
+
+    // Calculate preload range based on scrubbing state
+    const preloadAhead = this.isScrubbing ? SCRUB_PRELOAD_RANGE : PRELOAD_AHEAD_FRAMES;
+    const preloadBehind = this.isScrubbing ? SCRUB_PRELOAD_RANGE : PRELOAD_BEHIND_FRAMES;
+
+    // Priority queue: current frame first, then direction-based loading
+    const framesToPreload: number[] = [currentFrameIndex];
+
+    // Add frames in scrub direction first (higher priority)
+    if (this.scrubDirection >= 0) {
+      // Forward or stopped: prioritize ahead
+      for (let i = 1; i <= preloadAhead; i++) {
+        framesToPreload.push(currentFrameIndex + i);
+      }
+      for (let i = 1; i <= preloadBehind; i++) {
+        if (currentFrameIndex - i >= 0) {
+          framesToPreload.push(currentFrameIndex - i);
+        }
+      }
+    } else {
+      // Backward scrubbing: prioritize behind
+      for (let i = 1; i <= preloadBehind; i++) {
+        if (currentFrameIndex - i >= 0) {
+          framesToPreload.push(currentFrameIndex - i);
+        }
+      }
+      for (let i = 1; i <= preloadAhead; i++) {
+        framesToPreload.push(currentFrameIndex + i);
+      }
+    }
+
+    // Add to preload queue
+    for (let i = 0; i < framesToPreload.length; i++) {
+      const frameIndex = framesToPreload[i];
+      if (frameIndex < 0) continue;
+
       const key = this.getKey(mediaFileId, frameIndex);
 
       // Skip if already cached or in queue
@@ -229,6 +288,13 @@ class ProxyFrameCache {
     if (!this.isPreloading) {
       this.processPreloadQueue();
     }
+  }
+
+  // Call this when scrubbing stops to reset state
+  resetScrubState(): void {
+    this.isScrubbing = false;
+    this.scrubDirection = 0;
+    this.lastScrubFrame = -1;
   }
 
   // Process preload queue with parallel loading for speed
@@ -590,6 +656,9 @@ class ProxyFrameCache {
     }
     this.scrubIsActive = false;
     this.scrubCurrentMediaId = null;
+
+    // Also reset frame scrub tracking state
+    this.resetScrubState();
   }
 
   /**
@@ -636,13 +705,60 @@ class ProxyFrameCache {
     this.audioBufferCache.clear();
   }
 
-  // Get cache stats
+  // Bulk preload frames around a position - call when scrubbing starts
+  async preloadAroundPosition(mediaFileId: string, frameIndex: number, _fps: number = 30, range: number = SCRUB_PRELOAD_RANGE): Promise<void> {
+    const framesToPreload: string[] = [];
+
+    // Generate list of frames to preload (current position +/- range)
+    for (let i = -range; i <= range; i++) {
+      const frame = frameIndex + i;
+      if (frame < 0) continue;
+
+      const key = this.getKey(mediaFileId, frame);
+      if (!this.cache.has(key) && !this.preloadQueue.includes(key)) {
+        framesToPreload.push(key);
+      }
+    }
+
+    // Add all to front of queue (highest priority)
+    this.preloadQueue = [...framesToPreload, ...this.preloadQueue];
+
+    // Start preloading if not already
+    if (!this.isPreloading) {
+      this.processPreloadQueue();
+    }
+
+    console.log(`[ProxyCache] Bulk preload started: ${framesToPreload.length} frames around frame ${frameIndex}`);
+  }
+
+  // Get cache stats with more detail
   getStats() {
     return {
       cachedFrames: this.cache.size,
+      maxCacheSize: MAX_CACHE_SIZE,
       preloadQueueSize: this.preloadQueue.length,
       isPreloading: this.isPreloading,
+      isScrubbing: this.isScrubbing,
+      scrubDirection: this.scrubDirection,
+      hitRate: this.cacheHits / Math.max(1, this.cacheHits + this.cacheMisses),
     };
+  }
+
+  // Cache hit/miss tracking
+  private cacheHits = 0;
+  private cacheMisses = 0;
+
+  // Log cache performance (call periodically for debugging)
+  logPerformance(): void {
+    const total = this.cacheHits + this.cacheMisses;
+    const hitRate = total > 0 ? (this.cacheHits / total * 100).toFixed(1) : '0';
+    console.log(`[ProxyCache] Hit rate: ${hitRate}% (${this.cacheHits}/${total}), cached: ${this.cache.size}/${MAX_CACHE_SIZE}, queue: ${this.preloadQueue.length}`);
+  }
+
+  // Reset performance counters
+  resetPerformanceCounters(): void {
+    this.cacheHits = 0;
+    this.cacheMisses = 0;
   }
 }
 

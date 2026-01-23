@@ -462,6 +462,119 @@ input, textarea {
   color: var(--warning);
 }
 
+/* GPU Selector Dropdown */
+.gpu-selector {
+  position: relative;
+  margin-right: 8px;
+}
+
+.gpu-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.15s ease;
+}
+
+.gpu-trigger:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--text-muted);
+}
+
+.gpu-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.gpu-trigger.switching {
+  animation: gpu-spin 0.8s linear infinite;
+}
+
+@keyframes gpu-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.gpu-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 200px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  z-index: 10001;
+  overflow: hidden;
+}
+
+.gpu-dropdown-header {
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+}
+
+.gpu-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.gpu-option:hover {
+  background: var(--bg-hover);
+}
+
+.gpu-option.active {
+  background: var(--accent-dim);
+}
+
+.gpu-option .gpu-icon {
+  position: absolute;
+  right: 12px;
+  font-size: 16px;
+}
+
+.gpu-option .gpu-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gpu-option .gpu-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.gpu-note {
+  padding: 8px 12px;
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border-color);
+  font-style: italic;
+}
+
 /* Project Section */
 .project-section {
   position: relative;

@@ -2,12 +2,14 @@
 
 export type DeviceLostCallback = (reason: string) => void;
 export type DeviceRestoredCallback = () => void;
+export type GPUPowerPreference = 'high-performance' | 'low-power';
 
 export class WebGPUContext {
   private device: GPUDevice | null = null;
   private adapter: GPUAdapter | null = null;
   private initPromise: Promise<boolean> | null = null;
   private isInitialized = false;
+  private currentPowerPreference: GPUPowerPreference = 'high-performance';
 
   // Callbacks for device loss/restore events
   private deviceLostCallbacks: Set<DeviceLostCallback> = new Set();
@@ -16,7 +18,11 @@ export class WebGPUContext {
   // Track if we're recovering from a device loss
   private isRecovering = false;
 
-  async initialize(): Promise<boolean> {
+  async initialize(powerPreference?: GPUPowerPreference): Promise<boolean> {
+    // Store the preference if provided
+    if (powerPreference) {
+      this.currentPowerPreference = powerPreference;
+    }
     // Prevent multiple initializations with promise-based lock
     if (this.isInitialized && this.device) {
       console.log('[WebGPU] Already initialized, skipping');
@@ -42,8 +48,9 @@ export class WebGPUContext {
   private async doInitialize(): Promise<boolean> {
     try {
       this.adapter = await navigator.gpu.requestAdapter({
-        powerPreference: 'high-performance',
+        powerPreference: this.currentPowerPreference,
       });
+      console.log(`[WebGPU] Requested adapter with powerPreference: ${this.currentPowerPreference}`);
 
       if (!this.adapter) {
         console.error('Failed to get GPU adapter');
@@ -93,6 +100,28 @@ export class WebGPUContext {
       });
 
       this.isInitialized = true;
+
+      // Log detailed GPU adapter info to help debug iGPU vs dGPU selection
+      const adapterInfo = (this.adapter as any).info || (this.device as any).adapterInfo;
+      if (adapterInfo) {
+        const isIntegrated = adapterInfo.description?.toLowerCase().includes('intel') ||
+                            adapterInfo.description?.toLowerCase().includes('integrated') ||
+                            adapterInfo.vendor?.toLowerCase().includes('intel');
+        const gpuType = isIntegrated ? '⚠️ INTEGRATED' : '✅ DISCRETE';
+        console.log(`%c[WebGPU] ${gpuType} GPU`, `color: ${isIntegrated ? '#ff9900' : '#00ff00'}; font-weight: bold`);
+        console.log('[WebGPU] GPU Info:', {
+          vendor: adapterInfo.vendor || 'unknown',
+          architecture: adapterInfo.architecture || 'unknown',
+          device: adapterInfo.device || 'unknown',
+          description: adapterInfo.description || 'unknown',
+          powerPreference: this.currentPowerPreference,
+        });
+        if (isIntegrated && this.currentPowerPreference === 'high-performance') {
+          console.warn('[WebGPU] ⚠️ high-performance was requested but integrated GPU was selected!');
+          console.warn('[WebGPU] To fix: Open Windows Graphics Settings > Add Chrome/Edge > Options > High Performance');
+        }
+      }
+
       console.log('[WebGPU] Context initialized successfully');
       return true;
     } catch (error) {
@@ -228,6 +257,40 @@ export class WebGPUContext {
    */
   get recovering(): boolean {
     return this.isRecovering;
+  }
+
+  /**
+   * Get the current power preference
+   */
+  getPowerPreference(): GPUPowerPreference {
+    return this.currentPowerPreference;
+  }
+
+  /**
+   * Reinitialize with a new power preference
+   * This destroys the current device and creates a new one
+   */
+  async reinitializeWithPreference(preference: GPUPowerPreference): Promise<boolean> {
+    console.log(`[WebGPU] Reinitializing with powerPreference: ${preference}`);
+
+    // Skip if preference hasn't changed
+    if (preference === this.currentPowerPreference && this.isInitialized) {
+      console.log('[WebGPU] Power preference unchanged, skipping reinit');
+      return true;
+    }
+
+    // Destroy current device
+    this.device?.destroy();
+    this.device = null;
+    this.adapter = null;
+    this.isInitialized = false;
+    this.initPromise = null;
+
+    // Store new preference
+    this.currentPowerPreference = preference;
+
+    // Reinitialize
+    return this.initialize(preference);
   }
 
   destroy(): void {

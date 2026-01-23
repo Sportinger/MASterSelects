@@ -2,7 +2,7 @@
 // This is the main engine class that orchestrates all the manager modules
 
 import type { Layer, OutputWindow, EngineStats, LayerRenderData, DetailedStats, ProfileData } from './core/types';
-import { WebGPUContext } from './core/WebGPUContext';
+import { WebGPUContext, type GPUPowerPreference } from './core/WebGPUContext';
 import { TextureManager } from './texture/TextureManager';
 import { MaskTextureManager } from './texture/MaskTextureManager';
 import { ScrubbingCache } from './texture/ScrubbingCache';
@@ -12,6 +12,7 @@ import { OutputPipeline } from './pipeline/OutputPipeline';
 import { VideoFrameManager } from './video/VideoFrameManager';
 import { audioStatusTracker } from '../services/audioManager';
 import { useMediaStore } from '../stores/mediaStore';
+import { useSettingsStore } from '../stores/settingsStore';
 import { reportRenderTime } from '../services/performanceMonitor';
 
 export class WebGPUEngine {
@@ -196,7 +197,6 @@ export class WebGPUEngine {
    */
   private handleDeviceLost(): void {
     // Stop the render loop to prevent using invalid resources
-    const wasRunning = this.isRunning;
     this.stop();
 
     // Clear all GPU resources - they are now invalid
@@ -294,12 +294,70 @@ export class WebGPUEngine {
   }
 
   async initialize(): Promise<boolean> {
-    const success = await this.context.initialize();
+    // Get GPU preference from settings store
+    const preference = useSettingsStore.getState().gpuPowerPreference;
+    const success = await this.context.initialize(preference);
     if (!success) return false;
 
     await this.createResources();
     console.log('[WebGPU] Engine initialized successfully');
     return true;
+  }
+
+  /**
+   * Reinitialize the engine with a new GPU power preference
+   * This destroys all resources and recreates them with the new adapter
+   */
+  async reinitializeWithPreference(preference: GPUPowerPreference): Promise<boolean> {
+    console.log(`[WebGPUEngine] Reinitializing with preference: ${preference}`);
+
+    // Stop render loop
+    this.stop();
+
+    // Clean up all GPU resources
+    this.handleDeviceLost();
+
+    // Reinitialize context with new preference
+    const success = await this.context.reinitializeWithPreference(preference);
+    if (!success) {
+      console.error('[WebGPUEngine] Failed to reinitialize with new preference');
+      return false;
+    }
+
+    // Recreate all resources
+    await this.createResources();
+
+    // Reconfigure all stored canvas elements
+    if (this.mainPreviewCanvas) {
+      this.previewContext = this.context.configureCanvas(this.mainPreviewCanvas);
+    }
+
+    for (const [id, canvas] of this.previewCanvasElements) {
+      const context = this.context.configureCanvas(canvas);
+      if (context) {
+        this.previewCanvases.set(id, context);
+      }
+    }
+
+    for (const [id, canvas] of this.independentCanvasElements) {
+      const context = this.context.configureCanvas(canvas);
+      if (context) {
+        this.independentPreviewCanvases.set(id, context);
+      }
+    }
+
+    // Request a render
+    this.requestRender();
+
+    console.log('[WebGPUEngine] Reinitialize complete');
+    return true;
+  }
+
+  /**
+   * Get the current GPU power preference
+   */
+  getPowerPreference(): GPUPowerPreference {
+    return this.context.getPowerPreference();
   }
 
   private async createResources(): Promise<void> {
