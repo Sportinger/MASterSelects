@@ -570,11 +570,12 @@ export function YouTubePanel() {
                       {downloadingVideos.has(video.id) || fetchingFormats === video.id ? '...' : '↓'}
                     </button>
                     <button
-                      className="btn-add-timeline"
+                      className={`btn-add-timeline ${fetchingFormats === video.id ? 'loading' : ''}`}
                       onClick={(e) => { e.stopPropagation(); addVideoToTimeline(video); }}
-                      title="Add to timeline"
+                      title={fetchingFormats === video.id ? "Loading formats..." : "Add to timeline"}
+                      disabled={fetchingFormats === video.id || activeDownloadsRef.current.has(video.id)}
                     >
-                      +
+                      {fetchingFormats === video.id ? '...' : '+'}
                     </button>
                     <button
                       className="btn-copy-url"
@@ -584,6 +585,13 @@ export function YouTubePanel() {
                       Copy
                     </button>
                   </div>
+                  {/* Fetching formats indicator */}
+                  {fetchingFormats === video.id && (
+                    <div className="download-overlay">
+                      <div className="download-spinner" />
+                      <span>Loading formats...</span>
+                    </div>
+                  )}
                   {/* Downloading indicator */}
                   {downloadingVideos.has(video.id) && (
                     <div className="download-overlay">
