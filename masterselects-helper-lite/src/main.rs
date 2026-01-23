@@ -2,7 +2,8 @@
 
 use anyhow::Result;
 use clap::Parser;
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{SinkExt, StreamExt, stream::SplitSink};
+use std::sync::Mutex as StdMutex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -57,12 +58,103 @@ impl Response {
             data: serde_json::json!({ "error": { "code": code, "message": message.into() } }),
         }
     }
+    fn progress(id: &str, percent: u8) -> Self {
+        Self {
+            id: id.to_string(),
+            ok: true,
+            data: serde_json::json!({ "type": "progress", "percent": percent }),
+        }
+    }
 }
+
+// Type for sending WebSocket messages
+type WsSender = Arc<tokio::sync::Mutex<SplitSink<tokio_tungstenite::WebSocketStream<TcpStream>, Message>>>;
 
 /// Cross-platform download directory
 fn get_download_dir() -> PathBuf {
     let base = std::env::temp_dir();
     base.join("masterselects-downloads")
+}
+
+/// Find yt-dlp executable, checking common install locations on Windows
+fn find_ytdlp() -> Option<PathBuf> {
+    // First check if yt-dlp is in PATH
+    if let Ok(output) = std::process::Command::new("yt-dlp").arg("--version").output() {
+        if output.status.success() {
+            return Some(PathBuf::from("yt-dlp"));
+        }
+    }
+
+    // On Windows, check common Python user install locations
+    #[cfg(windows)]
+    {
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            // Check various Python versions
+            let appdata_path = PathBuf::from(&appdata);
+            if let Ok(entries) = std::fs::read_dir(appdata_path.join("Python")) {
+                for entry in entries.flatten() {
+                    let scripts = entry.path().join("Scripts").join("yt-dlp.exe");
+                    if scripts.exists() {
+                        return Some(scripts);
+                    }
+                }
+            }
+        }
+
+        // Also check LocalAppData (pip --user on some configs)
+        if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
+            let local_path = PathBuf::from(&localappdata);
+            if let Ok(entries) = std::fs::read_dir(local_path.join("Programs").join("Python")) {
+                for entry in entries.flatten() {
+                    let scripts = entry.path().join("Scripts").join("yt-dlp.exe");
+                    if scripts.exists() {
+                        return Some(scripts);
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Find deno executable for yt-dlp JavaScript runtime
+fn find_deno() -> Option<PathBuf> {
+    // Check if deno is in PATH
+    if let Ok(output) = std::process::Command::new("deno").arg("--version").output() {
+        if output.status.success() {
+            return Some(PathBuf::from("deno"));
+        }
+    }
+
+    // On Windows, check winget install location
+    #[cfg(windows)]
+    {
+        if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
+            let winget_path = PathBuf::from(&localappdata)
+                .join("Microsoft/WinGet/Packages");
+            if let Ok(entries) = std::fs::read_dir(&winget_path) {
+                for entry in entries.flatten() {
+                    let name = entry.file_name().to_string_lossy().to_lowercase();
+                    if name.contains("deno") {
+                        let deno_exe = entry.path().join("deno.exe");
+                        if deno_exe.exists() {
+                            return Some(deno_exe);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+/// Get yt-dlp command (returns path or "yt-dlp" if in PATH)
+fn get_ytdlp_command() -> String {
+    find_ytdlp()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| "yt-dlp".to_string())
 }
 
 /// Cross-platform allowed paths
@@ -93,7 +185,8 @@ async fn handle_command(cmd: Command) -> Response {
 
         Command::Info { id } => {
             // Check if yt-dlp is available
-            let ytdlp_available = TokioCommand::new("yt-dlp")
+            let ytdlp_cmd = get_ytdlp_command();
+            let ytdlp_available = TokioCommand::new(&ytdlp_cmd)
                 .arg("--version")
                 .output()
                 .await
@@ -113,12 +206,24 @@ async fn handle_command(cmd: Command) -> Response {
         }
 
         Command::DownloadYoutube { id, url, format_id, output_dir } => {
-            handle_download(&id, &url, format_id.as_deref(), output_dir.as_deref()).await
+            handle_download(&id, &url, format_id.as_deref(), output_dir.as_deref(), None).await
         }
 
         Command::GetFile { id, path } => {
             handle_get_file(&id, &path)
         }
+    }
+}
+
+/// Build yt-dlp args with deno runtime if available
+fn get_deno_args() -> Vec<String> {
+    if let Some(deno_path) = find_deno() {
+        vec![
+            "--js-runtimes".to_string(),
+            format!("deno:{}", deno_path.to_string_lossy()),
+        ]
+    } else {
+        vec![]
     }
 }
 
@@ -129,7 +234,14 @@ async fn handle_list_formats(id: &str, url: &str) -> Response {
         return Response::error(id, "INVALID_URL", "Not a valid YouTube URL");
     }
 
-    let result = TokioCommand::new("yt-dlp")
+    let ytdlp_cmd = get_ytdlp_command();
+    let deno_args = get_deno_args();
+
+    let mut cmd = TokioCommand::new(&ytdlp_cmd);
+    for arg in &deno_args {
+        cmd.arg(arg);
+    }
+    let result = cmd
         .args(["--dump-json", "--no-playlist", url])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -195,12 +307,13 @@ async fn handle_list_formats(id: &str, url: &str) -> Response {
                                         else { vcodec };
 
                                     recommendations.push(serde_json::json!({
-                                        "format_id": format_id,
-                                        "height": height,
-                                        "fps": fps,
-                                        "codec": codec_name,
-                                        "filesize": filesize,
+                                        "id": format_id,
                                         "label": format!("{}p {} ({:.0}fps)", height, codec_name, fps),
+                                        "resolution": format!("{}p", height),
+                                        "vcodec": codec_name,
+                                        "acodec": serde_json::Value::Null,
+                                        "needsMerge": true,
+                                        "filesize": filesize,
                                     }));
                                 }
                             }
@@ -229,8 +342,9 @@ async fn handle_list_formats(id: &str, url: &str) -> Response {
     }
 }
 
-async fn handle_download(id: &str, url: &str, format_id: Option<&str>, output_dir: Option<&str>) -> Response {
+async fn handle_download(id: &str, url: &str, format_id: Option<&str>, output_dir: Option<&str>, ws_sender: Option<WsSender>) -> Response {
     use std::process::Stdio;
+    use tokio::io::{AsyncBufReadExt, BufReader};
 
     if !url.contains("youtube.com") && !url.contains("youtu.be") {
         return Response::error(id, "INVALID_URL", "Not a valid YouTube URL");
@@ -252,19 +366,76 @@ async fn handle_download(id: &str, url: &str, format_id: Option<&str>, output_di
         "bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best".to_string()
     };
 
-    let result = TokioCommand::new("yt-dlp")
+    let ytdlp_cmd = get_ytdlp_command();
+    let deno_args = get_deno_args();
+
+    let mut cmd = TokioCommand::new(&ytdlp_cmd);
+    for arg in &deno_args {
+        cmd.arg(arg);
+    }
+
+    let mut child = match cmd
         .args([
             "-f", &format_str,
             "--merge-output-format", "mp4",
             "-o", &output_template,
             "--print", "after_move:filepath",
             "--no-playlist",
+            "--newline",  // Progress on separate lines
+            "--progress",
+            "--restrict-filenames",  // Replace special chars with ASCII
+            "--windows-filenames",   // Windows-safe filenames
             url,
         ])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .output()
-        .await;
+        .spawn() {
+            Ok(c) => c,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Response::error(id, "YTDLP_NOT_FOUND", "yt-dlp not found. Install with: pip install yt-dlp");
+            }
+            Err(e) => {
+                return Response::error(id, "SPAWN_ERROR", e.to_string());
+            }
+        };
+
+    // Stream stderr for progress
+    let stderr = child.stderr.take();
+    let mut last_percent: u8 = 0;
+    if let Some(stderr) = stderr {
+        let reader = BufReader::new(stderr);
+        let mut lines = reader.lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            // Parse progress percentage from yt-dlp output
+            // Format: "[download]  45.2% of 100.00MiB"
+            if line.contains('%') {
+                if let Some(pct_str) = line.split('%').next() {
+                    let pct_part = pct_str.trim().rsplit_once(' ').map(|(_, p)| p).unwrap_or(pct_str.trim());
+                    if let Ok(pct) = pct_part.trim().parse::<f32>() {
+                        let percent = (pct as u8).min(99);
+                        // Only send if changed by at least 5%
+                        if percent >= last_percent + 5 || percent == 99 {
+                            last_percent = percent;
+                            info!("[yt-dlp] Progress: {}%", percent);
+                            // Send progress via WebSocket
+                            if let Some(ref sender) = ws_sender {
+                                let progress_msg = Response::progress(id, percent);
+                                let json = serde_json::to_string(&progress_msg).unwrap();
+                                let mut sender = sender.lock().await;
+                                let _ = sender.send(Message::Text(json)).await;
+                            }
+                        }
+                    }
+                }
+            } else if line.contains("Downloading") || line.contains("Merging") {
+                info!("[yt-dlp] {}", line);
+            } else if !line.is_empty() && !line.starts_with("[") {
+                warn!("[yt-dlp] {}", line);
+            }
+        }
+    }
+
+    let result = child.wait_with_output().await;
 
     match result {
         Ok(output) if output.status.success() => {
@@ -332,16 +503,24 @@ async fn handle_websocket(stream: TcpStream) {
     };
 
     info!("New WebSocket connection");
-    let (mut write, mut read) = ws_stream.split();
+    let (write, mut read) = ws_stream.split();
+    let write = Arc::new(tokio::sync::Mutex::new(write));
 
     while let Some(msg) = read.next().await {
         match msg {
             Ok(Message::Text(text)) => {
                 match serde_json::from_str::<Command>(&text) {
                     Ok(cmd) => {
-                        let response = handle_command(cmd).await;
+                        // Handle download specially to stream progress
+                        let response = match cmd {
+                            Command::DownloadYoutube { id, url, format_id, output_dir } => {
+                                handle_download(&id, &url, format_id.as_deref(), output_dir.as_deref(), Some(write.clone())).await
+                            }
+                            other => handle_command(other).await,
+                        };
                         let json = serde_json::to_string(&response).unwrap();
-                        if let Err(e) = write.send(Message::Text(json)).await {
+                        let mut w = write.lock().await;
+                        if let Err(e) = w.send(Message::Text(json)).await {
                             error!("Failed to send response: {}", e);
                             break;
                         }
@@ -350,7 +529,8 @@ async fn handle_websocket(stream: TcpStream) {
                         warn!("Invalid command: {}", e);
                         let resp = Response::error("unknown", "INVALID_COMMAND", e.to_string());
                         let json = serde_json::to_string(&resp).unwrap();
-                        let _ = write.send(Message::Text(json)).await;
+                        let mut w = write.lock().await;
+                        let _ = w.send(Message::Text(json)).await;
                     }
                 }
             }
@@ -366,24 +546,61 @@ async fn handle_websocket(stream: TcpStream) {
     info!("WebSocket connection closed");
 }
 
-async fn serve_file(params: HashMap<String, String>) -> Result<impl warp::Reply, warp::Rejection> {
-    let path = params.get("path").ok_or_else(warp::reject::not_found)?;
-    let path = PathBuf::from(path);
+async fn serve_file(params: HashMap<String, String>) -> impl warp::Reply {
+    use warp::http::StatusCode;
 
-    if !path.is_absolute() || !is_path_allowed(&path) || !path.exists() {
-        return Err(warp::reject::not_found());
+    // Helper to create response with CORS
+    fn cors_response(status: StatusCode, body: Vec<u8>, content_type: &str) -> impl warp::Reply {
+        warp::reply::with_header(
+            warp::reply::with_header(
+                warp::reply::with_header(
+                    warp::reply::with_status(body, status),
+                    "Content-Type",
+                    content_type,
+                ),
+                "Access-Control-Allow-Origin",
+                "*",
+            ),
+            "Access-Control-Allow-Methods",
+            "GET, OPTIONS",
+        )
+    }
+
+    let path = match params.get("path") {
+        Some(p) => p,
+        None => {
+            warn!("HTTP: No path parameter");
+            return cors_response(StatusCode::BAD_REQUEST, b"Missing path parameter".to_vec(), "text/plain");
+        }
+    };
+
+    let path = PathBuf::from(path);
+    info!("HTTP: Request for {:?}", path);
+
+    if !path.is_absolute() {
+        warn!("HTTP: Path not absolute: {:?}", path);
+        return cors_response(StatusCode::BAD_REQUEST, b"Path must be absolute".to_vec(), "text/plain");
+    }
+
+    if !is_path_allowed(&path) {
+        warn!("HTTP: Path not allowed: {:?}", path);
+        return cors_response(StatusCode::FORBIDDEN, b"Path not in allowed directory".to_vec(), "text/plain");
+    }
+
+    if !path.exists() {
+        warn!("HTTP: File not found: {:?}", path);
+        return cors_response(StatusCode::NOT_FOUND, format!("File not found: {}", path.display()).into_bytes(), "text/plain");
     }
 
     match tokio::fs::read(&path).await {
         Ok(data) => {
             info!("HTTP: Serving {} ({} bytes)", path.display(), data.len());
-            Ok(warp::reply::with_header(
-                data,
-                "Content-Type",
-                "application/octet-stream",
-            ))
+            cors_response(StatusCode::OK, data, "video/mp4")
         }
-        Err(_) => Err(warp::reject::not_found()),
+        Err(e) => {
+            error!("HTTP: Failed to read file: {}", e);
+            cors_response(StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to read: {}", e).into_bytes(), "text/plain")
+        }
     }
 }
 
@@ -399,6 +616,11 @@ async fn main() -> Result<()> {
     let ws_addr = format!("127.0.0.1:{}", args.port);
     let http_port = args.port + 1;
 
+    let ytdlp_path = get_ytdlp_command();
+    let ytdlp_status = if find_ytdlp().is_some() { "OK" } else { "NOT FOUND" };
+    let deno_path = find_deno();
+    let deno_status = if deno_path.is_some() { "OK" } else { "NOT FOUND" };
+
     println!();
     println!("========================================");
     println!("  MasterSelects Helper Lite v{}", env!("CARGO_PKG_VERSION"));
@@ -407,20 +629,39 @@ async fn main() -> Result<()> {
     println!("  WebSocket: ws://127.0.0.1:{}", args.port);
     println!("  HTTP:      http://127.0.0.1:{}", http_port);
     println!("  Downloads: {}", get_download_dir().display());
+    println!("  yt-dlp:    {} [{}]", ytdlp_path, ytdlp_status);
+    println!("  deno:      {} [{}]", deno_path.as_ref().map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|| "not found".to_string()), deno_status);
     println!("========================================");
     println!();
 
-    // HTTP file server
+    // HTTP file server with CORS preflight support
     let file_route = warp::path("file")
         .and(warp::get())
         .and(warp::query::<HashMap<String, String>>())
-        .and_then(serve_file);
+        .then(serve_file);
 
-    let cors = warp::cors()
-        .allow_any_origin()
-        .allow_methods(vec!["GET"]);
+    // Handle OPTIONS preflight requests
+    let options_route = warp::path("file")
+        .and(warp::options())
+        .map(|| {
+            warp::reply::with_header(
+                warp::reply::with_header(
+                    warp::reply::with_header(
+                        "",
+                        "Access-Control-Allow-Origin",
+                        "*",
+                    ),
+                    "Access-Control-Allow-Methods",
+                    "GET, OPTIONS",
+                ),
+                "Access-Control-Allow-Headers",
+                "*",
+            )
+        });
 
-    let http_server = warp::serve(file_route.with(cors))
+    let routes = file_route.or(options_route);
+
+    let http_server = warp::serve(routes)
         .run(([127, 0, 0, 1], http_port));
 
     tokio::spawn(http_server);

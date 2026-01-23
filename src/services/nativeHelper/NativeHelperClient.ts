@@ -53,6 +53,7 @@ class NativeHelperClientImpl {
   private status: ConnectionStatus = 'disconnected';
   private requestId = 0;
   private pendingRequests = new Map<string, ResponseCallback>();
+  private progressCallbacks = new Map<string, (percent: number) => void>();
   private frameCallbacks = new Map<string, FrameCallback>();
   private statusListeners = new Set<(status: ConnectionStatus) => void>();
   private reconnectTimer: number | null = null;
@@ -387,7 +388,7 @@ class NativeHelperClientImpl {
   async downloadYouTube(
     url: string,
     formatId?: string,
-    _onProgress?: (percent: number) => void // Reserved for future progress reporting
+    onProgress?: (percent: number) => void
   ): Promise<{ success: boolean; path?: string; error?: string }> {
     const id = this.nextId();
 
@@ -395,12 +396,30 @@ class NativeHelperClientImpl {
       // Set timeout (10 minutes for large videos)
       const timeout = setTimeout(() => {
         this.pendingRequests.delete(id);
+        this.progressCallbacks.delete(id);
         reject(new Error('Download timeout'));
       }, 600000);
 
-      // Register callback
+      // Register progress callback if provided
+      if (onProgress) {
+        this.progressCallbacks.set(id, onProgress);
+      }
+
+      // Register completion callback
       this.pendingRequests.set(id, (response: any) => {
+        // Check if this is a progress message
+        if (response.type === 'progress' && response.percent !== undefined) {
+          // Don't resolve yet - this is just progress
+          const progressCb = this.progressCallbacks.get(id);
+          if (progressCb) {
+            progressCb(response.percent);
+          }
+          return; // Keep waiting for final response
+        }
+
+        // Final response
         clearTimeout(timeout);
+        this.progressCallbacks.delete(id);
         if (response.ok) {
           resolve({
             success: true,
@@ -428,6 +447,7 @@ class NativeHelperClientImpl {
       this.sendRaw(JSON.stringify(cmd)).catch((err) => {
         clearTimeout(timeout);
         this.pendingRequests.delete(id);
+        this.progressCallbacks.delete(id);
         reject(err);
       });
     });
@@ -539,7 +559,11 @@ class NativeHelperClientImpl {
         const callback = this.pendingRequests.get(response.id);
 
         if (callback) {
-          this.pendingRequests.delete(response.id);
+          // Check if this is a progress message - don't delete callback yet
+          const isProgress = (response as any).type === 'progress';
+          if (!isProgress) {
+            this.pendingRequests.delete(response.id);
+          }
           callback(response);
         }
       } catch (err) {
