@@ -466,9 +466,11 @@ impl Session {
         // Run yt-dlp
         let output_template = download_dir.join("%(title)s.%(ext)s").to_string_lossy().to_string();
 
+        // Prefer H.264 (avc1) over AV1 for better export compatibility
+        // AV1 is very slow with HTMLVideoElement seeking
         let result = TokioCommand::new("yt-dlp")
             .args([
-                "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+                "-f", "bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/bestvideo[ext=mp4][vcodec^=avc]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
                 "--merge-output-format", "mp4",
                 "-o", &output_template,
                 "--print", "after_move:filepath",
