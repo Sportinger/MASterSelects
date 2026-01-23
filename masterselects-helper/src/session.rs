@@ -600,13 +600,12 @@ impl Session {
             return Response::error(id, error_codes::INVALID_URL, "Not a valid YouTube URL");
         }
 
-        // Determine output directory
+        // Determine output directory - use temp for browser transfers
         let download_dir = if let Some(dir) = output_dir {
             std::path::PathBuf::from(dir)
         } else {
-            // Default to ~/Downloads/MasterSelects
-            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-            std::path::PathBuf::from(home).join("Downloads").join("MasterSelects")
+            // Default to temp folder - browser will save to project folder
+            std::path::PathBuf::from("/tmp/masterselects-downloads")
         };
 
         // Create directory if it doesn't exist
