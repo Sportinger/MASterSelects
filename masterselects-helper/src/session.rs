@@ -484,18 +484,13 @@ impl Session {
                             let mut recommendations = Vec::new();
 
                             if let Some(formats) = formats {
-                                // Group by resolution and pick best codec for each
-                                let mut seen_resolutions = std::collections::HashSet::new();
+                                // Collect all video formats first, grouped by resolution
+                                // Prefer H.264 (avc1) over VP9 for better compatibility
+                                let mut formats_by_height: std::collections::HashMap<u64, Vec<&serde_json::Value>> = std::collections::HashMap::new();
 
-                                for fmt in formats.iter().rev() {
-                                    let format_id = fmt["format_id"].as_str().unwrap_or("");
-                                    let ext = fmt["ext"].as_str().unwrap_or("");
+                                for fmt in formats.iter() {
                                     let vcodec = fmt["vcodec"].as_str().unwrap_or("none");
-                                    let acodec = fmt["acodec"].as_str().unwrap_or("none");
                                     let height = fmt["height"].as_u64().unwrap_or(0);
-                                    let width = fmt["width"].as_u64().unwrap_or(0);
-                                    let fps = fmt["fps"].as_f64().unwrap_or(0.0);
-                                    let filesize = fmt["filesize"].as_u64().or_else(|| fmt["filesize_approx"].as_u64());
 
                                     // Skip audio-only or formats without video
                                     if vcodec == "none" || height == 0 {
@@ -507,29 +502,57 @@ impl Session {
                                         continue;
                                     }
 
-                                    let resolution_key = format!("{}p", height);
-                                    if seen_resolutions.contains(&resolution_key) {
-                                        continue;
-                                    }
-                                    seen_resolutions.insert(resolution_key.clone());
+                                    formats_by_height.entry(height).or_default().push(fmt);
+                                }
 
-                                    let label = format!("{}p {}", height, if fps > 30.0 { format!("{}fps", fps as u32) } else { "".to_string() });
+                                // For each resolution, prefer H.264, then VP9
+                                let mut heights: Vec<u64> = formats_by_height.keys().cloned().collect();
+                                heights.sort_by(|a, b| b.cmp(a)); // Descending
 
-                                    recommendations.push(serde_json::json!({
-                                        "id": format_id,
-                                        "label": label.trim(),
-                                        "ext": ext,
-                                        "width": width,
-                                        "height": height,
-                                        "fps": fps,
-                                        "vcodec": vcodec,
-                                        "acodec": acodec,
-                                        "filesize": filesize
-                                    }));
+                                for height in heights {
+                                    if let Some(fmts) = formats_by_height.get(&height) {
+                                        // Prefer H.264 (avc) over VP9
+                                        let best = fmts.iter()
+                                            .max_by_key(|f| {
+                                                let vcodec = f["vcodec"].as_str().unwrap_or("");
+                                                if vcodec.contains("avc") { 2 }
+                                                else if vcodec.contains("vp9") || vcodec.contains("vp09") { 1 }
+                                                else { 0 }
+                                            });
 
-                                    // Limit to 6 options
-                                    if recommendations.len() >= 6 {
-                                        break;
+                                        if let Some(fmt) = best {
+                                            let format_id = fmt["format_id"].as_str().unwrap_or("");
+                                            let ext = fmt["ext"].as_str().unwrap_or("");
+                                            let vcodec = fmt["vcodec"].as_str().unwrap_or("none");
+                                            let acodec = fmt["acodec"].as_str().unwrap_or("none");
+                                            let width = fmt["width"].as_u64().unwrap_or(0);
+                                            let fps = fmt["fps"].as_f64().unwrap_or(0.0);
+                                            let filesize = fmt["filesize"].as_u64().or_else(|| fmt["filesize_approx"].as_u64());
+
+                                            // Codec label
+                                            let codec_short = if vcodec.contains("avc") { "H.264" }
+                                                else if vcodec.contains("vp9") || vcodec.contains("vp09") { "VP9" }
+                                                else { &vcodec[..vcodec.len().min(6)] };
+
+                                            let label = format!("{}p {} {}", height, codec_short, if fps > 30.0 { format!("{}fps", fps as u32) } else { "".to_string() });
+
+                                            recommendations.push(serde_json::json!({
+                                                "id": format_id,
+                                                "label": label.trim(),
+                                                "ext": ext,
+                                                "width": width,
+                                                "height": height,
+                                                "fps": fps,
+                                                "vcodec": vcodec,
+                                                "acodec": acodec,
+                                                "filesize": filesize
+                                            }));
+
+                                            // Limit to 6 options
+                                            if recommendations.len() >= 6 {
+                                                break;
+                                            }
+                                        }
                                     }
                                 }
                             }
