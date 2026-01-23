@@ -175,8 +175,13 @@ impl Session {
                 (Some(Response::ok(&id, serde_json::json!({"pong": true}))), None)
             }
 
-            Command::DownloadYoutube { id, url, output_dir } => {
-                let response = self.handle_download_youtube(&id, &url, output_dir.as_deref()).await;
+            Command::DownloadYoutube { id, url, format_id, output_dir } => {
+                let response = self.handle_download_youtube(&id, &url, format_id.as_deref(), output_dir.as_deref()).await;
+                (Some(response), None)
+            }
+
+            Command::ListFormats { id, url } => {
+                let response = self.handle_list_formats(&id, &url).await;
                 (Some(response), None)
             }
 
@@ -438,7 +443,132 @@ impl Session {
         Response::ok(id, serde_json::to_value(info).unwrap())
     }
 
-    async fn handle_download_youtube(&self, id: &str, url: &str, output_dir: Option<&str>) -> Response {
+    async fn handle_list_formats(&self, id: &str, url: &str) -> Response {
+        use std::process::Stdio;
+        use tokio::process::Command as TokioCommand;
+
+        // Validate URL
+        if !url.contains("youtube.com") && !url.contains("youtu.be") {
+            return Response::error(id, error_codes::INVALID_URL, "Not a valid YouTube URL");
+        }
+
+        info!("Listing formats for: {}", url);
+
+        // Run yt-dlp --dump-json to get video info including formats
+        let result = TokioCommand::new("yt-dlp")
+            .args([
+                "--dump-json",
+                "--no-playlist",
+                url,
+            ])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await;
+
+        match result {
+            Ok(output) => {
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+
+                    // Parse JSON output
+                    match serde_json::from_str::<serde_json::Value>(&stdout) {
+                        Ok(json) => {
+                            let title = json["title"].as_str().unwrap_or("Unknown");
+                            let uploader = json["uploader"].as_str().unwrap_or("Unknown");
+                            let duration = json["duration"].as_f64().unwrap_or(0.0);
+                            let thumbnail = json["thumbnail"].as_str().unwrap_or("");
+
+                            // Extract formats and create recommendations
+                            let formats = json["formats"].as_array();
+                            let mut recommendations = Vec::new();
+
+                            if let Some(formats) = formats {
+                                // Group by resolution and pick best codec for each
+                                let mut seen_resolutions = std::collections::HashSet::new();
+
+                                for fmt in formats.iter().rev() {
+                                    let format_id = fmt["format_id"].as_str().unwrap_or("");
+                                    let ext = fmt["ext"].as_str().unwrap_or("");
+                                    let vcodec = fmt["vcodec"].as_str().unwrap_or("none");
+                                    let acodec = fmt["acodec"].as_str().unwrap_or("none");
+                                    let height = fmt["height"].as_u64().unwrap_or(0);
+                                    let width = fmt["width"].as_u64().unwrap_or(0);
+                                    let fps = fmt["fps"].as_f64().unwrap_or(0.0);
+                                    let filesize = fmt["filesize"].as_u64().or_else(|| fmt["filesize_approx"].as_u64());
+
+                                    // Skip audio-only or formats without video
+                                    if vcodec == "none" || height == 0 {
+                                        continue;
+                                    }
+
+                                    // Skip AV1 (very slow for seeking)
+                                    if vcodec.contains("av01") {
+                                        continue;
+                                    }
+
+                                    let resolution_key = format!("{}p", height);
+                                    if seen_resolutions.contains(&resolution_key) {
+                                        continue;
+                                    }
+                                    seen_resolutions.insert(resolution_key.clone());
+
+                                    let label = format!("{}p {}", height, if fps > 30.0 { format!("{}fps", fps as u32) } else { "".to_string() });
+
+                                    recommendations.push(serde_json::json!({
+                                        "id": format_id,
+                                        "label": label.trim(),
+                                        "ext": ext,
+                                        "width": width,
+                                        "height": height,
+                                        "fps": fps,
+                                        "vcodec": vcodec,
+                                        "acodec": acodec,
+                                        "filesize": filesize
+                                    }));
+
+                                    // Limit to 6 options
+                                    if recommendations.len() >= 6 {
+                                        break;
+                                    }
+                                }
+                            }
+
+                            // Sort by height descending
+                            recommendations.sort_by(|a, b| {
+                                let h_a = a["height"].as_u64().unwrap_or(0);
+                                let h_b = b["height"].as_u64().unwrap_or(0);
+                                h_b.cmp(&h_a)
+                            });
+
+                            Response::ok(id, serde_json::json!({
+                                "title": title,
+                                "uploader": uploader,
+                                "duration": duration,
+                                "thumbnail": thumbnail,
+                                "recommendations": recommendations
+                            }))
+                        }
+                        Err(e) => {
+                            Response::error(id, error_codes::DOWNLOAD_FAILED, format!("Failed to parse yt-dlp output: {}", e))
+                        }
+                    }
+                } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    Response::error(id, error_codes::DOWNLOAD_FAILED, format!("yt-dlp error: {}", stderr.lines().last().unwrap_or("Unknown error")))
+                }
+            }
+            Err(e) => {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    Response::error(id, error_codes::YTDLP_NOT_FOUND, "yt-dlp not found")
+                } else {
+                    Response::error(id, error_codes::DOWNLOAD_FAILED, format!("Failed to run yt-dlp: {}", e))
+                }
+            }
+        }
+    }
+
+    async fn handle_download_youtube(&self, id: &str, url: &str, format_id: Option<&str>, output_dir: Option<&str>) -> Response {
         use std::process::Stdio;
         use tokio::process::Command as TokioCommand;
 
@@ -466,11 +596,18 @@ impl Session {
         // Run yt-dlp
         let output_template = download_dir.join("%(title)s.%(ext)s").to_string_lossy().to_string();
 
-        // Prefer H.264 (avc1) over AV1 for better export compatibility
-        // AV1 is very slow with HTMLVideoElement seeking
+        // Build format string - use specified format or default to best H.264
+        let format_str = if let Some(fid) = format_id {
+            // User selected a specific format - combine with best audio
+            format!("{}+bestaudio[ext=m4a]/{}+bestaudio/best", fid, fid)
+        } else {
+            // Default: prefer H.264 (avc1) over AV1 for better export compatibility
+            "bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/bestvideo[ext=mp4][vcodec^=avc]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best".to_string()
+        };
+
         let result = TokioCommand::new("yt-dlp")
             .args([
-                "-f", "bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/bestvideo[ext=mp4][vcodec^=avc]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+                "-f", &format_str,
                 "--merge-output-format", "mp4",
                 "-o", &output_template,
                 "--print", "after_move:filepath",

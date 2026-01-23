@@ -93,7 +93,15 @@ pub enum Command {
         id: String,
         url: String,
         #[serde(default)]
+        format_id: Option<String>,
+        #[serde(default)]
         output_dir: Option<String>,
+    },
+
+    /// List available formats for a YouTube video
+    ListFormats {
+        id: String,
+        url: String,
     },
 
     /// Get a file from local filesystem (for serving downloads)
