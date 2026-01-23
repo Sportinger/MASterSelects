@@ -1074,14 +1074,19 @@ export class FrameExporter {
 
     if (videoClips.length === 0) return;
 
-    // Filter out clips using WebCodecs (they're already ready)
+    // Filter out clips using WebCodecs sequential OR parallel decode (they're already ready)
     const htmlVideoClips = videoClips.filter(clip => {
       const clipState = this.clipStates.get(clip.id);
-      return !clipState?.isSequential; // Only wait for HTMLVideoElement clips
+      // Skip if using sequential WebCodecs
+      if (clipState?.isSequential) return false;
+      // Skip if using parallel decoder
+      if (this.useParallelDecode && this.parallelDecoder?.hasClip(clip.id)) return false;
+      // Only wait for pure HTMLVideoElement clips (precise mode fallback)
+      return true;
     });
 
     if (htmlVideoClips.length === 0) {
-      // All clips using WebCodecs - no waiting needed
+      // All clips using WebCodecs or parallel decode - no waiting needed
       return;
     }
 
@@ -1235,6 +1240,9 @@ export class FrameExporter {
               },
             });
             continue;
+          } else {
+            // Parallel decode failed to provide frame - this is a bug, log it
+            console.warn(`[FrameExporter] Parallel decode missing frame for clip "${clip.name}" at time ${time.toFixed(3)}s - export may have glitches`);
           }
         }
 
@@ -1254,9 +1262,13 @@ export class FrameExporter {
           }
         }
 
-        // Fall back to HTMLVideoElement
+        // Fall back to HTMLVideoElement (last resort - may be at wrong time in parallel mode)
         const videoReady = video.readyState >= 2 && !video.seeking;
         if (videoReady) {
+          // Warn if falling back from parallel decode - the video element wasn't sought
+          if (this.useParallelDecode && this.parallelDecoder?.hasClip(clip.id)) {
+            console.warn(`[FrameExporter] Falling back to HTMLVideoElement for "${clip.name}" - frame may be incorrect`);
+          }
           layers.push({
             ...baseLayerProps,
             source: {
@@ -1358,10 +1370,16 @@ export class FrameExporter {
               },
             } as Layer);
             continue;
+          } else {
+            // Parallel decode failed to provide frame for nested clip
+            console.warn(`[FrameExporter] Parallel decode missing frame for nested clip "${nestedClip.name}" at time ${mainTimelineTime.toFixed(3)}s`);
           }
         }
 
-        // Fall back to video element
+        // Fall back to video element (may be at wrong time if parallel decode was expected)
+        if (this.useParallelDecode && this.parallelDecoder?.hasClip(nestedClip.id)) {
+          console.warn(`[FrameExporter] Falling back to HTMLVideoElement for nested clip "${nestedClip.name}" - frame may be incorrect`);
+        }
         layers.push({
           ...baseLayer,
           source: {

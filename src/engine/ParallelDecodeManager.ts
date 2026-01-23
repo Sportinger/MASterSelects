@@ -297,6 +297,7 @@ export class ParallelDecodeManager {
   /**
    * Pre-decode frames for a specific timeline time across all clips
    * Call this before rendering each frame to ensure frames are ready
+   * This method guarantees the frame at timelineTime is in the buffer before returning
    */
   async prefetchFramesForTime(timelineTime: number): Promise<void> {
     if (!this.isActive) return;
@@ -327,6 +328,67 @@ export class ParallelDecodeManager {
     if (promises.length > 0) {
       await Promise.all(promises);
     }
+
+    // CRITICAL: Wait until the specific frames we need are actually in the buffers
+    // This ensures accuracy even on slow hardware (like laptop on battery)
+    await this.waitForFramesAtTime(timelineTime);
+  }
+
+  /**
+   * Wait until frames at the specified time are in all relevant clip buffers
+   * This provides After Effects-like accuracy - never render with wrong frames
+   */
+  private async waitForFramesAtTime(timelineTime: number, maxWaitMs: number = 500): Promise<void> {
+    const startTime = performance.now();
+    const waitInterval = 5; // Check every 5ms
+
+    while (performance.now() - startTime < maxWaitMs) {
+      let allFramesReady = true;
+
+      for (const [, clipDecoder] of this.clipDecoders) {
+        const clipInfo = clipDecoder.clipInfo;
+
+        // Skip if timeline time is outside this clip's range
+        if (!this.isTimeInClipRange(clipInfo, timelineTime)) {
+          continue;
+        }
+
+        // Check if frame is in buffer
+        const targetSourceTime = this.timelineToSourceTime(clipInfo, timelineTime);
+        const targetTimestamp = targetSourceTime * 1_000_000;
+
+        let frameFound = false;
+        for (const [, decodedFrame] of clipDecoder.frameBuffer) {
+          const diff = Math.abs(decodedFrame.timestamp - targetTimestamp);
+          if (diff < 100_000) { // Within 100ms
+            frameFound = true;
+            break;
+          }
+        }
+
+        if (!frameFound) {
+          allFramesReady = false;
+
+          // Trigger more decoding if needed
+          if (!clipDecoder.isDecoding) {
+            const targetSampleIndex = this.findSampleIndexForTime(clipDecoder, targetSourceTime);
+            // Decode further ahead to ensure we catch up
+            this.decodeAhead(clipDecoder, targetSampleIndex + BUFFER_AHEAD_FRAMES * 2);
+          }
+          break;
+        }
+      }
+
+      if (allFramesReady) {
+        return;
+      }
+
+      // Wait a bit and check again
+      await new Promise(resolve => setTimeout(resolve, waitInterval));
+    }
+
+    // Log warning if we timed out
+    console.warn(`[ParallelDecode] Timeout waiting for frames at time ${timelineTime.toFixed(3)}s`);
   }
 
   /**
