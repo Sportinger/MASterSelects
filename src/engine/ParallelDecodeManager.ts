@@ -654,11 +654,14 @@ export class ParallelDecodeManager {
     const targetSourceTime = this.timelineToSourceTime(clipInfo, timelineTime);
     const targetTimestamp = targetSourceTime * 1_000_000;  // Convert to microseconds
 
-    // Quick bounds check - O(1) rejection
-    if (targetTimestamp < clipDecoder.oldestTimestamp - this.frameTolerance ||
-        targetTimestamp > clipDecoder.newestTimestamp + this.frameTolerance) {
-      return null;
+    // Quick bounds check - but allow returning first frame if target is before it
+    // This handles videos where first frame isn't at exactly 0
+    if (targetTimestamp > clipDecoder.newestTimestamp + this.frameTolerance) {
+      return null;  // Target is after all decoded frames
     }
+
+    // If target is before first frame, use first frame (common for clips starting at 0)
+    const useFirstFrame = targetTimestamp < clipDecoder.oldestTimestamp - this.frameTolerance;
 
     // Binary search for closest timestamp - O(log n) instead of O(n)
     const timestamps = clipDecoder.sortedTimestamps;
@@ -686,16 +689,17 @@ export class ParallelDecodeManager {
       }
     }
 
-    const closestTimestamp = timestamps[closestIdx];
-    const closestDiff = Math.abs(closestTimestamp - targetTimestamp);
+    // If target is before first frame, use the first frame
+    const frameTimestamp = useFirstFrame ? timestamps[0] : timestamps[closestIdx];
+    const frameDiff = Math.abs(frameTimestamp - targetTimestamp);
 
-    if (closestDiff < this.frameTolerance) {
-      const decodedFrame = clipDecoder.frameBuffer.get(closestTimestamp);
+    // Accept if within tolerance OR if we're using first frame for early target
+    if (frameDiff < this.frameTolerance || useFirstFrame) {
+      const decodedFrame = clipDecoder.frameBuffer.get(frameTimestamp);
       if (decodedFrame) {
-        // Debug: log if diff is significant (> half frame duration)
-        const halfFrameDuration = 500_000 / this.exportFps;
-        if (closestDiff > halfFrameDuration) {
-          log.debug(`${clipDecoder.clipName}: frame diff ${(closestDiff/1000).toFixed(1)}ms`);
+        // Debug: log if using first frame for early target
+        if (useFirstFrame) {
+          log.debug(`${clipDecoder.clipName}: using first frame at ${(frameTimestamp/1000).toFixed(1)}ms for target ${(targetTimestamp/1000).toFixed(1)}ms`);
         }
         return decodedFrame.frame;
       }
