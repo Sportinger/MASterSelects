@@ -120,7 +120,7 @@ export const createFileManageSlice: MediaSliceCreator<FileManageActions> = (set,
       return 0;
     }
 
-    log.info('Reloading', filesToReload.length, 'files...');
+    log.info(`Reloading ${filesToReload.length} files...`);
     let totalReloaded = 0;
 
     for (const mediaFileToReload of filesToReload) {
@@ -172,7 +172,7 @@ export const createFileManageSlice: MediaSliceCreator<FileManageActions> = (set,
       totalReloaded++;
     }
 
-    log.info('Complete:', totalReloaded, 'files reloaded');
+    log.info(`Complete: ${totalReloaded} files reloaded`);
     return totalReloaded;
   },
 });
@@ -195,6 +195,6 @@ async function updateTimelineClips(mediaFileId: string, file: File): Promise<voi
   }
 
   if (clips.length > 0) {
-    log.debug('Updated', clips.length, 'timeline clips');
+    log.debug(`Updated ${clips.length} timeline clips`);
   }
 }

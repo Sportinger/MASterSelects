@@ -6,7 +6,6 @@ import { Logger } from '../../services/logger';
 const log = Logger.create('Toolbar');
 import { useEngine } from '../../hooks/useEngine';
 import { useEngineStore } from '../../stores/engineStore';
-import { useTimelineStore } from '../../stores/timeline';
 import { useDockStore } from '../../stores/dockStore';
 import { PANEL_CONFIGS, type PanelType } from '../../types/dock';
 import { useSettingsStore, type PreviewQuality, type AutosaveInterval, type GPUPowerPreference } from '../../stores/settingsStore';

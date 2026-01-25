@@ -113,7 +113,7 @@ async function checkExistingProxy(
 
   const frameCount = await projectFileService.getProxyFrameCount(fileHash);
   if (frameCount > 0) {
-    log.debug('Found existing proxy:', fileHash.slice(0, 8), 'frames:', frameCount);
+    log.debug(`Found existing proxy: ${fileHash.slice(0, 8)} frames: ${frameCount}`);
     return {
       proxyStatus: 'ready',
       proxyFrameCount: frameCount,

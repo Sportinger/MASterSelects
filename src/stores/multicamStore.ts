@@ -478,7 +478,7 @@ export const useMultiCamStore = create<MultiCamStore>()(
           transcriptProgress: 100,
         });
 
-        log.info('Transcription complete:', transcript.length, 'entries');
+        log.info(`Transcription complete: ${transcript.length} entries`);
       } catch (error) {
         log.error('Transcription failed:', error);
         set({
@@ -554,7 +554,7 @@ export const useMultiCamStore = create<MultiCamStore>()(
           edlStatus: 'complete',
         });
 
-        log.info('EDL generated:', edl.length, 'decisions');
+        log.info(`EDL generated: ${edl.length} decisions`);
       } catch (error) {
         log.error('EDL generation failed:', error);
         set({
@@ -661,7 +661,7 @@ export const useMultiCamStore = create<MultiCamStore>()(
             });
           }
 
-          log.info('Applied EDL to timeline:', edl.length, 'clips');
+          log.info(`Applied EDL to timeline: ${edl.length} clips`);
         });
       });
     },

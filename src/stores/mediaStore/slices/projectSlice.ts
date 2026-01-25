@@ -73,11 +73,11 @@ export const createProjectSlice: MediaSliceCreator<ProjectActions> = (set, get) 
                   file = await (handle as FileSystemFileHandle).getFile();
                   url = URL.createObjectURL(file);
                   fileSystemService.storeFileHandle(mediaFile.id, handle as FileSystemFileHandle);
-                  log.debug('Restored file from handle (after permission):', stored.name);
+                  log.debug(`Restored file from handle (after permission): ${stored.name}`);
                 }
               }
             } catch (e) {
-              log.warn('Failed to restore file from handle:', stored.name, e);
+              log.warn(`Failed to restore file from handle: ${stored.name}`, e);
             }
           }
 
@@ -123,7 +123,7 @@ export const createProjectSlice: MediaSliceCreator<ProjectActions> = (set, get) 
       );
 
       set({ files: updatedFiles, isLoading: false });
-      log.info('Restored', storedFiles.length, 'files from IndexedDB');
+      log.info(`Restored ${storedFiles.length} files from IndexedDB`);
     } catch (e) {
       log.error('Failed to init from IndexedDB:', e);
       set({ isLoading: false });

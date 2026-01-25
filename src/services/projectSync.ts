@@ -283,10 +283,10 @@ async function convertProjectMediaToStore(projectMedia: ProjectMediaFile[]): Pro
           handle = storedHandle as FileSystemFileHandle;
           // Cache in memory for future use
           fileSystemService.storeFileHandle(pm.id, handle);
-          log.info(' Retrieved handle from IndexedDB for:', pm.name);
+          log.info(`Retrieved handle from IndexedDB for: ${pm.name}`);
         }
       } catch (e) {
-        log.warn(' Failed to get handle from IndexedDB:', pm.name, e);
+        log.warn(`Failed to get handle from IndexedDB: ${pm.name}`, e);
       }
     }
 

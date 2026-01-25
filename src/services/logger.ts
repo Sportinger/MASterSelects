@@ -119,7 +119,10 @@ loadConfig();
 // ============================================================================
 
 class ModuleLogger {
-  constructor(private module: string) {
+  private module: string;
+
+  constructor(module: string) {
+    this.module = module;
     registeredModules.add(module);
   }
 
@@ -243,10 +246,8 @@ class ModuleLogger {
     parts.push(`%c${LEVEL_ICONS[entry.level]}`);
 
     // Return with color styling for console
-    const timeStyle = 'color: #666';
-    const moduleStyle = `color: ${LEVEL_COLORS[entry.level]}; font-weight: bold`;
-    const iconStyle = '';
-
+    // Note: timeStyle, moduleStyle, iconStyle were used for console.log with %c formatting
+    // but simplified to plain text output
     return parts.join(' ').replace(/%c/g, '') + ' ';
   }
 

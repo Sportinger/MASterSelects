@@ -335,11 +335,6 @@ export function Timeline() {
     };
   }, [timelineMarkerDrag, scrollX, snappingEnabled, duration, pixelToTime, getSnapTargetTimes, moveMarker, playheadPosition, inPoint, outPoint]);
 
-  // Handle add marker at playhead (click)
-  const handleAddMarkerAtPlayhead = useCallback(() => {
-    addMarker(playheadPosition);
-  }, [addMarker, playheadPosition]);
-
   // Handle drag-to-create marker - start dragging from button
   const handleMarkerButtonDragStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();

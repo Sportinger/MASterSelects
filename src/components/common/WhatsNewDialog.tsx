@@ -2,7 +2,7 @@
 // Displays changes categorized as "Today", "Last Week", "This Month", "Earlier"
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { APP_VERSION, KNOWN_ISSUES, getGroupedChangelog, type ChangeEntry } from '../../version';
+import { APP_VERSION, getGroupedChangelog, type ChangeEntry } from '../../version';
 
 interface WhatsNewDialogProps {
   onClose: () => void;
@@ -182,24 +182,6 @@ export function WhatsNewDialog({ onClose }: WhatsNewDialogProps) {
             </div>
           ))}
         </div>
-
-        {/* Known issues section */}
-        {KNOWN_ISSUES.length > 0 && (
-          <div className="changelog-issues">
-            <div className="changelog-issues-header">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                <circle cx="7" cy="7" r="6" stroke="currentColor" strokeWidth="1.5" />
-                <path d="M7 4v3M7 9v.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
-              <span>Known Issues</span>
-            </div>
-            <div className="changelog-issues-list">
-              {KNOWN_ISSUES.map((issue, i) => (
-                <div key={i} className="changelog-issue-item">{issue}</div>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* Footer */}
         <div className="changelog-footer">

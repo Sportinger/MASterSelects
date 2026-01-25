@@ -7839,7 +7839,7 @@ input[type="checkbox"] {
 
 /* Dialog container - fixed size */
 .changelog-dialog {
-  width: 480px;
+  width: 680px;
   height: 600px;
   max-height: 85vh;
   padding: 0;
@@ -7998,9 +7998,9 @@ input[type="checkbox"] {
 }
 
 .changelog-group-items {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 12px;
 }
 
 /* Change item */

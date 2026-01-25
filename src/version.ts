@@ -44,7 +44,79 @@ interface RawChangeEntry extends ChangeEntry {
 }
 
 const RAW_CHANGELOG: RawChangeEntry[] = [
-  // === Jan 25, 2026 ===
+  // === Jan 25, 2026 - MAJOR REFACTORING DAY ===
+  {
+    date: '2026-01-25',
+    type: 'improve',
+    title: 'WebGPUEngine Refactor',
+    description: 'Split into focused modules - 57% smaller core file',
+  },
+  {
+    date: '2026-01-25',
+    type: 'improve',
+    title: 'Timeline Component Refactor',
+    description: 'Extract hooks and utilities - 2109 → 1323 lines of code',
+  },
+  {
+    date: '2026-01-25',
+    type: 'improve',
+    title: 'ClipSlice Refactor',
+    description: 'Modular clip and helper modules - 66% code reduction',
+  },
+  {
+    date: '2026-01-25',
+    type: 'improve',
+    title: 'FrameExporter Refactor',
+    description: 'Split 1510-line file into 8 focused modules',
+  },
+  {
+    date: '2026-01-25',
+    type: 'improve',
+    title: 'ProjectFileService Refactor',
+    description: 'Modular architecture with clean separation of concerns',
+  },
+  {
+    date: '2026-01-25',
+    type: 'improve',
+    title: 'AI Tools Refactor',
+    description: 'Split monolithic aiTools.ts into modular architecture',
+  },
+  {
+    date: '2026-01-25',
+    type: 'improve',
+    title: 'Remove VJ/Mixer Mode',
+    description: 'Simplified codebase by removing unused VJ mode entirely',
+  },
+  {
+    date: '2026-01-25',
+    type: 'improve',
+    title: 'Codebase Reorganization',
+    description: 'Cleaner folder structure and better code organization',
+  },
+  {
+    date: '2026-01-25',
+    type: 'new',
+    title: 'Marker Drag-to-Create',
+    description: 'Drag from M button to create markers with ghost preview',
+  },
+  {
+    date: '2026-01-25',
+    type: 'improve',
+    title: 'Markers Extend into Ruler',
+    description: 'Markers now visually extend into time ruler like playhead',
+  },
+  {
+    date: '2026-01-25',
+    type: 'new',
+    title: 'Nested Comp Visual Indicator',
+    description: 'Orange outline on nested composition clips for easy identification',
+  },
+  {
+    date: '2026-01-25',
+    type: 'improve',
+    title: 'YouTube Download Organization',
+    description: 'Auto-place YouTube downloads in dedicated YouTube folder',
+  },
   {
     date: '2026-01-25',
     type: 'fix',
@@ -73,44 +145,18 @@ const RAW_CHANGELOG: RawChangeEntry[] = [
   // === Jan 24, 2026 ===
   {
     date: '2026-01-24',
-    type: 'new',
-    title: 'Nested Comp Visual Indicator',
-    description: 'Orange outline on nested composition clips for easy identification',
-  },
-  {
-    date: '2026-01-24',
-    type: 'improve',
-    title: 'YouTube Download Organization',
-    description: 'Auto-place YouTube downloads in dedicated YouTube folder',
-  },
-
-  // === Jan 23, 2026 ===
-  {
-    date: '2026-01-23',
-    type: 'new',
-    title: 'Marker Drag-to-Create',
-    description: 'Drag from M button to create markers with ghost preview',
-  },
-  {
-    date: '2026-01-23',
-    type: 'improve',
-    title: 'Markers Extend into Ruler',
-    description: 'Markers now visually extend into time ruler like playhead',
-  },
-  {
-    date: '2026-01-23',
     type: 'fix',
     title: 'Blend Mode Instant Update',
     description: 'Blend mode changes now apply immediately in preview',
   },
   {
-    date: '2026-01-23',
+    date: '2026-01-24',
     type: 'new',
     title: 'Numpad Blend Mode Cycling',
     description: 'Use numpad +/- to cycle through blend modes',
   },
   {
-    date: '2026-01-23',
+    date: '2026-01-24',
     type: 'fix',
     title: 'Media Thumbnails Persistence',
     description: 'Restore media panel thumbnails after project reload',

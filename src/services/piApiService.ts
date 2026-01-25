@@ -279,7 +279,7 @@ class PiApiService {
     formData.append('time', '1h'); // File expires in 1 hour (enough for video generation)
     formData.append('fileToUpload', blob, 'image.jpg');
 
-    log.debug(' Uploading image to litterbox.catbox.moe, size:', Math.round(blob.size / 1024), 'KB');
+    log.debug(`Uploading image to litterbox.catbox.moe, size: ${Math.round(blob.size / 1024)} KB`);
 
     const response = await fetch('https://litterbox.catbox.moe/resources/internals/api.php', {
       method: 'POST',
