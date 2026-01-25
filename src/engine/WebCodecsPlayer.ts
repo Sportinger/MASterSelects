@@ -1059,6 +1059,16 @@ export class WebCodecsPlayer {
       targetIndex = i;
     }
 
+    // DEBUG: Log sample timing details for first few frames
+    if (targetIndex < 5 && this.samples.length > 3) {
+      const s0 = this.samples[0];
+      const s1 = this.samples[1];
+      const s2 = this.samples[2];
+      console.log(`[WebCodecs] DEBUG: timescale=${this.videoTrack.timescale}, halfFrame=${halfFrame}`);
+      console.log(`[WebCodecs] DEBUG: targetTime=${targetTime.toFixed(1)}, withTolerance=${targetTimeWithTolerance.toFixed(1)}`);
+      console.log(`[WebCodecs] DEBUG: sample[0].cts=${s0.cts}, sample[1].cts=${s1.cts}, sample[2].cts=${s2.cts}, duration=${s0.duration}`);
+    }
+
     // Check if we can continue sequentially (target is within a few samples)
     // Allow +/- 3 samples to handle frame rate conversions (e.g., 25fps video at 30fps export)
     if (this.isInExportMode && targetIndex >= this.sampleIndex - 1 && targetIndex <= this.sampleIndex + 3) {
@@ -1069,8 +1079,8 @@ export class WebCodecsPlayer {
         await this.decodeNextFrameForExport();
       }
       // Debug: log first few seeks to verify frame-accurate export
-      if (targetIndex < 5) {
-        console.log(`[WebCodecs] Export seek: time=${timeSeconds.toFixed(3)}s → sample ${targetIndex} (decoded ${this.sampleIndex - beforeIndex} new)`);
+      if (targetIndex < 10) {
+        console.log(`[WebCodecs] Export seek: time=${timeSeconds.toFixed(3)}s → sample ${targetIndex}, sampleIndex now ${this.sampleIndex} (decoded ${this.sampleIndex - beforeIndex} new)`);
       }
       return;
     }
