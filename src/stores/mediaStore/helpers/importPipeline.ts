@@ -112,7 +112,7 @@ async function checkExistingProxy(
 
   const frameCount = await projectFileService.getProxyFrameCount(fileHash);
   if (frameCount > 0) {
-    console.log('[Import] Found existing proxy:', fileHash.slice(0, 8), 'frames:', frameCount);
+    log.debug('Found existing proxy:', fileHash.slice(0, 8), 'frames:', frameCount);
     return {
       proxyStatus: 'ready',
       proxyFrameCount: frameCount,
@@ -143,7 +143,7 @@ async function copyToRawIfEnabled(
     // Store the project file handle for the RAW copy
     fileSystemService.storeFileHandle(`${mediaId}_project`, result.handle);
     await projectDB.storeHandle(`media_${mediaId}_project`, result.handle);
-    console.log('[Import] Copied to Raw folder:', result.relativePath);
+    log.debug('Copied to Raw folder:', result.relativePath);
     return { relativePath: result.relativePath, handle: result.handle };
   }
 

@@ -565,7 +565,7 @@ export const useDockStore = create<DockState>()(
               set({ layout: parsed, maxZIndex: 1000 });
               return;
             } catch (e) {
-              console.error('Failed to parse saved default layout:', e);
+              log.error('Failed to parse saved default layout:', e);
             }
           }
           set({ layout: DEFAULT_LAYOUT, maxZIndex: 1000 });

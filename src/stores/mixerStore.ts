@@ -292,7 +292,7 @@ export const useMixerStore = create<MixerState>()(
         // Try WebCodecs first for hardware-accelerated decoding
         const hasWebCodecs = 'VideoDecoder' in window;
         const isMp4 = file.name.toLowerCase().endsWith('.mp4');
-        console.log(`[Store] Video load: ${file.name} | WebCodecs=${hasWebCodecs} | MP4=${isMp4}`);
+        log.debug(`Video load: ${file.name} | WebCodecs=${hasWebCodecs} | MP4=${isMp4}`);
 
         if (hasWebCodecs && isMp4) {
           const player = new WebCodecsPlayer({
@@ -309,14 +309,14 @@ export const useMixerStore = create<MixerState>()(
               });
             },
             onError: (error) => {
-              console.error('WebCodecs error, falling back to video element:', error);
+              log.error('WebCodecs error, falling back to video element:', error);
               // Fallback to video element
               createVideoElement(file, layerId, get, set);
             },
           });
 
           player.loadFile(file).then(() => {
-            console.log(`[WebCodecs] Loaded video: ${file.name} (${player.width}x${player.height})`);
+            log.debug(`WebCodecs loaded video: ${file.name} (${player.width}x${player.height})`);
             // Get fresh state to avoid stale closure
             const currentLayers = get().layers;
             set({
@@ -335,7 +335,7 @@ export const useMixerStore = create<MixerState>()(
             });
             player.play();
           }).catch((error) => {
-            console.error('WebCodecs failed to load, falling back:', error);
+            log.error('WebCodecs failed to load, falling back:', error);
             createVideoElement(file, layerId, get, set);
           });
         } else {
@@ -639,17 +639,17 @@ export const useMixerStore = create<MixerState>()(
       const { layers } = get();
       const sourceLayer = layers[fromIndex];
 
-      console.log('[Store] duplicateSlot:', fromIndex, '->', toIndex, 'source:', sourceLayer?.source);
+      log.debug('duplicateSlot:', fromIndex, '->', toIndex, 'source:', sourceLayer?.source);
 
       if (!sourceLayer?.source) {
-        console.log('[Store] No source to duplicate');
+        log.debug('No source to duplicate');
         return;
       }
 
       // Get the file - either from the source or we need to handle video/image elements
       const file = sourceLayer.source.file;
       if (!file) {
-        console.log('[Store] No file in source, cannot duplicate');
+        log.debug('No file in source, cannot duplicate');
         return;
       }
 
@@ -671,7 +671,7 @@ export const useMixerStore = create<MixerState>()(
       newLayers[toIndex] = newLayer;
       set({ layers: newLayers });
 
-      console.log('[Store] Created new layer, loading file:', file.name);
+      log.debug('Created new layer, loading file:', file.name);
 
       // Load the same file into the new slot (use setTimeout to ensure state is updated)
       setTimeout(() => {
@@ -711,7 +711,7 @@ export const useMixerStore = create<MixerState>()(
       for (let i = 0; i < groupSize; i++) {
         const newCol = targetCol + i;
         if (newCol >= gridColumns) {
-          console.log('[Store] moveGroup: Not enough room at target');
+          log.debug('moveGroup: Not enough room at target');
           return; // Not enough room in this row
         }
         const newIndex = targetRow * gridColumns + newCol;
@@ -719,13 +719,13 @@ export const useMixerStore = create<MixerState>()(
 
         // Check if position is free (or part of the moving group)
         if (layers[newIndex]?.source && !groupSlots.includes(newIndex)) {
-          console.log('[Store] moveGroup: Target position occupied');
+          log.debug('moveGroup: Target position occupied');
           return; // Position is occupied by something else
         }
         newPositions.push(newIndex);
       }
 
-      console.log('[Store] moveGroup:', sortedGroup, '->', newPositions);
+      log.debug('moveGroup:', sortedGroup, '->', newPositions);
 
       // Move the layers
       const newLayers = [...layers];
@@ -780,7 +780,7 @@ async function createVideoElement(
 
   // Wait for canplaythrough to ensure video is ready for playback
   video.addEventListener('canplaythrough', async () => {
-    console.log(`[Video] canplaythrough: ${file.name}, readyState=${video.readyState}`);
+    log.debug(`Video canplaythrough: ${file.name}, readyState=${video.readyState}`);
 
     // Connect to audio manager for volume and EQ control
     audioManager.connectMediaElement(video);
@@ -806,14 +806,14 @@ async function createVideoElement(
 
     // Play with error handling
     video.play().then(() => {
-      console.log(`[Video] Playing: ${file.name}`);
+      log.debug(`Video playing: ${file.name}`);
     }).catch((err) => {
-      console.error(`[Video] Play failed: ${file.name}`, err);
+      log.error(`Video play failed: ${file.name}`, err);
     });
   }, { once: true });
 
   video.addEventListener('error', (e) => {
-    console.error(`[Video] Error loading: ${file.name}`, e);
+    log.error(`Video error loading: ${file.name}`, e);
   });
 
   // Trigger load

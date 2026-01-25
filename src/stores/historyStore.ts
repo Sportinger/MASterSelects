@@ -301,7 +301,7 @@ export const useHistoryStore = create<HistoryState>()(
         isApplying: false,
       });
 
-      console.log(`[History] Undo: ${previousSnapshot.label}`);
+      log.debug(`Undo: ${previousSnapshot.label}`);
     },
 
     redo: () => {
@@ -330,7 +330,7 @@ export const useHistoryStore = create<HistoryState>()(
         isApplying: false,
       });
 
-      console.log(`[History] Redo: ${nextSnapshot.label}`);
+      log.debug(`Redo: ${nextSnapshot.label}`);
     },
 
     canUndo: () => get().undoStack.length > 0,

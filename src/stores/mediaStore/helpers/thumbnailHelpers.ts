@@ -83,7 +83,7 @@ export async function handleThumbnailDedup(
     // Check for existing thumbnail
     const existingBlob = await projectFileService.getThumbnail(fileHash);
     if (existingBlob && existingBlob.size > 0) {
-      console.log('[Thumbnail] Reusing existing for hash:', fileHash.slice(0, 8));
+      log.debug('Reusing existing for hash:', fileHash.slice(0, 8));
       return URL.createObjectURL(existingBlob);
     }
 
@@ -92,11 +92,11 @@ export async function handleThumbnailDedup(
       const blob = await fetchThumbnailBlob(thumbnailUrl);
       if (blob && blob.size > 0) {
         await projectFileService.saveThumbnail(fileHash, blob);
-        console.log('[Thumbnail] Saved to project folder:', fileHash.slice(0, 8));
+        log.debug('Saved to project folder:', fileHash.slice(0, 8));
       }
     }
   } catch (e) {
-    console.warn('[Thumbnail] Dedup error:', e);
+    log.warn('Dedup error:', e);
   }
 
   return thumbnailUrl;

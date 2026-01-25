@@ -475,6 +475,97 @@ export async function loadProjectToStores(): Promise<void> {
   }
 
   console.log('[ProjectSync] Loaded project to stores:', projectData.name);
+
+  // Auto-relink missing files from Raw folder
+  await autoRelinkFromRawFolder();
+}
+
+/**
+ * Automatically relink missing media files from the project's Raw folder
+ * This runs silently after project load - no user interaction needed if all files are found
+ */
+async function autoRelinkFromRawFolder(): Promise<void> {
+  if (!projectFileService.isProjectOpen()) return;
+
+  const mediaState = useMediaStore.getState();
+  const missingFiles = mediaState.files.filter(f => !f.file && !f.url);
+
+  if (missingFiles.length === 0) {
+    console.log('[ProjectSync] No missing files to relink');
+    return;
+  }
+
+  console.log(`[ProjectSync] Attempting auto-relink for ${missingFiles.length} missing files...`);
+
+  // Scan the Raw folder
+  const rawFiles = await projectFileService.scanRawFolder();
+  if (rawFiles.size === 0) {
+    console.log('[ProjectSync] Raw folder is empty or not accessible');
+    return;
+  }
+
+  console.log(`[ProjectSync] Found ${rawFiles.size} files in Raw folder`);
+
+  // Match and relink files
+  let relinkedCount = 0;
+  const updatedFiles = [...mediaState.files];
+
+  for (let i = 0; i < updatedFiles.length; i++) {
+    const file = updatedFiles[i];
+    if (file.file || file.url) continue; // Already has file
+
+    const searchName = file.name.toLowerCase();
+    const handle = rawFiles.get(searchName);
+
+    if (handle) {
+      try {
+        const fileObj = await handle.getFile();
+        const url = URL.createObjectURL(fileObj);
+
+        // Store handle for future access
+        fileSystemService.storeFileHandle(file.id, handle);
+        await projectDB.storeHandle(`media_${file.id}`, handle);
+
+        // Update file entry
+        updatedFiles[i] = {
+          ...file,
+          file: fileObj,
+          url,
+          hasFileHandle: true,
+        };
+
+        relinkedCount++;
+        console.log(`[ProjectSync] Auto-relinked: ${file.name}`);
+      } catch (e) {
+        console.warn(`[ProjectSync] Could not read file from Raw: ${file.name}`, e);
+      }
+    }
+  }
+
+  if (relinkedCount > 0) {
+    // Update media store with relinked files
+    useMediaStore.setState({ files: updatedFiles });
+    console.log(`[ProjectSync] Auto-relinked ${relinkedCount}/${missingFiles.length} files from Raw folder`);
+
+    // Also update any clips that reference these files
+    const timelineStore = useTimelineStore.getState();
+    for (const file of updatedFiles) {
+      if (file.file) {
+        const clips = timelineStore.clips.filter(
+          c => c.source?.mediaFileId === file.id && c.needsReload
+        );
+        for (const clip of clips) {
+          timelineStore.updateClip(clip.id, {
+            file: file.file,
+            needsReload: false,
+            isLoading: true,
+          });
+        }
+      }
+    }
+  } else {
+    console.log('[ProjectSync] No files could be auto-relinked from Raw folder');
+  }
 }
 
 // ============================================

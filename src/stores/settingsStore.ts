@@ -5,6 +5,9 @@
 import { create } from 'zustand';
 import { subscribeWithSelector, persist } from 'zustand/middleware';
 import { apiKeyManager, type ApiKeyType } from '../services/apiKeyManager';
+import { Logger } from '../services/logger';
+
+const log = Logger.create('SettingsStore');
 
 // Transcription provider options
 export type TranscriptionProvider = 'local' | 'openai' | 'assemblyai' | 'deepgram';
@@ -128,7 +131,7 @@ export const useSettingsStore = create<SettingsState>()(
         }));
         // Also save to encrypted IndexedDB
         apiKeyManager.storeKeyByType(provider as ApiKeyType, key).catch((err) => {
-          console.error('[SettingsStore] Failed to save API key:', err);
+          log.error('Failed to save API key:', err);
         });
       },
 
@@ -200,9 +203,9 @@ export const useSettingsStore = create<SettingsState>()(
         try {
           const keys = await apiKeyManager.getAllKeys();
           set({ apiKeys: keys });
-          console.log('[SettingsStore] API keys loaded from encrypted storage');
+          log.info('API keys loaded from encrypted storage');
         } catch (err) {
-          console.error('[SettingsStore] Failed to load API keys:', err);
+          log.error('Failed to load API keys:', err);
         }
       },
     }),
