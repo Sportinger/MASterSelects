@@ -5,6 +5,7 @@ import { Logger } from './logger';
 import { useMediaStore, type MediaFile, type Composition, type MediaFolder } from '../stores/mediaStore';
 import { getMediaInfo } from '../stores/mediaStore/helpers/mediaInfoHelpers';
 import { createThumbnail } from '../stores/mediaStore/helpers/thumbnailHelpers';
+import { updateTimelineClips } from '../stores/mediaStore/slices/fileManageSlice';
 
 const log = Logger.create('ProjectSync');
 import { useTimelineStore } from '../stores/timeline';
@@ -717,20 +718,10 @@ async function autoRelinkFromRawFolder(): Promise<void> {
     useMediaStore.setState({ files: updatedFiles });
     log.info(`Auto-relinked ${relinkedCount}/${missingFiles.length} files from Raw folder`);
 
-    // Also update any clips that reference these files
-    const timelineStore = useTimelineStore.getState();
+    // Update timeline clips with proper source elements (video/audio/image)
     for (const file of updatedFiles) {
       if (file.file) {
-        const clips = timelineStore.clips.filter(
-          c => c.source?.mediaFileId === file.id && c.needsReload
-        );
-        for (const clip of clips) {
-          timelineStore.updateClip(clip.id, {
-            file: file.file,
-            needsReload: false,
-            isLoading: true,
-          });
-        }
+        await updateTimelineClips(file.id, file.file);
       }
     }
   } else {

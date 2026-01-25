@@ -179,22 +179,120 @@ export const createFileManageSlice: MediaSliceCreator<FileManageActions> = (set,
 
 /**
  * Update timeline clips with reloaded file.
+ * Creates the actual video/audio elements for the clip sources.
+ * Exported for use by projectSync auto-relink.
  */
-async function updateTimelineClips(mediaFileId: string, file: File): Promise<void> {
+export async function updateTimelineClips(mediaFileId: string, file: File): Promise<void> {
   const timelineStore = useTimelineStore.getState();
   const clips = timelineStore.clips.filter(
     c => c.source?.mediaFileId === mediaFileId && c.needsReload
   );
 
+  if (clips.length === 0) return;
+
+  const url = URL.createObjectURL(file);
+
   for (const clip of clips) {
-    timelineStore.updateClip(clip.id, {
-      file,
-      needsReload: false,
-      isLoading: true,
-    });
+    const sourceType = clip.source?.type;
+
+    if (sourceType === 'video') {
+      // Create video element
+      const video = document.createElement('video');
+      video.src = url;
+      video.muted = true;
+      video.playsInline = true;
+      video.crossOrigin = 'anonymous';
+      video.preload = 'auto';
+
+      video.addEventListener('canplaythrough', () => {
+        const naturalDuration = video.duration || clip.duration;
+        timelineStore.updateClip(clip.id, {
+          file,
+          needsReload: false,
+          isLoading: false,
+          source: {
+            type: 'video',
+            videoElement: video,
+            naturalDuration,
+            mediaFileId,
+          },
+        });
+      }, { once: true });
+
+      video.addEventListener('error', () => {
+        log.warn('Failed to load video for clip:', clip.name);
+        timelineStore.updateClip(clip.id, {
+          needsReload: false,
+          isLoading: false,
+        });
+      }, { once: true });
+
+      video.load();
+    } else if (sourceType === 'audio') {
+      // Create audio element
+      const audio = document.createElement('audio');
+      audio.src = url;
+      audio.preload = 'auto';
+
+      audio.addEventListener('canplaythrough', () => {
+        const naturalDuration = audio.duration || clip.duration;
+        timelineStore.updateClip(clip.id, {
+          file,
+          needsReload: false,
+          isLoading: false,
+          source: {
+            type: 'audio',
+            audioElement: audio,
+            naturalDuration,
+            mediaFileId,
+          },
+        });
+      }, { once: true });
+
+      audio.addEventListener('error', () => {
+        log.warn('Failed to load audio for clip:', clip.name);
+        timelineStore.updateClip(clip.id, {
+          needsReload: false,
+          isLoading: false,
+        });
+      }, { once: true });
+
+      audio.load();
+    } else if (sourceType === 'image') {
+      // Create image element
+      const img = new Image();
+      img.src = url;
+      img.crossOrigin = 'anonymous';
+
+      img.addEventListener('load', () => {
+        timelineStore.updateClip(clip.id, {
+          file,
+          needsReload: false,
+          isLoading: false,
+          source: {
+            type: 'image',
+            imageElement: img,
+            mediaFileId,
+          },
+        });
+      }, { once: true });
+
+      img.addEventListener('error', () => {
+        log.warn('Failed to load image for clip:', clip.name);
+        timelineStore.updateClip(clip.id, {
+          needsReload: false,
+          isLoading: false,
+        });
+      }, { once: true });
+    } else {
+      // Unknown type - just update the file reference
+      timelineStore.updateClip(clip.id, {
+        file,
+        needsReload: false,
+        isLoading: false,
+      });
+    }
   }
 
-  if (clips.length > 0) {
-    log.debug(`Updated ${clips.length} timeline clips`);
-  }
+  log.debug(`Updated ${clips.length} timeline clips`);
 }
