@@ -505,31 +505,30 @@ export class ParallelDecodeManager {
   }
 
   /**
-   * Find sample index for a given source time - O(log n) binary search
+   * Find sample index for a given source time.
+   * Handles B-frame reordering by searching for closest CTS match.
+   * IMPORTANT: Samples are in DECODE order (DTS), not presentation order (CTS)
+   * due to B-frame reordering. Binary search doesn't work here.
    */
   private findSampleIndexForTime(clipDecoder: ClipDecoder, sourceTime: number): number {
     const targetTime = sourceTime * clipDecoder.videoTrack.timescale;
     const samples = clipDecoder.samples;
 
-    // Add half-frame tolerance to handle floating point precision issues
-    // e.g., at 30fps: 1/30 = 0.0333... but floating point may give slightly less
-    const halfFrame = (samples[0]?.duration ?? 1) / 2;
-    const targetTimeWithTolerance = targetTime + halfFrame;
+    if (samples.length === 0) return 0;
 
-    // Binary search for the sample with cts <= targetTimeWithTolerance
-    let left = 0;
-    let right = samples.length - 1;
+    // Linear search for sample with CTS closest to target time
+    let targetIndex = 0;
+    let closestDiff = Infinity;
 
-    while (left < right) {
-      const mid = Math.floor((left + right + 1) / 2);
-      if (samples[mid].cts <= targetTimeWithTolerance) {
-        left = mid;
-      } else {
-        right = mid - 1;
+    for (let i = 0; i < samples.length; i++) {
+      const diff = Math.abs(samples[i].cts - targetTime);
+      if (diff < closestDiff) {
+        closestDiff = diff;
+        targetIndex = i;
       }
     }
 
-    return left;
+    return targetIndex;
   }
 
   /**

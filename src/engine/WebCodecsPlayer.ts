@@ -713,12 +713,23 @@ export class WebCodecsPlayer {
 
     const targetTime = timeSeconds * this.videoTrack.timescale;
 
-    // Find the nearest keyframe before the target time
-    let keyframeIndex = 0;
+    // Find sample with CTS closest to target time
+    // IMPORTANT: Samples are in DECODE order (DTS), not presentation order (CTS)
+    // due to B-frame reordering. We must search for closest CTS match.
     let targetIndex = 0;
+    let closestDiff = Infinity;
+
     for (let i = 0; i < this.samples.length; i++) {
-      if (this.samples[i].cts > targetTime) break;
-      targetIndex = i;
+      const diff = Math.abs(this.samples[i].cts - targetTime);
+      if (diff < closestDiff) {
+        closestDiff = diff;
+        targetIndex = i;
+      }
+    }
+
+    // Find the nearest keyframe before the target sample (in decode order)
+    let keyframeIndex = 0;
+    for (let i = 0; i <= targetIndex; i++) {
       if (this.samples[i].is_sync) {
         keyframeIndex = i;
       }
@@ -848,12 +859,23 @@ export class WebCodecsPlayer {
 
     const targetTime = timeSeconds * this.videoTrack.timescale;
 
-    // Find the nearest keyframe before the target time
-    let keyframeIndex = 0;
+    // Find sample with CTS closest to target time
+    // IMPORTANT: Samples are in DECODE order (DTS), not presentation order (CTS)
+    // due to B-frame reordering. We must search for closest CTS match.
     let targetIndex = 0;
+    let closestDiff = Infinity;
+
     for (let i = 0; i < this.samples.length; i++) {
-      if (this.samples[i].cts > targetTime) break;
-      targetIndex = i;
+      const diff = Math.abs(this.samples[i].cts - targetTime);
+      if (diff < closestDiff) {
+        closestDiff = diff;
+        targetIndex = i;
+      }
+    }
+
+    // Find the nearest keyframe before the target sample (in decode order)
+    let keyframeIndex = 0;
+    for (let i = 0; i <= targetIndex; i++) {
       if (this.samples[i].is_sync) {
         keyframeIndex = i;
       }
@@ -904,16 +926,23 @@ export class WebCodecsPlayer {
 
     const targetTime = startTimeSeconds * this.videoTrack.timescale;
 
-    // Add half-frame tolerance to handle floating point precision issues
-    const halfFrame = (this.samples[0]?.duration ?? 1) / 2;
-    const targetTimeWithTolerance = targetTime + halfFrame;
-
-    // Find the nearest keyframe before the target time
-    let keyframeIndex = 0;
+    // Find sample with CTS closest to target time
+    // IMPORTANT: Samples are in DECODE order (DTS), not presentation order (CTS)
+    // due to B-frame reordering. We must search for closest CTS match.
     let targetIndex = 0;
+    let closestDiff = Infinity;
+
     for (let i = 0; i < this.samples.length; i++) {
-      if (this.samples[i].cts > targetTimeWithTolerance) break;
-      targetIndex = i;
+      const diff = Math.abs(this.samples[i].cts - targetTime);
+      if (diff < closestDiff) {
+        closestDiff = diff;
+        targetIndex = i;
+      }
+    }
+
+    // Find the nearest keyframe before the target sample (in decode order)
+    let keyframeIndex = 0;
+    for (let i = 0; i <= targetIndex; i++) {
       if (this.samples[i].is_sync) {
         keyframeIndex = i;
       }
@@ -1047,26 +1076,23 @@ export class WebCodecsPlayer {
 
     const targetTime = timeSeconds * this.videoTrack.timescale;
 
-    // Add half-frame tolerance to handle floating point precision issues
-    // e.g., at 30fps: 1/30 = 0.0333... but floating point may give us slightly less
-    const halfFrame = (this.samples[0]?.duration ?? 1) / 2;
-    const targetTimeWithTolerance = targetTime + halfFrame;
-
-    // Find target sample index - use tolerance-adjusted time
+    // Find sample with CTS closest to target time
+    // IMPORTANT: Samples are in DECODE order (DTS), not presentation order (CTS)
+    // due to B-frame reordering. We must search all samples to find the right one.
     let targetIndex = 0;
-    for (let i = 0; i < this.samples.length; i++) {
-      if (this.samples[i].cts > targetTimeWithTolerance) break;
-      targetIndex = i;
-    }
+    let closestDiff = Infinity;
 
-    // DEBUG: Log sample timing details for first few frames
-    if (targetIndex < 5 && this.samples.length > 3) {
-      const s0 = this.samples[0];
-      const s1 = this.samples[1];
-      const s2 = this.samples[2];
-      console.log(`[WebCodecs] DEBUG: timescale=${this.videoTrack.timescale}, halfFrame=${halfFrame}`);
-      console.log(`[WebCodecs] DEBUG: targetTime=${targetTime.toFixed(1)}, withTolerance=${targetTimeWithTolerance.toFixed(1)}`);
-      console.log(`[WebCodecs] DEBUG: sample[0].cts=${s0.cts}, sample[1].cts=${s1.cts}, sample[2].cts=${s2.cts}, duration=${s0.duration}`);
+    for (let i = 0; i < this.samples.length; i++) {
+      const diff = Math.abs(this.samples[i].cts - targetTime);
+      if (diff < closestDiff) {
+        closestDiff = diff;
+        targetIndex = i;
+      }
+      // Early exit: if we're getting further away and past target, stop searching
+      // (optimization for videos without B-frames where CTS is sorted)
+      if (this.samples[i].cts > targetTime + closestDiff) {
+        break;
+      }
     }
 
     // Check if we can continue sequentially (target is within a few samples)
@@ -1084,9 +1110,6 @@ export class WebCodecsPlayer {
       }
       return;
     }
-
-    // DEBUG: Log when we need to reset decoder
-    console.warn(`[WebCodecs] DECODER RESET: targetIndex=${targetIndex}, sampleIndex=${this.sampleIndex}, diff=${targetIndex - this.sampleIndex}`);
 
     // Need to jump - find keyframe and decode from there
     let keyframeIndex = 0;
@@ -1124,6 +1147,7 @@ export class WebCodecsPlayer {
 
   /**
    * Get the sample index for a given time (for checking if sequential decode is possible)
+   * Handles B-frame reordering by searching for closest CTS match.
    */
   getSampleIndexForTime(timeSeconds: number): number {
     if (this.useSimpleMode || !this.videoTrack || this.samples.length === 0) {
@@ -1131,14 +1155,21 @@ export class WebCodecsPlayer {
     }
 
     const targetTime = timeSeconds * this.videoTrack.timescale;
-    // Add half-frame tolerance to handle floating point precision issues
-    const halfFrame = (this.samples[0]?.duration ?? 1) / 2;
-    const targetTimeWithTolerance = targetTime + halfFrame;
+
+    // Find sample with CTS closest to target time
+    // IMPORTANT: Samples are in DECODE order (DTS), not presentation order (CTS)
+    // due to B-frame reordering. We must search for closest CTS match.
     let targetIndex = 0;
+    let closestDiff = Infinity;
+
     for (let i = 0; i < this.samples.length; i++) {
-      if (this.samples[i].cts > targetTimeWithTolerance) break;
-      targetIndex = i;
+      const diff = Math.abs(this.samples[i].cts - targetTime);
+      if (diff < closestDiff) {
+        closestDiff = diff;
+        targetIndex = i;
+      }
     }
+
     return targetIndex;
   }
 
