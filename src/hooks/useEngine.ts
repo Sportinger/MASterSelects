@@ -38,7 +38,6 @@ export function useEngine() {
       const success = await engine.initialize();
       useEngineStore.getState().setEngineReady(success);
       if (success) {
-        useTimelineStore.getState().play();
         // Get and store GPU info
         const gpuInfo = engine.getGPUInfo();
         useEngineStore.getState().setGpuInfo(gpuInfo);

@@ -178,13 +178,10 @@ export async function loadVideoMedia(params: LoadVideoMediaParams): Promise<void
 
     naturalDuration = video.duration || 5;
 
-    // Check if video has audio tracks
-    if ('audioTracks' in video) {
-      const audioTracks = (video as HTMLVideoElement & { audioTracks?: { length: number } }).audioTracks;
-      videoHasAudio = (audioTracks?.length ?? 0) > 0;
-      if (!videoHasAudio) {
-        log.debug('Video has no audio tracks', { file: file.name });
-      }
+    // Check if video has audio using Web Audio API (more reliable than audioTracks)
+    videoHasAudio = await checkVideoHasAudio(file);
+    if (!videoHasAudio) {
+      log.debug('Video has no audio tracks (Web Audio check)', { file: file.name });
     }
 
     // Update clip with actual duration
@@ -318,5 +315,35 @@ async function loadLinkedAudio(
       log.warn('Waveform generation failed', e);
       setClips(clips => updateClipById(clips, audioClipId, { waveformGenerating: false }));
     }
+  }
+}
+
+/**
+ * Check if a video file has audio tracks using Web Audio API.
+ * This is more reliable than the audioTracks API which isn't widely supported.
+ */
+async function checkVideoHasAudio(file: File): Promise<boolean> {
+  try {
+    const audioContext = new AudioContext();
+
+    // Read a portion of the file (first 1MB should be enough to detect audio)
+    const maxBytes = 1024 * 1024;
+    const blob = file.slice(0, Math.min(file.size, maxBytes));
+    const arrayBuffer = await blob.arrayBuffer();
+
+    try {
+      // Try to decode the audio - if it fails or has 0 channels, no audio
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+      const hasAudio = audioBuffer.numberOfChannels > 0 && audioBuffer.length > 0;
+      await audioContext.close();
+      return hasAudio;
+    } catch {
+      // decodeAudioData throws if there's no audio data
+      await audioContext.close();
+      return false;
+    }
+  } catch (e) {
+    log.warn('Audio detection failed, assuming video has audio', e);
+    return true; // Default to true on error
   }
 }

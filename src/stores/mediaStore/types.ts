@@ -27,8 +27,11 @@ export interface MediaFile extends MediaItem {
   height?: number;
   fps?: number;
   codec?: string;
+  audioCodec?: string;
   container?: string;
   fileSize?: number;
+  bitrate?: number;      // bits per second
+  hasAudio?: boolean;    // Does video have audio tracks?
   fileHash?: string;
   thumbnailUrl?: string;
   // Proxy support

@@ -72,49 +72,82 @@ export async function getVideoMetadataQuick(
 ): Promise<VideoMetadata | null> {
   if (!isVideoFile(file)) return null;
 
-  return new Promise((resolve) => {
+  // Get duration from video element
+  const durationResult = await new Promise<{ duration: number | null; blobUrl: string } | null>((resolve) => {
     const video = document.createElement('video');
     video.preload = 'metadata';
+    const blobUrl = URL.createObjectURL(file);
 
     const cleanup = () => {
-      URL.revokeObjectURL(video.src);
       video.remove();
     };
 
     const timeoutId = setTimeout(() => {
       cleanup();
+      URL.revokeObjectURL(blobUrl);
       resolve(null);
     }, timeoutMs);
 
     video.onloadedmetadata = () => {
       clearTimeout(timeoutId);
       const dur = video.duration;
-
-      // Check for audio tracks - use AudioTracks API if available
-      // Falls back to assuming audio exists for broader compatibility
-      let hasAudio = true; // Default to true for safety
-
-      // Modern browsers with AudioTracks API
-      if ('audioTracks' in video) {
-        const audioTracks = (video as HTMLVideoElement & { audioTracks?: { length: number } }).audioTracks;
-        hasAudio = (audioTracks?.length ?? 0) > 0;
-      }
-
       cleanup();
       resolve({
         duration: isFinite(dur) ? dur : null,
-        hasAudio,
+        blobUrl, // Keep blob URL for audio check
       });
     };
 
     video.onerror = () => {
       clearTimeout(timeoutId);
       cleanup();
+      URL.revokeObjectURL(blobUrl);
       resolve(null);
     };
 
-    video.src = URL.createObjectURL(file);
+    video.src = blobUrl;
   });
+
+  if (!durationResult) return null;
+
+  // Check for audio using Web Audio API (quick check with small sample)
+  const hasAudio = await checkHasAudioQuick(file);
+
+  URL.revokeObjectURL(durationResult.blobUrl);
+
+  return {
+    duration: durationResult.duration,
+    hasAudio,
+  };
+}
+
+/**
+ * Quick check if file has audio using Web Audio API
+ * Uses a small sample to keep it fast for drag preview
+ */
+async function checkHasAudioQuick(file: File): Promise<boolean> {
+  try {
+    const audioContext = new AudioContext();
+
+    // Read first 512KB - enough to detect audio presence
+    const maxBytes = 512 * 1024;
+    const blob = file.slice(0, Math.min(file.size, maxBytes));
+    const arrayBuffer = await blob.arrayBuffer();
+
+    try {
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+      const hasAudio = audioBuffer.numberOfChannels > 0 && audioBuffer.length > 0;
+      await audioContext.close();
+      return hasAudio;
+    } catch {
+      // decodeAudioData throws if there's no audio
+      await audioContext.close();
+      return false;
+    }
+  } catch {
+    // Default to true on error (will be checked again during import)
+    return true;
+  }
 }
 
 /**
