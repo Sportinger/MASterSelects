@@ -113,7 +113,7 @@ export class ParallelDecodeManager {
     // FPS-based tolerance: 1.5 frame duration
     this.frameTolerance = Math.round((1_000_000 / exportFps) * 1.5);
 
-    log.info(`Initializing ${clips.length} clips at ${exportFps}fps (tolerance: ${this.frameTolerance}μs)...`);
+    console.log(`[ParallelDecode] Initializing ${clips.length} clips:`, clips.map(c => c.clipName));
 
     // Parse all clips in parallel
     const initPromises = clips.map(clip => this.initializeClip(clip));
@@ -229,7 +229,7 @@ export class ParallelDecodeManager {
           const prevCount = clipDecoder.samples.length;
           clipDecoder.samples.push(...newSamples);
           if (prevCount === 0) {
-            log.info(`"${clipInfo.clipName}": First ${newSamples.length} samples received`);
+            console.log(`[ParallelDecode] "${clipInfo.clipName}": First ${newSamples.length} samples received`);
           }
         }
       };
@@ -265,7 +265,7 @@ export class ParallelDecodeManager {
 
     // Log first frame for debugging
     if (clipDecoder.frameBuffer.size === 0) {
-      log.info(`"${clipDecoder.clipName}": First frame decoded at ${sourceTime.toFixed(3)}s`);
+      console.log(`[ParallelDecode] "${clipDecoder.clipName}": First frame decoded at ${sourceTime.toFixed(3)}s`);
     }
 
     // Store frame by its timestamp
@@ -363,7 +363,7 @@ export class ParallelDecodeManager {
    * Optimized for speed: fires decode ahead in background, only waits if frame is missing
    */
   async prefetchFramesForTime(timelineTime: number): Promise<void> {
-    log.info(`prefetchFramesForTime(${timelineTime.toFixed(3)}) - isActive=${this.isActive}, decoders=${this.clipDecoders.size}`);
+    console.log(`[ParallelDecode] prefetchFramesForTime(${timelineTime.toFixed(3)}) - isActive=${this.isActive}, decoders=${this.clipDecoders.size}`);
     if (!this.isActive) return;
 
     const clipsNeedingFlush: ClipDecoder[] = [];
