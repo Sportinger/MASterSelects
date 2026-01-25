@@ -668,8 +668,14 @@ async function autoRelinkFromRawFolder(): Promise<void> {
 
   log.info(`Attempting auto-relink for ${missingFiles.length} missing files...`);
 
-  // Scan the Raw folder
-  const rawFiles = await projectFileService.scanRawFolder();
+  // Scan the Raw folder - retry if empty (handle may not be ready yet)
+  let rawFiles = await projectFileService.scanRawFolder();
+  if (rawFiles.size === 0) {
+    // Wait briefly and retry - the directory handle may need time on first load
+    log.debug('Raw folder scan returned empty, retrying after delay...');
+    await new Promise(resolve => setTimeout(resolve, 200));
+    rawFiles = await projectFileService.scanRawFolder();
+  }
   if (rawFiles.size === 0) {
     log.info(' Raw folder is empty or not accessible');
     return;
@@ -745,6 +751,9 @@ async function autoRelinkFromRawFolder(): Promise<void> {
     // Update media store with relinked files
     useMediaStore.setState({ files: updatedFiles });
     log.info(`Auto-relinked ${relinkedCount}/${missingFiles.length} files from Raw folder`);
+
+    // Small delay to allow state to settle before updating timeline clips
+    await new Promise(resolve => setTimeout(resolve, 50));
 
     // Update timeline clips with proper source elements (video/audio/image)
     for (const file of updatedFiles) {

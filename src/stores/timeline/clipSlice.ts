@@ -711,9 +711,22 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
   refreshCompClipNestedData: async (sourceCompositionId: string) => {
     const { clips, invalidateCache } = get();
 
+    log.info('refreshCompClipNestedData called', {
+      sourceCompositionId,
+      totalClips: clips.length,
+      compClips: clips.filter(c => c.isComposition).map(c => ({
+        id: c.id,
+        name: c.name,
+        compositionId: c.compositionId,
+      })),
+    });
+
     // Find all comp clips that reference this composition
     const compClips = clips.filter(c => c.isComposition && c.compositionId === sourceCompositionId);
-    if (compClips.length === 0) return;
+    if (compClips.length === 0) {
+      log.info('No comp clips found referencing this composition');
+      return;
+    }
 
     // Get the updated composition
     const { useMediaStore } = await import('../mediaStore');
@@ -729,6 +742,11 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
       affectedClips: compClips.length,
       newClipCount: composition.timelineData.clips.length,
       newTrackCount: composition.timelineData.tracks.length,
+      timelineDataClips: composition.timelineData.clips.map((c: any) => ({
+        id: c.id,
+        name: c.name,
+        trackId: c.trackId,
+      })),
     });
 
     // Reload nested clips for each comp clip

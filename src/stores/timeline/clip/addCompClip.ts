@@ -98,10 +98,29 @@ export async function loadNestedClips(params: LoadNestedClipsParams): Promise<Ti
   const mediaStore = useMediaStore.getState();
   const nestedClips: TimelineClip[] = [];
 
+  log.info('loadNestedClips', {
+    compClipId,
+    compositionId: composition.id,
+    compositionName: composition.name,
+    serializedClipCount: composition.timelineData.clips.length,
+    serializedClips: composition.timelineData.clips.map((c: any) => ({
+      id: c.id,
+      name: c.name,
+      trackId: c.trackId,
+      mediaFileId: c.mediaFileId,
+      sourceType: c.sourceType,
+    })),
+    availableMediaFiles: mediaStore.files.map(f => ({ id: f.id, name: f.name })),
+  });
+
   for (const serializedClip of composition.timelineData.clips) {
     const mediaFile = mediaStore.files.find(f => f.id === serializedClip.mediaFileId);
     if (!mediaFile?.file) {
-      log.warn('Could not find media file for nested clip', { clip: serializedClip.name });
+      log.warn('Could not find media file for nested clip', {
+        clip: serializedClip.name,
+        mediaFileId: serializedClip.mediaFileId,
+        sourceType: serializedClip.sourceType,
+      });
       continue;
     }
 

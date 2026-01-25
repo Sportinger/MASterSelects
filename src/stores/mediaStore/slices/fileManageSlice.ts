@@ -188,7 +188,17 @@ export async function updateTimelineClips(mediaFileId: string, file: File): Prom
     c => c.source?.mediaFileId === mediaFileId && c.needsReload
   );
 
-  if (clips.length === 0) return;
+  if (clips.length === 0) {
+    // Debug: check if there are clips that need reload but with different mediaFileId
+    const allNeedReload = timelineStore.clips.filter(c => c.needsReload);
+    if (allNeedReload.length > 0) {
+      log.debug(`No clips matched for mediaFileId ${mediaFileId}, but ${allNeedReload.length} clips need reload`, {
+        mediaFileId,
+        clipMediaIds: allNeedReload.map(c => c.source?.mediaFileId).slice(0, 5),
+      });
+    }
+    return;
+  }
 
   const url = URL.createObjectURL(file);
 
