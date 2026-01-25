@@ -5,6 +5,7 @@
  * methods for video decoding and encoding operations.
  */
 
+import { Logger } from '../logger';
 import type {
   Command,
   Response,
@@ -21,6 +22,8 @@ import {
 
 // LZ4 decompression (we'll use a simple implementation or skip for now)
 // In production, use a proper LZ4 library like 'lz4js'
+
+const log = Logger.create('NativeHelper');
 
 export interface NativeHelperConfig {
   port?: number;
@@ -107,7 +110,7 @@ class NativeHelperClientImpl {
         this.ws.binaryType = 'arraybuffer'; // Ensure binary data comes as ArrayBuffer, not Blob
 
         this.ws.onopen = async () => {
-          console.log('[NativeHelper] Connected to native helper');
+          log.info('Connected to native helper');
           this.wasEverConnected = true;
 
           // Authenticate if token provided
@@ -115,7 +118,7 @@ class NativeHelperClientImpl {
             try {
               await this.send({ cmd: 'auth', id: this.nextId(), token: this.config.token });
             } catch {
-              console.warn('[NativeHelper] Auth failed');
+              log.warn('Auth failed');
             }
           }
 
@@ -125,7 +128,7 @@ class NativeHelperClientImpl {
 
         this.ws.onclose = () => {
           if (this.wasEverConnected) {
-            console.log('[NativeHelper] Disconnected');
+            log.info('Disconnected');
           }
           this.setStatus('disconnected');
           this.handleDisconnect();
@@ -460,15 +463,15 @@ class NativeHelperClientImpl {
     // Try HTTP first (much faster than WebSocket base64)
     const httpPort = this.config.port + 1; // HTTP on port+1 (9877)
     try {
-      console.log('[NativeHelper] Fetching file via HTTP:', path);
+      log.debug('Fetching file via HTTP:', path);
       const response = await fetch(`http://127.0.0.1:${httpPort}/file?path=${encodeURIComponent(path)}`);
       if (response.ok) {
         const buffer = await response.arrayBuffer();
-        console.log('[NativeHelper] File received via HTTP:', buffer.byteLength, 'bytes');
+        log.debug('File received via HTTP:', buffer.byteLength + ' bytes');
         return buffer;
       }
     } catch (e) {
-      console.warn('[NativeHelper] HTTP fetch failed, falling back to WebSocket:', e);
+      log.warn('HTTP fetch failed, falling back to WebSocket', e);
     }
 
     // Fallback to WebSocket (slower but more compatible)
@@ -491,7 +494,7 @@ class NativeHelperClientImpl {
             const buffer = await fetchResponse.arrayBuffer();
             resolve(buffer);
           } catch (e) {
-            console.error('[NativeHelper] Failed to decode base64 data:', e);
+            log.error('Failed to decode base64 data', e);
             resolve(null);
           }
         } else {
@@ -545,7 +548,7 @@ class NativeHelperClientImpl {
 
     if (shouldReconnect) {
       this.reconnectTimer = window.setTimeout(() => {
-        console.log('[NativeHelper] Attempting reconnect...');
+        log.debug('Attempting reconnect...');
         this.connect();
       }, this.config.reconnectInterval);
     }
@@ -567,14 +570,14 @@ class NativeHelperClientImpl {
           callback(response);
         }
       } catch (err) {
-        console.error('[NativeHelper] Failed to parse response:', err);
+        log.error('Failed to parse response', err);
       }
     } else {
       // Binary frame data
       const header = parseFrameHeader(data);
 
       if (!header) {
-        console.error('[NativeHelper] Invalid frame header');
+        log.error('Invalid frame header');
         return;
       }
 
@@ -585,7 +588,7 @@ class NativeHelperClientImpl {
       // Decompress if needed
       if (isCompressed(header.flags)) {
         // TODO: Use proper LZ4 decompression
-        console.warn('[NativeHelper] LZ4 decompression not implemented, using raw data');
+        log.warn('LZ4 decompression not implemented, using raw data');
       }
 
       const frame: DecodedFrame = {

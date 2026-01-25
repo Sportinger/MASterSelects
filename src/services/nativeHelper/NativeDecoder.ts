@@ -6,8 +6,11 @@
  * objects that can be used directly with WebGPU textures.
  */
 
+import { Logger } from '../logger';
 import { NativeHelperClient } from './NativeHelperClient';
 import type { FileMetadata } from './protocol';
+
+const log = Logger.create('NativeDecoder');
 
 export interface NativeDecoderOptions {
   /** Use scaled preview during scrubbing */
@@ -43,22 +46,22 @@ export class NativeDecoder {
    * Open a video file and create a decoder
    */
   static async open(filePath: string, options?: NativeDecoderOptions): Promise<NativeDecoder> {
-    console.log('[NativeDecoder] Opening file:', filePath);
+    log.debug('Opening file:', filePath);
 
     // Ensure connected
     if (!NativeHelperClient.isConnected()) {
-      console.log('[NativeDecoder] Not connected, connecting...');
+      log.debug('Not connected, connecting...');
       const connected = await NativeHelperClient.connect();
       if (!connected) {
         throw new Error('Failed to connect to native helper');
       }
-      console.log('[NativeDecoder] Connected successfully');
+      log.debug('Connected successfully');
     }
 
     // Open file
-    console.log('[NativeDecoder] Sending open command...');
+    log.debug('Sending open command...');
     const metadata = await NativeHelperClient.openFile(filePath);
-    console.log('[NativeDecoder] Got metadata:', metadata);
+    log.debug('Got metadata:', metadata);
 
     return new NativeDecoder(metadata.file_id, metadata, options ?? {});
   }
@@ -220,7 +223,7 @@ export class NativeDecoder {
       this.currentFrame = bitmap;
       this.currentFrameNum = frame;
     } catch (err) {
-      console.error('[NativeDecoder] Decode failed:', err);
+      log.error('Decode failed', err);
       throw err;
     }
   }

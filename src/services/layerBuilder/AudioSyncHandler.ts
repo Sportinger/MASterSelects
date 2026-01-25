@@ -1,11 +1,14 @@
 // AudioSyncHandler - Unified audio synchronization for all audio sources
 // Consolidates 4 similar 80-line blocks into one reusable handler
 
+import { Logger } from '../logger';
 import type { TimelineClip } from '../../types';
 import type { FrameContext, AudioSyncState, AudioSyncTarget } from './types';
 import { LAYER_BUILDER_CONSTANTS } from './types';
 import { playheadState, setMasterAudio } from './PlayheadState';
 import { audioManager, audioStatusTracker } from '../audioManager';
+
+const log = Logger.create('AudioSyncHandler');
 
 /**
  * AudioSyncHandler - Manages audio synchronization for all audio sources
@@ -107,7 +110,7 @@ export class AudioSyncHandler {
     if (element.paused) {
       element.currentTime = clipTime;
       element.play().catch(err => {
-        console.warn(`[Audio ${type}] Failed to play:`, err.message);
+        log.warn(`[Audio ${type}] Failed to play: ${err.message}`);
         state.hasAudioError = true;
       });
     }

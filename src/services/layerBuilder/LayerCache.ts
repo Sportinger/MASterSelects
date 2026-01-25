@@ -1,9 +1,12 @@
 // LayerCache - Layer caching to avoid rebuilding every frame
 // Uses reference equality and frame quantization for change detection
 
+import { Logger } from '../logger';
 import type { Layer, TimelineClip, TimelineTrack } from '../../types';
 import type { FrameContext } from './types';
 import { LAYER_BUILDER_CONSTANTS } from './types';
+
+const log = Logger.create('LayerCache');
 
 /**
  * Cache check result
@@ -114,7 +117,7 @@ export class LayerCache {
       const total = this.cacheHits + this.cacheMisses;
       if (total > 0) {
         const hitRate = ((this.cacheHits / total) * 100).toFixed(1);
-        console.log(`[LayerCache] Hit rate: ${hitRate}% (${this.cacheHits}/${total})`);
+        log.debug(`Hit rate: ${hitRate}% (${this.cacheHits}/${total})`);
       }
       this.cacheHits = 0;
       this.cacheMisses = 0;
