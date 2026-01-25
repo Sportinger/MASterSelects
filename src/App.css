@@ -4330,9 +4330,9 @@ input[type="checkbox"] {
 /* In/Out Work Area Markers */
 .work-area-overlay {
   position: absolute;
-  top: 24px; /* Below time ruler */
+  top: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.3);
   pointer-events: none;
   z-index: 10;
 }
