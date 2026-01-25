@@ -9,6 +9,9 @@ import { useSettingsStore } from '../stores/settingsStore';
 import type { ClipMask, MaskVertex } from '../types';
 import { generateMaskTexture } from '../utils/maskRenderer';
 import { layerBuilder, playheadState } from '../services/layerBuilder';
+import { Logger } from '../services/logger';
+
+const log = Logger.create('Engine');
 
 // Create a stable hash of mask properties (including feather since blur is CPU-side now)
 // This is faster than JSON.stringify for comparison
@@ -69,7 +72,7 @@ export function useEngine() {
       const scaledHeight = Math.round(outputResolution.height * previewQuality);
 
       engine.setResolution(scaledWidth, scaledHeight);
-      console.log(`[Engine] Resolution set to ${scaledWidth}×${scaledHeight} (${previewQuality * 100}% of ${outputResolution.width}×${outputResolution.height})`);
+      log.info(`Resolution set to ${scaledWidth}×${scaledHeight} (${previewQuality * 100}% of ${outputResolution.width}×${outputResolution.height})`);
     };
 
     // Initial update
@@ -128,10 +131,10 @@ export function useEngine() {
         );
 
         if (maskImageData) {
-          console.log(`[Mask] Generated mask texture for clip ${clip.id}: ${engineDimensions.width}x${engineDimensions.height}, masks: ${clip.masks.length}`);
+          log.debug(`Generated mask texture for clip ${clip.id}: ${engineDimensions.width}x${engineDimensions.height}, masks: ${clip.masks.length}`);
           engine.updateMaskTexture(clip.id, maskImageData);
         } else {
-          console.warn(`[Mask] Failed to generate mask texture for clip ${clip.id}`);
+          log.warn(`Failed to generate mask texture for clip ${clip.id}`);
         }
       }
     } else if (clip.id) {
@@ -326,7 +329,7 @@ export function useEngine() {
           engine.cacheActiveCompOutput(activeCompId);
         }
       } catch (e) {
-        console.error('Render error:', e);
+        log.error('Render error', e);
       }
     };
 

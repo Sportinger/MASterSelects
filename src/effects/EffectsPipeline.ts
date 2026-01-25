@@ -3,6 +3,9 @@
 import { EFFECT_REGISTRY, getEffect } from './index';
 import type { EffectDefinition } from './types';
 import commonShader from './_shared/common.wgsl?raw';
+import { Logger } from '../services/logger';
+
+const log = Logger.create('EffectsPipeline');
 
 // Effect instance interface (runtime data attached to clips)
 interface EffectInstance {
@@ -35,7 +38,7 @@ export class EffectsPipeline {
     }
 
     this.initialized = true;
-    console.log(`[EffectsPipeline] Created ${this.pipelines.size} effect pipelines`);
+    log.info(`Created ${this.pipelines.size} effect pipelines`);
   }
 
   /**
@@ -92,7 +95,7 @@ export class EffectsPipeline {
 
       this.pipelines.set(id, pipeline);
     } catch (error) {
-      console.error(`[EffectsPipeline] Failed to create pipeline for ${id}:`, error);
+      log.error(`Failed to create pipeline for ${id}`, error);
     }
   }
 
@@ -179,7 +182,7 @@ export class EffectsPipeline {
       const bindGroupLayout = this.bindGroupLayouts.get(effect.type);
 
       if (!pipeline || !bindGroupLayout) {
-        console.warn(`[EffectsPipeline] No pipeline for effect type: ${effect.type}`);
+        log.warn(`No pipeline for effect type: ${effect.type}`);
         continue;
       }
 

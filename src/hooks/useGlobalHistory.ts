@@ -12,6 +12,9 @@ import {
   undo,
   redo,
 } from '../stores/historyStore';
+import { Logger } from '../services/logger';
+
+const log = Logger.create('History');
 
 // Debounce helper for rapid state changes
 function debounce<T extends (...args: any[]) => void>(fn: T, delay: number): T {
@@ -54,7 +57,7 @@ export function useGlobalHistory() {
     // Capture initial state
     captureSnapshot('initial');
 
-    console.log('[History] Undo/redo system initialized');
+    log.info('Undo/redo system initialized');
   }, []);
 
   // Subscribe to store changes and capture snapshots

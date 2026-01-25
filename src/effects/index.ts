@@ -2,7 +2,10 @@
 // Auto-discovers and registers all effects from category folders
 
 import type { EffectDefinition, EffectCategory } from './types';
+import { Logger } from '../services/logger';
 export * from './types';
+
+const log = Logger.create('Effects');
 
 // Import all effects from each category
 import * as colorEffects from './color';
@@ -140,6 +143,5 @@ export function getEffectConfig(id: string): { entryPoint: string; needsUniform:
 
 // Log registered effects in development
 if (import.meta.env.DEV) {
-  console.log(`[Effects] Registered ${EFFECT_REGISTRY.size} effects:`,
-    Array.from(EFFECT_REGISTRY.keys()).join(', '));
+  log.info(`Registered ${EFFECT_REGISTRY.size} effects: ${Array.from(EFFECT_REGISTRY.keys()).join(', ')}`);
 }

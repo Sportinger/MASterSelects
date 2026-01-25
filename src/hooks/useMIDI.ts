@@ -2,6 +2,9 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useMixerStore } from '../stores/mixerStore';
+import { Logger } from '../services/logger';
+
+const log = Logger.create('MIDI');
 
 interface MIDIDevice {
   id: string;
@@ -68,7 +71,7 @@ export function useMIDI() {
         };
       },
       (error) => {
-        console.error('MIDI access denied:', error);
+        log.error('MIDI access denied', error);
         setIsSupported(false);
       }
     );

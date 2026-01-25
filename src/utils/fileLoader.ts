@@ -1,5 +1,9 @@
 // File loading utilities for WebVJ Mixer
 
+import { Logger } from '../services/logger';
+
+const log = Logger.create('FileLoader');
+
 export interface FilePickerOptions {
   accept?: string[];
   multiple?: boolean;
@@ -90,7 +94,7 @@ function openFilePickerFallback(options: FilePickerOptions): Promise<File[]> {
 // Open directory picker (for media libraries)
 export async function openDirectoryPicker(): Promise<FileSystemDirectoryHandle | null> {
   if (!('showDirectoryPicker' in window)) {
-    console.warn('Directory picker not supported');
+    log.warn('Directory picker not supported');
     return null;
   }
 
