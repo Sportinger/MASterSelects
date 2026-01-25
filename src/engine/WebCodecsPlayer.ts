@@ -1002,9 +1002,14 @@ export class WebCodecsPlayer {
       }
     }
 
-    // Reset decoder
+    // Reset decoder with software acceleration for reliable export
     this.decoder.reset();
-    this.decoder.configure(this.codecConfig!);
+    const exportConfig: VideoDecoderConfig = {
+      ...this.codecConfig!,
+      hardwareAcceleration: 'prefer-software', // More reliable for export
+    };
+    this.decoder.configure(exportConfig);
+    log.debug('Configured decoder with prefer-software for export');
     this.sampleIndex = keyframeIndex;
 
     // Find NEXT keyframe after start position - this is the natural decode boundary
@@ -1282,6 +1287,17 @@ export class WebCodecsPlayer {
     endIndex = Math.min(endIndex, this.samples.length);
 
     log.info(`decodeMoreFrames: decoding samples ${startIndex}-${endIndex} (${endIndex - startIndex} samples)`);
+
+    // Reset and reconfigure decoder to ensure clean state after previous flush
+    if (this.decoder && this.codecConfig) {
+      this.decoder.reset();
+      const exportConfig: VideoDecoderConfig = {
+        ...this.codecConfig,
+        hardwareAcceleration: 'prefer-software', // More reliable for export
+      };
+      this.decoder.configure(exportConfig);
+      log.debug('decodeMoreFrames: decoder reset and reconfigured with prefer-software');
+    }
 
     for (let i = startIndex; i < endIndex; i++) {
       if (!this.decoder) {

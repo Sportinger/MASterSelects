@@ -167,7 +167,7 @@ export class ParallelDecodeManager {
           codec,
           codedWidth: videoTrack.video.width,
           codedHeight: videoTrack.video.height,
-          hardwareAcceleration: 'prefer-hardware',
+          hardwareAcceleration: 'prefer-software', // More reliable for export
           optimizeForLatency: true,
           description,
         };
@@ -487,7 +487,12 @@ export class ParallelDecodeManager {
           // Reset decoder and decode from keyframe
           await clipDecoder.decoder.flush(); // Flush before reset
           clipDecoder.decoder.reset();
-          clipDecoder.decoder.configure(clipDecoder.codecConfig);
+          // Use software decoding for reliable export
+          const exportConfig: VideoDecoderConfig = {
+            ...clipDecoder.codecConfig,
+            hardwareAcceleration: 'prefer-software',
+          };
+          clipDecoder.decoder.configure(exportConfig);
           clipDecoder.sampleIndex = keyframeIndex;
 
           // Clear buffer since we're seeking - also reset sorted list and bounds
