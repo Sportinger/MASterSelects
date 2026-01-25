@@ -706,4 +706,58 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
   setDownloadError: (clipId, error) => {
     set({ clips: updateClipById(get().clips, clipId, { downloadError: error, isPendingDownload: false }) });
   },
+
+  // Refresh nested clips when source composition changes
+  refreshCompClipNestedData: async (sourceCompositionId: string) => {
+    const { clips, invalidateCache } = get();
+
+    // Find all comp clips that reference this composition
+    const compClips = clips.filter(c => c.isComposition && c.compositionId === sourceCompositionId);
+    if (compClips.length === 0) return;
+
+    // Get the updated composition
+    const { useMediaStore } = await import('../mediaStore');
+    const composition = useMediaStore.getState().compositions.find(c => c.id === sourceCompositionId);
+    if (!composition?.timelineData) {
+      log.debug('No timelineData for composition', { sourceCompositionId });
+      return;
+    }
+
+    log.info('Refreshing nested clips for composition', {
+      compositionId: sourceCompositionId,
+      compositionName: composition.name,
+      affectedClips: compClips.length,
+      newClipCount: composition.timelineData.clips.length,
+      newTrackCount: composition.timelineData.tracks.length,
+    });
+
+    // Reload nested clips for each comp clip
+    for (const compClip of compClips) {
+      // Load updated nested clips
+      const nestedClips = await loadNestedClips({
+        compClipId: compClip.id,
+        composition,
+        get,
+        set,
+      });
+      const nestedTracks = composition.timelineData.tracks;
+
+      // Update the comp clip with new nested data
+      set({
+        clips: get().clips.map(c =>
+          c.id === compClip.id
+            ? { ...c, nestedClips, nestedTracks }
+            : c
+        ),
+      });
+
+      log.debug('Refreshed nested clips for comp clip', {
+        compClipId: compClip.id,
+        nestedClipCount: nestedClips.length,
+        nestedTrackCount: nestedTracks.length,
+      });
+    }
+
+    invalidateCache();
+  },
 });

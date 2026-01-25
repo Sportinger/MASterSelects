@@ -194,6 +194,10 @@ function doSetActiveComposition(
       ),
     }));
     compositionRenderer.invalidateCompositionAndParents(currentActiveId);
+
+    // Refresh nested clips in all parent compositions that contain this one
+    // This ensures comp clips show updated content when source composition changes
+    timelineStore.refreshCompClipNestedData(currentActiveId);
   }
 
   // Update active composition

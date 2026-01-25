@@ -163,6 +163,8 @@ export interface ClipActions {
   updateDownloadProgress: (clipId: string, progress: number) => void;
   completeDownload: (clipId: string, file: File) => Promise<void>;
   setDownloadError: (clipId: string, error: string) => void;
+  // Refresh nested clips when source composition changes
+  refreshCompClipNestedData: (sourceCompositionId: string) => Promise<void>;
 }
 
 // Playback actions interface
