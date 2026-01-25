@@ -2887,6 +2887,46 @@ input[type="checkbox"] {
   background: linear-gradient(90deg, rgba(0, 255, 150, 0.1), transparent);
 }
 
+/* Preview header shown when dragging media to create new track */
+.track-header-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  margin: 4px 4px 0 4px;
+  background: rgba(255, 255, 255, 0.05);
+  transition: all 0.15s ease;
+}
+
+.track-header-preview.video {
+  border-color: rgba(37, 99, 235, 0.4);
+}
+
+.track-header-preview.video.active {
+  border-color: rgba(37, 99, 235, 0.8);
+  background: rgba(37, 99, 235, 0.15);
+}
+
+.track-header-preview.audio {
+  border-color: rgba(22, 163, 74, 0.4);
+}
+
+.track-header-preview.audio.active {
+  border-color: rgba(22, 163, 74, 0.8);
+  background: rgba(22, 163, 74, 0.15);
+}
+
+.track-header-preview-label {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 500;
+}
+
+.track-header-preview.active .track-header-preview-label {
+  color: rgba(255, 255, 255, 0.8);
+}
+
 .track-header.dimmed,
 .track-lane.dimmed {
   opacity: 0.4;
@@ -3914,10 +3954,12 @@ input[type="checkbox"] {
 }
 
 .new-track-drop-zone.video {
+  height: 60px; /* Match default video track height */
   border-color: rgba(37, 99, 235, 0.4);
 }
 
 .new-track-drop-zone.audio {
+  height: 40px; /* Match default audio track height */
   border-color: rgba(22, 163, 74, 0.4);
 }
 

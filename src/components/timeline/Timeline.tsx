@@ -677,6 +677,15 @@ export function Timeline() {
           <div className="timeline-scroll-wrapper" ref={scrollWrapperRef}>
             <div className="timeline-content-row" ref={contentRef} style={{ transform: `translateY(-${scrollY}px)` }}>
           <div className="track-headers">
+            {/* New video track preview header - appears when dragging over new track zone */}
+            {externalDrag && (
+              <div
+                className={`track-header-preview video ${externalDrag.newTrackType === 'video' ? 'active' : ''}`}
+                style={{ height: 60 }}
+              >
+                <span className="track-header-preview-label">+ New Video Track</span>
+              </div>
+            )}
             {tracks.map((track) => {
               const isDimmed =
                 (track.type === 'video' && anyVideoSolo && !track.solo) ||
@@ -725,6 +734,20 @@ export function Timeline() {
                 />
               );
             })}
+            {/* New audio track preview header - appears when dragging over new track zone or linked audio needs new track */}
+            {externalDrag && (
+              <div
+                className={`track-header-preview audio ${
+                  externalDrag.newTrackType === 'audio' ||
+                  (externalDrag.isVideo && externalDrag.audioTrackId === '__new_audio_track__' && externalDrag.newTrackType !== 'video')
+                    ? 'active'
+                    : ''
+                }`}
+                style={{ height: 40 }}
+              >
+                <span className="track-header-preview-label">+ New Audio Track</span>
+              </div>
+            )}
           </div>
 
           <div

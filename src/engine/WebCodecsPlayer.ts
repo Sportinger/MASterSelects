@@ -1089,14 +1089,26 @@ export class WebCodecsPlayer {
     // Race: either flush completes or timeout
     await Promise.race([flushPromise, timeoutPromise]);
 
+    // Check if decoder is still valid after async wait
+    if (!this.decoder) {
+      log.warn('Decoder was closed during flush');
+      return;
+    }
+
     // If flush didn't complete, wait for queue to drain manually
     if (this.decoder.decodeQueueSize > 0) {
       log.warn(`Flush timeout, waiting for queue (${this.decoder.decodeQueueSize} remaining)...`);
       let waitCount = 0;
-      while (this.decoder.decodeQueueSize > 0 && waitCount < 100) {
+      while (this.decoder && this.decoder.decodeQueueSize > 0 && waitCount < 100) {
         await new Promise(r => setTimeout(r, 20));
         waitCount++;
       }
+    }
+
+    // Check again after the while loop
+    if (!this.decoder) {
+      log.warn('Decoder was closed during queue drain');
+      return;
     }
 
     const elapsed = performance.now() - startTime;
@@ -1230,6 +1242,7 @@ export class WebCodecsPlayer {
   /**
    * Decode more frames and add to buffer.
    * Decodes until next keyframe to ensure B-frames can be resolved.
+   * Always starts from a keyframe since decoder may have been flushed.
    */
   private async decodeMoreFrames(minCount: number): Promise<void> {
     if (!this.decoder || !this.videoTrack || this.sampleIndex >= this.samples.length) {
@@ -1237,11 +1250,28 @@ export class WebCodecsPlayer {
       return;
     }
 
-    const startIndex = this.sampleIndex;
+    // After flush, decoder needs a keyframe. Find the previous keyframe if current isn't one.
+    let startIndex = this.sampleIndex;
+    if (!this.samples[startIndex].is_sync) {
+      // Search backwards for keyframe
+      for (let i = startIndex - 1; i >= 0; i--) {
+        if (this.samples[i].is_sync) {
+          startIndex = i;
+          log.debug(`decodeMoreFrames: backed up to keyframe at sample ${i}`);
+          break;
+        }
+      }
+      // If no keyframe found before, start from beginning
+      if (!this.samples[startIndex].is_sync) {
+        startIndex = 0;
+        log.debug(`decodeMoreFrames: no keyframe found, starting from sample 0`);
+      }
+    }
+
     const bufferBefore = this.exportFrameBuffer.size;
 
     // Find next keyframe after minCount samples
-    let endIndex = Math.min(this.sampleIndex + minCount, this.samples.length);
+    let endIndex = Math.min(startIndex + minCount, this.samples.length);
     for (let i = endIndex; i < this.samples.length; i++) {
       if (this.samples[i].is_sync) {
         endIndex = i + 15; // Include some frames past keyframe
@@ -1253,7 +1283,11 @@ export class WebCodecsPlayer {
 
     log.info(`decodeMoreFrames: decoding samples ${startIndex}-${endIndex} (${endIndex - startIndex} samples)`);
 
-    for (let i = this.sampleIndex; i < endIndex; i++) {
+    for (let i = startIndex; i < endIndex; i++) {
+      if (!this.decoder) {
+        log.warn(`decodeMoreFrames: decoder closed at sample ${i}`);
+        break;
+      }
       const sample = this.samples[i];
       const chunk = new EncodedVideoChunk({
         type: sample.is_sync ? 'key' : 'delta',

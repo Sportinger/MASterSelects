@@ -424,6 +424,55 @@ export const Logger = {
 
 if (typeof window !== 'undefined') {
   (window as unknown as Record<string, unknown>).Logger = Logger;
+
+  // ============================================================================
+  // Browser Log Bridge - Auto-sync logs to dev server for AI agent access
+  // ============================================================================
+  let syncInterval: number | null = null;
+
+  const startLogSync = () => {
+    if (syncInterval) return;
+
+    const sync = () => {
+      try {
+        const summary = Logger.summary();
+        // Add recent logs for more context
+        const recentLogs = logBuffer.slice(-100);
+        const payload = { ...summary, recentLogs };
+
+        fetch('/api/logs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        }).catch(() => {}); // Silently fail if dev server not available
+      } catch {
+        // Ignore errors
+      }
+    };
+
+    // Sync immediately and then every 2 seconds
+    sync();
+    syncInterval = window.setInterval(sync, 2000);
+  };
+
+  const stopLogSync = () => {
+    if (syncInterval) {
+      clearInterval(syncInterval);
+      syncInterval = null;
+    }
+  };
+
+  // Auto-start in development
+  if (import.meta.env.DEV) {
+    startLogSync();
+  }
+
+  // Expose controls
+  (window as unknown as Record<string, unknown>).LogSync = {
+    start: startLogSync,
+    stop: stopLogSync,
+    status: () => syncInterval ? 'running' : 'stopped',
+  };
 }
 
 // ============================================================================

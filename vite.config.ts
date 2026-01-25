@@ -1,11 +1,57 @@
-import { defineConfig } from 'vite'
+import { defineConfig, Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import { APP_VERSION } from './src/version'
+import fs from 'fs'
+import path from 'path'
+
+// Browser Log Bridge - allows AI agents to read browser console logs
+function browserLogBridge(): Plugin {
+  const logFile = path.resolve(__dirname, '.browser-logs.json');
+
+  return {
+    name: 'browser-log-bridge',
+    configureServer(server) {
+      // Handle log sync from browser
+      server.middlewares.use('/api/logs', (req, res) => {
+        if (req.method === 'POST') {
+          let body = '';
+          req.on('data', (chunk: Buffer) => body += chunk.toString());
+          req.on('end', () => {
+            try {
+              fs.writeFileSync(logFile, body);
+              res.statusCode = 200;
+              res.end('ok');
+            } catch (err) {
+              res.statusCode = 500;
+              res.end('write error');
+            }
+          });
+        } else if (req.method === 'GET') {
+          // AI agent reads logs via this endpoint
+          try {
+            const logs = fs.existsSync(logFile)
+              ? fs.readFileSync(logFile, 'utf-8')
+              : '{"totalLogs":0,"errorCount":0,"warnCount":0,"recentErrors":[],"activeModules":[]}';
+            res.setHeader('Content-Type', 'application/json');
+            res.end(logs);
+          } catch {
+            res.statusCode = 500;
+            res.end('{}');
+          }
+        } else {
+          res.statusCode = 405;
+          res.end('Method not allowed');
+        }
+      });
+    }
+  };
+}
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
     react(),
+    browserLogBridge(),
     // Replace __APP_VERSION__ in index.html during build
     {
       name: 'html-version-replace',
