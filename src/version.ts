@@ -1,7 +1,7 @@
 // App version - INCREMENT ON EVERY COMMIT!
 // Format: MAJOR.MINOR.PATCH
 // Increment PATCH (0.0.X) for each commit
-export const APP_VERSION = '1.1.0';
+export const APP_VERSION = '1.1.1';
 
 // Change entry type
 export interface ChangeEntry {
@@ -44,6 +44,32 @@ interface RawChangeEntry extends ChangeEntry {
 }
 
 const RAW_CHANGELOG: RawChangeEntry[] = [
+  // === Jan 25, 2026 ===
+  {
+    date: '2026-01-25',
+    type: 'fix',
+    title: 'Nested Composition Rendering',
+    description: 'Fixed WebGPU texture flags causing black preview in nested comps',
+  },
+  {
+    date: '2026-01-25',
+    type: 'fix',
+    title: 'Nested Comp Audio Handling',
+    description: 'Skip audio sync for nested compositions without audio tracks',
+  },
+  {
+    date: '2026-01-25',
+    type: 'fix',
+    title: 'Export Frame Timing',
+    description: 'Handle first frame at non-zero timestamp and clips beyond video duration',
+  },
+  {
+    date: '2026-01-25',
+    type: 'improve',
+    title: 'Parallel Decode Error Handling',
+    description: 'Strict error reporting instead of silent fallback to HTMLVideoElement',
+  },
+
   // === Jan 20, 2026 ===
   {
     date: '2026-01-20',
