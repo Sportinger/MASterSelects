@@ -548,18 +548,13 @@ export const createPlaybackSlice: SliceCreator<PlaybackAndRamPreviewActions> = (
 
   // Invalidate cache when content changes (clip moved, trimmed, etc.)
   invalidateCache: () => {
-    console.log('[invalidateCache] Called');
     // Cancel any ongoing RAM preview
     set({ isRamPreviewing: false, cachedFrameTimes: new Set(), ramPreviewRange: null, ramPreviewProgress: null });
     // Immediately clear all caches and request render
-    console.log('[invalidateCache] Clearing layerBuilder cache');
     layerBuilder.invalidateCache(); // Force layer rebuild
-    console.log('[invalidateCache] Clearing engine caches');
     engine.setGeneratingRamPreview(false);
     engine.clearCompositeCache();
-    console.log('[invalidateCache] Requesting render');
     engine.requestRender(); // Wake up render loop to show changes immediately
-    console.log('[invalidateCache] Done');
   },
 
   // Performance toggles

@@ -40,6 +40,9 @@ interface UseTimelineKeyboardProps {
   playheadPosition: number;
   duration: number;
   setPlayheadPosition: (time: number) => void;
+
+  // Markers
+  addMarker?: (time: number) => string;
 }
 
 export function useTimelineKeyboard({
@@ -63,6 +66,7 @@ export function useTimelineKeyboard({
   playheadPosition,
   duration,
   setPlayheadPosition,
+  addMarker,
 }: UseTimelineKeyboardProps): void {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
