@@ -73,6 +73,10 @@ export class WebGPUEngine {
   private ramPlaybackCanvas: HTMLCanvasElement | null = null;
   private ramPlaybackCtx: CanvasRenderingContext2D | null = null;
 
+  // Export canvas (OffscreenCanvas for zero-copy VideoFrame creation)
+  private exportCanvas: OffscreenCanvas | null = null;
+  private exportCanvasContext: GPUCanvasContext | null = null;
+
   constructor() {
     this.context = new WebGPUContext();
     this.videoFrameManager = new VideoFrameManager();
@@ -394,6 +398,72 @@ export class WebGPUEngine {
     return this.isExporting;
   }
 
+  /**
+   * Initialize export canvas for zero-copy VideoFrame creation.
+   * Call this before starting export with the target resolution.
+   */
+  initExportCanvas(width: number, height: number): boolean {
+    const device = this.context.getDevice();
+    if (!device) {
+      console.error('[WebGPUEngine] Cannot init export canvas: no device');
+      return false;
+    }
+
+    // Create OffscreenCanvas at export resolution
+    this.exportCanvas = new OffscreenCanvas(width, height);
+    const ctx = this.exportCanvas.getContext('webgpu');
+    if (!ctx) {
+      console.error('[WebGPUEngine] Failed to get WebGPU context from OffscreenCanvas');
+      this.exportCanvas = null;
+      return false;
+    }
+
+    // Configure with same settings as preview canvases
+    const preferredFormat = navigator.gpu.getPreferredCanvasFormat();
+    ctx.configure({
+      device,
+      format: preferredFormat,
+      alphaMode: 'premultiplied',
+    });
+
+    this.exportCanvasContext = ctx;
+    console.log(`[WebGPUEngine] Export canvas initialized: ${width}x${height} (${preferredFormat})`);
+    return true;
+  }
+
+  /**
+   * Create VideoFrame directly from the export canvas (zero-copy path).
+   * Must call render() first to populate the canvas.
+   */
+  createVideoFrameFromExport(timestamp: number, duration: number): VideoFrame | null {
+    if (!this.exportCanvas) {
+      console.error('[WebGPUEngine] Export canvas not initialized');
+      return null;
+    }
+
+    try {
+      // Create VideoFrame directly from OffscreenCanvas - browser handles GPU→VideoFrame
+      const frame = new VideoFrame(this.exportCanvas, {
+        timestamp,
+        duration,
+        alpha: 'discard', // We don't need alpha channel in export
+      });
+      return frame;
+    } catch (e) {
+      console.error('[WebGPUEngine] Failed to create VideoFrame from export canvas:', e);
+      return null;
+    }
+  }
+
+  /**
+   * Cleanup export canvas after export completes.
+   */
+  cleanupExportCanvas(): void {
+    this.exportCanvasContext = null;
+    this.exportCanvas = null;
+    console.log('[WebGPUEngine] Export canvas cleaned up');
+  }
+
   // === RENDER LOOP ===
 
   requestRender(): void {
@@ -517,6 +587,13 @@ export class WebGPUEngine {
       for (const output of this.outputWindowManager!.getOutputWindows().values()) {
         if (output.context) this.outputPipeline!.renderToCanvas(commandEncoder, output.context, outputBindGroup);
       }
+    }
+
+    // Render to export canvas for zero-copy VideoFrame creation
+    if (this.isExporting && this.exportCanvasContext) {
+      // Disable transparency grid for export
+      this.outputPipeline!.updateUniforms(false, width, height);
+      this.outputPipeline!.renderToCanvas(commandEncoder, this.exportCanvasContext, outputBindGroup);
     }
 
     // Batch submit all command buffers in single call

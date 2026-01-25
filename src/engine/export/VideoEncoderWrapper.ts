@@ -191,6 +191,26 @@ export class VideoEncoderWrapper {
     }
   }
 
+  /**
+   * Encode a VideoFrame directly (zero-copy path from OffscreenCanvas).
+   * The caller is responsible for closing the frame after this returns.
+   */
+  async encodeVideoFrame(frame: VideoFrame, frameIndex: number, keyframeInterval?: number): Promise<void> {
+    if (!this.encoder || this.isClosed) {
+      throw new Error('Encoder not initialized or already closed');
+    }
+
+    // FPS-based keyframe interval (default: 1 keyframe per second)
+    const interval = keyframeInterval ?? this.settings.fps;
+    const keyFrame = frameIndex % interval === 0;
+    this.encoder.encode(frame, { keyFrame });
+
+    // Yield to event loop periodically
+    if (frameIndex % 30 === 0) {
+      await new Promise<void>(resolve => queueMicrotask(() => resolve()));
+    }
+  }
+
   addAudioChunks(audioResult: EncodedAudioResult): void {
     if (!this.muxer || !this.hasAudio) {
       console.warn('[VideoEncoder] Cannot add audio: muxer not ready or audio not enabled');

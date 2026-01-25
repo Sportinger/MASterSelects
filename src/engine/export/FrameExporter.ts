@@ -66,6 +66,14 @@ export class FrameExporter {
     engine.setResolution(width, height);
     engine.setExporting(true);
 
+    // Initialize export canvas for zero-copy VideoFrame creation
+    const useZeroCopy = engine.initExportCanvas(width, height);
+    if (useZeroCopy) {
+      console.log('[FrameExporter] Using zero-copy export path (OffscreenCanvas → VideoFrame)');
+    } else {
+      console.log('[FrameExporter] Falling back to readPixels export path');
+    }
+
     try {
       // Prepare clips for export
       const preparation = await prepareClipsForExport(this.settings, this.exportMode);
@@ -118,16 +126,34 @@ export class FrameExporter {
 
         engine.render(layers);
 
-        const pixels = await engine.readPixels();
-        if (!pixels) {
-          if (!engine.isDeviceValid()) {
-            throw new Error('WebGPU device lost during export. Try keeping the browser tab in focus.');
-          }
-          console.error('[FrameExporter] Failed to read pixels at frame', frame);
-          continue;
-        }
+        // Calculate timestamp and duration in microseconds
+        const timestampMicros = Math.round(frame * (1_000_000 / fps));
+        const durationMicros = Math.round(1_000_000 / fps);
 
-        await this.encoder.encodeFrame(pixels, frame, keyframeInterval);
+        if (useZeroCopy) {
+          // Zero-copy path: create VideoFrame directly from OffscreenCanvas
+          const videoFrame = engine.createVideoFrameFromExport(timestampMicros, durationMicros);
+          if (!videoFrame) {
+            if (!engine.isDeviceValid()) {
+              throw new Error('WebGPU device lost during export. Try keeping the browser tab in focus.');
+            }
+            console.error('[FrameExporter] Failed to create VideoFrame at frame', frame);
+            continue;
+          }
+          await this.encoder.encodeVideoFrame(videoFrame, frame, keyframeInterval);
+          videoFrame.close();
+        } else {
+          // Fallback: read pixels from GPU (slower)
+          const pixels = await engine.readPixels();
+          if (!pixels) {
+            if (!engine.isDeviceValid()) {
+              throw new Error('WebGPU device lost during export. Try keeping the browser tab in focus.');
+            }
+            console.error('[FrameExporter] Failed to read pixels at frame', frame);
+            continue;
+          }
+          await this.encoder.encodeFrame(pixels, frame, keyframeInterval);
+        }
 
         // Early cancellation check after expensive encode
         if (this.isCancelled) {
@@ -209,6 +235,7 @@ export class FrameExporter {
     cleanupLayerBuilder();
     this.parallelDecoder = null;
     this.useParallelDecode = false;
+    engine.cleanupExportCanvas();
     engine.setExporting(false);
     engine.setResolution(originalDimensions.width, originalDimensions.height);
   }
