@@ -1,7 +1,6 @@
-// MIDI input hook for WebVJ Mixer
+// MIDI input hook - simplified version (VJ layer control removed)
 
 import { useEffect, useState, useCallback } from 'react';
-import { useMixerStore } from '../stores/mixerStore';
 import { Logger } from '../services/logger';
 
 const log = Logger.create('MIDI');
@@ -16,20 +15,12 @@ export function useMIDI() {
   const [midiAccess, setMidiAccess] = useState<MIDIAccess | null>(null);
   const [devices, setDevices] = useState<MIDIDevice[]>([]);
   const [isSupported, setIsSupported] = useState(false);
+  const [isEnabled, setIsEnabled] = useState(false);
   const [lastMessage, setLastMessage] = useState<{
     channel: number;
     control: number;
     value: number;
   } | null>(null);
-
-  const {
-    midiEnabled,
-    midiMappings,
-    setMidiEnabled,
-    layers,
-    setLayerOpacity,
-    setLayerVisibility,
-  } = useMixerStore();
 
   // Check MIDI support and request access
   useEffect(() => {
@@ -40,7 +31,7 @@ export function useMIDI() {
 
     setIsSupported(true);
 
-    if (!midiEnabled) return;
+    if (!isEnabled) return;
 
     navigator.requestMIDIAccess().then(
       (access) => {
@@ -75,11 +66,11 @@ export function useMIDI() {
         setIsSupported(false);
       }
     );
-  }, [midiEnabled]);
+  }, [isEnabled]);
 
-  // Handle MIDI messages
+  // Handle MIDI messages (just log them for now - can be extended later)
   useEffect(() => {
-    if (!midiAccess || !midiEnabled) return;
+    if (!midiAccess || !isEnabled) return;
 
     const handleMIDIMessage = (event: MIDIMessageEvent) => {
       const [status, control, value] = event.data as Uint8Array;
@@ -90,31 +81,7 @@ export function useMIDI() {
       if (messageType !== 0xb0) return;
 
       setLastMessage({ channel, control, value });
-
-      // Apply MIDI mappings
-      for (const mapping of midiMappings) {
-        if (mapping.channel === channel && mapping.control === control) {
-          const normalizedValue =
-            mapping.min + (value / 127) * (mapping.max - mapping.min);
-
-          // Parse target and apply
-          const [targetType, layerIndex, property] = mapping.target.split('.');
-
-          if (targetType === 'layer' && layerIndex !== undefined) {
-            const layer = layers[parseInt(layerIndex, 10)];
-            if (layer) {
-              switch (property) {
-                case 'opacity':
-                  setLayerOpacity(layer.id, normalizedValue);
-                  break;
-                case 'visible':
-                  setLayerVisibility(layer.id, value > 63);
-                  break;
-              }
-            }
-          }
-        }
-      }
+      // MIDI mappings can be implemented here in the future
     };
 
     // Attach listeners to all inputs
@@ -127,21 +94,21 @@ export function useMIDI() {
         input.onmidimessage = null;
       });
     };
-  }, [midiAccess, midiEnabled, midiMappings, layers, setLayerOpacity, setLayerVisibility]);
+  }, [midiAccess, isEnabled]);
 
   const enableMIDI = useCallback(() => {
-    setMidiEnabled(true);
-  }, [setMidiEnabled]);
+    setIsEnabled(true);
+  }, []);
 
   const disableMIDI = useCallback(() => {
-    setMidiEnabled(false);
+    setIsEnabled(false);
     setMidiAccess(null);
     setDevices([]);
-  }, [setMidiEnabled]);
+  }, []);
 
   return {
     isSupported,
-    isEnabled: midiEnabled,
+    isEnabled,
     devices,
     lastMessage,
     enableMIDI,

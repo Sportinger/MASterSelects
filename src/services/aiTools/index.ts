@@ -2,7 +2,10 @@
 // Provides tools for AI chat to control timeline editing
 // Uses OpenAI function calling format
 
+import { Logger } from '../logger';
 import { useTimelineStore } from '../../stores/timeline';
+
+const log = Logger.create('AITool');
 import { useMediaStore } from '../../stores/mediaStore';
 import { startBatch, endBatch } from '../../stores/historyStore';
 import type { ToolResult } from './types';
@@ -56,7 +59,7 @@ export async function executeAITool(toolName: string, args: Record<string, unkno
     if (isModifying) {
       endBatch();
     }
-    console.error(`[AI Tool] Error executing ${toolName}:`, error);
+    log.error(`Error executing ${toolName}`, error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error occurred',

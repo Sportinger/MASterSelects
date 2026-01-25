@@ -61,16 +61,16 @@ class AudioManager {
       this.masterGain.connect(this.audioContext.destination);
 
       this.initialized = true;
-      console.log('[AudioManager] Initialized with 10-band EQ');
+      log.info('Initialized with 10-band EQ');
     } catch (error) {
-      console.error('[AudioManager] Failed to initialize:', error);
+      log.error('Failed to initialize', error);
     }
   }
 
   // Connect a media element (video/audio) to the audio chain
   connectMediaElement(element: HTMLMediaElement): void {
     if (!this.audioContext || !this.eqFilters.length) {
-      console.warn('[AudioManager] Not initialized, cannot connect media element');
+      log.warn('Not initialized, cannot connect media element');
       return;
     }
 
@@ -97,9 +97,9 @@ class AudioManager {
       // Un-mute the element since we're handling audio through Web Audio
       element.muted = false;
 
-      console.log('[AudioManager] Connected media element');
+      log.debug('Connected media element');
     } catch (error) {
-      console.error('[AudioManager] Failed to connect media element:', error);
+      log.error('Failed to connect media element', error);
     }
   }
 
@@ -113,7 +113,7 @@ class AudioManager {
         // Ignore disconnect errors
       }
       this.mediaElementSources.delete(element);
-      console.log('[AudioManager] Disconnected media element');
+      log.debug('Disconnected media element');
     }
   }
 

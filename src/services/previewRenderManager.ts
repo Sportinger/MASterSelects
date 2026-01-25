@@ -40,7 +40,7 @@ class PreviewRenderManagerService {
    * Register a preview panel for rendering
    */
   register(panelId: string, compositionId: string): void {
-    console.log(`[PreviewRenderManager] Registering preview: ${panelId} for composition: ${compositionId}`);
+    log.debug(` Registering preview: ${panelId} for composition: ${compositionId}`);
 
     this.registeredPreviews.set(panelId, {
       panelId,
@@ -54,7 +54,7 @@ class PreviewRenderManagerService {
       const preview = this.registeredPreviews.get(panelId);
       if (preview) {
         preview.isReady = ready;
-        console.log(`[PreviewRenderManager] Composition ${compositionId} ready: ${ready}`);
+        log.debug(` Composition ${compositionId} ready: ${ready}`);
       }
     });
 
@@ -66,7 +66,7 @@ class PreviewRenderManagerService {
    * Unregister a preview panel
    */
   unregister(panelId: string): void {
-    console.log(`[PreviewRenderManager] Unregistering preview: ${panelId}`);
+    log.debug(` Unregistering preview: ${panelId}`);
     this.registeredPreviews.delete(panelId);
 
     // Stop loop if no more previews
@@ -197,7 +197,7 @@ class PreviewRenderManagerService {
   private startLoop(): void {
     if (this.isRunning) return;
 
-    console.log('[PreviewRenderManager] Starting unified render loop');
+    log.info('Starting unified render loop');
     this.isRunning = true;
     this.lastFrameTime = performance.now();
 
@@ -229,7 +229,7 @@ class PreviewRenderManagerService {
   private stopLoop(): void {
     if (!this.isRunning) return;
 
-    console.log('[PreviewRenderManager] Stopping unified render loop');
+    log.info('Stopping unified render loop');
     this.isRunning = false;
 
     if (this.rafId !== null) {

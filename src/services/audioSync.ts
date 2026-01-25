@@ -159,7 +159,7 @@ class AudioSync {
     targetMediaFileId: string,
     maxOffsetSeconds: number = 30
   ): Promise<number> {
-    console.log('[AudioSync] Finding offset between', masterMediaFileId, 'and', targetMediaFileId);
+    log.info('Finding offset between', masterMediaFileId, 'and', targetMediaFileId);
 
     // Get fingerprints
     const [masterFp, targetFp] = await Promise.all([
@@ -168,7 +168,7 @@ class AudioSync {
     ]);
 
     if (!masterFp || !targetFp) {
-      console.warn('[AudioSync] Could not generate fingerprints');
+      log.warn('Could not generate fingerprints');
       return 0;
     }
 
@@ -185,7 +185,7 @@ class AudioSync {
     // Convert offset from samples to milliseconds
     const offsetMs = (result.offset / masterFp.sampleRate) * 1000;
 
-    console.log(`[AudioSync] Found offset: ${offsetMs.toFixed(2)}ms (correlation: ${result.correlation.toFixed(4)})`);
+    log.info(`Found offset: ${offsetMs.toFixed(2)}ms (correlation: ${result.correlation.toFixed(4)})`);
 
     return offsetMs;
   }
@@ -213,7 +213,7 @@ class AudioSync {
     };
 
     // Generate master fingerprint using clip's time bounds
-    console.log(`[AudioSync] Generating master fingerprint (${masterClip.inPoint.toFixed(1)}s - ${(masterClip.inPoint + masterClip.duration).toFixed(1)}s)...`);
+    log.info(`Generating master fingerprint (${masterClip.inPoint.toFixed(1)}s - ${(masterClip.inPoint + masterClip.duration).toFixed(1)}s)...`);
     reportProgress();
     const masterFp = await this.getFingerprint(
       masterClip.mediaFileId,
@@ -224,7 +224,7 @@ class AudioSync {
     reportProgress();
 
     if (!masterFp) {
-      console.warn('[AudioSync] Could not generate master fingerprint');
+      log.warn('Could not generate master fingerprint');
       return offsets;
     }
 
@@ -232,7 +232,7 @@ class AudioSync {
     for (let i = 0; i < targetClips.length; i++) {
       const targetClip = targetClips[i];
 
-      console.log(`[AudioSync] Processing target ${i + 1}/${targetClips.length} (${targetClip.inPoint.toFixed(1)}s - ${(targetClip.inPoint + targetClip.duration).toFixed(1)}s)...`);
+      log.debug(`Processing target ${i + 1}/${targetClips.length} (${targetClip.inPoint.toFixed(1)}s - ${(targetClip.inPoint + targetClip.duration).toFixed(1)}s)...`);
 
       // Get target fingerprint using clip's time bounds
       const targetFp = await this.getFingerprint(
@@ -242,7 +242,7 @@ class AudioSync {
       );
 
       if (!targetFp) {
-        console.warn('[AudioSync] Could not generate fingerprint for clip', targetClip.clipId);
+        log.warn('Could not generate fingerprint for clip', targetClip.clipId);
         currentStep++;
         reportProgress();
         continue;
@@ -267,7 +267,7 @@ class AudioSync {
 
       offsets.set(targetClip.clipId, totalOffsetMs);
 
-      console.log(`[AudioSync] Offset for ${targetClip.clipId}: ${totalOffsetMs.toFixed(1)}ms (correlation: ${result.correlation.toFixed(4)}, inPoint diff: ${inPointDifferenceMs.toFixed(1)}ms)`);
+      log.info(`Offset for ${targetClip.clipId}: ${totalOffsetMs.toFixed(1)}ms (correlation: ${result.correlation.toFixed(4)}, inPoint diff: ${inPointDifferenceMs.toFixed(1)}ms)`);
 
       currentStep++;
       reportProgress();
@@ -298,14 +298,14 @@ class AudioSync {
     };
 
     // Generate master fingerprint first (this is the slow part)
-    console.log('[AudioSync] Generating master fingerprint...');
+    log.info('Generating master fingerprint...');
     reportProgress();
     const masterFp = await this.getFingerprint(masterMediaFileId);
     currentStep++;
     reportProgress();
 
     if (!masterFp) {
-      console.warn('[AudioSync] Could not generate master fingerprint');
+      log.warn('Could not generate master fingerprint');
       return offsets;
     }
 
@@ -318,13 +318,13 @@ class AudioSync {
         continue;
       }
 
-      console.log(`[AudioSync] Processing target ${i + 1}/${targetMediaFileIds.length}...`);
+      log.debug(`Processing target ${i + 1}/${targetMediaFileIds.length}...`);
 
       // Get target fingerprint
       const targetFp = await this.getFingerprint(targetId);
 
       if (!targetFp) {
-        console.warn('[AudioSync] Could not generate fingerprint for', targetId);
+        log.warn('Could not generate fingerprint for', targetId);
         currentStep++;
         reportProgress();
         continue;
@@ -344,7 +344,7 @@ class AudioSync {
       const offsetMs = (result.offset / masterFp.sampleRate) * 1000;
       offsets.set(targetId, offsetMs);
 
-      console.log(`[AudioSync] Offset for ${targetId}: ${offsetMs.toFixed(1)}ms (correlation: ${result.correlation.toFixed(4)})`);
+      log.info(`Offset for ${targetId}: ${offsetMs.toFixed(1)}ms (correlation: ${result.correlation.toFixed(4)})`);
 
       currentStep++;
       reportProgress();

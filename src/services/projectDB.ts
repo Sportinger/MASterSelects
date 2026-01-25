@@ -114,13 +114,13 @@ class ProjectDatabase {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
 
       request.onerror = () => {
-        console.error('Failed to open IndexedDB:', request.error);
+        log.error('Failed to open IndexedDB', request.error);
         reject(request.error);
       };
 
       request.onsuccess = () => {
         this.db = request.result;
-        console.log('[ProjectDB] Database opened successfully');
+        log.info('Database opened successfully');
         resolve(this.db);
       };
 
@@ -170,7 +170,7 @@ class ProjectDatabase {
           db.createObjectStore(STORES.THUMBNAILS, { keyPath: 'fileHash' });
         }
 
-        console.log('[ProjectDB] Database schema created/upgraded');
+        log.info('Database schema created/upgraded');
       };
     });
 
@@ -297,7 +297,7 @@ class ProjectDatabase {
       transaction.objectStore(STORES.PROJECTS).clear();
 
       transaction.oncomplete = () => {
-        console.log('[ProjectDB] All data cleared');
+        log.info('All data cleared');
         resolve();
       };
       transaction.onerror = () => reject(transaction.error);
@@ -536,7 +536,7 @@ class ProjectDatabase {
       const request = store.put({ key, handle });
 
       request.onsuccess = () => {
-        console.log('[ProjectDB] Stored handle:', key);
+        log.debug('Stored handle:', key);
         resolve();
       };
       request.onerror = () => reject(request.error);
@@ -658,7 +658,7 @@ class ProjectDatabase {
       const request = store.put(record);
 
       request.onsuccess = () => {
-        console.log(`[ProjectDB] Saved analysis for ${mediaFileId} (range: ${rangeKey})`);
+        log.debug(`Saved analysis for ${mediaFileId} (range: ${rangeKey})`);
         resolve();
       };
       request.onerror = () => reject(request.error);
@@ -742,7 +742,7 @@ class ProjectDatabase {
       const request = store.clear();
 
       request.onsuccess = () => {
-        console.log('[ProjectDB] All analysis cache cleared');
+        log.info('All analysis cache cleared');
         resolve();
       };
       request.onerror = () => reject(request.error);

@@ -603,7 +603,6 @@ export function Toolbar() {
               <div className="menu-submenu">
                 <span className="menu-label">Panels</span>
                 {(Object.keys(PANEL_CONFIGS) as PanelType[])
-                  .filter(type => type !== 'slots') // Hide slots panel
                   .map((type) => {
                     const config = PANEL_CONFIGS[type];
                     const isVisible = isPanelTypeVisible(type);

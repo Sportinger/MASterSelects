@@ -247,7 +247,7 @@ export async function syncStoresToProject(): Promise<void> {
     };
   }
 
-  console.log('[ProjectSync] Synced stores to project');
+  log.info(' Synced stores to project');
 }
 
 // ============================================
@@ -275,10 +275,10 @@ async function convertProjectMediaToStore(projectMedia: ProjectMediaFile[]): Pro
           handle = storedHandle as FileSystemFileHandle;
           // Cache in memory for future use
           fileSystemService.storeFileHandle(pm.id, handle);
-          console.log('[ProjectSync] Retrieved handle from IndexedDB for:', pm.name);
+          log.info(' Retrieved handle from IndexedDB for:', pm.name);
         }
       } catch (e) {
-        console.warn('[ProjectSync] Failed to get handle from IndexedDB:', pm.name, e);
+        log.warn(' Failed to get handle from IndexedDB:', pm.name, e);
       }
     }
 
@@ -289,13 +289,13 @@ async function convertProjectMediaToStore(projectMedia: ProjectMediaFile[]): Pro
         if (permission === 'granted') {
           file = await handle.getFile();
           url = URL.createObjectURL(file);
-          console.log('[ProjectSync] Restored file from handle:', pm.name);
+          log.info(' Restored file from handle:', pm.name);
         } else {
           // Permission needs to be requested - will be done by reloadFile
-          console.log('[ProjectSync] File needs permission:', pm.name);
+          log.info(' File needs permission:', pm.name);
         }
       } catch (e) {
-        console.warn(`[ProjectSync] Could not access file: ${pm.name}`, e);
+        log.warn(`Could not access file: ${pm.name}`, e);
       }
     }
 
@@ -430,7 +430,7 @@ function convertProjectFolderToStore(projectFolders: ProjectFolder[]): MediaFold
 export async function loadProjectToStores(): Promise<void> {
   const projectData = projectFileService.getProjectData();
   if (!projectData) {
-    console.error('[ProjectSync] No project data to load');
+    log.error(' No project data to load');
     return;
   }
 
@@ -485,7 +485,7 @@ export async function loadProjectToStores(): Promise<void> {
   // Restore dock layout from project
   if (projectData.uiState?.dockLayout) {
     useDockStore.getState().setLayoutFromProject(projectData.uiState.dockLayout);
-    console.log('[ProjectSync] Restored dock layout from project');
+    log.info(' Restored dock layout from project');
   }
 
   // Restore per-project UI settings to localStorage
@@ -499,7 +499,7 @@ export async function loadProjectToStores(): Promise<void> {
     localStorage.setItem('transcriptLanguage', projectData.uiState.transcriptLanguage);
   }
 
-  console.log('[ProjectSync] Loaded project to stores:', projectData.name);
+  log.info(' Loaded project to stores:', projectData.name);
 
   // Auto-relink missing files from Raw folder
   await autoRelinkFromRawFolder();
@@ -516,20 +516,20 @@ async function autoRelinkFromRawFolder(): Promise<void> {
   const missingFiles = mediaState.files.filter(f => !f.file && !f.url);
 
   if (missingFiles.length === 0) {
-    console.log('[ProjectSync] No missing files to relink');
+    log.info(' No missing files to relink');
     return;
   }
 
-  console.log(`[ProjectSync] Attempting auto-relink for ${missingFiles.length} missing files...`);
+  log.info(`Attempting auto-relink for ${missingFiles.length} missing files...`);
 
   // Scan the Raw folder
   const rawFiles = await projectFileService.scanRawFolder();
   if (rawFiles.size === 0) {
-    console.log('[ProjectSync] Raw folder is empty or not accessible');
+    log.info(' Raw folder is empty or not accessible');
     return;
   }
 
-  console.log(`[ProjectSync] Found ${rawFiles.size} files in Raw folder`);
+  log.debug(`Found ${rawFiles.size} files in Raw folder`);
 
   // Match and relink files
   let relinkedCount = 0;
@@ -560,9 +560,9 @@ async function autoRelinkFromRawFolder(): Promise<void> {
         };
 
         relinkedCount++;
-        console.log(`[ProjectSync] Auto-relinked: ${file.name}`);
+        log.debug(`Auto-relinked: ${file.name}`);
       } catch (e) {
-        console.warn(`[ProjectSync] Could not read file from Raw: ${file.name}`, e);
+        log.warn(`Could not read file from Raw: ${file.name}`, e);
       }
     }
   }
@@ -570,7 +570,7 @@ async function autoRelinkFromRawFolder(): Promise<void> {
   if (relinkedCount > 0) {
     // Update media store with relinked files
     useMediaStore.setState({ files: updatedFiles });
-    console.log(`[ProjectSync] Auto-relinked ${relinkedCount}/${missingFiles.length} files from Raw folder`);
+    log.info(`Auto-relinked ${relinkedCount}/${missingFiles.length} files from Raw folder`);
 
     // Also update any clips that reference these files
     const timelineStore = useTimelineStore.getState();
@@ -589,7 +589,7 @@ async function autoRelinkFromRawFolder(): Promise<void> {
       }
     }
   } else {
-    console.log('[ProjectSync] No files could be auto-relinked from Raw folder');
+    log.info(' No files could be auto-relinked from Raw folder');
   }
 }
 
@@ -636,7 +636,7 @@ export async function openExistingProject(): Promise<boolean> {
  */
 export async function saveCurrentProject(): Promise<boolean> {
   if (!projectFileService.isProjectOpen()) {
-    console.error('[ProjectSync] No project open');
+    log.error(' No project open');
     return false;
   }
 
@@ -701,5 +701,5 @@ export function setupAutoSync(): void {
     }
   });
 
-  console.log('[ProjectSync] Auto-sync setup complete');
+  log.info(' Auto-sync setup complete');
 }

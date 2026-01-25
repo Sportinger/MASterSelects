@@ -168,7 +168,7 @@ class CompositionRendererService {
     await Promise.all(loadPromises);
 
     sources.isReady = true;
-    console.log(`[CompositionRenderer] Composition ready: ${composition.name}, ${sources.clipSources.size} sources`);
+    log.info(`Composition ready: ${composition.name}, ${sources.clipSources.size} sources`);
 
     // Notify any waiting callbacks
     const callbacks = this.readyCallbacks.get(compositionId) || [];
@@ -196,12 +196,12 @@ class CompositionRendererService {
           file,
           naturalDuration: video.duration || clip.naturalDuration || 0,
         });
-        console.log(`[CompositionRenderer] Video loaded: ${file.name}`);
+        log.debug(`Video loaded: ${file.name}`);
         resolve();
       }, { once: true });
 
       video.addEventListener('error', () => {
-        console.error(`[CompositionRenderer] Failed to load video: ${file.name}`);
+        log.error(`Failed to load video: ${file.name}`);
         resolve(); // Don't block on errors
       }, { once: true });
 
@@ -223,12 +223,12 @@ class CompositionRendererService {
           file,
           naturalDuration: clip.naturalDuration || 5,
         });
-        console.log(`[CompositionRenderer] Image loaded: ${file.name}`);
+        log.debug(`Image loaded: ${file.name}`);
         resolve();
       };
 
       img.onerror = () => {
-        console.error(`[CompositionRenderer] Failed to load image: ${file.name}`);
+        log.error(`Failed to load image: ${file.name}`);
         resolve();
       };
     });
@@ -267,7 +267,7 @@ class CompositionRendererService {
       clips = composition.timelineData.clips || [];
       tracks = composition.timelineData.tracks || [];
     } else {
-      console.warn(`[CompositionRenderer] evaluateAtTime: comp ${composition.name} has NO timelineData!`);
+      log.warn(`evaluateAtTime: comp ${composition.name} has NO timelineData!`);
       return [];
     }
 
@@ -594,7 +594,7 @@ class CompositionRendererService {
     }
 
     this.compositionSources.delete(compositionId);
-    console.log(`[CompositionRenderer] Disposed composition: ${compositionId}`);
+    log.debug(`Disposed composition: ${compositionId}`);
   }
 
   /**
@@ -625,7 +625,7 @@ class CompositionRendererService {
   invalidateComposition(compositionId: string): void {
     const sources = this.compositionSources.get(compositionId);
     if (sources) {
-      console.log(`[CompositionRenderer] Invalidating composition: ${compositionId}`);
+      log.debug(`Invalidating composition: ${compositionId}`);
       // Mark as not ready - will be re-prepared on next access
       sources.isReady = false;
       // Clear cached clip sources (they may be stale)
@@ -645,7 +645,7 @@ class CompositionRendererService {
         sources.clipSources.clear();
       }
     }
-    console.log(`[CompositionRenderer] Invalidated all non-active compositions`);
+    log.debug('Invalidated all non-active compositions');
   }
 
   /**
@@ -669,7 +669,7 @@ class CompositionRendererService {
       );
 
       if (hasNested) {
-        console.log(`[CompositionRenderer] Invalidating parent composition: ${comp.name} (contains ${compositionId})`);
+        log.debug(`Invalidating parent composition: ${comp.name} (contains ${compositionId})`);
         this.invalidateComposition(comp.id);
         // Recursively invalidate grandparents
         this.invalidateCompositionAndParents(comp.id);
@@ -685,7 +685,7 @@ class CompositionRendererService {
       sources.isReady = false;
       sources.clipSources.clear();
     }
-    console.log(`[CompositionRenderer] Invalidated ALL compositions`);
+    log.debug('Invalidated ALL compositions');
   }
 }
 

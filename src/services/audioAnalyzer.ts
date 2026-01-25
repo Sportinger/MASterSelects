@@ -43,7 +43,7 @@ class AudioAnalyzer {
     const mediaFile = mediaStore.files.find(f => f.id === mediaFileId);
 
     if (!mediaFile || !mediaFile.file) {
-      console.warn('[AudioAnalyzer] Media file not found:', mediaFileId);
+      log.warn('Media file not found:', mediaFileId);
       return null;
     }
 
@@ -53,7 +53,7 @@ class AudioAnalyzer {
       const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
       return audioBuffer;
     } catch (error) {
-      console.error('[AudioAnalyzer] Failed to decode audio:', error);
+      log.error('Failed to decode audio', error);
       return null;
     }
   }
@@ -129,13 +129,13 @@ class AudioAnalyzer {
     const samplesToProcess = endSample - startSample;
 
     if (samplesToProcess <= 0) {
-      console.warn(`[AudioAnalyzer] Invalid time range: start=${startTimeSeconds}s, duration=${maxDurationSeconds}s`);
+      log.warn(`Invalid time range: start=${startTimeSeconds}s, duration=${maxDurationSeconds}s`);
       return null;
     }
 
     const channelData = fullChannelData.subarray(startSample, endSample);
 
-    console.log(`[AudioAnalyzer] Processing ${(samplesToProcess / originalSampleRate).toFixed(1)}s of audio from ${startTimeSeconds.toFixed(1)}s (${samplesToProcess} samples)`);
+    log.debug(`Processing ${(samplesToProcess / originalSampleRate).toFixed(1)}s of audio from ${startTimeSeconds.toFixed(1)}s (${samplesToProcess} samples)`);
 
     // Downsample by averaging
     const ratio = originalSampleRate / targetSampleRate;
