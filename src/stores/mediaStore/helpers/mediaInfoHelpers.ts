@@ -2,7 +2,9 @@
 
 import { CONTAINER_MAP, MEDIA_INFO_TIMEOUT } from '../constants';
 import { Logger } from '../../../services/logger';
-import MP4Box from 'mp4box';
+import * as MP4BoxModule from 'mp4box';
+
+const MP4Box = (MP4BoxModule as any).default || MP4BoxModule;
 
 const log = Logger.create('MediaInfo');
 

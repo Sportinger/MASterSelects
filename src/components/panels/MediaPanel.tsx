@@ -11,7 +11,7 @@ import { useContextMenuPosition } from '../../hooks/useContextMenuPosition';
 import { RelinkDialog } from '../common/RelinkDialog';
 
 // Column definitions
-type ColumnId = 'name' | 'duration' | 'resolution' | 'fps' | 'container' | 'codec' | 'size';
+type ColumnId = 'name' | 'duration' | 'resolution' | 'fps' | 'container' | 'codec' | 'audio' | 'bitrate' | 'size';
 
 const COLUMN_LABELS: Record<ColumnId, string> = {
   name: 'Name',
@@ -20,10 +20,12 @@ const COLUMN_LABELS: Record<ColumnId, string> = {
   fps: 'FPS',
   container: 'Container',
   codec: 'Codec',
+  audio: 'Audio',
+  bitrate: 'Bitrate',
   size: 'Size',
 };
 
-const DEFAULT_COLUMN_ORDER: ColumnId[] = ['name', 'duration', 'resolution', 'fps', 'container', 'codec', 'size'];
+const DEFAULT_COLUMN_ORDER: ColumnId[] = ['name', 'duration', 'resolution', 'fps', 'container', 'codec', 'audio', 'bitrate', 'size'];
 const STORAGE_KEY = 'media-panel-column-order';
 
 // Load column order from localStorage
@@ -32,10 +34,17 @@ function loadColumnOrder(): ColumnId[] {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
       const parsed = JSON.parse(stored) as ColumnId[];
-      // Validate that all columns are present
+      // If all default columns are present and no extras, use saved order
       if (parsed.length === DEFAULT_COLUMN_ORDER.length &&
           DEFAULT_COLUMN_ORDER.every(col => parsed.includes(col))) {
         return parsed;
+      }
+      // If saved order is missing new columns, add them at the end
+      const missingColumns = DEFAULT_COLUMN_ORDER.filter(col => !parsed.includes(col));
+      if (missingColumns.length > 0) {
+        // Filter out any invalid columns and add missing ones
+        const validColumns = parsed.filter(col => DEFAULT_COLUMN_ORDER.includes(col));
+        return [...validColumns, ...missingColumns];
       }
     }
   } catch {
@@ -521,6 +530,13 @@ export function MediaPanel() {
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
   };
 
+  const formatBitrate = (bps?: number): string => {
+    if (!bps) return '–';
+    if (bps < 1000) return `${bps} bps`;
+    if (bps < 1000 * 1000) return `${(bps / 1000).toFixed(0)} kbps`;
+    return `${(bps / (1000 * 1000)).toFixed(1)} Mbps`;
+  };
+
   // Name column width state (resizable)
   const [nameColumnWidth, setNameColumnWidth] = useState(() => {
     const stored = localStorage.getItem('media-panel-name-width');
@@ -647,6 +663,15 @@ export function MediaPanel() {
         return <div className="media-col media-col-container">{mediaFile?.container || '–'}</div>;
       case 'codec':
         return <div className="media-col media-col-codec">{mediaFile?.codec || '–'}</div>;
+      case 'audio':
+        return <div className="media-col media-col-audio">
+          {mediaFile?.type === 'audio' ? 'Yes' :
+           mediaFile?.type === 'image' ? '–' :
+           mediaFile?.hasAudio === true ? 'Yes' :
+           mediaFile?.hasAudio === false ? 'No' : '–'}
+        </div>;
+      case 'bitrate':
+        return <div className="media-col media-col-bitrate">{mediaFile?.bitrate ? formatBitrate(mediaFile.bitrate) : '–'}</div>;
       case 'size':
         return <div className="media-col media-col-size">{mediaFile ? formatFileSize(mediaFile.fileSize) : '–'}</div>;
       default:
