@@ -724,9 +724,148 @@ async function autoRelinkFromRawFolder(): Promise<void> {
         await updateTimelineClips(file.id, file.file);
       }
     }
+
+    // Reload nested composition clips that may need their content updated
+    await reloadNestedCompositionClips();
   } else {
     log.info(' No files could be auto-relinked from Raw folder');
   }
+}
+
+/**
+ * Reload nested clips for composition clips that are missing their content.
+ * This is called after auto-relinking when media files become available.
+ */
+async function reloadNestedCompositionClips(): Promise<void> {
+  const timelineStore = useTimelineStore.getState();
+  const mediaStore = useMediaStore.getState();
+
+  // Find composition clips that have no nested clips (need reload)
+  const compClips = timelineStore.clips.filter(
+    c => c.isComposition && c.compositionId && (!c.nestedClips || c.nestedClips.length === 0)
+  );
+
+  if (compClips.length === 0) return;
+
+  log.info(`Reloading ${compClips.length} nested composition clips...`);
+
+  for (const compClip of compClips) {
+    const composition = mediaStore.compositions.find(c => c.id === compClip.compositionId);
+    if (!composition?.timelineData) continue;
+
+    const nestedClips: any[] = [];
+    const nestedTracks = composition.timelineData.tracks;
+
+    for (const nestedSerializedClip of composition.timelineData.clips) {
+      const nestedMediaFile = mediaStore.files.find(f => f.id === nestedSerializedClip.mediaFileId);
+      if (!nestedMediaFile?.file) continue;
+
+      const nestedClip: any = {
+        id: `nested-${compClip.id}-${nestedSerializedClip.id}`,
+        trackId: nestedSerializedClip.trackId,
+        name: nestedSerializedClip.name,
+        file: nestedMediaFile.file,
+        startTime: nestedSerializedClip.startTime,
+        duration: nestedSerializedClip.duration,
+        inPoint: nestedSerializedClip.inPoint,
+        outPoint: nestedSerializedClip.outPoint,
+        source: null,
+        thumbnails: nestedSerializedClip.thumbnails,
+        transform: nestedSerializedClip.transform,
+        effects: nestedSerializedClip.effects || [],
+        masks: nestedSerializedClip.masks || [],
+        isLoading: true,
+      };
+
+      nestedClips.push(nestedClip);
+
+      // Load the video/audio/image element
+      const sourceType = nestedSerializedClip.sourceType;
+      const fileUrl = URL.createObjectURL(nestedMediaFile.file);
+
+      if (sourceType === 'video') {
+        const video = document.createElement('video');
+        video.src = fileUrl;
+        video.muted = true;
+        video.playsInline = true;
+        video.preload = 'auto';
+        video.crossOrigin = 'anonymous';
+
+        video.addEventListener('canplaythrough', () => {
+          nestedClip.source = {
+            type: 'video',
+            videoElement: video,
+            naturalDuration: video.duration,
+          };
+          nestedClip.isLoading = false;
+
+          // Trigger state update
+          const currentClips = timelineStore.clips;
+          useTimelineStore.setState({ clips: [...currentClips] });
+        }, { once: true });
+
+        video.load();
+      } else if (sourceType === 'audio') {
+        const audio = document.createElement('audio');
+        audio.src = fileUrl;
+        audio.preload = 'auto';
+
+        audio.addEventListener('canplaythrough', () => {
+          nestedClip.source = {
+            type: 'audio',
+            audioElement: audio,
+            naturalDuration: audio.duration,
+          };
+          nestedClip.isLoading = false;
+
+          const currentClips = timelineStore.clips;
+          useTimelineStore.setState({ clips: [...currentClips] });
+        }, { once: true });
+
+        audio.load();
+      } else if (sourceType === 'image') {
+        const img = new Image();
+        img.src = fileUrl;
+        img.crossOrigin = 'anonymous';
+
+        img.addEventListener('load', () => {
+          nestedClip.source = {
+            type: 'image',
+            imageElement: img,
+          };
+          nestedClip.isLoading = false;
+
+          const currentClips = timelineStore.clips;
+          useTimelineStore.setState({ clips: [...currentClips] });
+        }, { once: true });
+      }
+    }
+
+    // Update the composition clip with nested data
+    if (nestedClips.length > 0) {
+      timelineStore.updateClip(compClip.id, {
+        nestedClips,
+        nestedTracks,
+        isLoading: false,
+      });
+
+      // Generate thumbnails if missing
+      if (!compClip.thumbnails || compClip.thumbnails.length === 0) {
+        const { generateCompThumbnails } = await import('../stores/timeline/clip/addCompClip');
+        const compDuration = composition.timelineData?.duration ?? composition.duration;
+        generateCompThumbnails({
+          clipId: compClip.id,
+          nestedClips,
+          compDuration,
+          thumbnailsEnabled: timelineStore.thumbnailsEnabled,
+          get: useTimelineStore.getState,
+          set: useTimelineStore.setState,
+        });
+      }
+    }
+  }
+
+  log.info('Nested composition clips reloaded');
 }
 
 // ============================================
