@@ -16,6 +16,9 @@ import {
   waitForVideoMetadata,
 } from '../helpers/webCodecsHelpers';
 import { shouldSkipWaveform, generateWaveformForFile } from '../helpers/waveformHelpers';
+import { generateLinkedClipIds } from '../helpers/idGenerator';
+import { blobUrlManager } from '../helpers/blobUrlManager';
+import { updateClipById, createUpdateBatch } from '../helpers/clipStateHelpers';
 
 export interface AddVideoClipParams {
   trackId: string;
@@ -40,9 +43,9 @@ export interface AddVideoClipResult {
 export function createVideoClipPlaceholders(params: AddVideoClipParams): AddVideoClipResult {
   const { trackId, file, startTime, estimatedDuration, mediaFileId, findAvailableAudioTrack } = params;
 
-  const clipId = `clip-${Date.now()}`;
+  const { videoId: clipId, audioId } = generateLinkedClipIds();
   const audioTrackId = findAvailableAudioTrack(startTime, estimatedDuration);
-  const audioClipId = audioTrackId ? `clip-audio-${Date.now()}` : undefined;
+  const audioClipId = audioTrackId ? audioId : undefined;
 
   const videoClip: TimelineClip = {
     id: clipId,
@@ -165,6 +168,8 @@ export async function loadVideoMedia(params: LoadVideoMediaParams): Promise<void
   // Fallback to HTMLVideoElement if not using native decoder
   if (!nativeDecoder) {
     video = createVideoElement(file);
+    // Track the blob URL for cleanup
+    blobUrlManager.create(clipId, file, 'video');
     await waitForVideoMetadata(video);
 
     naturalDuration = video.duration || 5;
@@ -272,6 +277,8 @@ async function loadLinkedAudio(
   setClips: (updater: (clips: TimelineClip[]) => TimelineClip[]) => void
 ): Promise<void> {
   const audio = createAudioElement(file);
+  // Track the blob URL for cleanup
+  blobUrlManager.create(audioClipId, file, 'audio');
 
   // Mark audio clip as ready immediately
   updateClip(audioClipId, {
@@ -283,20 +290,14 @@ async function loadLinkedAudio(
   const isLargeFile = shouldSkipWaveform(file);
   if (waveformsEnabled && !isLargeFile) {
     // Mark waveform generation starting
-    setClips(clips => clips.map(c =>
-      c.id === audioClipId ? { ...c, waveformGenerating: true, waveformProgress: 0 } : c
-    ));
+    setClips(clips => updateClipById(clips, audioClipId, { waveformGenerating: true, waveformProgress: 0 }));
 
     try {
       const waveform = await generateWaveformForFile(file);
-      setClips(clips => clips.map(c =>
-        c.id === audioClipId ? { ...c, waveform, waveformGenerating: false, waveformProgress: 100 } : c
-      ));
+      setClips(clips => updateClipById(clips, audioClipId, { waveform, waveformGenerating: false, waveformProgress: 100 }));
     } catch (e) {
       console.warn('[Waveform] Failed:', e);
-      setClips(clips => clips.map(c =>
-        c.id === audioClipId ? { ...c, waveformGenerating: false } : c
-      ));
+      setClips(clips => updateClipById(clips, audioClipId, { waveformGenerating: false }));
     }
   }
 }

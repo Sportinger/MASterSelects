@@ -5,6 +5,8 @@ import type { TimelineClip } from '../../../types';
 import { DEFAULT_TRANSFORM } from '../constants';
 import { useMediaStore } from '../../mediaStore';
 import { generateImageThumbnail } from '../helpers/thumbnailHelpers';
+import { generateClipId } from '../helpers/idGenerator';
+import { blobUrlManager } from '../helpers/blobUrlManager';
 
 export interface AddImageClipParams {
   trackId: string;
@@ -19,7 +21,7 @@ export interface AddImageClipParams {
  */
 export function createImageClipPlaceholder(params: AddImageClipParams): TimelineClip {
   const { trackId, file, startTime, estimatedDuration } = params;
-  const clipId = `clip-${Date.now()}`;
+  const clipId = generateClipId('clip-img');
 
   return {
     id: clipId,
@@ -48,9 +50,9 @@ export interface LoadImageMediaParams {
 export async function loadImageMedia(params: LoadImageMediaParams): Promise<void> {
   const { clip, updateClip } = params;
 
-  // Create and load image element
+  // Create and load image element - track URL for cleanup
   const img = new Image();
-  img.src = URL.createObjectURL(clip.file);
+  img.src = blobUrlManager.create(clip.id, clip.file, 'image');
 
   await new Promise<void>((resolve) => {
     img.onload = () => resolve();

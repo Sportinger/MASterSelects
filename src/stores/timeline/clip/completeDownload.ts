@@ -7,6 +7,9 @@ import { useMediaStore } from '../../mediaStore';
 import { initWebCodecsPlayer, createAudioElement } from '../helpers/webCodecsHelpers';
 import { generateDownloadThumbnails } from '../helpers/thumbnailHelpers';
 import { generateWaveformForFile } from '../helpers/waveformHelpers';
+import { generateClipId } from '../helpers/idGenerator';
+import { blobUrlManager } from '../helpers/blobUrlManager';
+import { updateClipById } from '../helpers/clipStateHelpers';
 
 export interface CompleteDownloadParams {
   clipId: string;
@@ -44,13 +47,13 @@ export async function completeDownload(params: CompleteDownloadParams): Promise<
 
   console.log(`[Download] Completing download for: ${clipId}`);
 
-  // Create and load video element
+  // Create and load video element - track URL for cleanup
   const video = document.createElement('video');
   video.preload = 'auto';
   video.muted = true;
   video.playsInline = true;
   video.crossOrigin = 'anonymous';
-  const url = URL.createObjectURL(file);
+  const url = blobUrlManager.create(clipId, file, 'video');
   video.src = url;
 
   await new Promise<void>((resolve, reject) => {
@@ -69,7 +72,7 @@ export async function completeDownload(params: CompleteDownloadParams): Promise<
 
   // Find/create audio track
   const audioTrackId = findAvailableAudioTrack(clip.startTime, naturalDuration);
-  const audioClipId = audioTrackId ? `clip-audio-yt-${Date.now()}` : undefined;
+  const audioClipId = audioTrackId ? generateClipId('clip-audio-yt') : undefined;
 
   // Update video clip
   const updatedClips = clips.map(c => {
@@ -126,26 +129,28 @@ export async function completeDownload(params: CompleteDownloadParams): Promise<
   // Initialize WebCodecsPlayer
   const webCodecsPlayer = await initWebCodecsPlayer(video, 'YouTube download');
   if (webCodecsPlayer) {
-    set({
-      clips: get().clips.map((c: TimelineClip) => {
-        if (c.id !== clipId || !c.source) return c;
-        return { ...c, source: { ...c.source, webCodecsPlayer } };
-      }),
-    });
+    const currentClips = get().clips;
+    const targetClip = currentClips.find((c: TimelineClip) => c.id === clipId);
+    if (targetClip?.source) {
+      set({
+        clips: updateClipById(currentClips, clipId, {
+          source: { ...targetClip.source, webCodecsPlayer }
+        }),
+      });
+    }
   }
 
   // Load audio element for linked clip
   if (audioTrackId && audioClipId) {
     const audio = createAudioElement(file);
-    // Reuse the same blob URL
+    // Share the same blob URL reference for the audio clip
+    blobUrlManager.share(clipId, audioClipId, 'video');
     audio.src = url;
 
     set({
-      clips: get().clips.map((c: TimelineClip) =>
-        c.id === audioClipId
-          ? { ...c, source: { type: 'audio' as const, audioElement: audio, naturalDuration, mediaFileId: mediaFile.id } }
-          : c
-      ),
+      clips: updateClipById(get().clips, audioClipId, {
+        source: { type: 'audio' as const, audioElement: audio, naturalDuration, mediaFileId: mediaFile.id }
+      }),
     });
 
     // Generate waveform in background
@@ -167,27 +172,15 @@ async function generateWaveformAsync(
   get: () => any,
   set: (state: any) => void
 ): Promise<void> {
-  set({
-    clips: get().clips.map((c: TimelineClip) =>
-      c.id === audioClipId ? { ...c, waveformGenerating: true, waveformProgress: 0 } : c
-    ),
-  });
+  set({ clips: updateClipById(get().clips, audioClipId, { waveformGenerating: true, waveformProgress: 0 }) });
 
   try {
     const waveform = await generateWaveformForFile(file);
-    set({
-      clips: get().clips.map((c: TimelineClip) =>
-        c.id === audioClipId ? { ...c, waveform, waveformGenerating: false } : c
-      ),
-    });
+    set({ clips: updateClipById(get().clips, audioClipId, { waveform, waveformGenerating: false }) });
     console.log(`[Download] Waveform generated for audio clip`);
   } catch (e) {
     console.warn('[Download] Waveform generation failed:', e);
-    set({
-      clips: get().clips.map((c: TimelineClip) =>
-        c.id === audioClipId ? { ...c, waveformGenerating: false } : c
-      ),
-    });
+    set({ clips: updateClipById(get().clips, audioClipId, { waveformGenerating: false }) });
   }
 }
 
@@ -201,17 +194,20 @@ async function generateThumbnailsAsync(
   get: () => any,
   set: (state: any) => void
 ): Promise<void> {
-  // Small delay to let video element settle
-  await new Promise(r => setTimeout(r, 100));
+  // Wait for video to be ready instead of arbitrary delay
+  await new Promise<void>(resolve => {
+    if (video.readyState >= 2) {
+      resolve();
+    } else {
+      video.addEventListener('canplay', () => resolve(), { once: true });
+      setTimeout(resolve, 1000); // Fallback timeout
+    }
+  });
 
   try {
     const thumbnails = await generateDownloadThumbnails(video, duration);
     video.currentTime = 0;
-    set({
-      clips: get().clips.map((c: TimelineClip) =>
-        c.id === clipId ? { ...c, thumbnails } : c
-      ),
-    });
+    set({ clips: updateClipById(get().clips, clipId, { thumbnails }) });
     console.log(`[Download] Generated ${thumbnails.length} thumbnails`);
   } catch (e) {
     console.warn('[Download] Thumbnail generation failed:', e);

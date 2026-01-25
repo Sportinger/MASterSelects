@@ -9,6 +9,9 @@ import { useMediaStore } from '../../mediaStore';
 import { initWebCodecsPlayer } from '../helpers/webCodecsHelpers';
 import { findOrCreateAudioTrack, createCompositionAudioClip } from '../helpers/audioTrackHelpers';
 import { generateSilentWaveform } from '../helpers/waveformHelpers';
+import { generateCompClipId, generateClipId, generateNestedClipId } from '../helpers/idGenerator';
+import { blobUrlManager } from '../helpers/blobUrlManager';
+import { updateClipById } from '../helpers/clipStateHelpers';
 
 export interface AddCompClipParams {
   trackId: string;
@@ -23,7 +26,7 @@ export interface AddCompClipParams {
 export function createCompClipPlaceholder(params: AddCompClipParams): TimelineClip {
   const { trackId, composition, startTime, findNonOverlappingPosition } = params;
 
-  const clipId = `clip-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const clipId = generateCompClipId();
   const compDuration = composition.timelineData?.duration ?? composition.duration;
   const finalStartTime = findNonOverlappingPosition(clipId, startTime, trackId, compDuration);
 
@@ -73,7 +76,7 @@ export async function loadNestedClips(params: LoadNestedClipsParams): Promise<Ti
     }
 
     const nestedClip: TimelineClip = {
-      id: `nested-${compClipId}-${serializedClip.id}`,
+      id: generateNestedClipId(compClipId, serializedClip.id),
       trackId: serializedClip.trackId,
       name: serializedClip.name,
       file: mediaFile.file,
@@ -93,9 +96,10 @@ export async function loadNestedClips(params: LoadNestedClipsParams): Promise<Ti
 
     nestedClips.push(nestedClip);
 
-    // Load media element async
+    // Load media element async - track URL for cleanup
     const type = serializedClip.sourceType;
-    const fileUrl = URL.createObjectURL(mediaFile.file);
+    const urlType = type === 'video' ? 'video' : type === 'audio' ? 'audio' : 'image';
+    const fileUrl = blobUrlManager.create(nestedClip.id, mediaFile.file, urlType as 'video' | 'audio' | 'image');
 
     if (type === 'video') {
       loadVideoNestedClip(nestedClip, fileUrl, mediaFile.file.name, get, set);
@@ -193,23 +197,31 @@ export function generateCompThumbnails(params: GenerateCompThumbnailsParams): vo
   const firstVideoClip = nestedClips.find(c => c.file.type.startsWith('video/'));
   if (!firstVideoClip) return;
 
-  // Wait a bit for video to load
-  setTimeout(async () => {
+  // Wait for video to load using event listener instead of arbitrary timeout
+  const checkAndGenerate = async () => {
     if (!get().thumbnailsEnabled) return;
     const video = firstVideoClip.source?.videoElement;
     if (video && video.readyState >= 2) {
       try {
         const thumbnails = await generateThumbnails(video, compDuration);
-        set({
-          clips: get().clips.map((c: TimelineClip) =>
-            c.id === clipId ? { ...c, thumbnails } : c
-          ),
-        });
+        set({ clips: updateClipById(get().clips, clipId, { thumbnails }) });
       } catch (e) {
         console.warn('[Nested Comp] Failed to generate thumbnails:', e);
       }
     }
-  }, 500);
+  };
+
+  // Try immediately if ready, otherwise wait for canplay event
+  const video = firstVideoClip.source?.videoElement;
+  if (video) {
+    if (video.readyState >= 2) {
+      checkAndGenerate();
+    } else {
+      video.addEventListener('canplay', checkAndGenerate, { once: true });
+      // Fallback timeout in case event never fires
+      setTimeout(checkAndGenerate, 2000);
+    }
+  }
 }
 
 export interface CreateCompLinkedAudioParams {
@@ -230,11 +242,7 @@ export async function createCompLinkedAudioClip(params: CreateCompLinkedAudioPar
   const { compClipId, composition, compClipStartTime, compDuration, tracks, set, get } = params;
 
   // Mark as generating
-  set({
-    clips: get().clips.map((c: TimelineClip) =>
-      c.id === compClipId ? { ...c, mixdownGenerating: true } : c
-    ),
-  });
+  set({ clips: updateClipById(get().clips, compClipId, { mixdownGenerating: true }) });
 
   let hasAudio = false;
   let mixdownAudio: HTMLAudioElement | undefined;
@@ -268,7 +276,7 @@ export async function createCompLinkedAudioClip(params: CreateCompLinkedAudioPar
   }
 
   // Create audio clip
-  const audioClipId = `clip-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-audio`;
+  const audioClipId = generateClipId('clip-comp-audio');
   const audioClip = createCompositionAudioClip({
     clipId: audioClipId,
     trackId: audioTrackId,

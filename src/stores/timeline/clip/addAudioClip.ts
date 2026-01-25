@@ -6,6 +6,8 @@ import { DEFAULT_TRANSFORM } from '../constants';
 import { useMediaStore } from '../../mediaStore';
 import { createAudioElement } from '../helpers/webCodecsHelpers';
 import { generateWaveformForFile, AUDIO_WAVEFORM_THRESHOLD } from '../helpers/waveformHelpers';
+import { generateClipId } from '../helpers/idGenerator';
+import { blobUrlManager } from '../helpers/blobUrlManager';
 
 export interface AddAudioClipParams {
   trackId: string;
@@ -21,7 +23,7 @@ export interface AddAudioClipParams {
  */
 export function createAudioClipPlaceholder(params: AddAudioClipParams): TimelineClip {
   const { trackId, file, startTime, estimatedDuration, mediaFileId } = params;
-  const clipId = `clip-${Date.now()}`;
+  const clipId = generateClipId('clip-audio');
 
   return {
     id: clipId,
@@ -55,6 +57,8 @@ export async function loadAudioMedia(params: LoadAudioMediaParams): Promise<void
 
   // Create and load audio element
   const audio = createAudioElement(file);
+  // Track the blob URL for cleanup
+  blobUrlManager.create(clip.id, file, 'audio');
 
   // Wait for metadata
   await new Promise<void>((resolve) => {

@@ -21,6 +21,14 @@ import {
   createCompLinkedAudioClip,
 } from './clip/addCompClip';
 import { completeDownload as completeDownloadImpl } from './clip/completeDownload';
+import {
+  generateTextClipId,
+  generateYouTubeClipId,
+  generateEffectId,
+  generateLinkedGroupId,
+} from './helpers/idGenerator';
+import { blobUrlManager } from './helpers/blobUrlManager';
+import { updateClipById, createUpdateBatch } from './helpers/clipStateHelpers';
 
 export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
   addClip: async (trackId, file, startTime, providedDuration, mediaFileId) => {
@@ -157,33 +165,36 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
     const clipToRemove = clips.find(c => c.id === id);
 
     if (clipToRemove) {
-      // Clean up video/audio resources
+      // Clean up video resources
       if (clipToRemove.source?.type === 'video' && clipToRemove.source.videoElement) {
         const video = clipToRemove.source.videoElement;
-        if (video.src?.startsWith('blob:')) URL.revokeObjectURL(video.src);
         video.pause();
         video.src = '';
         video.load();
         import('../../engine/WebGPUEngine').then(({ engine }) => engine.cleanupVideo(video));
       }
+      // Clean up audio resources
       if (clipToRemove.source?.type === 'audio' && clipToRemove.source.audioElement) {
         const audio = clipToRemove.source.audioElement;
-        if (audio.src?.startsWith('blob:')) URL.revokeObjectURL(audio.src);
         audio.pause();
         audio.src = '';
         audio.load();
       }
+
+      // Revoke blob URLs via manager (handles all URL types for this clip)
+      blobUrlManager.revokeAll(id);
 
       // Also cleanup linked clip
       if (clipToRemove.linkedClipId) {
         const linkedClip = clips.find(c => c.id === clipToRemove.linkedClipId);
         if (linkedClip?.source?.type === 'audio' && linkedClip.source.audioElement) {
           const audio = linkedClip.source.audioElement;
-          if (audio.src?.startsWith('blob:')) URL.revokeObjectURL(audio.src);
           audio.pause();
           audio.src = '';
           audio.load();
         }
+        // Revoke linked clip's blob URLs
+        blobUrlManager.revokeAll(clipToRemove.linkedClipId);
       }
     }
 
@@ -398,7 +409,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
       return null;
     }
 
-    const clipId = `clip-text-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const clipId = generateTextClipId();
     await googleFontsService.loadFont(DEFAULT_TEXT_PROPERTIES.fontFamily, DEFAULT_TEXT_PROPERTIES.fontWeight);
 
     const canvas = textRenderer.createCanvas(1920, 1080);
@@ -472,7 +483,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
   addClipEffect: (clipId, effectType) => {
     const { clips, invalidateCache } = get();
     const effect: Effect = {
-      id: `effect_${Date.now()}`,
+      id: generateEffectId(),
       name: effectType,
       type: effectType as EffectType,
       enabled: true,
@@ -516,7 +527,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
 
   createLinkedGroup: (clipIds, offsets) => {
     const { clips, invalidateCache } = get();
-    const groupId = `multicam-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+    const groupId = generateLinkedGroupId();
     const selectedClips = clips.filter(c => clipIds.includes(c.id));
     if (selectedClips.length === 0) return;
 
@@ -556,7 +567,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
     const clip = clips.find(c => c.id === clipId);
     if (!clip || clip.waveformGenerating) return;
 
-    set({ clips: get().clips.map(c => c.id === clipId ? { ...c, waveformGenerating: true, waveformProgress: 0 } : c) });
+    set({ clips: updateClipById(get().clips, clipId, { waveformGenerating: true, waveformProgress: 0 }) });
     console.log(`[Waveform] Starting generation for ${clip.name}`);
 
     try {
@@ -570,11 +581,11 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
           waveform = mixdownResult.waveform;
           const mixdownAudio = compositionAudioMixer.createAudioElement(mixdownResult.buffer);
           set({
-            clips: get().clips.map(c =>
-              c.id === clipId
-                ? { ...c, source: { type: 'audio' as const, audioElement: mixdownAudio, naturalDuration: mixdownResult.duration }, mixdownBuffer: mixdownResult.buffer, hasMixdownAudio: true }
-                : c
-            ),
+            clips: updateClipById(get().clips, clipId, {
+              source: { type: 'audio' as const, audioElement: mixdownAudio, naturalDuration: mixdownResult.duration },
+              mixdownBuffer: mixdownResult.buffer,
+              hasMixdownAudio: true,
+            }),
           });
         } else if (clip.mixdownBuffer) {
           waveform = generateWaveformFromBuffer(clip.mixdownBuffer, 50);
@@ -583,19 +594,19 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
         }
       } else if (!clip.file) {
         console.warn('[Waveform] No file found for clip:', clipId);
-        set({ clips: get().clips.map(c => c.id === clipId ? { ...c, waveformGenerating: false } : c) });
+        set({ clips: updateClipById(get().clips, clipId, { waveformGenerating: false }) });
         return;
       } else {
         waveform = await generateWaveform(clip.file, 50, (progress, partialWaveform) => {
-          set({ clips: get().clips.map(c => c.id === clipId ? { ...c, waveformProgress: progress, waveform: partialWaveform } : c) });
+          set({ clips: updateClipById(get().clips, clipId, { waveformProgress: progress, waveform: partialWaveform }) });
         });
       }
 
       console.log(`[Waveform] Complete: ${waveform.length} samples for ${clip.name}`);
-      set({ clips: get().clips.map(c => c.id === clipId ? { ...c, waveform, waveformGenerating: false, waveformProgress: 100 } : c) });
+      set({ clips: updateClipById(get().clips, clipId, { waveform, waveformGenerating: false, waveformProgress: 100 }) });
     } catch (e) {
       console.error('[Waveform] Failed:', e);
-      set({ clips: get().clips.map(c => c.id === clipId ? { ...c, waveformGenerating: false } : c) });
+      set({ clips: updateClipById(get().clips, clipId, { waveformGenerating: false }) });
     }
   },
 
@@ -630,7 +641,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
   },
 
   setClipPreservesPitch: (clipId: string, preservesPitch: boolean) => {
-    set({ clips: get().clips.map(c => c.id === clipId ? { ...c, preservesPitch } : c) });
+    set({ clips: updateClipById(get().clips, clipId, { preservesPitch }) });
   },
 
   // ========== YOUTUBE PENDING DOWNLOAD ==========
@@ -643,7 +654,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
       return '';
     }
 
-    const clipId = `clip-yt-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const clipId = generateYouTubeClipId();
     const finalStartTime = findNonOverlappingPosition(clipId, startTime, trackId, estimatedDuration);
 
     const pendingClip: TimelineClip = {
@@ -672,7 +683,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
   },
 
   updateDownloadProgress: (clipId, progress) => {
-    set({ clips: get().clips.map(c => c.id === clipId ? { ...c, downloadProgress: progress } : c) });
+    set({ clips: updateClipById(get().clips, clipId, { downloadProgress: progress }) });
   },
 
   completeDownload: async (clipId, file) => {
@@ -690,6 +701,6 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
   },
 
   setDownloadError: (clipId, error) => {
-    set({ clips: get().clips.map(c => c.id === clipId ? { ...c, downloadError: error, isPendingDownload: false } : c) });
+    set({ clips: updateClipById(get().clips, clipId, { downloadError: error, isPendingDownload: false }) });
   },
 });
