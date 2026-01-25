@@ -226,7 +226,11 @@ export class ParallelDecodeManager {
         // Samples arrive asynchronously - add them to the decoder's sample list
         const clipDecoder = this.clipDecoders.get(clipInfo.clipId);
         if (clipDecoder) {
+          const prevCount = clipDecoder.samples.length;
           clipDecoder.samples.push(...newSamples);
+          if (prevCount === 0) {
+            log.info(`"${clipInfo.clipName}": First ${newSamples.length} samples received`);
+          }
         }
       };
 
@@ -258,6 +262,11 @@ export class ParallelDecodeManager {
   private handleDecodedFrame(clipDecoder: ClipDecoder, frame: VideoFrame): void {
     const timestamp = frame.timestamp;  // microseconds
     const sourceTime = timestamp / 1_000_000;  // convert to seconds
+
+    // Log first frame for debugging
+    if (clipDecoder.frameBuffer.size === 0) {
+      log.info(`"${clipDecoder.clipName}": First frame decoded at ${sourceTime.toFixed(3)}s`);
+    }
 
     // Store frame by its timestamp
     clipDecoder.frameBuffer.set(timestamp, {
@@ -399,9 +408,11 @@ export class ParallelDecodeManager {
       // Trigger decode ahead - await if we need the frame NOW
       const needsDecoding = clipDecoder.sampleIndex < targetSampleIndex + BUFFER_AHEAD_FRAMES;
       if (needsDecoding && !clipDecoder.isDecoding) {
+        log.debug(`"${clipInfo.clipName}": Triggering decode - samples=${clipDecoder.samples.length}, targetIdx=${targetSampleIndex}, currentIdx=${clipDecoder.sampleIndex}`);
         if (!frameInBuffer) {
           // Need frame NOW - await the decode with flush
           await this.decodeAhead(clipDecoder, targetSampleIndex + BUFFER_AHEAD_FRAMES, true);
+          log.debug(`"${clipInfo.clipName}": After decode - buffer=${clipDecoder.frameBuffer.size} frames, decoderState=${clipDecoder.decoder.state}`);
         } else {
           // Fire and forget for frames already in buffer
           this.decodeAhead(clipDecoder, targetSampleIndex + BUFFER_AHEAD_FRAMES, false);
