@@ -1012,7 +1012,8 @@ export class WebCodecsPlayer {
 
     // Queue samples from keyframe up to target + extra for B-frame buffering
     // B-frames need future reference frames to be decoded, so we decode ahead
-    const decodeEnd = Math.min(targetIndex + 20, this.samples.length);
+    // Decode 30 samples to ensure we have enough reference frames
+    const decodeEnd = Math.min(targetIndex + 30, this.samples.length);
     console.log(`[WebCodecs] Export mode: initializing, keyframe=${keyframeIndex}, target=${targetIndex}, decoding ${decodeEnd - keyframeIndex} samples`);
     this.sampleIndex = keyframeIndex;
 
@@ -1180,7 +1181,7 @@ export class WebCodecsPlayer {
 
     // Need to decode more frames - always decode FORWARD in DTS order
     // Queue samples ahead to handle B-frame buffering in the decoder
-    const decodeAhead = 15; // Decode 15 samples ahead (half second at 30fps)
+    const decodeAhead = 20; // Decode 20 samples ahead to ensure B-frame references
     const maxSampleIndex = Math.min(this.sampleIndex + decodeAhead, this.samples.length);
 
     // Queue all samples without waiting (decoder will buffer B-frames)
@@ -1270,18 +1271,24 @@ export class WebCodecsPlayer {
       // Check decoder is still valid
       if (!this.decoder || !this.isInExportMode) return;
 
-      // Wait for decoder queue to drain
+      // Wait for decoder queue to drain and frames to appear
       let resetWaitCount = 0;
-      const maxResetWaits = 50; // 500ms max
-      while (this.decoder && this.decoder.decodeQueueSize > 0 && resetWaitCount < maxResetWaits) {
+      const maxResetWaits = 100; // 1 second max
+      while (resetWaitCount < maxResetWaits && this.decoder && this.isInExportMode) {
+        const queueEmpty = this.decoder.decodeQueueSize === 0;
+        const hasFrames = this.exportFrameBuffer.size > 0;
+
+        if (queueEmpty && hasFrames) {
+          break;
+        }
+
         await new Promise(r => setTimeout(r, 10));
         resetWaitCount++;
-        if (!this.isInExportMode) return;
       }
 
-      // Flush to force output of buffered B-frames
+      // Extra wait for output callbacks
       if (this.decoder && this.isInExportMode) {
-        await this.decoder.flush();
+        await new Promise(r => setTimeout(r, 20));
       }
 
       // Now find best match in buffer
