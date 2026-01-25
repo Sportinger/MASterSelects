@@ -2,18 +2,75 @@
 
 [← Back to Index](./README.md)
 
-Audio processing with 10-band EQ, waveform visualization, and multicam synchronization.
+Audio processing with 10-band EQ, audio master clock, varispeed scrubbing, and multicam synchronization.
 
 ---
 
 ## Table of Contents
 
+- [Audio Master Clock](#audio-master-clock)
+- [Varispeed Scrubbing](#varispeed-scrubbing)
 - [Audio Tracks](#audio-tracks)
 - [10-Band EQ](#10-band-eq)
 - [Waveforms](#waveforms)
 - [Multicam Sync](#multicam-sync)
 - [Transcription](#transcription)
 - [Audio Manager](#audio-manager)
+
+---
+
+## Audio Master Clock
+
+The playhead follows audio timing for perfect sync, like Premiere Pro and DaVinci Resolve.
+
+### How It Works
+- Audio playback drives the timeline position
+- Playhead syncs to `audioContext.currentTime`
+- Gradual drift correction using playback rate adjustment
+- Prevents audio glitches from hard seeks
+
+### Benefits
+- Perfect audio-video sync during playback
+- No audio pops or clicks from constant re-syncing
+- Professional-grade timing accuracy
+
+### Implementation
+```typescript
+// Playhead follows audio instead of system time
+currentTime = audioStartTime + (audioContext.currentTime - playbackStartTime)
+
+// Gentle drift correction via playback rate
+if (drift > threshold) {
+  playbackRate = 1.0 + (drift * correctionFactor)
+}
+```
+
+---
+
+## Varispeed Scrubbing
+
+Continuous audio playback with speed adjustment while scrubbing the timeline.
+
+### Features
+- **Continuous playback**: Audio plays at varying speeds during scrub
+- **Direction-aware**: Plays forward or backward based on scrub direction
+- **Speed-scaled**: Playback rate matches scrub speed
+- **All clips**: Works with proxy and non-proxy video clips
+
+### Experience
+- Scrub slowly: Hear audio at reduced speed
+- Scrub fast: Audio speeds up proportionally
+- Stop scrubbing: Audio fades out smoothly
+
+### Technical Details
+```typescript
+// Speed calculated from scrub velocity
+const velocity = (newTime - prevTime) / deltaTime
+const playbackRate = clamp(Math.abs(velocity), 0.25, 4.0)
+
+// Time-based triggers for smooth audio
+triggerInterval = Math.max(50, 200 / Math.abs(velocity))
+```
 
 ---
 

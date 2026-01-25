@@ -2,18 +2,61 @@
 
 [← Back to Index](./README.md)
 
-Frame-by-frame video export with H.264/VP9 encoding.
+Frame-by-frame video export with H.264/VP9 encoding and three export modes.
 
 ---
 
 ## Table of Contents
 
+- [Export Modes](#export-modes)
 - [Export Panel](#export-panel)
 - [Export Settings](#export-settings)
 - [Audio Settings](#audio-settings)
 - [Export Process](#export-process)
 - [Frame Export](#frame-export)
 - [FFmpeg Export](#ffmpeg-export)
+
+---
+
+## Export Modes
+
+MASterSelects offers three export modes optimized for different use cases:
+
+### WebCodecs Fast Mode
+
+**Best for: Simple timelines, maximum speed**
+
+- Uses sequential decoding with MP4Box parsing
+- Creates dedicated WebCodecs players per clip
+- Parallel decoding for multi-clip exports
+- Auto-extracts avcC/hvcC descriptions for H.264/H.265
+- Falls back to Precise mode if codec unsupported (e.g., AV1)
+
+```
+Pipeline: MP4Box → WebCodecs Decoder → GPU Compositor → VideoEncoder
+```
+
+### HTMLVideo Precise Mode
+
+**Best for: Complex timelines, nested compositions**
+
+- Uses HTMLVideoElement seeking (frame-accurate)
+- Handles all codec types the browser supports
+- Better for clips with complex timing
+- Slower but more reliable for edge cases
+
+```
+Pipeline: HTMLVideoElement → requestVideoFrameCallback → GPU Compositor → VideoEncoder
+```
+
+### FFmpeg WASM Export
+
+**Best for: Professional codecs (ProRes, DNxHR, HAP)**
+
+- Loads FFmpeg WASM on-demand (~20MB)
+- Supports broadcast-quality codecs
+- Requires SharedArrayBuffer headers
+- See [FFmpeg Export](#ffmpeg-export) section below
 
 ---
 
@@ -109,30 +152,48 @@ When audio is exported:
 
 ### Pipeline
 ```
-Video Phase (70% of progress):
-1. Seek all clips to frame time
-2. Build layer composition
-3. Render via GPU engine
-4. Read pixels (staging buffer)
-5. Create VideoFrame
-6. Encode frame
-7. Write to muxer
-8. Repeat for all frames
+Video Phase (95% of progress):
+1. Prepare clips (load MP4Box players for Fast mode)
+2. Parallel decode multiple clips simultaneously
+3. Build layer composition
+4. Render via GPU engine
+5. Read pixels (staging buffer)
+6. Create VideoFrame
+7. Encode frame
+8. Write to muxer
+9. Repeat for all frames
 
-Audio Phase (30% of progress):
+Audio Phase (5% of progress):
 1. Extract audio from all clips
 2. Apply speed/pitch processing
 3. Render EQ and volume effects
 4. Mix all tracks
-5. Encode to AAC
+5. Encode to AAC/Opus
 6. Add audio chunks to muxer
 ```
 
+### Parallel Decoding
+
+For multi-clip exports, ParallelDecodeManager handles:
+
+- Concurrent decoding of multiple clips
+- 60-frame buffer per clip
+- Batch decode operations
+- Smart flush timing
+- Timestamp-based frame tracking
+
+```typescript
+// ParallelDecodeManager.ts
+- Creates dedicated decoder per clip
+- Batch decodes frames ahead of export
+- Frame buffer prevents export stalls
+```
+
 ### Progress Tracking
+- Timeline overlay progress bar
 - Frame counter: `X / Total`
 - Percentage complete
-- ETA (30-frame moving average)
-- Cancel button
+- Cancel button in overlay
 
 ### Video Seeking
 ```typescript
@@ -145,6 +206,13 @@ Audio Phase (30% of progress):
 
 ### Key Frame Insertion
 Every 30 frames (configurable).
+
+### Audio Codec Detection
+```typescript
+// Auto-detects browser support
+- AAC-LC (mp4a.40.2) - preferred
+- Opus - fallback for Linux/WebM
+```
 
 ---
 
@@ -321,4 +389,4 @@ FFmpeg WASM is loaded on-demand when first used:
 
 ---
 
-*Source: `src/engine/FrameExporter.ts`, `src/engine/audio/`, `src/components/export/ExportDialog.tsx`*
+*Source: `src/engine/export/`, `src/engine/ParallelDecodeManager.ts`, `src/engine/audio/`, `src/components/export/ExportPanel.tsx`*

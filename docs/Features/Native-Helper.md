@@ -13,6 +13,50 @@ While the web app uses browser-native decoders (WebCodecs, HTMLVideoElement) and
 - **Hardware acceleration** - VAAPI (Intel/AMD), NVDEC (NVIDIA)
 - **LRU frame cache** - Smooth scrubbing with up to 2GB cache
 - **Background prefetch** - Frames loaded ahead of playhead
+- **YouTube downloads** - Fast downloads via yt-dlp integration
+
+## Platform-Specific Builds
+
+The Native Helper has different builds per platform:
+
+| Platform | Location | Features |
+|----------|----------|----------|
+| **Windows** | `tools/helpers/win/` | YouTube downloads only (yt-dlp) |
+| **Linux** | `tools/helpers/linux/` | Full FFmpeg decoder + encoder |
+| **macOS** | `tools/helpers/mac/` | Full FFmpeg decoder + encoder |
+
+### Windows (Lite)
+
+Windows build focuses on YouTube downloads without requiring FFmpeg:
+
+```bash
+cd tools/helpers/win
+cargo run --release
+```
+
+### Linux (Full)
+
+Linux build includes full FFmpeg decoding and encoding:
+
+```bash
+cd tools/helpers/linux
+cargo run --release
+
+# For FFmpeg 8.0+ (e.g., Arch Linux):
+FFMPEG_INCLUDE_DIR=/usr/include/ffmpeg4.4 \
+FFMPEG_LIB_DIR=/usr/lib/ffmpeg4.4 \
+PKG_CONFIG_PATH=/usr/lib/ffmpeg4.4/pkgconfig \
+cargo run --release
+```
+
+### macOS (Full)
+
+macOS build includes full FFmpeg decoding and encoding:
+
+```bash
+cd tools/helpers/mac
+cargo run --release
+```
 
 ## Architecture
 
@@ -129,23 +173,37 @@ Binary messages with 16-byte header containing width, height, frame number, and 
 
 ### Source Code
 
-The helper is written in Rust and located at:
+The helpers are written in Rust and located at:
 ```
-masterselects-helper/
-├── src/
-│   ├── main.rs         # Entry point
-│   ├── server.rs       # WebSocket server
-│   ├── session.rs      # Connection handling
-│   ├── decoder/        # FFmpeg decode
-│   ├── encoder/        # FFmpeg encode
-│   ├── cache/          # LRU frame cache
-│   └── protocol/       # Message types
-└── Cargo.toml
+tools/helpers/
+├── win/                # Windows: YouTube only (lite)
+│   └── src/
+│       └── main.rs
+├── linux/              # Linux: Full FFmpeg
+│   └── src/
+│       ├── main.rs
+│       ├── server.rs
+│       ├── decoder/
+│       ├── encoder/
+│       ├── cache/
+│       └── protocol/
+└── mac/                # macOS: Full FFmpeg
+    └── src/
+        └── (same as linux)
+```
+
+Browser client code:
+```
+src/services/nativeHelper/
+├── NativeHelperClient.ts  # WebSocket client
+├── NativeDecoder.ts       # Decoder wrapper
+├── protocol.ts            # Message types
+└── index.ts
 ```
 
 Build with:
 ```bash
-cd masterselects-helper
+cd tools/helpers/linux  # or /win or /mac
 cargo build --release
 ```
 

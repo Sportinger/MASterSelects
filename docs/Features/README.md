@@ -36,14 +36,16 @@ MASterSelects is a browser-based professional video editing application built on
 
 ```
 Frontend          React 19 + TypeScript + Vite 7.2
-State Management  Zustand with slice architecture
+State Management  Zustand with modular slice architecture
 GPU Rendering     WebGPU + WGSL shaders (2,000+ lines)
-Video Decoding    WebCodecs API with hardware acceleration
-Video Encoding    WebCodecs + FFmpeg WASM (ProRes, DNxHR, HAP)
-Audio Processing  Web Audio API with AnalyserNode
-AI Services       OpenAI GPT-4 function calling
-Persistence       File System Access API + local project folders
-UI Framework      Custom dockable panel system
+GPU Effects       30+ modular effects with individual WGSL shaders
+Video Decoding    WebCodecs API with hardware acceleration + parallel decode
+Video Encoding    WebCodecs (Fast/Precise) + FFmpeg WASM (ProRes, DNxHR, HAP)
+Audio Processing  Web Audio API, audio master clock, varispeed scrubbing
+AI Services       OpenAI GPT-4/GPT-5 function calling, PiAPI video generation
+Persistence       File System Access API + local project folders with Raw media
+Native Helper     Rust + FFmpeg (Linux/Mac) or yt-dlp (Windows)
+UI Framework      Custom dockable panel system with mobile support
 ```
 
 ---
@@ -275,13 +277,17 @@ UI Framework      Custom dockable panel system
 | Feature | Status | Details |
 |---------|--------|---------|
 | Dockable Panels | ✅ | Drag, resize, tab grouping |
-| 9 Panel Types | ✅ | Preview, Timeline, Media, Properties, Export, Multicam, AI Chat, AI Video, YouTube |
-| Unified Properties Panel | ✅ | Transform, Effects, Masks, Volume tabs |
-| Menu Bar | ✅ | File, Edit, View, Output, Window |
-| Context Menus | ✅ | Right-click operations |
+| 10 Panel Types | ✅ | Preview, Timeline, Media, Properties, Export, Multicam, AI Chat, AI Video, YouTube, Slots |
+| Unified Properties Panel | ✅ | Transform, Effects, Masks, Volume, Transcript, Analysis |
+| Menu Bar | ✅ | File, Edit, View, Output, Audio, Info, Window |
+| Context Menus | ✅ | Right-click operations (viewport-bounded) |
 | MIDI Control | ✅ | Web MIDI API integration |
 | Keyboard Shortcuts | ✅ | Comprehensive hotkey support |
 | Hold-to-Drag Tabs | ✅ | 500ms hold to reorder |
+| Mobile Support | ✅ | Responsive layout with touch gestures |
+| Desktop Mode Toggle | ✅ | Option to view full UI on mobile |
+| What's New Dialog | ✅ | Time-grouped changelog on refresh |
+| Welcome Overlay | ✅ | Project folder selection on launch |
 
 ---
 
@@ -492,6 +498,10 @@ The following features are planned but not currently available:
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 1.1.0 | Jan 2026 | Export mode selection, audio master clock, varispeed scrubbing, parallel decoding |
+| 1.0.9 | Jan 2026 | Layer caching, WebCodecs export optimization, case-insensitive file detection |
+| 1.0.8 | Jan 2026 | Native Helper YouTube download, NativeDecoder integration, FFmpeg audio export |
+| 1.0.7 | Jan 2026 | Mobile UI, desktop mode toggle, FFmpeg direct loading |
 | 1.0.6 | Jan 2026 | Windows GPU proxy fix, streaming decode, FFmpeg WASM |
 | 1.0.5 | Jan 2026 | 30+ modular GPU effects, effect bypass/quality controls |
 | 1.0.4 | Jan 2026 | Local project storage, autosave, backup system |
