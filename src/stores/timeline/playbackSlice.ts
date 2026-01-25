@@ -5,6 +5,8 @@ import type { Layer } from '../../types';
 import { RAM_PREVIEW_FPS, FRAME_TOLERANCE, MIN_ZOOM, MAX_ZOOM } from './constants';
 import { quantizeTime } from './utils';
 import { Logger } from '../../services/logger';
+import { engine } from '../../engine/WebGPUEngine';
+import { layerBuilder } from '../../services/layerBuilder';
 
 const log = Logger.create('PlaybackSlice');
 
@@ -547,15 +549,12 @@ export const createPlaybackSlice: SliceCreator<PlaybackAndRamPreviewActions> = (
   // Invalidate cache when content changes (clip moved, trimmed, etc.)
   invalidateCache: () => {
     // Cancel any ongoing RAM preview
-    set({ isRamPreviewing: false });
-    // Then async cleanup the engine and request a render
-    import('../../engine/WebGPUEngine').then(({ engine }) => {
-      engine.setGeneratingRamPreview(false);
-      engine.clearCompositeCache();
-      engine.requestRender(); // Wake up render loop to show changes immediately
-    });
-    // Clear cached frame times
-    set({ cachedFrameTimes: new Set(), ramPreviewRange: null, ramPreviewProgress: null });
+    set({ isRamPreviewing: false, cachedFrameTimes: new Set(), ramPreviewRange: null, ramPreviewProgress: null });
+    // Immediately clear all caches and request render
+    layerBuilder.invalidateCache(); // Force layer rebuild
+    engine.setGeneratingRamPreview(false);
+    engine.clearCompositeCache();
+    engine.requestRender(); // Wake up render loop to show changes immediately
   },
 
   // Performance toggles
