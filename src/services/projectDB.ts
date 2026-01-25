@@ -111,6 +111,18 @@ class ProjectDatabase {
     return this.db !== null && !this.initFailed;
   }
 
+  // Reset the init failure flag to allow retry
+  resetInitFailure(): void {
+    this.initFailed = false;
+    this.initPromise = null;
+    log.info('IndexedDB init failure flag reset - will retry on next access');
+  }
+
+  // Check if init has failed (for UI to show retry option)
+  hasInitFailed(): boolean {
+    return this.initFailed;
+  }
+
   // Initialize the database
   async init(): Promise<IDBDatabase> {
     if (this.db) return this.db;

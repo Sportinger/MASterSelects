@@ -649,39 +649,55 @@ export const useTimelineStore = create<TimelineStore>()(
 
                 for (const nestedSerializedClip of composition.timelineData.clips) {
                   const nestedMediaFile = mediaStore.files.find(f => f.id === nestedSerializedClip.mediaFileId);
-                  if (!nestedMediaFile || !nestedMediaFile.file) {
-                    log.warn('Skipping nested clip - media file not found', {
+                  const hasFile = !!(nestedMediaFile?.file);
+
+                  if (!nestedMediaFile) {
+                    log.warn('Skipping nested clip - media file entry not found', {
                       clipName: nestedSerializedClip.name,
                       trackId: nestedSerializedClip.trackId,
                       mediaFileId: nestedSerializedClip.mediaFileId,
-                      mediaFileFound: !!nestedMediaFile,
-                      hasFile: !!nestedMediaFile?.file,
                     });
                     continue;
                   }
 
+                  // Create the nested clip - even if file is missing (will need reload)
                   const nestedClip: TimelineClip = {
                     id: `nested-${compClip.id}-${nestedSerializedClip.id}`,
                     trackId: nestedSerializedClip.trackId,
                     name: nestedSerializedClip.name,
-                    file: nestedMediaFile.file,
+                    file: nestedMediaFile.file || new File([], nestedSerializedClip.name),
                     startTime: nestedSerializedClip.startTime,
                     duration: nestedSerializedClip.duration,
                     inPoint: nestedSerializedClip.inPoint,
                     outPoint: nestedSerializedClip.outPoint,
-                    source: null,
+                    source: hasFile ? null : {
+                      type: nestedSerializedClip.sourceType || 'video',
+                      naturalDuration: nestedSerializedClip.naturalDuration || nestedSerializedClip.duration,
+                      mediaFileId: nestedSerializedClip.mediaFileId,
+                    },
                     thumbnails: nestedSerializedClip.thumbnails,
                     transform: nestedSerializedClip.transform,
                     effects: nestedSerializedClip.effects || [],
-                    masks: nestedSerializedClip.masks || [],  // Copy masks from source clip
-                    isLoading: true,
+                    masks: nestedSerializedClip.masks || [],
+                    isLoading: hasFile,
+                    needsReload: !hasFile,
                   };
 
                   nestedClips.push(nestedClip);
 
+                  // Only load media element if file is available
+                  if (!hasFile) {
+                    log.warn('Nested clip needs reload - file not available', {
+                      clipName: nestedSerializedClip.name,
+                      trackId: nestedSerializedClip.trackId,
+                      mediaFileId: nestedSerializedClip.mediaFileId,
+                    });
+                    continue;
+                  }
+
                   // Load media element
                   const nestedType = nestedSerializedClip.sourceType;
-                  const nestedFileRef = nestedMediaFile.file!;  // Capture for use in callbacks
+                  const nestedFileRef = nestedMediaFile.file!;
                   const nestedFileUrl = URL.createObjectURL(nestedFileRef);
 
                   if (nestedType === 'video') {
