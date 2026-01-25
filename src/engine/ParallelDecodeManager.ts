@@ -88,6 +88,7 @@ interface ClipDecoder {
   clipInfo: ClipInfo;
   isDecoding: boolean;
   pendingDecode: Promise<void> | null;
+  needsKeyframe: boolean;                  // True after flush - must start from keyframe
 }
 
 // Buffer settings - tuned for speed like After Effects
@@ -205,6 +206,7 @@ export class ParallelDecodeManager {
           clipInfo,
           isDecoding: false,
           pendingDecode: null,
+          needsKeyframe: false,
         };
 
         this.clipDecoders.set(clipInfo.clipId, clipDecoder);
@@ -440,6 +442,7 @@ export class ParallelDecodeManager {
         // Still missing - decode more frames
         if (clipDecoder.decoder.decodeQueueSize > 0) {
           await clipDecoder.decoder.flush();
+          clipDecoder.needsKeyframe = true; // After flush, next decode needs keyframe
         }
 
         // Trigger another decode batch if needed
@@ -485,6 +488,22 @@ export class ParallelDecodeManager {
         // Check if we need to seek (target is far ahead of current position)
         const needsSeek = targetSampleIndex > clipDecoder.sampleIndex + 30;
 
+        // After flush, we need to start from a keyframe
+        if (clipDecoder.needsKeyframe && !needsSeek) {
+          const currentSample = clipDecoder.samples[clipDecoder.sampleIndex];
+          if (currentSample && !currentSample.is_sync) {
+            // Back up to previous keyframe
+            for (let i = clipDecoder.sampleIndex - 1; i >= 0; i--) {
+              if (clipDecoder.samples[i].is_sync) {
+                log.debug(`${clipDecoder.clipName}: after flush, backing up to keyframe at sample ${i}`);
+                clipDecoder.sampleIndex = i;
+                break;
+              }
+            }
+          }
+          clipDecoder.needsKeyframe = false;
+        }
+
         if (needsSeek) {
           // Need to seek - find nearest keyframe before target
           let keyframeIndex = targetSampleIndex;
@@ -505,6 +524,7 @@ export class ParallelDecodeManager {
           };
           clipDecoder.decoder.configure(exportConfig);
           clipDecoder.sampleIndex = keyframeIndex;
+          clipDecoder.needsKeyframe = false; // Reset flag after seek
 
           // Clear buffer since we're seeking
           for (const [, decodedFrame] of clipDecoder.frameBuffer) {
@@ -538,6 +558,7 @@ export class ParallelDecodeManager {
         // Only flush if explicitly requested (when we need frames NOW)
         if (forceFlush) {
           await clipDecoder.decoder.flush();
+          clipDecoder.needsKeyframe = true; // After flush, next decode needs keyframe
         }
       } catch (e) {
         log.error(`Decode error for ${clipDecoder.clipName}: ${e}`);
