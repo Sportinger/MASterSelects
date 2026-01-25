@@ -391,32 +391,25 @@ function TimelineClipComponent({
 }: TimelineClipProps) {
   const thumbnails = clip.thumbnails || [];
 
-  // Entrance animation on composition switch
-  const clipEntranceAnimationKey = useTimelineStore(s => s.clipEntranceAnimationKey);
-  const [isAnimating, setIsAnimating] = useState(false);
-  const [animationDelay, setAnimationDelay] = useState(0);
-  const prevAnimationKeyRef = useRef(clipEntranceAnimationKey);
+  // Entrance animation - animate clips on mount with staggered delays (left to right)
+  const timelineDuration = useTimelineStore(s => s.duration);
+  const allClips = useTimelineStore(s => s.clips);
+  const [isAnimating, setIsAnimating] = useState(true);
+
+  // Sort clips by startTime and find this clip's index for stagger order
+  const sortedClipIds = [...allClips].sort((a, b) => a.startTime - b.startTime).map(c => c.id);
+  const clipIndex = sortedClipIds.indexOf(clip.id);
+  // Each clip gets 50ms delay after the previous one
+  const animationDelay = Math.max(0, clipIndex) * 0.05;
+  const animationDelayRef = useRef(animationDelay);
 
   useEffect(() => {
-    // Detect when animation key changes (composition switched)
-    if (clipEntranceAnimationKey !== prevAnimationKeyRef.current) {
-      prevAnimationKeyRef.current = clipEntranceAnimationKey;
-      // Calculate stagger delay based on clip's start time (left to right animation)
-      // Max stagger of 300ms spread across clips based on their position
-      const maxStagger = 0.3; // 300ms max delay
-      const normalizedPosition = Math.min(clip.startTime / 60, 1); // Normalize to 0-1 range (assuming 60s max)
-      const delay = normalizedPosition * maxStagger;
-      setAnimationDelay(delay);
-      setIsAnimating(true);
-
-      // Remove animation class after animation completes
-      const timer = setTimeout(() => {
-        setIsAnimating(false);
-      }, 600 + delay * 1000); // 600ms animation + delay
-
-      return () => clearTimeout(timer);
-    }
-  }, [clipEntranceAnimationKey, clip.startTime]);
+    // Remove animation class after animation completes (runs only on mount)
+    const timer = setTimeout(() => {
+      setIsAnimating(false);
+    }, 600 + animationDelayRef.current * 1000);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Check if this clip should show cut indicator (either directly hovered or linked to hovered clip)
   const isDirectlyHovered = cutHoverInfo?.clipId === clip.id;
