@@ -176,7 +176,7 @@ export async function requestHandlePermission(
     const result = await handle.requestPermission({ mode });
     return result === 'granted';
   } catch (e) {
-    console.error('[FileSystem] Failed to request permission:', e);
+    log.error('Failed to request permission', e);
     return false;
   }
 }
@@ -210,7 +210,7 @@ export async function saveProxyFrame(
 
     return true;
   } catch (e) {
-    console.error('[FileSystem] Failed to save proxy frame:', e);
+    log.error('Failed to save proxy frame', e);
     return false;
   }
 }

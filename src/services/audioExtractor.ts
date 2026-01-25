@@ -81,12 +81,12 @@ export async function extractAudioFromVideo(
     let processedSamples = 0;
 
     mp4boxFile.onReady = (info) => {
-      console.log('[AudioExtractor] File info ready');
+      log.info('File info ready');
 
       // Find audio track
       const audioTrackInfo = info.tracks.find((t) => t.type === 'audio');
       if (!audioTrackInfo) {
-        console.warn('[AudioExtractor] No audio track found');
+        log.warn('No audio track found');
         resolve(null);
         return;
       }

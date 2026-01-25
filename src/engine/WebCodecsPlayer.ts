@@ -1174,7 +1174,7 @@ export class WebCodecsPlayer {
       ? this.exportFramesCts[this.exportFramesCts.length - 1]
       : 0;
 
-    log.debug(`Frame not in buffer: target=${targetCts.toFixed(0)}, max=${maxCtsInBuffer.toFixed(0)}, bufferSize=${this.exportFramesCts.length}`);
+    log.warn(`Frame not in buffer: target=${targetCts.toFixed(0)}, max=${maxCtsInBuffer.toFixed(0)}, bufferSize=${this.exportFramesCts.length}`);
 
     if (targetCts > maxCtsInBuffer && this.sampleIndex < this.samples.length) {
       // Target is ahead of buffer - decode more
@@ -1251,7 +1251,7 @@ export class WebCodecsPlayer {
     }
     endIndex = Math.min(endIndex, this.samples.length);
 
-    log.debug(`decodeMoreFrames: decoding samples ${startIndex}-${endIndex} (${endIndex - startIndex} samples)`);
+    log.info(`decodeMoreFrames: decoding samples ${startIndex}-${endIndex} (${endIndex - startIndex} samples)`);
 
     for (let i = this.sampleIndex; i < endIndex; i++) {
       const sample = this.samples[i];
@@ -1277,7 +1277,7 @@ export class WebCodecsPlayer {
     this.exportFramesCts = Array.from(this.exportFrameBuffer.keys()).sort((a, b) => a - b);
 
     const framesAdded = this.exportFrameBuffer.size - bufferBefore;
-    log.debug(`decodeMoreFrames: ${framesAdded} new frames added, buffer now ${this.exportFrameBuffer.size}`);
+    log.info(`decodeMoreFrames: ${framesAdded} new frames added, buffer now ${this.exportFrameBuffer.size}`);
   }
 
   /**
