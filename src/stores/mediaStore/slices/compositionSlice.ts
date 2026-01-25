@@ -208,9 +208,7 @@ function doSetActiveComposition(
     if (syncedPlayhead !== null && syncedPlayhead >= 0) {
       timelineStore.setPlayheadPosition(syncedPlayhead);
     }
-
-    timelineStore.setZoom(0.1);
-    timelineStore.setScrollX(0);
+    // zoom and scrollX are restored by loadState() from composition's timelineData
   } else {
     timelineStore.clearTimeline();
   }
