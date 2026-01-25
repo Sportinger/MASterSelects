@@ -1186,22 +1186,22 @@ export class WebCodecsPlayer {
     // Check decoder is still valid after queuing
     if (!this.decoder || !this.isInExportMode) return;
 
-    // Wait for decoder queue to drain AND for output callbacks
-    // decodeQueueSize=0 means decoder accepted chunks, not that frames are output
+    // Wait for decoder queue to drain
     let waitCount = 0;
-    const maxWaits = 50; // 50 * 10ms = 500ms max
-    const initialBufferSize = this.exportFrameBuffer.size;
+    const maxWaits = 30; // 300ms max for queue drain
 
-    while (waitCount < maxWaits && this.decoder && this.isInExportMode) {
-      // Wait until queue is drained AND we have new frames
-      if (this.decoder.decodeQueueSize === 0 && this.exportFrameBuffer.size > initialBufferSize) {
-        break;
-      }
+    while (waitCount < maxWaits && this.decoder && this.decoder.decodeQueueSize > 0) {
       await new Promise(r => setTimeout(r, 10));
       waitCount++;
     }
 
     // Check decoder is still valid
+    if (!this.decoder || !this.isInExportMode) return;
+
+    // Flush to force output of buffered B-frames
+    await this.decoder.flush();
+
+    // Check decoder is still valid after flush
     if (!this.decoder || !this.isInExportMode) return;
 
     // Check if we now have our frame
@@ -1263,18 +1263,18 @@ export class WebCodecsPlayer {
       // Check decoder is still valid
       if (!this.decoder || !this.isInExportMode) return;
 
-      // Wait for decoder with timeout safety
+      // Wait for decoder queue to drain
       let resetWaitCount = 0;
-      const maxResetWaits = 100; // 100 * 10ms = 1s max
+      const maxResetWaits = 50; // 500ms max
       while (this.decoder && this.decoder.decodeQueueSize > 0 && resetWaitCount < maxResetWaits) {
         await new Promise(r => setTimeout(r, 10));
         resetWaitCount++;
         if (!this.isInExportMode) return;
       }
 
-      // Small wait for output callbacks
+      // Flush to force output of buffered B-frames
       if (this.decoder && this.isInExportMode) {
-        await new Promise(r => setTimeout(r, 30));
+        await this.decoder.flush();
       }
 
       // Now find best match in buffer
