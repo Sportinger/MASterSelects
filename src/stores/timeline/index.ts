@@ -10,6 +10,7 @@ import { useMediaStore } from '../mediaStore';
 
 import { createTrackSlice } from './trackSlice';
 import { createClipSlice } from './clipSlice';
+import { generateCompThumbnails } from './clip/addCompClip';
 import { createPlaybackSlice } from './playbackSlice';
 import { createSelectionSlice } from './selectionSlice';
 import { createKeyframeSlice } from './keyframeSlice';
@@ -725,6 +726,19 @@ export const useTimelineStore = create<TimelineStore>()(
                       : c
                   ),
                 }));
+
+                // Regenerate thumbnails if missing (for older projects or failed generation)
+                if (!serializedClip.thumbnails || serializedClip.thumbnails.length === 0) {
+                  const compDuration = composition.timelineData?.duration ?? composition.duration;
+                  generateCompThumbnails({
+                    clipId: compClip.id,
+                    nestedClips,
+                    compDuration,
+                    thumbnailsEnabled: get().thumbnailsEnabled,
+                    get,
+                    set,
+                  });
+                }
               } else {
                 // No timeline data
                 set(state => ({

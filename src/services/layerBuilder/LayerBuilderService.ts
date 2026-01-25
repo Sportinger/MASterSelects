@@ -401,18 +401,21 @@ export class LayerBuilderService {
 
     // Debug: log nested clip info once per second
     if (Math.floor(ctx.now / 1000) !== Math.floor((ctx.now - 16) / 1000)) {
-      log.debug('buildNestedLayers', {
+      log.info('buildNestedLayers', {
         compClipId: clip.id,
         clipTime,
+        nestedTrackCount: clip.nestedTracks.length,
+        nestedVideoTrackCount: nestedVideoTracks.length,
+        nestedTracks: clip.nestedTracks.map(t => ({ id: t.id, type: t.type, visible: t.visible })),
         nestedClipCount: clip.nestedClips.length,
         nestedClips: clip.nestedClips.map(nc => ({
           id: nc.id,
           name: nc.name,
+          trackId: nc.trackId,
+          startTime: nc.startTime,
+          duration: nc.duration,
           isLoading: nc.isLoading,
           hasVideoElement: !!nc.source?.videoElement,
-          hasWebCodecs: !!nc.source?.webCodecsPlayer,
-          hasImageElement: !!nc.source?.imageElement,
-          videoReadyState: nc.source?.videoElement?.readyState,
         })),
       });
     }
