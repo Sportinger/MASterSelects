@@ -542,6 +542,7 @@ function TimelineClipComponent({
 
   // Cut tool snapping helper
   const snapCutTime = (rawTime: number, shouldSnap: boolean): number => {
+    console.log('[CUT SNAP]', { shouldSnap, snappingEnabled, rawTime, zoom, playheadPosition });
     if (!shouldSnap) return rawTime;
 
     const snapThresholdPixels = 10;
@@ -554,6 +555,8 @@ function TimelineClipComponent({
       snapTargets.push(c.startTime + c.duration);
     });
 
+    console.log('[CUT SNAP] targets:', snapTargets, 'threshold:', snapThresholdTime);
+
     // Find nearest snap target
     let nearestTarget = rawTime;
     let nearestDistance = Infinity;
@@ -565,6 +568,7 @@ function TimelineClipComponent({
       }
     }
 
+    console.log('[CUT SNAP] result:', { nearestTarget, nearestDistance, snapped: nearestTarget !== rawTime });
     return nearestTarget;
   };
 
