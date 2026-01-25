@@ -1198,6 +1198,9 @@ export const useTimelineStore = create<TimelineStore>()(
 
       // Clip entrance animation key (increments on composition switch)
       clipEntranceAnimationKey: 0,
+
+      // Clip animation phase for enter/exit transitions
+      clipAnimationPhase: 'idle' as const,
     };
 
     // Layer actions (render layers for engine, moved from mixerStore)

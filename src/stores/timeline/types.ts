@@ -115,6 +115,9 @@ export interface TimelineState {
 
   // Clip entrance animation key (increments on composition switch to trigger animations)
   clipEntranceAnimationKey: number;
+
+  // Clip animation phase for enter/exit transitions
+  clipAnimationPhase: 'idle' | 'exiting' | 'entering';
 }
 
 // Track actions interface
@@ -191,6 +194,8 @@ export interface PlaybackActions {
   // Tool mode
   setToolMode: (mode: TimelineToolMode) => void;
   toggleCutTool: () => void;
+  // Clip animation phase for composition transitions
+  setClipAnimationPhase: (phase: 'idle' | 'exiting' | 'entering') => void;
 }
 
 // RAM Preview actions interface

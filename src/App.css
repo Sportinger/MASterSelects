@@ -3266,8 +3266,24 @@ input[type="checkbox"] {
   }
 }
 
+/* Clip exit animation - slides out to the right */
+@keyframes clip-exit {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(25px, 0, 0);
+  }
+}
+
 .timeline-clip.entrance-animate {
   animation: clip-entrance 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.timeline-clip.exit-animate {
+  animation: clip-exit 0.35s cubic-bezier(0.55, 0, 1, 0.45) forwards;
 }
 
 .clip-loading-spinner {

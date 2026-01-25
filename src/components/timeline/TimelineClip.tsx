@@ -355,6 +355,7 @@ function TimelineClipComponent({
   clip,
   trackId,
   track,
+  tracks,
   clips,
   isSelected,
   isInLinkedGroup,
@@ -391,11 +392,16 @@ function TimelineClipComponent({
 }: TimelineClipProps) {
   const thumbnails = clip.thumbnails || [];
 
-  // Entrance animation with sequential stagger (top-left to bottom-right wave)
-  // Combine track index (vertical) + startTime (horizontal) for unique delays
+  // Animation phase for enter/exit transitions
+  const clipAnimationPhase = useTimelineStore(s => s.clipAnimationPhase);
+
+  // Calculate stagger delay based on track index (vertical) + startTime (horizontal)
   const trackIndex = track ? tracks.findIndex(t => t.id === track.id) : 0;
   // 80ms per track + 20ms per second of timeline position
-  const entranceDelay = (trackIndex * 0.08) + Math.min(clip.startTime * 0.02, 0.5);
+  const animationDelay = (trackIndex * 0.08) + Math.min(clip.startTime * 0.02, 0.5);
+
+  // Determine animation class based on phase
+  const animationClass = clipAnimationPhase === 'exiting' ? 'exit-animate' : 'entrance-animate';
 
   // Check if this clip should show cut indicator (either directly hovered or linked to hovered clip)
   const isDirectlyHovered = cutHoverInfo?.clipId === clip.id;
@@ -625,12 +631,12 @@ function TimelineClipComponent({
 
   return (
     <div
-      className={`${clipClass}${toolMode === 'cut' ? ' cut-mode' : ''} entrance-animate`}
+      className={`${clipClass}${toolMode === 'cut' ? ' cut-mode' : ''} ${animationClass}`}
       style={{
         left,
         width,
         cursor: toolMode === 'cut' ? 'crosshair' : undefined,
-        animationDelay: `${entranceDelay}s`,
+        animationDelay: `${animationDelay}s`,
       }}
       data-clip-id={clip.id}
       onMouseDown={toolMode === 'cut' ? undefined : onMouseDown}

@@ -167,6 +167,7 @@ function calculateSyncedPlayhead(
 
 /**
  * Internal helper to set active composition (avoids calling get().setActiveComposition).
+ * Handles exit/enter animations for smooth transitions.
  */
 function doSetActiveComposition(
   set: (partial: Partial<MediaState> | ((state: MediaState) => Partial<MediaState>)) => void,
@@ -196,6 +197,34 @@ function doSetActiveComposition(
     }));
     compositionRenderer.invalidateCompositionAndParents(currentActiveId);
   }
+
+  // Trigger exit animation for current clips
+  const hasExistingClips = timelineStore.clips.length > 0;
+  if (hasExistingClips && newId !== currentActiveId) {
+    // Set exit animation phase
+    timelineStore.setClipAnimationPhase('exiting');
+
+    // Wait for exit animation, then load new composition
+    setTimeout(() => {
+      finishCompositionSwitch(set, get, newId, savedCompId, syncedPlayhead);
+    }, 350); // Exit animation duration
+  } else {
+    // No existing clips or same comp, load immediately
+    finishCompositionSwitch(set, get, newId, savedCompId, syncedPlayhead);
+  }
+}
+
+/**
+ * Complete the composition switch after exit animation
+ */
+function finishCompositionSwitch(
+  set: (partial: Partial<MediaState> | ((state: MediaState) => Partial<MediaState>)) => void,
+  get: () => MediaState,
+  newId: string | null,
+  savedCompId: string | null,
+  syncedPlayhead: number | null
+): void {
+  const timelineStore = useTimelineStore.getState();
 
   // Update active composition
   set({ activeCompositionId: newId });
