@@ -654,10 +654,20 @@ export class ParallelDecodeManager {
     const targetSourceTime = this.timelineToSourceTime(clipInfo, timelineTime);
     const targetTimestamp = targetSourceTime * 1_000_000;  // Convert to microseconds
 
-    // Quick bounds check - but allow returning first frame if target is before it
-    // This handles videos where first frame isn't at exactly 0
-    if (targetTimestamp > clipDecoder.newestTimestamp + this.frameTolerance) {
-      return null;  // Target is after all decoded frames
+    // Quick bounds check - but allow returning first/last frame if target is outside
+    // This handles videos where first frame isn't at exactly 0 or clip extends beyond video
+    const useLastFrame = targetTimestamp > clipDecoder.newestTimestamp + this.frameTolerance;
+    if (useLastFrame && clipDecoder.sortedTimestamps.length > 0) {
+      // Return last frame for targets beyond video end
+      const lastTimestamp = clipDecoder.sortedTimestamps[clipDecoder.sortedTimestamps.length - 1];
+      const lastFrame = clipDecoder.frameBuffer.get(lastTimestamp);
+      if (lastFrame) {
+        console.log(`[ParallelDecode] "${clipDecoder.clipName}": using last frame for target ${(targetTimestamp/1_000_000).toFixed(3)}s (video ends at ${(lastTimestamp/1_000_000).toFixed(3)}s)`);
+        return lastFrame.frame;
+      }
+    }
+    if (useLastFrame) {
+      return null;  // No frames available
     }
 
     // If target is before first frame, use first frame (common for clips starting at 0)
