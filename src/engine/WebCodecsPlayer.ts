@@ -1182,6 +1182,9 @@ export class WebCodecsPlayer {
     // First check if frame is already in buffer
     let { frame: bestFrame, diff: bestDiff } = findBestFrame();
 
+    // Debug: log buffer state
+    console.log(`[WebCodecs] seekDuringExport(${timeSeconds.toFixed(3)}): buffer=${this.exportFrameBuffer.size}, bestDiff=${bestDiff?.toFixed(0) ?? 'none'}`);
+
     // If we have ANY frame in buffer, use the closest one
     // This handles videos with non-zero start times or edit list offsets
     if (bestFrame) {
