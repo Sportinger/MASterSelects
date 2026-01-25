@@ -408,7 +408,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
     const track = tracks.find(t => t.id === trackId);
 
     if (!track || track.type !== 'video') {
-      console.warn('[Timeline] Text clips can only be added to video tracks');
+      log.warn('Text clips can only be added to video tracks');
       return null;
     }
 
@@ -437,7 +437,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
     set({ clips: [...clips, textClip] });
     updateDuration();
     invalidateCache();
-    console.log(`[Timeline] Created text clip: ${clipId}`);
+    log.debug('Created text clip', { clipId });
     return clipId;
   },
 
@@ -550,7 +550,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
       }),
     });
     invalidateCache();
-    console.log(`[Multicam] Created linked group ${groupId} with ${clipIds.length} clips`);
+    log.debug('Created linked group', { groupId, clipCount: clipIds.length });
   },
 
   unlinkGroup: (clipId) => {
@@ -560,7 +560,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
 
     set({ clips: clips.map(c => c.linkedGroupId === clip.linkedGroupId ? { ...c, linkedGroupId: undefined } : c) });
     invalidateCache();
-    console.log(`[Multicam] Unlinked group ${clip.linkedGroupId}`);
+    log.debug('Unlinked group', { groupId: clip.linkedGroupId });
   },
 
   // ========== WAVEFORM GENERATION ==========
@@ -571,7 +571,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
     if (!clip || clip.waveformGenerating) return;
 
     set({ clips: updateClipById(get().clips, clipId, { waveformGenerating: true, waveformProgress: 0 }) });
-    console.log(`[Waveform] Starting generation for ${clip.name}`);
+    log.debug('Starting waveform generation', { clip: clip.name });
 
     try {
       let waveform: number[];
@@ -596,7 +596,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
           waveform = new Array(Math.max(1, Math.floor(clip.duration * 50))).fill(0);
         }
       } else if (!clip.file) {
-        console.warn('[Waveform] No file found for clip:', clipId);
+        log.warn('No file found for clip', { clipId });
         set({ clips: updateClipById(get().clips, clipId, { waveformGenerating: false }) });
         return;
       } else {
@@ -605,10 +605,10 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
         });
       }
 
-      console.log(`[Waveform] Complete: ${waveform.length} samples for ${clip.name}`);
+      log.debug('Waveform complete', { samples: waveform.length, clip: clip.name });
       set({ clips: updateClipById(get().clips, clipId, { waveform, waveformGenerating: false, waveformProgress: 100 }) });
     } catch (e) {
-      console.error('[Waveform] Failed:', e);
+      log.error('Waveform generation failed', e);
       set({ clips: updateClipById(get().clips, clipId, { waveformGenerating: false }) });
     }
   },
@@ -618,7 +618,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
   setClipParent: (clipId: string, parentClipId: string | null) => {
     const { clips } = get();
     if (parentClipId === clipId) {
-      console.warn('[Parenting] Cannot parent clip to itself');
+      log.warn('Cannot parent clip to itself');
       return;
     }
 
@@ -630,13 +630,13 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
         return wouldCreateCycle(check.parentClipId);
       };
       if (wouldCreateCycle(parentClipId)) {
-        console.warn('[Parenting] Cannot create circular parent reference');
+        log.warn('Cannot create circular parent reference');
         return;
       }
     }
 
     set({ clips: clips.map(c => c.id === clipId ? { ...c, parentClipId: parentClipId || undefined } : c) });
-    console.log(`[Parenting] Set parent of ${clipId} to ${parentClipId || 'none'}`);
+    log.debug('Set clip parent', { clipId, parentClipId: parentClipId || 'none' });
   },
 
   getClipChildren: (clipId: string) => {
@@ -653,7 +653,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
     const { clips, tracks, updateDuration, findNonOverlappingPosition } = get();
     const track = tracks.find(t => t.id === trackId);
     if (!track || track.type !== 'video') {
-      console.warn('[Timeline] Pending download clips can only be added to video tracks');
+      log.warn('Pending download clips can only be added to video tracks');
       return '';
     }
 
@@ -681,7 +681,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
 
     set({ clips: [...clips, pendingClip] });
     updateDuration();
-    console.log(`[Timeline] Added pending download clip: ${clipId}`);
+    log.debug('Added pending download clip', { clipId });
     return clipId;
   },
 

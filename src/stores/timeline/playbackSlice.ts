@@ -4,6 +4,9 @@ import type { PlaybackActions, RamPreviewActions, SliceCreator } from './types';
 import type { Layer } from '../../types';
 import { RAM_PREVIEW_FPS, FRAME_TOLERANCE, MIN_ZOOM, MAX_ZOOM } from './constants';
 import { quantizeTime } from './utils';
+import { Logger } from '../../services/logger';
+
+const log = Logger.create('PlaybackSlice');
 
 // Combined playback and RAM preview actions
 export type PlaybackAndRamPreviewActions = PlaybackActions & RamPreviewActions;
@@ -206,7 +209,7 @@ export const createPlaybackSlice: SliceCreator<PlaybackAndRamPreviewActions> = (
     // Don't start if RAM Preview is disabled or already running
     if (!ramPreviewEnabled || isRamPreviewing) return;
 
-    console.log('[RAM Preview] Starting generation...');
+    log.debug('RAM Preview starting generation');
 
     // Determine range to preview (use In/Out or clips extent)
     const start = inPoint ?? 0;
@@ -471,12 +474,12 @@ export const createPlaybackSlice: SliceCreator<PlaybackAndRamPreviewActions> = (
           ramPreviewRange: { start, end },
           ramPreviewProgress: null
         });
-        console.log(`[RAM Preview] Complete: ${totalFrames} frames cached (${start.toFixed(1)}s - ${end.toFixed(1)}s)`);
+        log.debug('RAM Preview complete', { totalFrames, start: start.toFixed(1), end: end.toFixed(1) });
       } else {
-        console.log('[RAM Preview] Cancelled');
+        log.debug('RAM Preview cancelled');
       }
     } catch (error) {
-      console.error('[RAM Preview] Error:', error);
+      log.error('RAM Preview error', error);
     } finally {
       engine.setGeneratingRamPreview(false);
       set({ isRamPreviewing: false, ramPreviewProgress: null });

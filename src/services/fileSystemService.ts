@@ -1,7 +1,10 @@
 // File System Access API Service
 // Provides access to actual file paths and persistent storage locations
 
+import { Logger } from './logger';
 import { projectDB } from './projectDB';
+
+const log = Logger.create('FileSystemService');
 
 // Types for File System Access API
 interface FileSystemHandlePermissionDescriptor {
@@ -37,7 +40,7 @@ let proxyFolderHandle: FileSystemDirectoryHandle | null = null;
 // Initialize from IndexedDB
 export async function initFileSystemService(): Promise<void> {
   if (!isFileSystemAccessSupported()) {
-    console.log('[FileSystem] File System Access API not supported');
+    log.info('File System Access API not supported');
     return;
   }
 
@@ -51,7 +54,7 @@ export async function initFileSystemService(): Promise<void> {
       const permission = await storedProxyHandle.queryPermission({ mode: 'readwrite' });
       if (permission === 'granted') {
         proxyFolderHandle = storedProxyHandle as FileSystemDirectoryHandle;
-        console.log('[FileSystem] Restored proxy folder handle');
+        log.info('Restored proxy folder handle');
       }
     }
 
@@ -59,11 +62,11 @@ export async function initFileSystemService(): Promise<void> {
       const permission = await storedRawHandle.queryPermission({ mode: 'read' });
       if (permission === 'granted') {
         // Reserved for future raw file folder support
-        console.log('[FileSystem] Restored raw folder handle');
+        log.info('Restored raw folder handle');
       }
     }
   } catch (e) {
-    console.warn('[FileSystem] Failed to restore handles:', e);
+    log.warn('Failed to restore handles', e);
   }
 }
 
@@ -106,7 +109,7 @@ export async function pickFiles(options?: {
       // User cancelled
       return null;
     }
-    console.error('[FileSystem] Failed to pick files:', e);
+    log.error('Failed to pick files', e);
     return null;
   }
 }
@@ -137,14 +140,14 @@ export async function pickProxyFolder(): Promise<FileSystemDirectoryHandle | nul
 
     // Store in IndexedDB for persistence
     await projectDB.storeHandle(STORAGE_KEYS.PROXY_FOLDER, handle);
-    console.log('[FileSystem] Proxy folder set:', handle.name);
+    log.info('Proxy folder set:', handle.name);
 
     return handle;
   } catch (e: any) {
     if (e.name === 'AbortError') {
       return null;
     }
-    console.error('[FileSystem] Failed to pick proxy folder:', e);
+    log.error('Failed to pick proxy folder', e);
     return null;
   }
 }

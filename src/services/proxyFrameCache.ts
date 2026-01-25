@@ -1,6 +1,9 @@
 // Proxy frame cache - loads and caches WebP frames for fast playback
 
+import { Logger } from './logger';
 import { projectFileService } from './projectFileService';
+
+const log = Logger.create('ProxyFrameCache');
 import { fileSystemService } from './fileSystemService';
 import { useMediaStore } from '../stores/mediaStore';
 
@@ -148,17 +151,15 @@ class ProxyFrameCache {
 
       // Debug logging
       if (frameIndex === 0) {
-        console.log('[ProxyCache] Loading frame 0 for:', mediaFile?.name);
-        console.log('[ProxyCache] storageKey:', storageKey);
-        console.log('[ProxyCache] projectOpen:', projectFileService.isProjectOpen());
-        console.log('[ProxyCache] proxyStatus:', mediaFile?.proxyStatus);
+        log.debug(`Loading frame 0 for: ${mediaFile?.name}`);
+        log.debug(`storageKey: ${storageKey}, projectOpen: ${projectFileService.isProjectOpen()}, proxyStatus: ${mediaFile?.proxyStatus}`);
       }
 
       // Load from project folder ONLY (no IndexedDB fallback)
       if (projectFileService.isProjectOpen()) {
         blob = await projectFileService.getProxyFrame(storageKey, frameIndex);
         if (frameIndex === 0) {
-          console.log('[ProxyCache] Frame 0 blob:', blob ? `${blob.size} bytes` : 'null');
+          log.debug(`Frame 0 blob: ${blob ? `${blob.size} bytes` : 'null'}`);
         }
       }
 
@@ -180,7 +181,7 @@ class ProxyFrameCache {
         image.src = url;
       });
     } catch (e) {
-      console.warn('[ProxyCache] Failed to load frame:', e);
+      log.warn('Failed to load frame', e);
       return null;
     }
   }
@@ -424,10 +425,10 @@ class ProxyFrameCache {
         audio.load();
       });
 
-      console.log(`[ProxyFrameCache] Audio proxy loaded for ${mediaFileId}`);
+      log.info(`Audio proxy loaded for ${mediaFileId}`);
       return audio;
     } catch (e) {
-      console.warn(`[ProxyFrameCache] Failed to load audio proxy for ${mediaFileId}:`, e);
+      log.warn(`Failed to load audio proxy for ${mediaFileId}`, e);
       return null;
     }
   }
@@ -485,18 +486,18 @@ class ProxyFrameCache {
       // Try 1: Proxy audio file (fastest, smallest)
       const audioFile = await projectFileService.getProxyAudio(storageKey);
       if (audioFile) {
-        console.log(`[AudioBuffer] Loading from proxy audio: ${mediaFileId}`);
+        log.debug(`Loading from proxy audio: ${mediaFileId}`);
         arrayBuffer = await audioFile.arrayBuffer();
       }
 
       // Try 2: Original video file URL (extract audio from video)
       if (!arrayBuffer && mediaFile?.url) {
-        console.log(`[AudioBuffer] Loading from video URL: ${mediaFileId}`);
+        log.debug(`Loading from video URL: ${mediaFileId}`);
         try {
           const response = await fetch(mediaFile.url);
           arrayBuffer = await response.arrayBuffer();
         } catch (e) {
-          console.warn(`[AudioBuffer] Failed to fetch video URL:`, e);
+          log.warn('Failed to fetch video URL', e);
         }
       }
 
@@ -504,18 +505,18 @@ class ProxyFrameCache {
       if (!arrayBuffer) {
         const fileHandle = fileSystemService.getFileHandle(mediaFileId);
         if (fileHandle) {
-          console.log(`[AudioBuffer] Loading from file handle: ${mediaFileId}`);
+          log.debug(`Loading from file handle: ${mediaFileId}`);
           try {
             const file = await fileHandle.getFile();
             arrayBuffer = await file.arrayBuffer();
           } catch (e) {
-            console.warn(`[AudioBuffer] Failed to read file handle:`, e);
+            log.warn('Failed to read file handle', e);
           }
         }
       }
 
       if (!arrayBuffer) {
-        console.warn(`[AudioBuffer] No audio source found for ${mediaFileId}`);
+        log.warn(`No audio source found for ${mediaFileId}`);
         this.audioBufferLoading.delete(mediaFileId);
         return null;
       }
@@ -527,11 +528,11 @@ class ProxyFrameCache {
       // Cache it
       this.audioBufferCache.set(mediaFileId, audioBuffer);
       this.audioBufferLoading.delete(mediaFileId);
-      console.log(`[AudioBuffer] Decoded ${mediaFileId}: ${audioBuffer.duration.toFixed(1)}s, ${audioBuffer.numberOfChannels}ch`);
+      log.debug(`Decoded ${mediaFileId}: ${audioBuffer.duration.toFixed(1)}s, ${audioBuffer.numberOfChannels}ch`);
 
       return audioBuffer;
     } catch (e) {
-      console.warn(`[AudioBuffer] Failed to decode:`, e);
+      log.warn('Failed to decode audio', e);
       this.audioBufferLoading.delete(mediaFileId);
       return null;
     }
@@ -549,14 +550,14 @@ class ProxyFrameCache {
   playScrubAudio(mediaFileId: string, targetTime: number, _duration: number = 0.15): void {
     const buffer = this.audioBufferCache.get(mediaFileId);
     if (!buffer) {
-      console.log('[Scrub] No AudioBuffer for', mediaFileId, '- loading...');
+      log.debug(`No AudioBuffer for ${mediaFileId} - loading...`);
       this.getAudioBuffer(mediaFileId);
       return;
     }
 
     // Debug: Log that varispeed is active
     if (!this.scrubIsActive) {
-      console.log('[Scrub] VARISPEED starting at', targetTime.toFixed(2), 's');
+      log.debug(`VARISPEED starting at ${targetTime.toFixed(2)}s`);
     }
 
     const ctx = this.getAudioContext();
@@ -728,7 +729,7 @@ class ProxyFrameCache {
       this.processPreloadQueue();
     }
 
-    console.log(`[ProxyCache] Bulk preload started: ${framesToPreload.length} frames around frame ${frameIndex}`);
+    log.debug(`Bulk preload started: ${framesToPreload.length} frames around frame ${frameIndex}`);
   }
 
   // Get cache stats with more detail
@@ -752,7 +753,7 @@ class ProxyFrameCache {
   logPerformance(): void {
     const total = this.cacheHits + this.cacheMisses;
     const hitRate = total > 0 ? (this.cacheHits / total * 100).toFixed(1) : '0';
-    console.log(`[ProxyCache] Hit rate: ${hitRate}% (${this.cacheHits}/${total}), cached: ${this.cache.size}/${MAX_CACHE_SIZE}, queue: ${this.preloadQueue.length}`);
+    log.debug(`Hit rate: ${hitRate}% (${this.cacheHits}/${total}), cached: ${this.cache.size}/${MAX_CACHE_SIZE}, queue: ${this.preloadQueue.length}`);
   }
 
   // Reset performance counters

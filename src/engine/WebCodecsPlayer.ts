@@ -1126,7 +1126,12 @@ export class WebCodecsPlayer {
       return;
     }
 
-    if (!this.isInExportMode || !this.videoTrack || !this.decoder) {
+    if (!this.isInExportMode) {
+      log.warn(`seekDuringExport: not in export mode at ${timeSeconds.toFixed(3)}s`);
+      return;
+    }
+    if (!this.videoTrack || !this.decoder) {
+      log.warn(`seekDuringExport: missing videoTrack/decoder at ${timeSeconds.toFixed(3)}s`);
       return;
     }
 
@@ -1142,19 +1147,25 @@ export class WebCodecsPlayer {
 
       // Accept if within 1.5 frame durations
       if (diff < frameDuration * 1.5) {
-        this.currentFrame = this.exportFrameBuffer.get(cts) || null;
-        this.exportCurrentIndex = bestIndex;
+        const foundFrame = this.exportFrameBuffer.get(cts);
+        if (foundFrame) {
+          this.currentFrame = foundFrame;
+          this.exportCurrentIndex = bestIndex;
 
-        // Decode ahead if we're getting close to buffer end
-        const framesRemaining = this.exportFramesCts.length - bestIndex;
-        if (framesRemaining < 30 && this.sampleIndex < this.samples.length) {
-          await this.decodeMoreFrames(30);
+          // Decode ahead if we're getting close to buffer end
+          const framesRemaining = this.exportFramesCts.length - bestIndex;
+          if (framesRemaining < 30 && this.sampleIndex < this.samples.length) {
+            log.debug(`Decoding ahead: ${framesRemaining} frames remaining, sampleIndex=${this.sampleIndex}/${this.samples.length}`);
+            await this.decodeMoreFrames(30);
+          }
+
+          // Clean up frames far behind current position (keep 10 behind)
+          this.cleanupOldFrames(bestIndex - 10);
+
+          return;
+        } else {
+          log.warn(`Frame CTS ${cts} in list but not in buffer at ${timeSeconds.toFixed(3)}s`);
         }
-
-        // Clean up frames far behind current position (keep 10 behind)
-        this.cleanupOldFrames(bestIndex - 10);
-
-        return;
       }
     }
 
@@ -1163,8 +1174,11 @@ export class WebCodecsPlayer {
       ? this.exportFramesCts[this.exportFramesCts.length - 1]
       : 0;
 
+    log.debug(`Frame not in buffer: target=${targetCts.toFixed(0)}, max=${maxCtsInBuffer.toFixed(0)}, bufferSize=${this.exportFramesCts.length}`);
+
     if (targetCts > maxCtsInBuffer && this.sampleIndex < this.samples.length) {
       // Target is ahead of buffer - decode more
+      log.info(`Decoding more frames: target ahead of buffer by ${((targetCts - maxCtsInBuffer)/1000).toFixed(1)}ms`);
       await this.decodeMoreFrames(60);
 
       // Try again
@@ -1181,6 +1195,9 @@ export class WebCodecsPlayer {
     if (this.exportFramesCts.length > 0) {
       const lastCts = this.exportFramesCts[this.exportFramesCts.length - 1];
       this.currentFrame = this.exportFrameBuffer.get(lastCts) || null;
+      log.warn(`Using fallback frame at CTS ${lastCts.toFixed(0)} for target ${targetCts.toFixed(0)}`);
+    } else {
+      log.error(`No frames in buffer for seek to ${timeSeconds.toFixed(3)}s`);
     }
   }
 
@@ -1216,10 +1233,12 @@ export class WebCodecsPlayer {
    */
   private async decodeMoreFrames(minCount: number): Promise<void> {
     if (!this.decoder || !this.videoTrack || this.sampleIndex >= this.samples.length) {
+      log.debug(`decodeMoreFrames: nothing to decode (sampleIndex=${this.sampleIndex}/${this.samples.length})`);
       return;
     }
 
     const startIndex = this.sampleIndex;
+    const bufferBefore = this.exportFrameBuffer.size;
 
     // Find next keyframe after minCount samples
     let endIndex = Math.min(this.sampleIndex + minCount, this.samples.length);
@@ -1232,6 +1251,8 @@ export class WebCodecsPlayer {
     }
     endIndex = Math.min(endIndex, this.samples.length);
 
+    log.debug(`decodeMoreFrames: decoding samples ${startIndex}-${endIndex} (${endIndex - startIndex} samples)`);
+
     for (let i = this.sampleIndex; i < endIndex; i++) {
       const sample = this.samples[i];
       const chunk = new EncodedVideoChunk({
@@ -1242,7 +1263,9 @@ export class WebCodecsPlayer {
       });
       try {
         this.decoder.decode(chunk);
-      } catch {}
+      } catch (e) {
+        log.warn(`Decode error at sample ${i}: ${e}`);
+      }
     }
     this.sampleIndex = endIndex;
 
@@ -1252,6 +1275,9 @@ export class WebCodecsPlayer {
 
     // Update sorted CTS array
     this.exportFramesCts = Array.from(this.exportFrameBuffer.keys()).sort((a, b) => a - b);
+
+    const framesAdded = this.exportFrameBuffer.size - bufferBefore;
+    log.debug(`decodeMoreFrames: ${framesAdded} new frames added, buffer now ${this.exportFrameBuffer.size}`);
   }
 
   /**

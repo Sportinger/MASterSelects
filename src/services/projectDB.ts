@@ -1,6 +1,10 @@
 // IndexedDB service for project persistence
 // Stores media file blobs and project data
 
+import { Logger } from './logger';
+
+const log = Logger.create('ProjectDB');
+
 const DB_NAME = 'MASterSelectsDB';
 const DB_VERSION = 5; // Upgraded for fileHash proxy deduplication
 

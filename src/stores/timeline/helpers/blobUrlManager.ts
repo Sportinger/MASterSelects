@@ -1,6 +1,10 @@
 // Blob URL Manager - prevents memory leaks by tracking and cleaning up object URLs
 // Each clip can have associated blob URLs that need to be revoked when the clip is removed
 
+import { Logger } from '../../../services/logger';
+
+const log = Logger.create('BlobUrlManager');
+
 type UrlType = 'video' | 'audio' | 'image' | 'file';
 
 interface ManagedUrl {
@@ -191,13 +195,13 @@ class BlobUrlManager {
    * Debug: log all tracked URLs.
    */
   debug(): void {
-    console.log('[BlobUrlManager] Active URLs:');
+    log.debug('Active URLs:');
     for (const [clipId, clipUrls] of this.urls) {
       for (const [type, managed] of clipUrls) {
-        console.log(`  ${clipId} [${type}]: ${managed.url} (created ${Date.now() - managed.createdAt}ms ago)`);
+        log.debug('URL entry', { clipId, type, url: managed.url, ageMs: Date.now() - managed.createdAt });
       }
     }
-    console.log('[BlobUrlManager] Stats:', this.getStats());
+    log.debug('Stats', this.getStats());
   }
 }
 

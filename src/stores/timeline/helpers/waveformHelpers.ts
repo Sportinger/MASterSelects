@@ -2,6 +2,9 @@
 // Provides consistent thresholds and logging across clip loading
 
 import { generateWaveform as baseGenerateWaveform } from '../utils';
+import { Logger } from '../../../services/logger';
+
+const log = Logger.create('WaveformHelpers');
 
 // File size thresholds for waveform generation
 // Video waveforms: skip if >500MB (video decode + audio decode is expensive)
@@ -25,11 +28,11 @@ export async function generateWaveformForFile(
 ): Promise<number[]> {
   const { samplesPerSecond = 50, onProgress } = options;
 
-  console.log(`[Waveform] Starting generation for ${file.name}...`);
+  log.debug('Starting waveform generation', { file: file.name });
 
   const waveform = await baseGenerateWaveform(file, samplesPerSecond, onProgress);
 
-  console.log(`[Waveform] Complete: ${waveform.length} samples for ${file.name}`);
+  log.debug('Waveform complete', { samples: waveform.length, file: file.name });
 
   return waveform;
 }
@@ -44,7 +47,7 @@ export function shouldSkipWaveform(file: File, isAudioOnly: boolean = false): bo
 
   if (file.size > threshold) {
     const sizeMB = (file.size / 1024 / 1024).toFixed(0);
-    console.log(`[Waveform] Skipping for large file (${sizeMB}MB): ${file.name}`);
+    log.debug('Skipping waveform for large file', { sizeMB, file: file.name });
     return true;
   }
 

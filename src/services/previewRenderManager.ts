@@ -1,7 +1,10 @@
 // PreviewRenderManager - Centralized render loop for all independent preview canvases
 // Single RAF loop handles all previews efficiently with proper nested composition sync
 
+import { Logger } from './logger';
 import type { Layer } from '../types';
+
+const log = Logger.create('PreviewRenderManager');
 import { useTimelineStore } from '../stores/timeline';
 import { useMediaStore } from '../stores/mediaStore';
 import { compositionRenderer } from './compositionRenderer';

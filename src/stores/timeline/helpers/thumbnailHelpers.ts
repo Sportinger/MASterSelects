@@ -2,6 +2,9 @@
 // Handles video and image thumbnail generation
 
 import { seekVideo } from '../utils';
+import { Logger } from '../../../services/logger';
+
+const log = Logger.create('ThumbnailHelpers');
 
 export interface ThumbnailOptions {
   maxCount?: number;
@@ -33,7 +36,7 @@ export async function generateVideoThumbnails(
   const ctx = canvas.getContext('2d');
 
   if (!ctx) {
-    console.warn('[Thumbnails] Could not get canvas context');
+    log.warn('Could not get canvas context');
     return thumbnails;
   }
 
@@ -54,7 +57,7 @@ export async function generateVideoThumbnails(
       ctx.drawImage(video, 0, 0, thumbWidth, thumbHeight);
       thumbnails.push(canvas.toDataURL('image/jpeg', quality));
     } catch (e) {
-      console.warn('[Thumbnails] Failed at', time, e);
+      log.warn('Thumbnail failed at time', { time, error: e });
     }
   }
 

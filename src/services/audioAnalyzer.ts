@@ -1,7 +1,10 @@
 // Audio Analyzer Service
 // Extracts audio levels and fingerprints from media files for sync and analysis
 
+import { Logger } from './logger';
 import { useMediaStore } from '../stores/mediaStore';
+
+const log = Logger.create('AudioAnalyzer');
 
 export interface AudioLevel {
   timestamp: number; // ms

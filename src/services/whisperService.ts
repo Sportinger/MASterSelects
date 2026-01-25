@@ -1,7 +1,10 @@
 // Whisper Service
 // Browser-based speech-to-text using Transformers.js
 
+import { Logger } from './logger';
 import type { TranscriptEntry } from '../stores/multicamStore';
+
+const log = Logger.create('WhisperService');
 import { useMediaStore } from '../stores/mediaStore';
 
 // We'll dynamically import transformers.js when needed
@@ -38,7 +41,7 @@ class WhisperService {
       // Dynamically import transformers.js
       const { pipeline } = await import('@huggingface/transformers');
 
-      console.log('[WhisperService] Loading Whisper model...');
+      log.info('Loading Whisper model...');
 
       // Use whisper-tiny for fastest inference
       // Options: whisper-tiny, whisper-base, whisper-small
@@ -54,9 +57,9 @@ class WhisperService {
         }
       );
 
-      console.log('[WhisperService] Model loaded');
+      log.info('Model loaded');
     } catch (error) {
-      console.error('[WhisperService] Failed to load model:', error);
+      log.error('Failed to load model', error);
       throw new Error(
         'Failed to load Whisper model. Make sure @xenova/transformers is installed: npm install @xenova/transformers'
       );
@@ -73,7 +76,7 @@ class WhisperService {
     const mediaFile = mediaStore.files.find(f => f.id === mediaFileId);
 
     if (!mediaFile || !mediaFile.file) {
-      console.warn('[WhisperService] Media file not found:', mediaFileId);
+      log.warn('Media file not found', { mediaFileId });
       return null;
     }
 
@@ -107,7 +110,7 @@ class WhisperService {
       audioContext.close();
       return channelData;
     } catch (error) {
-      console.error('[WhisperService] Failed to extract audio:', error);
+      log.error('Failed to extract audio', error);
       return null;
     }
   }
@@ -126,14 +129,14 @@ class WhisperService {
     });
 
     // Extract audio
-    console.log('[WhisperService] Extracting audio...');
+    log.debug('Extracting audio...');
     const audioData = await this.extractAudio(mediaFileId);
 
     if (!audioData) {
       throw new Error('Failed to extract audio from media file');
     }
 
-    console.log('[WhisperService] Transcribing', audioData.length, 'samples...');
+    log.debug(`Transcribing ${audioData.length} samples...`);
     onProgress?.(55);
 
     // Run transcription
@@ -181,7 +184,7 @@ class WhisperService {
     }
 
     onProgress?.(100);
-    console.log('[WhisperService] Transcription complete:', entries.length, 'entries');
+    log.info(`Transcription complete: ${entries.length} entries`);
 
     return entries;
   }
@@ -200,7 +203,7 @@ class WhisperService {
     if (this.pipeline) {
       // Transformers.js doesn't have explicit unload, but we can null the reference
       this.pipeline = null;
-      console.log('[WhisperService] Model unloaded');
+      log.info('Model unloaded');
     }
   }
 }

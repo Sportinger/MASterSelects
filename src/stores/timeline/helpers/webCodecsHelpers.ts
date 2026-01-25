@@ -2,6 +2,9 @@
 // Handles WebCodecsPlayer setup and video decoder warm-up
 
 import { WebCodecsPlayer } from '../../../engine/WebCodecsPlayer';
+import { Logger } from '../../../services/logger';
+
+const log = Logger.create('WebCodecsHelpers');
 
 /**
  * Check if WebCodecs API is available in the browser.
@@ -23,22 +26,22 @@ export async function initWebCodecsPlayer(
   }
 
   try {
-    console.log(`[WebCodecs] Initializing for ${fileName}...`);
+    log.debug('Initializing WebCodecs', { file: fileName });
 
     const webCodecsPlayer = new WebCodecsPlayer({
       loop: false,
       useSimpleMode: true,
       onError: (error) => {
-        console.warn('[WebCodecs] Error:', error.message);
+        log.warn('WebCodecs error', { error: error.message });
       },
     });
 
     webCodecsPlayer.attachToVideoElement(video);
-    console.log(`[WebCodecs] Ready for ${fileName}`);
+    log.debug('WebCodecs ready', { file: fileName });
 
     return webCodecsPlayer;
   } catch (err) {
-    console.warn('[WebCodecs] Init failed, using HTMLVideoElement:', err);
+    log.warn('WebCodecs init failed, using HTMLVideoElement', err);
     return null;
   }
 }

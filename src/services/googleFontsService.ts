@@ -3,6 +3,10 @@
  * Uses the FontFace API for efficient font loading
  */
 
+import { Logger } from './logger';
+
+const log = Logger.create('GoogleFontsService');
+
 export interface FontConfig {
   family: string;
   weights: number[];
@@ -101,7 +105,7 @@ class GoogleFontsService {
       await promise;
       this.loadedFonts.add(key);
     } catch (e) {
-      console.warn(`[GoogleFonts] Failed to load ${family} ${weight}:`, e);
+      log.warn(`Failed to load ${family} ${weight}`, e);
     } finally {
       this.loadingPromises.delete(key);
     }

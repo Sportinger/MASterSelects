@@ -2,6 +2,10 @@
 // Supports: Kling, Luma, Veo, Sora2, Wanx, Hailuo, SkyReels, Hunyuan, etc.
 // Docs: https://piapi.ai/docs/overview
 
+import { Logger } from './logger';
+
+const log = Logger.create('PiAPI');
+
 const BASE_URL = 'https://api.piapi.ai';
 const MODELS_CACHE_KEY = 'piapi-video-models';
 const MODELS_CACHE_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours

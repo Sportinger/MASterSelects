@@ -2,6 +2,9 @@
 
 import type { EffectType } from '../../types';
 import { getDefaultParams as getRegistryDefaultParams, hasEffect } from '../../effects';
+import { Logger } from '../../services/logger';
+
+const log = Logger.create('TimelineUtils');
 
 // Helper to seek video and wait for it to be ready
 export function seekVideo(video: HTMLVideoElement, time: number): Promise<void> {
@@ -78,7 +81,7 @@ export async function generateWaveform(
     }
     return samples;
   } catch (e) {
-    console.warn('Failed to generate waveform:', e);
+    log.warn('Failed to generate waveform', e);
     return [];
   }
 }
@@ -120,7 +123,7 @@ export function generateWaveformFromBuffer(
     }
     return samples;
   } catch (e) {
-    console.warn('Failed to generate waveform from buffer:', e);
+    log.warn('Failed to generate waveform from buffer', e);
     return [];
   }
 }
@@ -148,7 +151,7 @@ export async function generateThumbnails(video: HTMLVideoElement, duration: numb
       ctx.drawImage(video, 0, 0, thumbWidth, thumbHeight);
       thumbnails.push(canvas.toDataURL('image/jpeg', 0.6));
     } catch (e) {
-      console.warn('Failed to generate thumbnail at', time, e);
+      log.warn('Failed to generate thumbnail', { time, error: e });
     }
   }
 

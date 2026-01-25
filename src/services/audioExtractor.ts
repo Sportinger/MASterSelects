@@ -1,7 +1,10 @@
 // Audio Extractor - Extract audio from video files using MP4Box.js (no FFmpeg needed)
 // Much faster than FFmpeg WASM since we just copy without re-encoding
 
+import { Logger } from './logger';
 import * as MP4BoxModule from 'mp4box';
+
+const log = Logger.create('AudioExtractor');
 
 const MP4Box = (MP4BoxModule as unknown as { default: typeof MP4BoxModule }).default || MP4BoxModule;
 

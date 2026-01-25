@@ -2,7 +2,10 @@
 // Uses VideoDecoder for hardware decoding and GPU for batch resize
 // Workers handle parallel WebP encoding
 
+import { Logger } from './logger';
 import * as MP4BoxModule from 'mp4box';
+
+const log = Logger.create('ProxyGenerator');
 import { engine } from '../engine/WebGPUEngine';
 import { ProxyResizePipeline } from '../engine/proxy/ProxyResizePipeline';
 
@@ -149,12 +152,12 @@ class ProxyGeneratorGPU {
     for (let i = 0; i < WORKER_POOL_SIZE; i++) {
       const worker = new Worker(workerUrl);
       worker.onmessage = (e) => this.handleWorkerMessage(i, e.data);
-      worker.onerror = (e) => console.error('[ProxyGen] Worker error:', e);
+      worker.onerror = (e) => log.error('Worker error', e);
       this.workers.push(worker);
       this.workerBusy.push(false);
     }
 
-    console.log(`[ProxyGen] Initialized ${WORKER_POOL_SIZE} encoding workers`);
+    log.info(`Initialized ${WORKER_POOL_SIZE} encoding workers`);
   }
 
   private handleWorkerMessage(workerIndex: number, data: { frameIndex: number; blob?: Blob; error?: string }) {
@@ -164,13 +167,13 @@ class ProxyGeneratorGPU {
     if (pending) {
       if (data.error) {
         // Log error but don't reject - just skip this frame
-        console.warn(`[ProxyGen] Worker failed to encode frame ${data.frameIndex}: ${data.error}`);
+        log.warn(`Worker failed to encode frame ${data.frameIndex}: ${data.error}`);
         // Create a tiny placeholder blob
         pending.resolve(new Blob([], { type: 'image/webp' }));
       } else if (data.blob) {
         pending.resolve(data.blob);
       } else {
-        console.warn(`[ProxyGen] Worker returned no data for frame ${data.frameIndex}`);
+        log.warn(`Worker returned no data for frame ${data.frameIndex}`);
         pending.resolve(new Blob([], { type: 'image/webp' }));
       }
       this.pendingFrames.delete(data.frameIndex);
@@ -241,8 +244,8 @@ class ProxyGeneratorGPU {
 
         // Log GPU info for verification
         const adapterInfo = (device as any).adapterInfo;
-        console.log('%c[ProxyGen] 🎮 GPU ACCELERATION ACTIVE', 'color: #00ff00; font-weight: bold; font-size: 14px');
-        console.log('[ProxyGen] GPU Device:', {
+        log.info('GPU ACCELERATION ACTIVE');
+        log.debug('GPU Device', {
           vendor: adapterInfo?.vendor || 'unknown',
           architecture: adapterInfo?.architecture || 'unknown',
           device: adapterInfo?.device || 'unknown',
@@ -256,7 +259,7 @@ class ProxyGeneratorGPU {
           return;
         }
 
-        console.log(`[ProxyGen] Video loaded: ${this.videoTrack!.video.width}x${this.videoTrack!.video.height}, targeting ${this.outputWidth}x${this.outputHeight} at ${PROXY_FPS}fps`);
+        log.info(`Video loaded: ${this.videoTrack!.video.width}x${this.videoTrack!.video.height}, targeting ${this.outputWidth}x${this.outputHeight} at ${PROXY_FPS}fps`);
 
         // Initialize GPU resize pipeline
         this.resizePipeline = new ProxyResizePipeline(device);
@@ -283,7 +286,7 @@ class ProxyGeneratorGPU {
         try {
           await this.processSamplesGPU(mediaFileId, saveFrame);
         } catch (firstError) {
-          console.warn('[ProxyGen] First decode attempt failed, trying without description...');
+          log.warn('First decode attempt failed, trying without description...');
 
           // Reset state
           this.decodedFrames.clear();
@@ -300,7 +303,7 @@ class ProxyGeneratorGPU {
             try {
               const support = await VideoDecoder.isConfigSupported(configWithoutDesc);
               if (support.supported) {
-                console.log('[ProxyGen] Retrying with config without description...');
+                log.info('Retrying with config without description...');
                 this.codecConfig = configWithoutDesc;
                 this.decoder?.close();
                 this.initDecoder();
@@ -309,7 +312,7 @@ class ProxyGeneratorGPU {
                 throw firstError;
               }
             } catch (retryError) {
-              console.error('[ProxyGen] Retry also failed:', retryError);
+              log.error('Retry also failed', retryError);
               throw firstError;
             }
           } else {
@@ -318,7 +321,7 @@ class ProxyGeneratorGPU {
         }
 
       } catch (error) {
-        console.error('[ProxyGen] Generation failed:', error);
+        log.error('Generation failed', error);
         reject(error);
       }
     });
@@ -334,7 +337,7 @@ class ProxyGeneratorGPU {
 
       const checkComplete = () => {
         if (codecReady && samplesReady) {
-          console.log(`[ProxyGen] Extracted ${this.samples.length} samples from video`);
+          log.info(`Extracted ${this.samples.length} samples from video`);
           resolve(true);
         }
       };
@@ -366,7 +369,7 @@ class ProxyGeneratorGPU {
         const trak = this.mp4File!.getTrackById(track.id);
         const codecString = this.getCodecString(track.codec, trak);
 
-        console.log(`[ProxyGen] Detected codec: ${codecString}, expecting ${expectedSamples} samples...`);
+        log.debug(`Detected codec: ${codecString}, expecting ${expectedSamples} samples...`);
 
         // Get AVC description (SPS/PPS) for H.264
         let description: Uint8Array | undefined;
@@ -382,22 +385,22 @@ class ProxyGeneratorGPU {
             const totalWritten = stream.position || stream.buffer.byteLength;
             if (totalWritten > 8) {
               description = new Uint8Array(stream.buffer.slice(8, totalWritten));
-              console.log(`[ProxyGen] Got AVC description: ${description.length} bytes (from ${totalWritten} total)`);
+              log.debug(`Got AVC description: ${description.length} bytes (from ${totalWritten} total)`);
               // Log first few bytes for debugging
               const hex = Array.from(description.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' ');
-              console.log(`[ProxyGen] AVC description starts with: ${hex}`);
+              log.debug(`AVC description starts with: ${hex}`);
             } else {
-              console.warn(`[ProxyGen] avcC box too small: ${totalWritten} bytes`);
+              log.warn(`avcC box too small: ${totalWritten} bytes`);
             }
           } else {
-            console.warn('[ProxyGen] No avcC box found in track');
+            log.warn('No avcC box found in track');
           }
         }
 
         // Try to find a supported codec configuration
         const config = await this.findSupportedCodec(codecString, track.video.width, track.video.height, description);
         if (!config) {
-          console.warn('[ProxyGen] No supported codec configuration found');
+          log.warn('No supported codec configuration found');
           resolve(false);
           return;
         }
@@ -406,19 +409,19 @@ class ProxyGeneratorGPU {
         codecReady = true;
 
         // Extract all samples
-        console.log(`[ProxyGen] Setting extraction options for track ${track.id}...`);
+        log.debug(`Setting extraction options for track ${track.id}...`);
         mp4File.setExtractionOptions(track.id, null, { nbSamples: Infinity });
         mp4File.start();
 
         // Force re-process already buffered data
         mp4File.flush();
 
-        console.log(`[ProxyGen] Extraction started, waiting for samples...`);
+        log.debug('Extraction started, waiting for samples...');
 
         // If no samples after a short delay, something is wrong
         setTimeout(() => {
           if (this.samples.length === 0) {
-            console.warn(`[ProxyGen] No samples received after start(). Track has ${expectedSamples} samples.`);
+            log.warn(`No samples received after start(). Track has ${expectedSamples} samples.`);
           }
         }, 500);
 
@@ -427,7 +430,7 @@ class ProxyGeneratorGPU {
 
       mp4File.onSamples = (_trackId: number, _ref: any, samples: Sample[]) => {
         this.samples.push(...samples);
-        console.log(`[ProxyGen] Received ${samples.length} samples (total: ${this.samples.length}/${expectedSamples})`);
+        log.debug(`Received ${samples.length} samples (total: ${this.samples.length}/${expectedSamples})`);
         if (this.samples.length >= expectedSamples) {
           samplesReady = true;
           checkComplete();
@@ -435,7 +438,7 @@ class ProxyGeneratorGPU {
       };
 
       mp4File.onError = (error: string) => {
-        console.error('[ProxyGen] MP4Box error:', error);
+        log.error('MP4Box error', error);
         resolve(false);
       };
 
@@ -453,14 +456,14 @@ class ProxyGeneratorGPU {
         await new Promise(r => setTimeout(r, 500));
 
         if (!codecReady) {
-          console.warn('[ProxyGen] Codec not ready after first pass');
+          log.warn('Codec not ready after first pass');
           // Wait longer
           await new Promise(r => setTimeout(r, 1000));
         }
 
         if (codecReady && this.samples.length === 0) {
           // Second pass: re-append to extract samples now that extraction options are set
-          console.log('[ProxyGen] Re-appending data to extract samples...');
+          log.debug('Re-appending data to extract samples...');
           const buffer2 = fileData.slice(0) as MP4ArrayBuffer;
           buffer2.fileStart = 0;
           mp4File.appendBuffer(buffer2);
@@ -470,19 +473,19 @@ class ProxyGeneratorGPU {
         // Give time for samples to be extracted
         setTimeout(() => {
           if (!samplesReady && this.samples.length > 0) {
-            console.log(`[ProxyGen] Timeout: proceeding with ${this.samples.length} samples`);
+            log.debug(`Timeout: proceeding with ${this.samples.length} samples`);
             samplesReady = true;
             checkComplete();
           } else if (!this.videoTrack) {
-            console.warn('[ProxyGen] Timeout: no video track found');
+            log.warn('Timeout: no video track found');
             resolve(false);
           } else if (this.samples.length === 0) {
-            console.error('[ProxyGen] No samples extracted after re-append');
+            log.error('No samples extracted after re-append');
             resolve(false);
           }
         }, 2000);
       } catch (e) {
-        console.error('[ProxyGen] File read error:', e);
+        log.error('File read error', e);
         resolve(false);
       }
     });
@@ -542,9 +545,9 @@ class ProxyGeneratorGPU {
 
     const codecsToTry = baseCodec.startsWith('avc1') ? h264Fallbacks : [baseCodec];
 
-    console.log(`[ProxyGen] Testing ${codecsToTry.length} codec configurations for ${width}x${height}...`);
+    log.debug(`Testing ${codecsToTry.length} codec configurations for ${width}x${height}...`);
     if (description) {
-      console.log(`[ProxyGen] Using AVC description (${description.length} bytes) for H.264 decoding`);
+      log.debug(`Using AVC description (${description.length} bytes) for H.264 decoding`);
     }
 
     // Try with hardware acceleration preferred
@@ -560,16 +563,16 @@ class ProxyGeneratorGPU {
 
       try {
         const support = await VideoDecoder.isConfigSupported(config);
-        console.log(`[ProxyGen] Codec ${codec}: ${support.supported ? '✓ supported' : '✗ not supported'}`);
+        log.debug(`Codec ${codec}: ${support.supported ? 'supported' : 'not supported'}`);
         if (support.supported) {
           return config;
         }
       } catch (e) {
-        console.log(`[ProxyGen] Codec ${codec}: ✗ error - ${e}`);
+        log.debug(`Codec ${codec}: error - ${e}`);
       }
     }
 
-    console.warn(`[ProxyGen] No supported codec found for ${baseCodec}`);
+    log.warn(`No supported codec found for ${baseCodec}`);
     return null;
   }
 
@@ -590,18 +593,18 @@ class ProxyGeneratorGPU {
         lastError = error;
         // Only log first few errors to avoid spam
         if (errorCount <= 5) {
-          console.error('[ProxyGen] Decoder error:', error.message || error);
+          log.error('Decoder error', error.message || error);
         }
         if (errorCount === 5) {
-          console.warn('[ProxyGen] Suppressing further decoder errors...');
+          log.warn('Suppressing further decoder errors...');
         }
       },
     });
 
-    console.log('[ProxyGen] VideoDecoder created, state:', this.decoder.state);
+    log.debug(`VideoDecoder created, state: ${this.decoder.state}`);
 
     this.decoder.configure(this.codecConfig);
-    console.log('[ProxyGen] Decoder configured:', {
+    log.debug('Decoder configured', {
       codec: this.codecConfig.codec,
       size: `${this.codecConfig.codedWidth}x${this.codecConfig.codedHeight}`,
       hasDescription: !!this.codecConfig.description,
@@ -623,7 +626,7 @@ class ProxyGeneratorGPU {
     // Log first few frames and every 50th frame
     const frameCount = this.decodedFrames.size + 1;
     if (frameCount <= 3 || frameCount % 50 === 0) {
-      console.log(`[ProxyGen] Frame decoded: index=${frameIndex}, timestamp=${timestamp.toFixed(2)}s, size=${frame.codedWidth}x${frame.codedHeight}, total=${frameCount}`);
+      log.debug(`Frame decoded: index=${frameIndex}, timestamp=${timestamp.toFixed(2)}s, size=${frame.codedWidth}x${frame.codedHeight}, total=${frameCount}`);
     }
 
     if (frameIndex >= 0 && frameIndex < this.totalFrames) {
@@ -660,16 +663,16 @@ class ProxyGeneratorGPU {
     // Count keyframes for diagnostics
     const keyframeCount = sortedSamples.filter(s => s.is_sync).length;
     const deltaCount = sortedSamples.length - keyframeCount;
-    console.log(`[ProxyGen] Decoding ${sortedSamples.length} samples (${keyframeCount} keyframes, ${deltaCount} delta frames)...`);
+    log.info(`Decoding ${sortedSamples.length} samples (${keyframeCount} keyframes, ${deltaCount} delta frames)...`);
 
     // Find first keyframe to start decoding from
     const firstKeyframeIdx = sortedSamples.findIndex(s => s.is_sync);
     if (firstKeyframeIdx === -1) {
-      console.error('[ProxyGen] No keyframes found in video!');
+      log.error('No keyframes found in video!');
       throw new Error('No keyframes found');
     }
     if (firstKeyframeIdx > 0) {
-      console.log(`[ProxyGen] Skipping ${firstKeyframeIdx} samples before first keyframe`);
+      log.debug(`Skipping ${firstKeyframeIdx} samples before first keyframe`);
     }
 
     // Performance tracking
@@ -730,7 +733,7 @@ class ProxyGeneratorGPU {
 
           // Log batch performance
           if (batchCount % 5 === 0 || batchCount === 1) {
-            console.log(`[ProxyGen] Batch ${batchCount}: GPU=${(gpuEnd - gpuStart).toFixed(1)}ms, Frames=${batchFrames.length}, Decoded=${this.decodedFrames.size} pending`);
+            log.debug(`Batch ${batchCount}: GPU=${(gpuEnd - gpuStart).toFixed(1)}ms, Frames=${batchFrames.length}, Decoded=${this.decodedFrames.size} pending`);
           }
 
           // Save frames
@@ -755,7 +758,7 @@ class ProxyGeneratorGPU {
           }
 
         } catch (e) {
-          console.error('[ProxyGen] GPU batch processing error:', e);
+          log.error('GPU batch processing error', e);
           for (const frame of batchFrames) {
             frame.close();
           }
@@ -778,7 +781,7 @@ class ProxyGeneratorGPU {
     let samplesDecoded = 0;
     const MAX_PENDING_FRAMES = BATCH_SIZE * 2; // Keep at most 2 batches worth of frames
 
-    console.log(`[ProxyGen] Starting streaming decode (max ${MAX_PENDING_FRAMES} pending frames)...`);
+    log.debug(`Starting streaming decode (max ${MAX_PENDING_FRAMES} pending frames)...`);
     const decodeStartTime = performance.now();
 
     for (let i = firstKeyframeIdx; i < sortedSamples.length; i++) {
@@ -790,7 +793,7 @@ class ProxyGeneratorGPU {
       }
 
       if (this.decoder.state === 'closed') {
-        console.error('[ProxyGen] Decoder was closed unexpectedly');
+        log.error('Decoder was closed unexpectedly');
         break;
       }
 
@@ -801,7 +804,7 @@ class ProxyGeneratorGPU {
         await new Promise(resolve => setTimeout(resolve, 5));
         waitCount++;
         if (waitCount > 400) { // 2 second timeout
-          console.warn(`[ProxyGen] Frame processing stalled, ${this.decodedFrames.size} frames pending`);
+          log.warn(`Frame processing stalled, ${this.decodedFrames.size} frames pending`);
           break;
         }
       }
@@ -817,15 +820,15 @@ class ProxyGeneratorGPU {
         this.decoder.decode(chunk);
         samplesDecoded++;
         if (samplesDecoded % 100 === 0) {
-          console.log(`[ProxyGen] Submitted ${samplesDecoded}/${sortedSamples.length} samples, ${this.decodedFrames.size} frames pending, ${this.processedFrames} processed`);
+          log.debug(`Submitted ${samplesDecoded}/${sortedSamples.length} samples, ${this.decodedFrames.size} frames pending, ${this.processedFrames} processed`);
         }
       } catch (e) {
         decodeErrors++;
         if (decodeErrors <= 5) {
-          console.error(`[ProxyGen] Decode error on sample ${sample.number}:`, e);
+          log.error(`Decode error on sample ${sample.number}`, e);
         }
         if (decodeErrors > 50) {
-          console.error('[ProxyGen] Too many decode errors, stopping');
+          log.error('Too many decode errors, stopping');
           break;
         }
       }
@@ -837,11 +840,11 @@ class ProxyGeneratorGPU {
     }
 
     const decodeLoopTime = performance.now() - decodeStartTime;
-    console.log(`[ProxyGen] Decode loop complete: ${samplesDecoded} samples in ${decodeLoopTime.toFixed(0)}ms`);
+    log.debug(`Decode loop complete: ${samplesDecoded} samples in ${decodeLoopTime.toFixed(0)}ms`);
 
     // Wait for decoder to output remaining frames
     // Windows NVIDIA decoders can be very slow, so we actively wait
-    console.log(`[ProxyGen] Waiting for decoder to output frames (currently ${this.decodedFrames.size} pending)...`);
+    log.debug(`Waiting for decoder to output frames (currently ${this.decodedFrames.size} pending)...`);
 
     const expectedFrames = Math.min(sortedSamples.length - firstKeyframeIdx, this.totalFrames);
     const maxWaitTime = 120000; // 2 minutes max wait
@@ -860,7 +863,7 @@ class ProxyGeneratorGPU {
 
       // Check if we got all expected frames
       if (this.processedFrames >= expectedFrames * 0.95) {
-        console.log(`[ProxyGen] Got ${this.processedFrames}/${expectedFrames} frames (95%+), continuing...`);
+        log.debug(`Got ${this.processedFrames}/${expectedFrames} frames (95%+), continuing...`);
         break;
       }
 
@@ -868,7 +871,7 @@ class ProxyGeneratorGPU {
       if (currentFrameCount === lastFrameCount) {
         stallCount++;
         if (stallCount > 100) { // 5 seconds (100 * 50ms)
-          console.warn(`[ProxyGen] Decoder stalled for 5s at ${currentFrameCount} frames`);
+          log.warn(`Decoder stalled for 5s at ${currentFrameCount} frames`);
           break;
         }
       } else {
@@ -879,7 +882,7 @@ class ProxyGeneratorGPU {
       // Log progress periodically
       if (stallCount === 0 && currentFrameCount % 50 === 0) {
         const elapsed = ((performance.now() - waitStart) / 1000).toFixed(1);
-        console.log(`[ProxyGen] Decoder progress: ${this.processedFrames} processed, ${this.decodedFrames.size} pending (${elapsed}s elapsed)`);
+        log.debug(`Decoder progress: ${this.processedFrames} processed, ${this.decodedFrames.size} pending (${elapsed}s elapsed)`);
       }
 
       await new Promise(resolve => setTimeout(resolve, 50));
@@ -888,7 +891,7 @@ class ProxyGeneratorGPU {
     // Try to flush any remaining frames
     try {
       if (this.decoder.state !== 'closed') {
-        console.log('[ProxyGen] Final decoder flush...');
+        log.debug('Final decoder flush...');
         await Promise.race([
           this.decoder.flush(),
           new Promise<void>((_, reject) => setTimeout(() => reject(new Error('Flush timeout')), 5000))
@@ -899,7 +902,7 @@ class ProxyGeneratorGPU {
     }
 
     // Process any remaining frames
-    console.log(`[ProxyGen] Processing ${this.decodedFrames.size} remaining frames...`);
+    log.debug(`Processing ${this.decodedFrames.size} remaining frames...`);
     while (this.decodedFrames.size > 0) {
       // Process whatever we have, even if less than BATCH_SIZE
       const sortedIndices = Array.from(this.decodedFrames.keys()).sort((a, b) => a - b);
@@ -948,7 +951,7 @@ class ProxyGeneratorGPU {
 
         this.onProgress?.(Math.round((this.processedFrames / this.totalFrames) * 100));
       } catch (e) {
-        console.error('[ProxyGen] Final batch error:', e);
+        log.error('Final batch error', e);
         for (const frame of batchFrames) {
           frame.close();
         }
@@ -971,8 +974,8 @@ class ProxyGeneratorGPU {
       const totalTime = performance.now() - startTime;
       const fps = this.processedFrames / (totalTime / 1000);
 
-      console.log('%c[ProxyGen] ✅ GPU Processing Complete', 'color: #00ff00; font-weight: bold');
-      console.log('[ProxyGen] Performance Summary:', {
+      log.info('GPU Processing Complete');
+      log.info('Performance Summary', {
         totalFrames: this.processedFrames,
         totalBatches: batchCount,
         totalTime: `${(totalTime / 1000).toFixed(1)}s`,

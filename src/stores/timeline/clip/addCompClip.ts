@@ -12,6 +12,9 @@ import { generateSilentWaveform } from '../helpers/waveformHelpers';
 import { generateCompClipId, generateClipId, generateNestedClipId } from '../helpers/idGenerator';
 import { blobUrlManager } from '../helpers/blobUrlManager';
 import { updateClipById } from '../helpers/clipStateHelpers';
+import { Logger } from '../../../services/logger';
+
+const log = Logger.create('AddCompClip');
 
 export interface AddCompClipParams {
   trackId: string;
@@ -71,7 +74,7 @@ export async function loadNestedClips(params: LoadNestedClipsParams): Promise<Ti
   for (const serializedClip of composition.timelineData.clips) {
     const mediaFile = mediaStore.files.find(f => f.id === serializedClip.mediaFileId);
     if (!mediaFile?.file) {
-      console.warn('[Nested Comp] Could not find media file:', serializedClip.name);
+      log.warn('Could not find media file for nested clip', { clip: serializedClip.name });
       continue;
     }
 
@@ -206,7 +209,7 @@ export function generateCompThumbnails(params: GenerateCompThumbnailsParams): vo
         const thumbnails = await generateThumbnails(video, compDuration);
         set({ clips: updateClipById(get().clips, clipId, { thumbnails }) });
       } catch (e) {
-        console.warn('[Nested Comp] Failed to generate thumbnails:', e);
+        log.warn('Failed to generate thumbnails for nested comp', e);
       }
     }
   };
@@ -253,7 +256,7 @@ export async function createCompLinkedAudioClip(params: CreateCompLinkedAudioPar
   if (composition.timelineData) {
     try {
       const { compositionAudioMixer } = await import('../../../services/compositionAudioMixer');
-      console.log(`[Nested Comp] Generating audio mixdown for ${composition.name}...`);
+      log.debug('Generating audio mixdown for nested comp', { composition: composition.name });
       const mixdownResult = await compositionAudioMixer.mixdownComposition(composition.id);
 
       if (mixdownResult?.hasAudio) {
@@ -264,7 +267,7 @@ export async function createCompLinkedAudioClip(params: CreateCompLinkedAudioPar
         mixdownBuffer = mixdownResult.buffer;
       }
     } catch (e) {
-      console.error('[Nested Comp] Failed to generate audio mixdown:', e);
+      log.error('Failed to generate audio mixdown for nested comp', e);
     }
   }
 
@@ -272,7 +275,7 @@ export async function createCompLinkedAudioClip(params: CreateCompLinkedAudioPar
   const { trackId: audioTrackId, newTrack } = findOrCreateAudioTrack(tracks);
   if (newTrack) {
     set({ tracks: [...get().tracks, newTrack] });
-    console.log(`[Nested Comp] Created new audio track for ${composition.name}`);
+    log.debug('Created new audio track for nested comp', { composition: composition.name });
   }
 
   // Create audio clip
@@ -303,5 +306,5 @@ export async function createCompLinkedAudioClip(params: CreateCompLinkedAudioPar
     ],
   });
 
-  console.log(`[Nested Comp] Created linked audio clip for ${composition.name} (hasAudio: ${hasAudio})`);
+  log.debug('Created linked audio clip for nested comp', { composition: composition.name, hasAudio });
 }

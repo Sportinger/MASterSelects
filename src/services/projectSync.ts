@@ -1,7 +1,10 @@
 // Project Sync Service
 // Synchronizes mediaStore and timelineStore with projectFileService
 
+import { Logger } from './logger';
 import { useMediaStore, type MediaFile, type Composition, type MediaFolder } from '../stores/mediaStore';
+
+const log = Logger.create('ProjectSync');
 import { useTimelineStore } from '../stores/timeline';
 import { useYouTubeStore } from '../stores/youtubeStore';
 import { useDockStore } from '../stores/dockStore';

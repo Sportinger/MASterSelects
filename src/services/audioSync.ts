@@ -1,7 +1,10 @@
 // Audio Sync Service
 // Synchronizes multiple camera angles using audio waveform cross-correlation
 
+import { Logger } from './logger';
 import { audioAnalyzer, type AudioFingerprint } from './audioAnalyzer';
+
+const log = Logger.create('AudioSync');
 
 /**
  * Cross-correlation algorithm to find the offset between two audio signals.

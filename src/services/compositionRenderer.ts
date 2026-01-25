@@ -1,7 +1,10 @@
 // CompositionRenderer - Evaluates any composition at a given time and returns renderable layers
 // This enables multiple previews showing different compositions simultaneously
 
+import { Logger } from './logger';
 import type { Layer, SerializableClip, TimelineTrack, TimelineClip, NestedCompositionData } from '../types';
+
+const log = Logger.create('CompositionRenderer');
 import { useMediaStore } from '../stores/mediaStore';
 import { useTimelineStore } from '../stores/timeline';
 import { calculateSourceTime } from '../utils/speedIntegration';

@@ -110,7 +110,7 @@ export const useSettingsStore = create<SettingsState>()(
       transcriptionProvider: 'local',
       previewQuality: 1, // Full quality by default
       showTransparencyGrid: false, // Don't show checkerboard by default
-      autosaveEnabled: false, // Autosave disabled by default
+      autosaveEnabled: true, // Autosave enabled by default
       autosaveInterval: 5, // 5 minutes default interval
       turboModeEnabled: true, // Try to use native helper by default
       nativeHelperPort: 9876, // Default WebSocket port

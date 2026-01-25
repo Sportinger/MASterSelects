@@ -19,6 +19,9 @@ import { shouldSkipWaveform, generateWaveformForFile } from '../helpers/waveform
 import { generateLinkedClipIds } from '../helpers/idGenerator';
 import { blobUrlManager } from '../helpers/blobUrlManager';
 import { updateClipById } from '../helpers/clipStateHelpers';
+import { Logger } from '../../../services/logger';
+
+const log = Logger.create('AddVideoClip');
 
 export interface AddVideoClipParams {
   trackId: string;
@@ -131,14 +134,14 @@ export async function loadVideoMedia(params: LoadVideoMediaParams): Promise<void
       // If no absolute path, try common locations
       if (!filePath || !filePath.startsWith('/')) {
         filePath = `/home/admin/Desktop/${file.name}`;
-        console.log(`[Video] No absolute path found, trying:`, filePath);
+        log.debug('No absolute path found, trying', { filePath });
       }
 
-      console.log(`[Video] Opening ${file.name} with Native Helper`);
+      log.debug('Opening with Native Helper', { file: file.name });
       nativeDecoder = await NativeDecoder.open(filePath);
       naturalDuration = nativeDecoder.duration;
 
-      console.log(`[Video] Native Helper ready: ${nativeDecoder.width}x${nativeDecoder.height} @ ${nativeDecoder.fps}fps`);
+      log.debug('Native Helper ready', { width: nativeDecoder.width, height: nativeDecoder.height, fps: nativeDecoder.fps });
 
       // Decode initial frame so preview isn't black
       await nativeDecoder.seekToFrame(0);
@@ -160,7 +163,7 @@ export async function loadVideoMedia(params: LoadVideoMediaParams): Promise<void
         updateClip(audioClipId, { duration: naturalDuration, outPoint: naturalDuration });
       }
     } catch (err) {
-      console.warn(`[Video] Native Helper failed, falling back to browser:`, err);
+      log.warn('Native Helper failed, falling back to browser', err);
       nativeDecoder = null;
     }
   }
@@ -188,7 +191,7 @@ export async function loadVideoMedia(params: LoadVideoMediaParams): Promise<void
 
     // Warm up video decoder in background (non-blocking)
     warmUpVideoDecoder(video).then(() => {
-      console.log(`[Video] Decoder warmed up for ${file.name}`);
+      log.debug('Decoder warmed up', { file: file.name });
     });
 
     // Initialize WebCodecsPlayer for hardware-accelerated decoding
@@ -209,14 +212,14 @@ export async function loadVideoMedia(params: LoadVideoMediaParams): Promise<void
   if (thumbnailsEnabled && !isLargeFile && video) {
     generateThumbnailsAsync(video, naturalDuration, clipId, file.name, setClips);
   } else if (nativeDecoder) {
-    console.log(`[Thumbnails] Skipping for NativeDecoder file: ${file.name}`);
+    log.debug('Skipping thumbnails for NativeDecoder file', { file: file.name });
   }
 
   // Load audio for linked clip (skip for NativeDecoder - browser can't decode ProRes/DNxHD audio)
   if (audioClipId && !nativeDecoder) {
     await loadLinkedAudio(file, audioClipId, naturalDuration, mediaFileId, waveformsEnabled, updateClip, setClips);
   } else if (audioClipId && nativeDecoder) {
-    console.log(`[Audio] Skipping for NativeDecoder file: ${file.name}`);
+    log.debug('Skipping audio for NativeDecoder file', { file: file.name });
     updateClip(audioClipId, {
       source: { type: 'audio', naturalDuration, mediaFileId },
       isLoading: false,
@@ -251,16 +254,16 @@ async function generateThumbnailsAsync(
       }
     });
 
-    console.log(`[Thumbnails] Starting generation for ${fileName}...`);
+    log.debug('Starting thumbnail generation', { file: fileName });
     const thumbnails = await generateThumbnails(video, duration);
-    console.log(`[Thumbnails] Complete: ${thumbnails.length} thumbnails for ${fileName}`);
+    log.debug('Thumbnails complete', { count: thumbnails.length, file: fileName });
 
     setClips(clips => clips.map(c => c.id === clipId ? { ...c, thumbnails } : c));
 
     // Seek back to start
     video.currentTime = 0;
   } catch (e) {
-    console.warn('[Thumbnails] Failed:', e);
+    log.warn('Thumbnail generation failed', e);
   }
 }
 
@@ -296,7 +299,7 @@ async function loadLinkedAudio(
       const waveform = await generateWaveformForFile(file);
       setClips(clips => updateClipById(clips, audioClipId, { waveform, waveformGenerating: false, waveformProgress: 100 }));
     } catch (e) {
-      console.warn('[Waveform] Failed:', e);
+      log.warn('Waveform generation failed', e);
       setClips(clips => updateClipById(clips, audioClipId, { waveformGenerating: false }));
     }
   }

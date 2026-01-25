@@ -2,6 +2,10 @@
 // Supports text-to-video and image-to-video generation via official Kling API
 // Uses JWT authentication with Access Key (AK) and Secret Key (SK)
 
+import { Logger } from './logger';
+
+const log = Logger.create('KlingService');
+
 const BASE_URL = 'https://api.klingai.com';
 const TOKEN_EXPIRATION = 1800; // 30 minutes in seconds
 
@@ -278,17 +282,17 @@ class KlingService {
     try {
       result = JSON.parse(responseText) as ApiResponse<T>;
     } catch {
-      console.error('[KlingService] Failed to parse response:', responseText);
+      log.error('Failed to parse response', responseText);
       throw new Error(`Kling API error: ${response.status} - Invalid JSON response`);
     }
 
     if (!response.ok) {
-      console.error('[KlingService] API error:', result);
+      log.error('API error', result);
       throw new Error(`Kling API error: ${response.status} - ${result.message || responseText}`);
     }
 
     if (result.code !== 0) {
-      console.error('[KlingService] API returned error code:', result);
+      log.error('API returned error code', result);
       throw new Error(`Kling API error: ${result.message}`);
     }
 
@@ -350,7 +354,7 @@ class KlingService {
       body.cfg_scale = params.cfgScale;
     }
 
-    console.log('[KlingService] Creating image-to-video task:', {
+    log.info('Creating image-to-video task', {
       model_name: body.model_name,
       duration: body.duration,
       mode: body.mode,

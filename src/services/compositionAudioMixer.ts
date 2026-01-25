@@ -7,7 +7,10 @@
  * 3. Create a playable audio element for timeline playback
  */
 
+import { Logger } from './logger';
 import { useMediaStore } from '../stores/mediaStore';
+
+const log = Logger.create('CompositionAudioMixer');
 import { useTimelineStore } from '../stores/timeline';
 import { AudioMixer, type AudioTrackData } from '../engine/audio/AudioMixer';
 import { audioExtractor } from '../engine/audio/AudioExtractor';

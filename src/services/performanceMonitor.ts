@@ -1,8 +1,11 @@
 // Performance Monitor Service
 // Monitors frame render times and automatically resets quality parameters when performance is too slow
 
+import { Logger } from './logger';
 import { useTimelineStore } from '../stores/timeline';
 import { getDefaultParams, EFFECT_REGISTRY } from '../effects';
+
+const log = Logger.create('PerformanceMonitor');
 
 // Config
 const SLOW_FRAME_THRESHOLD_MS = 100; // 10fps
@@ -65,11 +68,11 @@ function checkPerformance(renderTimeMs: number) {
     slowFrameCount++;
 
     if (slowFrameCount >= CONSECUTIVE_SLOW_FRAMES) {
-      console.warn(`[Performance] Slow rendering detected (${renderTimeMs.toFixed(1)}ms). Resetting quality parameters...`);
+      log.warn(`Slow rendering detected (${renderTimeMs.toFixed(1)}ms). Resetting quality parameters...`);
       const resetCount = resetAllQualityParams();
 
       if (resetCount > 0) {
-        console.log(`[Performance] Reset ${resetCount} quality parameters to defaults`);
+        log.info(`Reset ${resetCount} quality parameters to defaults`);
         onSlowPerformanceCallback?.();
       }
 
@@ -86,14 +89,14 @@ export function startPerformanceMonitor() {
   if (isMonitoring) return;
   isMonitoring = true;
   slowFrameCount = 0;
-  console.log('[Performance] Monitor started');
+  log.debug('Monitor started');
 }
 
 // Stop monitoring
 export function stopPerformanceMonitor() {
   isMonitoring = false;
   slowFrameCount = 0;
-  console.log('[Performance] Monitor stopped');
+  log.debug('Monitor stopped');
 }
 
 // Set callback for when slow performance triggers a reset

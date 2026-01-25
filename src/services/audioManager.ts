@@ -1,5 +1,9 @@
 // Audio Manager - Master volume and EQ control using Web Audio API
 
+import { Logger } from './logger';
+
+const log = Logger.create('AudioManager');
+
 export interface EQBand {
   frequency: number;
   gain: number; // -12 to +12 dB

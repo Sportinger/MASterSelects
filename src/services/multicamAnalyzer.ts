@@ -1,9 +1,12 @@
 // Multicam Analyzer Service
 // Orchestrates CV analysis (motion, sharpness, faces) and audio analysis for multicam editing
 
+import { Logger } from './logger';
 import type { MultiCamSource, MultiCamAnalysis, CameraAnalysis, FrameAnalysis, DetectedFace } from '../stores/multicamStore';
 import { useMediaStore } from '../stores/mediaStore';
 import { audioAnalyzer } from './audioAnalyzer';
+
+const log = Logger.create('MulticamAnalyzer');
 
 // Analysis sample interval in milliseconds
 const SAMPLE_INTERVAL_MS = 500; // Sample every 500ms
@@ -147,7 +150,7 @@ class MulticamAnalyzer {
     const mediaFile = mediaStore.files.find(f => f.id === camera.mediaFileId);
 
     if (!mediaFile || !mediaFile.file) {
-      console.warn('[MulticamAnalyzer] Media file not found:', camera.mediaFileId);
+      log.warn('Media file not found', { mediaFileId: camera.mediaFileId });
       return null;
     }
 
@@ -250,7 +253,7 @@ class MulticamAnalyzer {
     onProgress?: (progress: number) => void,
     checkCancelled?: () => boolean
   ): Promise<MultiCamAnalysis> {
-    console.log('[MulticamAnalyzer] Starting analysis for', cameras.length, 'cameras');
+    log.info(`Starting analysis for ${cameras.length} cameras`);
 
     const cameraAnalyses: CameraAnalysis[] = [];
     const totalCameras = cameras.length;
@@ -261,7 +264,7 @@ class MulticamAnalyzer {
       }
 
       const camera = cameras[i];
-      console.log('[MulticamAnalyzer] Analyzing camera:', camera.name);
+      log.debug(`Analyzing camera: ${camera.name}`);
 
       const analysis = await this.analyzeCamera(
         camera,
@@ -306,7 +309,7 @@ class MulticamAnalyzer {
       }
     }
 
-    console.log('[MulticamAnalyzer] Analysis complete');
+    log.info('Analysis complete');
 
     return {
       projectDuration,

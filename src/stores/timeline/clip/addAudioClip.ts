@@ -8,6 +8,9 @@ import { createAudioElement } from '../helpers/webCodecsHelpers';
 import { generateWaveformForFile, AUDIO_WAVEFORM_THRESHOLD } from '../helpers/waveformHelpers';
 import { generateClipId } from '../helpers/idGenerator';
 import { blobUrlManager } from '../helpers/blobUrlManager';
+import { Logger } from '../../../services/logger';
+
+const log = Logger.create('AddAudioClip');
 
 export interface AddAudioClipParams {
   trackId: string;
@@ -83,7 +86,7 @@ export async function loadAudioMedia(params: LoadAudioMediaParams): Promise<void
 
   // Generate waveform in background - only if enabled and not very large
   if (isLargeFile) {
-    console.log(`[Waveform] Skipping for very large file (${(file.size / 1024 / 1024).toFixed(0)}MB): ${file.name}`);
+    log.debug('Skipping waveform for very large file', { sizeMB: (file.size / 1024 / 1024).toFixed(0), file: file.name });
   }
 
   if (waveformsEnabled && !isLargeFile) {
@@ -107,9 +110,9 @@ async function generateWaveformAsync(
   updateClip: (id: string, updates: Partial<TimelineClip>) => void
 ): Promise<void> {
   try {
-    console.log(`[Waveform] Starting generation for ${file.name}...`);
+    log.debug('Starting waveform generation', { file: file.name });
     const waveform = await generateWaveformForFile(file);
-    console.log(`[Waveform] Complete: ${waveform.length} samples for ${file.name}`);
+    log.debug('Waveform complete', { samples: waveform.length, file: file.name });
 
     updateClip(clipId, {
       waveform,
@@ -117,7 +120,7 @@ async function generateWaveformAsync(
       waveformProgress: 100,
     });
   } catch (e) {
-    console.warn('[Waveform] Failed:', e);
+    log.warn('Waveform generation failed', e);
     updateClip(clipId, { waveformGenerating: false });
   }
 }

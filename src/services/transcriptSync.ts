@@ -2,7 +2,10 @@
 // Synchronizes clips based on their transcribed text content
 // More accurate than audio waveform correlation when transcripts are available
 
+import { Logger } from './logger';
 import type { TranscriptWord } from '../types';
+
+const log = Logger.create('TranscriptSync');
 
 export interface TranscriptSyncResult {
   offsetMs: number;           // Time offset in milliseconds
@@ -101,7 +104,7 @@ export function calculateTranscriptOffset(
   minMatchLength: number = 3
 ): TranscriptSyncResult | null {
   if (masterTranscript.length === 0 || targetTranscript.length === 0) {
-    console.warn('[TranscriptSync] Empty transcript(s)');
+    log.warn('Empty transcript(s)');
     return null;
   }
 
@@ -109,11 +112,11 @@ export function calculateTranscriptOffset(
   const matches = findMatchingSequences(masterTranscript, targetTranscript, minMatchLength);
 
   if (matches.length === 0) {
-    console.warn('[TranscriptSync] No matching sequences found');
+    log.warn('No matching sequences found');
     return null;
   }
 
-  console.log(`[TranscriptSync] Found ${matches.length} matching sequence(s)`);
+  log.debug(`Found ${matches.length} matching sequence(s)`);
 
   // Calculate offset for each match and use weighted average
   const offsets: { offsetMs: number; weight: number }[] = [];
@@ -153,8 +156,8 @@ export function calculateTranscriptOffset(
   const longestMatch = matches[0];
   const matchedSequence = longestMatch.words1.map(w => w.text).join(' ');
 
-  console.log(`[TranscriptSync] Offset: ${finalOffset.toFixed(1)}ms, confidence: ${(confidence * 100).toFixed(1)}%, matched: ${totalMatchedWords} words`);
-  console.log(`[TranscriptSync] Longest match: "${matchedSequence.substring(0, 100)}${matchedSequence.length > 100 ? '...' : ''}"`);
+  log.info(`Offset: ${finalOffset.toFixed(1)}ms, confidence: ${(confidence * 100).toFixed(1)}%, matched: ${totalMatchedWords} words`);
+  log.debug(`Longest match: "${matchedSequence.substring(0, 100)}${matchedSequence.length > 100 ? '...' : ''}"`);
 
   return {
     offsetMs: finalOffset,
@@ -189,7 +192,7 @@ export function syncClipsByTranscript(
       });
     } else {
       // No match found - keep current position (0 offset)
-      console.warn(`[TranscriptSync] No transcript match for clip ${target.clipId}`);
+      log.warn(`No transcript match for clip ${target.clipId}`);
       results.set(target.clipId, { offsetMs: 0, confidence: 0, matchedWords: 0 });
     }
   }

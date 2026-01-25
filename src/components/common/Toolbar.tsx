@@ -1,6 +1,9 @@
 // Toolbar component - After Effects style menu bar
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { Logger } from '../../services/logger';
+
+const log = Logger.create('Toolbar');
 import { useEngine } from '../../hooks/useEngine';
 import { useMixerStore } from '../../stores/mixerStore';
 import { useDockStore } from '../../stores/dockStore';
@@ -215,11 +218,11 @@ export function Toolbar() {
     // Set up new timer if autosave is enabled and project is open
     if (autosaveEnabled && isProjectOpen) {
       const intervalMs = autosaveInterval * 60 * 1000; // Convert minutes to milliseconds
-      console.log(`[Autosave] Enabled with ${autosaveInterval} minute interval`);
+      log.info(`Autosave enabled with ${autosaveInterval} minute interval`);
 
       autosaveTimerRef.current = setInterval(async () => {
         if (projectFileService.isProjectOpen() && projectFileService.hasUnsavedChanges()) {
-          console.log('[Autosave] Creating backup and saving project...');
+          log.info('Autosave: Creating backup and saving project...');
           // Create backup before saving
           await projectFileService.createBackup();
           // Then save the project
@@ -333,7 +336,7 @@ export function Toolbar() {
   const handleNewOutput = useCallback(() => {
     const output = createOutputWindow(`Output ${Date.now()}`);
     if (output) {
-      console.log('Created output window:', output.id);
+      log.info('Created output window', { id: output.id });
     }
     setOpenMenu(null);
   }, [createOutputWindow]);
@@ -356,14 +359,14 @@ export function Toolbar() {
         // Update GPU info in mixer store
         const newGpuInfo = engine.getGPUInfo();
         useMixerStore.getState().setGpuInfo(newGpuInfo);
-        console.log('[Toolbar] GPU preference changed to:', preference, newGpuInfo);
+        log.info('GPU preference changed', { preference, gpuInfo: newGpuInfo });
       } else {
         // Revert on failure
         setGpuPowerPreference(gpuPowerPreference);
-        console.error('[Toolbar] Failed to change GPU preference');
+        log.error('Failed to change GPU preference');
       }
     } catch (e) {
-      console.error('[Toolbar] Error changing GPU preference:', e);
+      log.error('Error changing GPU preference', e);
       setGpuPowerPreference(gpuPowerPreference);
     } finally {
       setGpuSwitching(false);

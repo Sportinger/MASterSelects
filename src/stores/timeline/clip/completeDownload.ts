@@ -10,6 +10,9 @@ import { generateWaveformForFile } from '../helpers/waveformHelpers';
 import { generateClipId } from '../helpers/idGenerator';
 import { blobUrlManager } from '../helpers/blobUrlManager';
 import { updateClipById } from '../helpers/clipStateHelpers';
+import { Logger } from '../../../services/logger';
+
+const log = Logger.create('CompleteDownload');
 
 export interface CompleteDownloadParams {
   clipId: string;
@@ -41,11 +44,11 @@ export async function completeDownload(params: CompleteDownloadParams): Promise<
 
   const clip = clips.find(c => c.id === clipId);
   if (!clip?.isPendingDownload) {
-    console.warn('[Download] Clip not found or not pending:', clipId);
+    log.warn('Clip not found or not pending', { clipId });
     return;
   }
 
-  console.log(`[Download] Completing download for: ${clipId}`);
+  log.debug('Completing download', { clipId });
 
   // Create and load video element - track URL for cleanup
   const video = document.createElement('video');
@@ -117,14 +120,14 @@ export async function completeDownload(params: CompleteDownloadParams): Promise<
       isLoading: false,
     };
     updatedClips.push(audioClip);
-    console.log(`[Download] Created linked audio clip: ${audioClipId}`);
+    log.debug('Created linked audio clip', { audioClipId });
   }
 
   set({ clips: updatedClips });
   updateDuration();
   invalidateCache();
 
-  console.log(`[Download] Complete: ${clipId}, duration: ${naturalDuration}s`);
+  log.debug('Download complete', { clipId, duration: naturalDuration });
 
   // Initialize WebCodecsPlayer
   const webCodecsPlayer = await initWebCodecsPlayer(video, 'YouTube download');
@@ -177,9 +180,9 @@ async function generateWaveformAsync(
   try {
     const waveform = await generateWaveformForFile(file);
     set({ clips: updateClipById(get().clips, audioClipId, { waveform, waveformGenerating: false }) });
-    console.log(`[Download] Waveform generated for audio clip`);
+    log.debug('Waveform generated for audio clip');
   } catch (e) {
-    console.warn('[Download] Waveform generation failed:', e);
+    log.warn('Waveform generation failed', e);
     set({ clips: updateClipById(get().clips, audioClipId, { waveformGenerating: false }) });
   }
 }
@@ -208,8 +211,8 @@ async function generateThumbnailsAsync(
     const thumbnails = await generateDownloadThumbnails(video, duration);
     video.currentTime = 0;
     set({ clips: updateClipById(get().clips, clipId, { thumbnails }) });
-    console.log(`[Download] Generated ${thumbnails.length} thumbnails`);
+    log.debug('Generated thumbnails', { count: thumbnails.length });
   } catch (e) {
-    console.warn('[Download] Thumbnail generation failed:', e);
+    log.warn('Thumbnail generation failed', e);
   }
 }

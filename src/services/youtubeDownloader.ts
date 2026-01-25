@@ -1,7 +1,10 @@
 // YouTube video downloader service using Native Helper + yt-dlp
 // Downloads videos locally without third-party web services
 
+import { Logger } from './logger';
 import { NativeHelperClient } from './nativeHelper';
+
+const log = Logger.create('YouTubeDownloader');
 import { projectFileService } from './projectFileService';
 
 export interface DownloadProgress {
@@ -97,7 +100,7 @@ export async function downloadYouTubeVideo(
     const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
     // Request download from Native Helper
-    console.log('[YouTubeDownloader] Starting download:', videoId);
+    log.info(`Starting download: ${videoId}`);
 
     const result = await NativeHelperClient.downloadYouTube(youtubeUrl, formatId, (percent) => {
       progress.progress = 5 + (percent * 0.9); // 5% to 95%
@@ -113,7 +116,7 @@ export async function downloadYouTubeVideo(
     notifySubscribers(progress);
 
     // Transfer file from helper via WebSocket
-    console.log('[YouTubeDownloader] Fetching file from helper:', result.path);
+    log.debug(`Fetching file from helper: ${result.path}`);
     const fileResponse = await NativeHelperClient.getDownloadedFile(result.path!);
     if (!fileResponse) {
       throw new Error('Failed to read downloaded file from helper');
@@ -126,7 +129,7 @@ export async function downloadYouTubeVideo(
       const savedFile = await projectFileService.saveYouTubeDownload(blob, title);
       if (savedFile) {
         file = savedFile;
-        console.log('[YouTubeDownloader] Saved to project YT folder');
+        log.info('Saved to project YT folder');
       } else {
         // Fallback to in-memory file
         const sanitizedTitle = title.replace(/[^a-zA-Z0-9\s-]/g, '').substring(0, 100);
@@ -136,7 +139,7 @@ export async function downloadYouTubeVideo(
       // No project open, keep in memory
       const sanitizedTitle = title.replace(/[^a-zA-Z0-9\s-]/g, '').substring(0, 100);
       file = new File([fileResponse], `${sanitizedTitle}.mp4`, { type: 'video/mp4' });
-      console.log('[YouTubeDownloader] No project open, file kept in memory only');
+      log.debug('No project open, file kept in memory only');
     }
 
     progress.status = 'complete';
