@@ -70,6 +70,110 @@ const RAW_CHANGELOG: RawChangeEntry[] = [
     description: 'Strict error reporting instead of silent fallback to HTMLVideoElement',
   },
 
+  // === Jan 24, 2026 ===
+  {
+    date: '2026-01-24',
+    type: 'new',
+    title: 'Nested Comp Visual Indicator',
+    description: 'Orange outline on nested composition clips for easy identification',
+  },
+  {
+    date: '2026-01-24',
+    type: 'improve',
+    title: 'YouTube Download Organization',
+    description: 'Auto-place YouTube downloads in dedicated YouTube folder',
+  },
+
+  // === Jan 23, 2026 ===
+  {
+    date: '2026-01-23',
+    type: 'new',
+    title: 'Marker Drag-to-Create',
+    description: 'Drag from M button to create markers with ghost preview',
+  },
+  {
+    date: '2026-01-23',
+    type: 'improve',
+    title: 'Markers Extend into Ruler',
+    description: 'Markers now visually extend into time ruler like playhead',
+  },
+  {
+    date: '2026-01-23',
+    type: 'fix',
+    title: 'Blend Mode Instant Update',
+    description: 'Blend mode changes now apply immediately in preview',
+  },
+  {
+    date: '2026-01-23',
+    type: 'new',
+    title: 'Numpad Blend Mode Cycling',
+    description: 'Use numpad +/- to cycle through blend modes',
+  },
+  {
+    date: '2026-01-23',
+    type: 'fix',
+    title: 'Media Thumbnails Persistence',
+    description: 'Restore media panel thumbnails after project reload',
+  },
+
+  // === Jan 22, 2026 ===
+  {
+    date: '2026-01-22',
+    type: 'fix',
+    title: 'Parallel Decode Keyframes',
+    description: 'Improved keyframe handling for reliable multi-clip export',
+  },
+  {
+    date: '2026-01-22',
+    type: 'fix',
+    title: 'Nested Comp Preview',
+    description: 'Fix nested composition preview and thumbnail generation',
+  },
+  {
+    date: '2026-01-22',
+    type: 'new',
+    title: 'Linked Audio Preview',
+    description: 'Show linked audio track preview when dragging video',
+  },
+
+  // === Jan 21, 2026 ===
+  {
+    date: '2026-01-21',
+    type: 'improve',
+    title: 'Removed VJ/Mixer Mode',
+    description: 'Simplified codebase by removing unused VJ mode',
+  },
+  {
+    date: '2026-01-21',
+    type: 'new',
+    title: 'Logger Service',
+    description: 'Professional logging system with filtering and search',
+  },
+  {
+    date: '2026-01-21',
+    type: 'new',
+    title: 'Full Project Persistence',
+    description: 'Encrypted API keys, global settings, per-project UI state',
+  },
+  {
+    date: '2026-01-21',
+    type: 'new',
+    title: 'UI State Persistence',
+    description: 'Dock layout and timeline view state saved per composition',
+  },
+  {
+    date: '2026-01-21',
+    type: 'new',
+    title: 'Automatic Frame Caching',
+    description: 'Cache frames during playback for instant scrubbing',
+  },
+  {
+    date: '2026-01-21',
+    type: 'fix',
+    title: 'B-Frame Decoding',
+    description: 'Decode until next keyframe for proper B-frame handling',
+  },
+
   // === Jan 20, 2026 ===
   {
     date: '2026-01-20',
