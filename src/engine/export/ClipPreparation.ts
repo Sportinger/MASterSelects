@@ -263,6 +263,22 @@ async function initializeParallelDecoding(
   await parallelDecoder.initialize(clipInfos, fps);
   endParallelInit();
 
+  // Pre-decode first frame to ensure it's ready when export starts
+  // This is critical because the parallel decoder initializes lazily
+  const endPrefetch = log.time('parallelDecoder.prefetchFirstFrame');
+  await parallelDecoder.prefetchFramesForTime(_startTime);
+
+  // Verify first frame is actually decoded for each clip
+  for (const clipInfo of clipInfos) {
+    const frame = parallelDecoder.getFrameForClip(clipInfo.clipId, _startTime);
+    if (!frame) {
+      log.warn(`First frame not ready for "${clipInfo.clipName}" after prefetch, retrying...`);
+      // Force another prefetch with extra wait
+      await parallelDecoder.prefetchFramesForTime(_startTime);
+    }
+  }
+  endPrefetch();
+
   // Mark clips as using parallel decoding
   for (const clip of clips) {
     clipStates.set(clip.id, {

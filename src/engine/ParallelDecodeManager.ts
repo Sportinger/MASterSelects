@@ -421,8 +421,8 @@ export class ParallelDecodeManager {
       const targetTimestamp = sourceTime * 1_000_000;
       const targetSampleIndex = this.findSampleIndexForTime(clipDecoder, sourceTime);
 
-      // Loop until frame is in buffer (max 10 attempts)
-      for (let attempt = 0; attempt < 10; attempt++) {
+      // Loop until frame is in buffer (max 20 attempts with delays)
+      for (let attempt = 0; attempt < 20; attempt++) {
         // Wait for pending decode
         if (clipDecoder.pendingDecode) {
           await clipDecoder.pendingDecode;
@@ -439,16 +439,40 @@ export class ParallelDecodeManager {
 
         if (frameFound) break;
 
-        // Still missing - decode more frames
+        // Still missing - flush decoder queue if there are pending frames
         if (clipDecoder.decoder.decodeQueueSize > 0) {
           await clipDecoder.decoder.flush();
           clipDecoder.needsKeyframe = true; // After flush, next decode needs keyframe
+          continue; // Check again after flush
         }
 
-        // Trigger another decode batch if needed
-        if (clipDecoder.sampleIndex <= targetSampleIndex && !clipDecoder.isDecoding) {
-          await this.decodeAhead(clipDecoder, targetSampleIndex + BUFFER_AHEAD_FRAMES, true);
+        // If samples haven't loaded yet, wait a bit
+        if (clipDecoder.samples.length === 0) {
+          await new Promise(r => setTimeout(r, 50));
+          continue;
         }
+
+        // Trigger decode if we haven't decoded enough yet
+        if (!clipDecoder.isDecoding) {
+          // For first frame (targetSampleIndex near 0), ensure we decode from the start
+          const decodeTarget = Math.max(targetSampleIndex + BUFFER_AHEAD_FRAMES, BUFFER_AHEAD_FRAMES);
+          await this.decodeAhead(clipDecoder, decodeTarget, true);
+        }
+
+        // Small delay between attempts to allow async operations to complete
+        await new Promise(r => setTimeout(r, 20));
+      }
+
+      // Final check - log warning if frame still not found
+      let finalCheck = false;
+      for (const [, decodedFrame] of clipDecoder.frameBuffer) {
+        if (Math.abs(decodedFrame.timestamp - targetTimestamp) < 100_000) {
+          finalCheck = true;
+          break;
+        }
+      }
+      if (!finalCheck) {
+        log.warn(`"${clipDecoder.clipName}": Frame at ${(targetTimestamp/1_000_000).toFixed(3)}s still not ready after all attempts`);
       }
     }
   }
