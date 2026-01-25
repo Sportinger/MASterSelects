@@ -4,6 +4,7 @@
 import { Logger } from './logger';
 import { useMediaStore, type MediaFile, type Composition, type MediaFolder } from '../stores/mediaStore';
 import { getMediaInfo } from '../stores/mediaStore/helpers/mediaInfoHelpers';
+import { createThumbnail } from '../stores/mediaStore/helpers/thumbnailHelpers';
 
 const log = Logger.create('ProjectSync');
 import { useTimelineStore } from '../stores/timeline';
@@ -518,7 +519,8 @@ export async function loadProjectToStores(): Promise<void> {
   // Auto-relink missing files from Raw folder
   await autoRelinkFromRawFolder();
 
-  // Refresh media metadata (codec, bitrate, hasAudio) for all files
+  // Restore thumbnails and refresh metadata in the background
+  restoreMediaThumbnails();
   refreshMediaMetadata();
 }
 
@@ -586,6 +588,66 @@ async function refreshMediaMetadata(): Promise<void> {
   }
 
   log.info('Media metadata refresh complete');
+}
+
+/**
+ * Restore thumbnails for media files after project load.
+ * Checks project folder first, then regenerates from file if needed.
+ */
+async function restoreMediaThumbnails(): Promise<void> {
+  const mediaState = useMediaStore.getState();
+  // Find files that need thumbnails (video/image files without thumbnailUrl)
+  const filesToRestore = mediaState.files.filter(f =>
+    f.file && !f.thumbnailUrl && (f.type === 'video' || f.type === 'image')
+  );
+
+  if (filesToRestore.length === 0) {
+    log.debug('No thumbnails need restoration');
+    return;
+  }
+
+  log.info(`Restoring thumbnails for ${filesToRestore.length} files...`);
+
+  // Process in batches to avoid overwhelming browser
+  const batchSize = 5;
+  for (let i = 0; i < filesToRestore.length; i += batchSize) {
+    const batch = filesToRestore.slice(i, i + batchSize);
+
+    await Promise.all(batch.map(async (mediaFile) => {
+      if (!mediaFile.file) return;
+
+      try {
+        let thumbnailUrl: string | undefined;
+
+        // First try to get from project folder if we have a hash
+        if (mediaFile.fileHash && projectFileService.isProjectOpen()) {
+          const existingBlob = await projectFileService.getThumbnail(mediaFile.fileHash);
+          if (existingBlob && existingBlob.size > 0) {
+            thumbnailUrl = URL.createObjectURL(existingBlob);
+            log.debug(`Restored thumbnail from project: ${mediaFile.name}`);
+          }
+        }
+
+        // If not found in project, regenerate from file
+        if (!thumbnailUrl) {
+          thumbnailUrl = await createThumbnail(mediaFile.file, mediaFile.type as 'video' | 'image');
+          log.debug(`Regenerated thumbnail: ${mediaFile.name}`);
+        }
+
+        if (thumbnailUrl) {
+          useMediaStore.setState((state) => ({
+            files: state.files.map((f) =>
+              f.id === mediaFile.id ? { ...f, thumbnailUrl } : f
+            ),
+          }));
+        }
+      } catch (e) {
+        log.warn(`Failed to restore thumbnail for: ${mediaFile.name}`, e);
+      }
+    }));
+  }
+
+  log.info('Thumbnail restoration complete');
 }
 
 /**
