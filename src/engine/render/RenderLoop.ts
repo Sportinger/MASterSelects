@@ -33,7 +33,7 @@ export class RenderLoop {
     performanceStats: PerformanceStats,
     callbacks: RenderLoopCallbacks
   ) {
-    this.performanceStats = statsTracker;
+    this.performanceStats = performanceStats;
     this.callbacks = callbacks;
   }
 
