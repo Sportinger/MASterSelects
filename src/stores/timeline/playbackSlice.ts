@@ -548,10 +548,11 @@ export const createPlaybackSlice: SliceCreator<PlaybackAndRamPreviewActions> = (
   invalidateCache: () => {
     // Cancel any ongoing RAM preview
     set({ isRamPreviewing: false });
-    // Then async cleanup the engine
+    // Then async cleanup the engine and request a render
     import('../../engine/WebGPUEngine').then(({ engine }) => {
       engine.setGeneratingRamPreview(false);
       engine.clearCompositeCache();
+      engine.requestRender(); // Wake up render loop to show changes immediately
     });
     // Clear cached frame times
     set({ cachedFrameTimes: new Set(), ramPreviewRange: null, ramPreviewProgress: null });
