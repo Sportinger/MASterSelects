@@ -2,21 +2,14 @@
 
 > **Goal:** Clean folder structure, easy to maintain, slick root, best practices
 
-## Status: Phase 1 In Progress
+## Status: Phase 1 COMPLETE ✓
 
 **Completed:**
 - [x] Updated .gitignore (terminal files, test videos, Rust targets)
-- [x] Created `tools/` folder with copies of all build tools
+- [x] Created `tools/` folder with all build tools
 - [x] Organized docs/ (architecture, COMPLETED folder)
 - [x] Updated CLAUDE.md with new paths
-
-**Manual cleanup required (Windows permission issues):**
-```bash
-# Close any terminals/IDEs, then delete these duplicate folders from root:
-rm -rf ffmpeg-build
-rm -rf ffmpeg-wasm-build
-rm -rf native-helper
-```
+- [x] Removed duplicate folders from root
 
 ---
 
