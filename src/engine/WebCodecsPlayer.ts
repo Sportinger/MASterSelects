@@ -2,6 +2,9 @@
 // Bypasses browser VAAPI issues by using WebCodecs API directly
 // With timeout fallback for problematic MP4 files
 
+import { Logger } from '../services/logger';
+const log = Logger.create('WebCodecsPlayer');
+
 import * as MP4BoxModule from 'mp4box';
 const MP4Box = (MP4BoxModule as any).default || MP4BoxModule;
 
@@ -330,8 +333,9 @@ export class WebCodecsPlayer {
   }
 
   async loadArrayBuffer(buffer: ArrayBuffer): Promise<void> {
+    const endLoad = log.time('loadArrayBuffer');
     return new Promise((resolve, reject) => {
-      console.log(`[WebCodecs] Parsing MP4 (${(buffer.byteLength / 1024 / 1024).toFixed(1)}MB)...`);
+      log.info(`Parsing MP4 (${(buffer.byteLength / 1024 / 1024).toFixed(1)}MB)...`);
 
       // Reduced timeout - we only wait for codec info now, not all samples
       const timeout = setTimeout(() => {
@@ -418,7 +422,8 @@ export class WebCodecsPlayer {
           if (!resolved) {
             resolved = true;
             clearTimeout(timeout);
-            console.log(`[WebCodecs] Decoder configured: ${this.width}x${this.height} @ ${this.frameRate.toFixed(1)}fps (samples loading in background)`);
+            endLoad();
+            log.info(`Decoder configured: ${this.width}x${this.height} @ ${this.frameRate.toFixed(1)}fps (samples loading in background)`);
             resolve();
           }
         });
@@ -930,25 +935,33 @@ export class WebCodecsPlayer {
    * Uses flush() to ensure all frames are output before continuing.
    */
   async prepareForSequentialExport(startTimeSeconds: number): Promise<void> {
+    const endPrepare = log.time('prepareForSequentialExport');
+
     // Simple mode: browser handles decoding
     if (this.useSimpleMode) {
       this.isInExportMode = true;
+      endPrepare();
       return;
     }
 
     // Wait for samples to load (lazy loading means they might not be ready yet)
     if (this.samples.length === 0) {
-      console.log('[WebCodecs Export] Waiting for samples to load...');
+      const endWaitSamples = log.time('waitForSamples');
+      log.info('Waiting for samples to load...');
       const maxWaitMs = 10000; // 10 second max wait
       const startWait = performance.now();
       while (this.samples.length === 0 && performance.now() - startWait < maxWaitMs) {
         await new Promise(r => setTimeout(r, 50));
       }
+      endWaitSamples();
       if (this.samples.length === 0) {
-        console.error('[WebCodecs Export] Timeout waiting for samples');
+        log.error('Timeout waiting for samples');
+        endPrepare();
         return;
       }
-      console.log(`[WebCodecs Export] Samples ready: ${this.samples.length} (waited ${(performance.now() - startWait).toFixed(0)}ms)`);
+      log.info(`Samples ready: ${this.samples.length} (waited ${(performance.now() - startWait).toFixed(0)}ms)`);
+    } else {
+      log.info(`Samples already loaded: ${this.samples.length}`);
     }
 
     if (!this.videoTrack || !this.decoder) {
@@ -1009,9 +1022,10 @@ export class WebCodecsPlayer {
     const BUFFER_BEYOND_KEYFRAME = 15;
     const decodeEnd = Math.min(nextKeyframeIndex + BUFFER_BEYOND_KEYFRAME, this.samples.length);
 
-    console.log(`[WebCodecs Export] Preparing: keyframe=${keyframeIndex}, start=${startSampleIndex}, nextKeyframe=${nextKeyframeIndex}, decoding ${decodeEnd - keyframeIndex} samples (total: ${this.samples.length})`);
+    log.info(`Preparing: keyframe=${keyframeIndex}, start=${startSampleIndex}, nextKeyframe=${nextKeyframeIndex}, decoding ${decodeEnd - keyframeIndex} samples (total: ${this.samples.length})`);
 
     // Decode from keyframe to start position + buffer
+    const endDecode = log.time('decodeInitialSamples');
     for (let i = keyframeIndex; i < decodeEnd; i++) {
       const sample = this.samples[i];
       const chunk = new EncodedVideoChunk({
@@ -1023,18 +1037,21 @@ export class WebCodecsPlayer {
       try {
         this.decoder.decode(chunk);
       } catch (e) {
-        console.warn(`[WebCodecs Export] Decode error at sample ${i}:`, e);
+        log.warn(`Decode error at sample ${i}: ${e}`);
       }
     }
     this.sampleIndex = decodeEnd;
+    endDecode();
 
     const samplesDecoded = decodeEnd - keyframeIndex;
-    console.log(`[WebCodecs Export] Queued ${samplesDecoded} samples, queue size: ${this.decoder.decodeQueueSize}`);
+    log.info(`Queued ${samplesDecoded} samples, queue size: ${this.decoder.decodeQueueSize}`);
 
     // Wait for decoder to output frames
     // Timeout scales with sample count: ~10ms per sample
     const flushTimeout = Math.max(5000, samplesDecoded * 10);
+    const endFlush = log.time('waitForDecoderFlush');
     await this.waitForDecoderFlush(flushTimeout);
+    endFlush();
 
     // Build sorted CTS array for index-based access
     this.exportFramesCts = Array.from(this.exportFrameBuffer.keys()).sort((a, b) => a - b);
@@ -1047,7 +1064,8 @@ export class WebCodecsPlayer {
       this.currentFrame = this.exportFrameBuffer.get(this.exportFramesCts[0]) || null;
     }
 
-    console.log(`[WebCodecs Export] Ready: ${this.exportFrameBuffer.size} frames buffered, CTS range: ${this.exportFramesCts[0]?.toFixed(0)} - ${this.exportFramesCts[this.exportFramesCts.length - 1]?.toFixed(0)}`);
+    log.info(`Ready: ${this.exportFrameBuffer.size} frames buffered, CTS range: ${this.exportFramesCts[0]?.toFixed(0)} - ${this.exportFramesCts[this.exportFramesCts.length - 1]?.toFixed(0)}`);
+    endPrepare();
   }
 
   /**
@@ -1061,7 +1079,7 @@ export class WebCodecsPlayer {
 
     // Try flush() with a race against timeout
     const flushPromise = this.decoder.flush().catch(e => {
-      console.warn('[WebCodecs Export] Flush error:', e);
+      log.warn(`Flush error: ${e}`);
     });
 
     const timeoutPromise = new Promise<void>((resolve) => {
@@ -1073,7 +1091,7 @@ export class WebCodecsPlayer {
 
     // If flush didn't complete, wait for queue to drain manually
     if (this.decoder.decodeQueueSize > 0) {
-      console.log(`[WebCodecs Export] Flush timeout, waiting for queue (${this.decoder.decodeQueueSize} remaining)...`);
+      log.warn(`Flush timeout, waiting for queue (${this.decoder.decodeQueueSize} remaining)...`);
       let waitCount = 0;
       while (this.decoder.decodeQueueSize > 0 && waitCount < 100) {
         await new Promise(r => setTimeout(r, 20));
@@ -1083,7 +1101,7 @@ export class WebCodecsPlayer {
 
     const elapsed = performance.now() - startTime;
     const framesOutput = this.exportFrameBuffer.size - startBufferSize;
-    console.log(`[WebCodecs Export] Flush complete: ${framesOutput} frames output in ${elapsed.toFixed(0)}ms, buffer now ${this.exportFrameBuffer.size}`);
+    log.debug(`Flush complete: ${framesOutput} frames output in ${elapsed.toFixed(0)}ms, buffer now ${this.exportFrameBuffer.size}`);
   }
 
   /**

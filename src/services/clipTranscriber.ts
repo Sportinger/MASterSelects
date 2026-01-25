@@ -1,10 +1,13 @@
 // Clip Transcriber Service
 // Handles transcription of individual clips using Whisper (local) or cloud APIs
 
+import { Logger } from './logger';
 import { useTimelineStore } from '../stores/timeline';
 import { triggerTimelineSave } from '../stores/mediaStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import type { TranscriptWord, TranscriptStatus } from '../types';
+
+const log = Logger.create('ClipTranscriber');
 
 // Worker instance
 let worker: Worker | null = null;
@@ -30,7 +33,7 @@ function getWorker(): Worker {
  */
 export async function transcribeClip(clipId: string, language: string = 'de'): Promise<void> {
   if (isTranscribing) {
-    console.warn('[Transcribe] Already transcribing');
+    log.warn('Already transcribing');
     return;
   }
 
@@ -38,14 +41,14 @@ export async function transcribeClip(clipId: string, language: string = 'de'): P
   const clip = store.clips.find(c => c.id === clipId);
 
   if (!clip || !clip.file) {
-    console.warn('[Transcribe] Clip not found or has no file:', clipId);
+    log.warn('Clip not found or has no file', { clipId });
     return;
   }
 
   // Check if file has audio
   const hasAudio = clip.file.type.startsWith('video/') || clip.file.type.startsWith('audio/');
   if (!hasAudio) {
-    console.warn('[Transcribe] File does not contain audio');
+    log.warn('File does not contain audio');
     return;
   }
 
@@ -55,7 +58,7 @@ export async function transcribeClip(clipId: string, language: string = 'de'): P
 
   // Validate API key if using cloud provider
   if (transcriptionProvider !== 'local' && !apiKey) {
-    console.error('[Transcribe] No API key configured for', transcriptionProvider);
+    log.error(`No API key configured for ${transcriptionProvider}`);
     updateClipTranscript(clipId, {
       status: 'error',
       progress: 0,
@@ -68,7 +71,7 @@ export async function transcribeClip(clipId: string, language: string = 'de'): P
   currentClipId = clipId;
 
   const providerName = transcriptionProvider === 'local' ? 'Local Whisper' : transcriptionProvider.toUpperCase();
-  console.log(`[Transcript] Starting transcription for ${clip.name} using ${providerName}...`);
+  log.info(`Starting transcription for ${clip.name} using ${providerName}`);
 
   // Update status to transcribing
   updateClipTranscript(clipId, {
@@ -84,12 +87,12 @@ export async function transcribeClip(clipId: string, language: string = 'de'): P
     const outPoint = clip.outPoint || clip.duration;
     const clipDuration = outPoint - inPoint;
 
-    console.log(`[Transcribe] Extracting audio from ${inPoint.toFixed(1)}s to ${outPoint.toFixed(1)}s (${clipDuration.toFixed(1)}s)`);
+    log.debug(`Extracting audio from ${inPoint.toFixed(1)}s to ${outPoint.toFixed(1)}s (${clipDuration.toFixed(1)}s)`);
 
     const audioBuffer = await extractAudioBuffer(clip.file, inPoint, outPoint);
     const audioDuration = audioBuffer.duration;
 
-    console.log('[Transcribe] Audio extracted:', audioDuration.toFixed(1) + 's');
+    log.debug(`Audio extracted: ${audioDuration.toFixed(1)}s`);
 
     let words: TranscriptWord[];
 
@@ -134,10 +137,10 @@ export async function transcribeClip(clipId: string, language: string = 'de'): P
       message: undefined,
     });
     triggerTimelineSave();
-    console.log(`[Transcript] Complete: ${words.length} words for ${clip.name}`);
+    log.info(`Complete: ${words.length} words for ${clip.name}`);
 
   } catch (error) {
-    console.error('[Transcribe] Failed:', error);
+    log.error('Transcription failed', error);
     updateClipTranscript(clipId, {
       status: 'error',
       progress: 0,

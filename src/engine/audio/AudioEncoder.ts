@@ -9,6 +9,10 @@
  * - Automatic codec selection based on browser support
  */
 
+import { Logger } from '../../services/logger';
+
+const log = Logger.create('AudioEncoder');
+
 export type AudioCodec = 'aac' | 'opus';
 
 export interface AudioEncoderSettings {

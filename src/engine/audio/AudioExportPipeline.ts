@@ -11,7 +11,10 @@
  * Returns encoded audio chunks ready for muxing with video
  */
 
+import { Logger } from '../../services/logger';
 import { AudioExtractor, audioExtractor } from './AudioExtractor';
+
+const log = Logger.create('AudioExportPipeline');
 import { AudioEncoderWrapper, type EncodedAudioResult } from './AudioEncoder';
 import { AudioMixer, type AudioTrackData } from './AudioMixer';
 import { TimeStretchProcessor, timeStretchProcessor } from './TimeStretchProcessor';

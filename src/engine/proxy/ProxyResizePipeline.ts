@@ -2,6 +2,9 @@
 // Renders VideoFrames to a texture atlas for batch readback
 
 import proxyResizeShader from '../../shaders/proxy-resize.wgsl?raw';
+import { Logger } from '../../services/logger';
+
+const log = Logger.create('ProxyResizePipeline');
 
 // Configuration
 const ATLAS_GRID_SIZE = 4; // 4x4 = 16 frames per atlas
@@ -104,7 +107,7 @@ export class ProxyResizePipeline {
       },
     });
 
-    console.log('[ProxyResizePipeline] GPU render pipeline created (texture_external → rgba8unorm)');
+    log.info('GPU render pipeline created (texture_external -> rgba8unorm)');
   }
 
   /**
@@ -150,7 +153,7 @@ export class ProxyResizePipeline {
     });
 
     const atlasSizeMB = (this.atlasWidth * this.atlasHeight * 4) / (1024 * 1024);
-    console.log(`[ProxyResizePipeline] GPU Atlas initialized:`, {
+    log.info('GPU Atlas initialized', {
       atlasSize: `${this.atlasWidth}x${this.atlasHeight}`,
       frameSize: `${this.frameWidth}x${this.frameHeight}`,
       framesPerBatch: BATCH_SIZE,
@@ -164,12 +167,12 @@ export class ProxyResizePipeline {
    */
   renderFrameToAtlas(frame: VideoFrame, tileIndex: number, commandEncoder: GPUCommandEncoder): void {
     if (!this.pipeline || !this.atlasView || !this.sampler || !this.bindGroupLayout) {
-      console.warn('[ProxyResizePipeline] Pipeline not initialized');
+      log.warn('Pipeline not initialized');
       return;
     }
 
     if (tileIndex >= this.uniformBuffers.length) {
-      console.warn(`[ProxyResizePipeline] Tile index ${tileIndex} exceeds buffer count`);
+      log.warn(`Tile index ${tileIndex} exceeds buffer count`);
       return;
     }
 
@@ -181,7 +184,7 @@ export class ProxyResizePipeline {
     try {
       externalTexture = this.device.importExternalTexture({ source: frame });
     } catch (e) {
-      console.warn('[ProxyResizePipeline] Failed to import video frame:', e);
+      log.warn('Failed to import video frame', e);
       return;
     }
 
@@ -332,6 +335,6 @@ export class ProxyResizePipeline {
       buffer.destroy();
     }
     this.uniformBuffers = [];
-    console.log('[ProxyResizePipeline] Destroyed');
+    log.debug('Destroyed');
   }
 }

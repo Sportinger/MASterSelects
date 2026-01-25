@@ -1,6 +1,9 @@
 // Slots panel component - dynamic grid with drag & drop
 
 import { useState, useCallback, Fragment } from 'react';
+import { Logger } from '../../services/logger';
+
+const log = Logger.create('LayerPanel');
 import { useMixerStore } from '../../stores/mixerStore';
 import { openFilePicker } from '../../utils/fileLoader';
 
@@ -171,19 +174,19 @@ export function LayerPanel() {
     const hasContent = !!targetLayer?.source;
     const zone = getDropZone(e, hasContent);
 
-    console.log('[Drop] toIndex:', toIndex, 'hasContent:', hasContent, 'zone:', zone);
+    log.debug('Drop event', { toIndex, hasContent, zone });
 
     // Handle external file drop
     if (e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
-      console.log('[Drop] External file:', file.name, file.type);
+      log.debug('External file drop', { name: file.name, type: file.type });
       if (file.type.startsWith('video/') || file.type.startsWith('image/')) {
         const state = useMixerStore.getState();
 
         if (hasContent && zone !== 'full') {
           // Drop on half of filled slot - put in adjacent slot (left or right)
           const adjacentSlot = getAdjacentSlot(toIndex, zone);
-          console.log('[Drop] Half-slot drop, adjacentSlot:', adjacentSlot);
+          log.debug('Half-slot drop', { adjacentSlot });
           if (adjacentSlot !== null && !layers[adjacentSlot]?.source) {
             state.createLayerAtSlot(adjacentSlot, file);
             // Create a group between the existing slot and the new one
@@ -192,7 +195,7 @@ export function LayerPanel() {
           }
         } else {
           // Normal drop on empty slot or full replacement
-          console.log('[Drop] Normal drop to slot:', toIndex);
+          log.debug('Normal drop to slot', { toIndex });
           state.createLayerAtSlot(toIndex, file);
         }
       }
@@ -207,22 +210,22 @@ export function LayerPanel() {
     const isGroupDrag = e.dataTransfer.getData('isGroupDrag') === 'true';
     const groupSlotsData = e.dataTransfer.getData('groupSlots');
 
-    console.log('[Drop] Internal drag from:', fromIndex, 'wasCtrlDrag:', wasCtrlDrag, 'isGroupDrag:', isGroupDrag);
+    log.debug('Internal drag', { fromIndex, wasCtrlDrag, isGroupDrag });
 
     if (!isNaN(fromIndex) && fromIndex !== toIndex) {
       if (wasCtrlDrag) {
         // Ctrl+drag = duplicate
-        console.log('[Drop] Duplicating slot');
+        log.debug('Duplicating slot');
         duplicateSlot(fromIndex, toIndex);
       } else if (isGroupDrag && groupSlotsData) {
         // Moving a group - move all slots together
         const draggedGroupSlots = JSON.parse(groupSlotsData) as number[];
-        console.log('[Drop] Moving group:', draggedGroupSlots, 'to:', toIndex);
+        log.debug('Moving group', { draggedGroupSlots, toIndex });
         moveGroup(draggedGroupSlots, toIndex);
       } else if (hasContent && zone !== 'full') {
         // Drag to half of filled slot - move to adjacent slot and group
         const adjacentSlot = getAdjacentSlot(toIndex, zone);
-        console.log('[Drop] Half-slot internal, adjacentSlot:', adjacentSlot);
+        log.debug('Half-slot internal', { adjacentSlot });
         if (adjacentSlot !== null && !layers[adjacentSlot]?.source) {
           swapSlots(fromIndex, adjacentSlot);
           // Create a group between the target slot and the moved slot
@@ -231,7 +234,7 @@ export function LayerPanel() {
         }
       } else {
         // Normal swap
-        console.log('[Drop] Normal swap');
+        log.debug('Normal swap');
         swapSlots(fromIndex, toIndex);
       }
     }

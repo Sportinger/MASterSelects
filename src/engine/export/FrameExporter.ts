@@ -1,7 +1,10 @@
 // Frame-by-frame exporter for precise video rendering
 // Main orchestrator - delegates to specialized modules
 
+import { Logger } from '../../services/logger';
 import { engine } from '../WebGPUEngine';
+
+const log = Logger.create('FrameExporter');
 import { AudioExportPipeline, type EncodedAudioResult } from '../audio';
 import { ParallelDecodeManager } from '../ParallelDecodeManager';
 import { useTimelineStore } from '../../stores/timeline';
@@ -43,13 +46,13 @@ export class FrameExporter {
     const frameDuration = 1 / fps;
     const totalFrames = Math.ceil((endTime - startTime) * fps);
 
-    console.log(`[FrameExporter] Starting export: ${width}x${height} @ ${fps}fps, ${totalFrames} frames, audio: ${includeAudio ? 'yes' : 'no'}`);
+    log.info(`Starting export: ${width}x${height} @ ${fps}fps, ${totalFrames} frames, audio: ${includeAudio ? 'yes' : 'no'}`);
 
     // Initialize encoder
     this.encoder = new VideoEncoderWrapper(this.settings);
     const initialized = await this.encoder.init();
     if (!initialized) {
-      console.error('[FrameExporter] Failed to initialize encoder');
+      log.error('Failed to initialize encoder');
       return null;
     }
 
@@ -69,9 +72,9 @@ export class FrameExporter {
     // Initialize export canvas for zero-copy VideoFrame creation
     const useZeroCopy = engine.initExportCanvas(width, height);
     if (useZeroCopy) {
-      console.log('[FrameExporter] Using zero-copy export path (OffscreenCanvas → VideoFrame)');
+      log.info('Using zero-copy export path (OffscreenCanvas -> VideoFrame)');
     } else {
-      console.log('[FrameExporter] Falling back to readPixels export path');
+      log.info('Falling back to readPixels export path');
     }
 
     try {
@@ -93,7 +96,7 @@ export class FrameExporter {
       // Phase 1: Encode video frames
       for (let frame = 0; frame < totalFrames; frame++) {
         if (this.isCancelled) {
-          console.log('[FrameExporter] Export cancelled');
+          log.info('Export cancelled');
           this.encoder.cancel();
           this.audioPipeline?.cancel();
           this.cleanup(originalDimensions);
@@ -107,7 +110,7 @@ export class FrameExporter {
         const ctx = this.createFrameContext(time, fps, frameTolerance);
 
         if (frame % 30 === 0 || frame < 5) {
-          console.log(`[FrameExporter] Processing frame ${frame}/${totalFrames} at time ${time.toFixed(3)}s`);
+          log.debug(`Processing frame ${frame}/${totalFrames} at time ${time.toFixed(3)}s`);
         }
 
         await seekAllClipsToTime(ctx, this.clipStates, this.parallelDecoder, this.useParallelDecode);
@@ -116,7 +119,7 @@ export class FrameExporter {
         const layers = buildLayersAtTime(ctx, this.clipStates, this.parallelDecoder, this.useParallelDecode);
 
         if (layers.length === 0 && frame === 0) {
-          console.warn('[FrameExporter] No layers at time', time);
+          log.warn(`No layers at time ${time}`);
         }
 
         // Check GPU device validity
@@ -138,7 +141,7 @@ export class FrameExporter {
             if (!engine.isDeviceValid()) {
               throw new Error('WebGPU device lost during export. Try keeping the browser tab in focus.');
             }
-            console.error('[FrameExporter] Failed to create VideoFrame at frame', frame);
+            log.error(`Failed to create VideoFrame at frame ${frame}`);
             continue;
           }
           await this.encoder.encodeVideoFrame(videoFrame, frame, keyframeInterval);
@@ -150,7 +153,7 @@ export class FrameExporter {
             if (!engine.isDeviceValid()) {
               throw new Error('WebGPU device lost during export. Try keeping the browser tab in focus.');
             }
-            console.error('[FrameExporter] Failed to read pixels at frame', frame);
+            log.error(`Failed to read pixels at frame ${frame}`);
             continue;
           }
           await this.encoder.encodeFrame(pixels, frame, keyframeInterval);
@@ -190,7 +193,7 @@ export class FrameExporter {
           return null;
         }
 
-        console.log('[FrameExporter] Starting audio export...');
+        log.info('Starting audio export...');
 
         audioResult = await this.audioPipeline.exportAudio(startTime, endTime, (audioProgress) => {
           if (this.isCancelled) return;
@@ -210,16 +213,16 @@ export class FrameExporter {
         if (audioResult && audioResult.chunks.length > 0) {
           this.encoder.addAudioChunks(audioResult);
         } else {
-          console.log('[FrameExporter] No audio to add');
+          log.debug('No audio to add');
         }
       }
 
       const blob = await this.encoder.finish();
-      console.log(`[FrameExporter] Export complete: ${(blob.size / 1024 / 1024).toFixed(2)}MB`);
+      log.info(`Export complete: ${(blob.size / 1024 / 1024).toFixed(2)}MB`);
       this.cleanup(originalDimensions);
       return blob;
     } catch (error) {
-      console.error('[FrameExporter] Export error:', error);
+      log.error('Export error:', error);
       this.cleanup(originalDimensions);
       return null;
     }

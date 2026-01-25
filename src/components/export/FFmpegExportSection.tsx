@@ -2,6 +2,9 @@
 // FFmpeg WASM export section with professional codec support
 
 import { useState, useCallback } from 'react';
+import { Logger } from '../../services/logger';
+
+const log = Logger.create('FFmpegExportSection');
 import {
   getFFmpegBridge,
   FFmpegBridge,
@@ -86,7 +89,7 @@ export function FFmpegExportSection({
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to load FFmpeg';
       setLoadError(msg);
-      console.error('[FFmpegExportSection] Load error:', e);
+      log.error('Load error', e);
     } finally {
       setIsLoading(false);
     }
@@ -192,7 +195,7 @@ export function FFmpegExportSection({
       };
 
       // Render frames
-      console.log('[FFmpegExportSection] Rendering frames...');
+      log.info('Rendering frames...');
       const frames = await onRenderFrames(settings);
 
       if (frames.length === 0) {
@@ -201,7 +204,7 @@ export function FFmpegExportSection({
 
       // Encode with FFmpeg
       setPhase('encoding');
-      console.log(`[FFmpegExportSection] Encoding ${frames.length} frames...`);
+      log.info(`Encoding ${frames.length} frames...`);
 
       const ffmpeg = getFFmpegBridge();
       const blob = await ffmpeg.encode(frames, settings, (p) => {
@@ -218,11 +221,11 @@ export function FFmpegExportSection({
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      console.log('[FFmpegExportSection] Export complete');
+      log.info('Export complete');
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Export failed';
       setError(msg);
-      console.error('[FFmpegExportSection] Export error:', e);
+      log.error('Export error', e);
     } finally {
       setIsExporting(false);
       setPhase('idle');

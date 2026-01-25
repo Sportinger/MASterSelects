@@ -1,5 +1,9 @@
 // Texture creation and caching for images and video frames
 
+import { Logger } from '../../services/logger';
+
+const log = Logger.create('TextureManager');
+
 export class TextureManager {
   private device: GPUDevice;
 
@@ -49,7 +53,7 @@ export class TextureManager {
       this.imageTextures.set(image, texture);
       return texture;
     } catch (e) {
-      console.error('Failed to create image texture:', e);
+      log.error('Failed to create image texture', e);
       return null;
     }
   }
@@ -82,7 +86,7 @@ export class TextureManager {
       this.canvasTextures.set(canvas, texture);
       return texture;
     } catch (e) {
-      console.error('Failed to create canvas texture:', e);
+      log.error('Failed to create canvas texture', e);
       return null;
     }
   }
@@ -115,7 +119,7 @@ export class TextureManager {
 
       return texture;
     } catch (e) {
-      console.error('Failed to create ImageBitmap texture:', e);
+      log.error('Failed to create ImageBitmap texture', e);
       return null;
     }
   }

@@ -11,7 +11,10 @@
  * - Chunked processing for memory efficiency
  */
 
+import { Logger } from '../../services/logger';
 import { SoundTouch } from 'soundtouch-ts';
+
+const log = Logger.create('TimeStretchProcessor');
 import type { Keyframe } from '../../types';
 import { interpolateKeyframes } from '../../utils/keyframeInterpolation';
 

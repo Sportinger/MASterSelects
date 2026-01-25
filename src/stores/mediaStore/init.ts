@@ -5,6 +5,9 @@
 import { useTimelineStore } from '../timeline';
 import { fileSystemService } from '../../services/fileSystemService';
 import type { Composition, MediaState } from './types';
+import { Logger } from '../../services/logger';
+
+const log = Logger.create('MediaStore');
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type MediaStore = any;
@@ -39,7 +42,7 @@ function saveTimelineToActiveComposition(): void {
  */
 export function triggerTimelineSave(): void {
   saveTimelineToActiveComposition();
-  console.log('[MediaStore] Timeline saved to composition');
+  log.info('Timeline saved to composition');
 }
 
 /**
@@ -65,7 +68,7 @@ async function initializeStore(): Promise<void> {
   if (activeCompositionId) {
     const activeComp = compositions.find((c: Composition) => c.id === activeCompositionId);
     if (activeComp?.timelineData) {
-      console.log('[MediaStore] Restoring timeline for:', activeComp.name);
+      log.info('Restoring timeline for:', activeComp.name);
       await useTimelineStore.getState().loadState(activeComp.timelineData);
     }
   }

@@ -1,6 +1,9 @@
 // Proxy frame and audio storage service
 
+import { Logger } from '../../logger';
 import { PROJECT_FOLDERS } from '../core/constants';
+
+const log = Logger.create('ProxyStorage');
 
 export class ProxyStorageService {
   // ============================================

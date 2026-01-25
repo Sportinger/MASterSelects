@@ -1,6 +1,9 @@
 // Manages external output windows (fullscreen, secondary displays)
 
 import type { OutputWindow } from '../core/types';
+import { Logger } from '../../services/logger';
+
+const log = Logger.create('OutputWindowManager');
 
 export class OutputWindowManager {
   private outputWindows: Map<string, OutputWindow> = new Map();
@@ -20,7 +23,7 @@ export class OutputWindowManager {
     );
 
     if (!outputWindow) {
-      console.error('[OutputWindowManager] Failed to open window (popup blocked?)');
+      log.error('Failed to open window (popup blocked?)');
       return null;
     }
 

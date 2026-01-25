@@ -8,6 +8,9 @@ import { projectFileService } from '../../../services/projectFileService';
 import { fileSystemService } from '../../../services/fileSystemService';
 import { useTimelineStore } from '../../timeline';
 import { engine } from '../../../engine/WebGPUEngine';
+import { Logger } from '../../../services/logger';
+
+const log = Logger.create('Project');
 
 export interface ProjectActions {
   initFromDB: () => Promise<void>;

@@ -10,6 +10,9 @@ import { projectFileService } from '../../../services/projectFileService';
 import { fileSystemService } from '../../../services/fileSystemService';
 import { projectDB } from '../../../services/projectDB';
 import { useSettingsStore } from '../../settingsStore';
+import { Logger } from '../../../services/logger';
+
+const log = Logger.create('Import');
 
 export interface ImportParams {
   file: File;

@@ -1,7 +1,10 @@
 // Project File Service Facade
 // Delegates to domain services while maintaining the original API for backward compatibility
 
+import { Logger } from '../logger';
 import { FileStorageService, fileStorageService } from './core/FileStorageService';
+
+const log = Logger.create('ProjectFileService');
 import { ProjectCoreService } from './core/ProjectCoreService';
 import { AnalysisService } from './domains/AnalysisService';
 import { TranscriptService } from './domains/TranscriptService';
@@ -187,7 +190,7 @@ class ProjectFileService {
   async copyToRawFolder(file: File, fileName?: string): Promise<{ handle: FileSystemFileHandle; relativePath: string; alreadyExisted: boolean } | null> {
     const handle = this.coreService.getProjectHandle();
     if (!handle) {
-      console.warn('[ProjectFile] No project open, cannot copy to Raw folder');
+      log.warn('No project open, cannot copy to Raw folder');
       return null;
     }
     return this.rawMediaService.copyToRawFolder(handle, file, fileName);
@@ -228,7 +231,7 @@ class ProjectFileService {
   async saveYouTubeDownload(blob: Blob, title: string): Promise<File | null> {
     const handle = this.coreService.getProjectHandle();
     if (!handle) {
-      console.warn('[ProjectFile] No project open, cannot save YouTube download to project');
+      log.warn('No project open, cannot save YouTube download to project');
       return null;
     }
     return this.rawMediaService.saveYouTubeDownload(handle, blob, title);
@@ -275,7 +278,7 @@ class ProjectFileService {
   async saveProxyFrame(mediaId: string, frameIndex: number, blob: Blob): Promise<boolean> {
     const handle = this.coreService.getProjectHandle();
     if (!handle) {
-      console.error('[ProjectFile] No project handle for proxy save!');
+      log.error('No project handle for proxy save!');
       return false;
     }
     return this.proxyStorageService.saveProxyFrame(handle, mediaId, frameIndex, blob);
@@ -302,7 +305,7 @@ class ProjectFileService {
   async saveProxyAudio(mediaId: string, blob: Blob): Promise<boolean> {
     const handle = this.coreService.getProjectHandle();
     if (!handle) {
-      console.error('[ProjectFile] No project handle for audio proxy save!');
+      log.error('No project handle for audio proxy save!');
       return false;
     }
     return this.proxyStorageService.saveProxyAudio(handle, mediaId, blob);

@@ -3,6 +3,9 @@
 
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
+import { Logger } from '../services/logger';
+
+const log = Logger.create('History');
 
 // Snapshot of undoable state from all stores
 interface StateSnapshot {

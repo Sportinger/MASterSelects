@@ -1,6 +1,9 @@
 // Media info extraction helpers
 
 import { CONTAINER_MAP, MEDIA_INFO_TIMEOUT } from '../constants';
+import { Logger } from '../../../services/logger';
+
+const log = Logger.create('MediaInfo');
 
 export interface MediaInfo {
   width?: number;

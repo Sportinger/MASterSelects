@@ -4,6 +4,9 @@
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import type { MediaFile } from './mediaStore';
+import { Logger } from '../services/logger';
+
+const log = Logger.create('MultiCam');
 
 // =============================================================================
 // Types

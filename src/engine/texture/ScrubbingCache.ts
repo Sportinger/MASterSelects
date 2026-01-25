@@ -1,7 +1,10 @@
 // Scrubbing frame cache for instant access during timeline scrubbing
 // Also includes RAM preview composite cache for instant playback
 
+import { Logger } from '../../services/logger';
 import type { GpuFrameCacheEntry } from '../core/types';
+
+const log = Logger.create('ScrubbingCache');
 
 export class ScrubbingCache {
   private device: GPUDevice;
@@ -277,7 +280,7 @@ export class ScrubbingCache {
     }
     this.gpuFrameCache.clear();
 
-    console.log('[ScrubbingCache] Composite cache cleared');
+    log.debug('Composite cache cleared');
   }
 
   // Clear all caches
@@ -294,7 +297,7 @@ export class ScrubbingCache {
     this.lastFrameSizes.clear();
     this.lastCaptureTime.clear();
 
-    console.log('[ScrubbingCache] All caches cleared');
+    log.debug('All caches cleared');
   }
 
   destroy(): void {

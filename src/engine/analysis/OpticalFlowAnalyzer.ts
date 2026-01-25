@@ -2,6 +2,9 @@
 // Uses Lucas-Kanade with Gaussian Pyramid for accurate motion detection
 
 import opticalFlowShader from '../../shaders/opticalflow.wgsl?raw';
+import { Logger } from '../../services/logger';
+
+const log = Logger.create('OpticalFlowAnalyzer');
 
 // Motion analysis result
 export interface MotionResult {
@@ -85,10 +88,10 @@ export class OpticalFlowAnalyzer {
       this.createTextures();
       this.createBuffers();
       this.initialized = true;
-      console.log('[OpticalFlow] Analyzer initialized');
+      log.info('Analyzer initialized');
       return true;
     } catch (error) {
-      console.error('[OpticalFlow] Failed to initialize:', error);
+      log.error('Failed to initialize', error);
       return false;
     }
   }
@@ -701,7 +704,7 @@ export class OpticalFlowAnalyzer {
     this.statsParamsBuffer?.destroy();
 
     this.initialized = false;
-    console.log('[OpticalFlow] Analyzer destroyed');
+    log.debug('Analyzer destroyed');
   }
 }
 

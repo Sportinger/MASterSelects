@@ -1,6 +1,9 @@
 // Animation loop with idle detection and frame rate limiting
 
+import { Logger } from '../../services/logger';
 import type { PerformanceStats } from '../stats/PerformanceStats';
+
+const log = Logger.create('RenderLoop');
 
 export interface RenderLoopCallbacks {
   isRecovering: () => boolean;
@@ -42,7 +45,7 @@ export class RenderLoop {
     this.isRunning = true;
     this.lastActivityTime = performance.now();
     this.isIdle = false;
-    console.log('[RenderLoop] Starting');
+    log.info('Starting');
 
     let lastTimestamp = 0;
 
@@ -56,12 +59,12 @@ export class RenderLoop {
       const timeSinceActivity = timestamp - this.lastActivityTime;
       if (!this.isIdle && !this.renderRequested && timeSinceActivity > this.IDLE_TIMEOUT) {
         this.isIdle = true;
-        console.log('[RenderLoop] Entering idle mode');
+        log.debug('Entering idle mode');
       }
 
       if (this.isIdle && this.renderRequested) {
         this.isIdle = false;
-        console.log('[RenderLoop] Waking from idle');
+        log.debug('Waking from idle');
       }
 
       this.renderRequested = false;

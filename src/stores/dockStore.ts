@@ -20,6 +20,9 @@ import {
   insertPanelAtTarget,
   collapseSingleChildSplits,
 } from '../utils/dockLayout';
+import { Logger } from '../services/logger';
+
+const log = Logger.create('DockStore');
 
 // Valid panel types (used to filter out removed panels from saved layouts)
 const VALID_PANEL_TYPES = new Set(Object.keys(PANEL_CONFIGS));

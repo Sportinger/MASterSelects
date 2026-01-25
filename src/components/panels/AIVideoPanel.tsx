@@ -2,6 +2,9 @@
 // Supports text-to-video and image-to-video generation with timeline integration
 
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { Logger } from '../../services/logger';
+
+const log = Logger.create('AIVideoPanel');
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useMediaStore } from '../../stores/mediaStore';
 import { useTimelineStore } from '../../stores/timeline';
@@ -54,7 +57,7 @@ function loadHistory(): GenerationJob[] {
       }));
     }
   } catch (e) {
-    console.warn('Failed to load generation history:', e);
+    log.warn('Failed to load generation history', e);
   }
   return [];
 }
@@ -63,7 +66,7 @@ function saveHistory(history: GenerationJob[]) {
   try {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(0, 50))); // Keep last 50
   } catch (e) {
-    console.warn('Failed to save generation history:', e);
+    log.warn('Failed to save generation history', e);
   }
 }
 
@@ -99,7 +102,7 @@ async function captureCurrentFrame(): Promise<string | null> {
 
     return canvas.toDataURL('image/png');
   } catch (e) {
-    console.error('Failed to capture frame:', e);
+    log.error('Failed to capture frame', e);
     return null;
   }
 }
@@ -112,7 +115,7 @@ async function downloadVideoAsFile(url: string, filename: string): Promise<File 
     const blob = await response.blob();
     return new File([blob], filename, { type: blob.type || 'video/mp4' });
   } catch (e) {
-    console.error('Failed to download video:', e);
+    log.error('Failed to download video', e);
     return null;
   }
 }
@@ -188,7 +191,7 @@ export function AIVideoPanel() {
       const info = await piApiService.getAccountInfo();
       setAccountInfo(info);
     } catch (err) {
-      console.error('Failed to fetch account balance:', err);
+      log.error('Failed to fetch account balance', err);
       // Don't show error to user, just log it
     } finally {
       setIsLoadingBalance(false);
@@ -327,7 +330,7 @@ export function AIVideoPanel() {
       const filename = `${job.provider}_${job.id.slice(0, 8)}_${Date.now()}.mp4`;
       const file = await downloadVideoAsFile(job.videoUrl, filename);
       if (!file) {
-        console.error('Failed to download video');
+        log.error('Failed to download video');
         return;
       }
 
@@ -340,7 +343,7 @@ export function AIVideoPanel() {
       // Move to AI Video folder
       useMediaStore.getState().moveToFolder([mediaFile.id], folderId);
 
-      console.log('[AIVideo] Imported video to media panel:', mediaFile.name);
+      log.info('Imported video to media panel', { name: mediaFile.name });
 
       // Add to timeline if option is enabled
       if (addToTimeline) {
@@ -367,7 +370,7 @@ export function AIVideoPanel() {
         const { playheadPosition } = useTimelineStore.getState();
         await addClip(targetTrackId, file, playheadPosition, job.duration, mediaFile.id);
 
-        console.log('[AIVideo] Added clip to timeline');
+        log.info('Added clip to timeline');
 
         // Update job to mark as added
         setJobs(prev => prev.map(j =>
@@ -378,7 +381,7 @@ export function AIVideoPanel() {
         ));
       }
     } catch (err) {
-      console.error('Failed to import video:', err);
+      log.error('Failed to import video', err);
     }
   }, [importFile, tracks, addClip, addTrack, addToTimeline]);
 

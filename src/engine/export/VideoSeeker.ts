@@ -1,6 +1,9 @@
 // Video seeking and ready-state management for export
 
+import { Logger } from '../../services/logger';
 import type { ExportClipState, FrameContext } from './types';
+
+const log = Logger.create('VideoSeeker');
 import { ParallelDecodeManager } from '../ParallelDecodeManager';
 
 /**

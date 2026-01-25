@@ -1,6 +1,9 @@
 // Manages ping-pong render targets for compositing
 
+import { Logger } from '../../services/logger';
 import type { RenderTargets } from './types';
+
+const log = Logger.create('RenderTargetManager');
 
 export class RenderTargetManager {
   private device: GPUDevice;
@@ -75,7 +78,7 @@ export class RenderTargetManager {
         this.independentPongView = this.independentPongTexture.createView();
       }
     } catch (e) {
-      console.error('[RenderTargetManager] Failed to create ping-pong textures:', e);
+      log.error('Failed to create ping-pong textures', e);
     }
   }
 

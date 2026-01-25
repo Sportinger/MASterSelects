@@ -8,6 +8,10 @@
  * - Gain normalization to prevent clipping
  */
 
+import { Logger } from '../../services/logger';
+
+const log = Logger.create('AudioMixer');
+
 export interface AudioTrackData {
   clipId: string;
   buffer: AudioBuffer;      // Already processed (speed, effects)

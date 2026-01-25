@@ -1,6 +1,9 @@
 // Clip preparation and initialization for export
 
+import { Logger } from '../../services/logger';
 import type { TimelineClip } from '../../stores/timeline/types';
+
+const log = Logger.create('ClipPreparation');
 import type { ExportSettings, ExportClipState, ExportMode } from './types';
 import { useTimelineStore } from '../../stores/timeline';
 import { useMediaStore } from '../../stores/mediaStore';
@@ -23,6 +26,7 @@ export async function prepareClipsForExport(
   settings: ExportSettings,
   exportMode: ExportMode
 ): Promise<ClipPreparationResult> {
+  const endPrepare = log.time('prepareClipsForExport TOTAL');
   const { clips, tracks } = useTimelineStore.getState();
   const mediaFiles = useMediaStore.getState().files;
   const startTime = settings.startTime;
@@ -38,16 +42,17 @@ export async function prepareClipsForExport(
     return clip.startTime < endTime && clipEnd > startTime;
   });
 
-  console.log(`[FrameExporter] Preparing ${videoClips.length} video clips for ${exportMode.toUpperCase()} export...`);
+  log.info(`Preparing ${videoClips.length} video clips for ${exportMode.toUpperCase()} export...`);
 
   if (exportMode === 'precise') {
+    endPrepare();
     return initializePreciseMode(videoClips, clipStates);
   }
 
   // FAST MODE: WebCodecs with MP4Box parsing
   // NOTE: Auto-fallback to PRECISE mode is DISABLED for debugging
   // All errors will be thrown to surface issues with FAST mode
-  return await initializeFastMode(videoClips, mediaFiles, startTime, clipStates, settings.fps);
+  return await initializeFastMode(videoClips, mediaFiles, startTime, clipStates, settings.fps, endPrepare);
 }
 
 function initializePreciseMode(
@@ -62,9 +67,9 @@ function initializePreciseMode(
       lastSampleIndex: 0,
       isSequential: false,
     });
-    console.log(`[FrameExporter] Clip ${clip.name}: PRECISE mode (HTMLVideoElement seeking)`);
+    log.debug(`Clip ${clip.name}: PRECISE mode (HTMLVideoElement seeking)`);
   }
-  console.log(`[FrameExporter] All ${videoClips.length} clips using PRECISE HTMLVideoElement seeking`);
+  log.info(`All ${videoClips.length} clips using PRECISE HTMLVideoElement seeking`);
 
   return {
     clipStates,
@@ -79,7 +84,8 @@ async function initializeFastMode(
   mediaFiles: any[],
   startTime: number,
   clipStates: Map<string, ExportClipState>,
-  fps: number
+  fps: number,
+  endPrepare: () => void
 ): Promise<ClipPreparationResult> {
   const { WebCodecsPlayer } = await import('../WebCodecsPlayer');
 
@@ -97,7 +103,7 @@ async function initializeFastMode(
         lastSampleIndex: 0,
         isSequential: false,
       });
-      console.log(`[FrameExporter] Clip ${clip.name}: Composition with nested clips`);
+      log.debug(`Clip ${clip.name}: Composition with nested clips`);
 
       // Collect nested video clips
       if (clip.nestedClips) {
@@ -115,15 +121,18 @@ async function initializeFastMode(
   // Use parallel decoding if we have 2+ total video clips
   const totalVideoClips = regularVideoClips.length + nestedVideoClips.length;
   if (totalVideoClips >= 2) {
-    console.log(`[FrameExporter] Using PARALLEL decoding for ${regularVideoClips.length} regular + ${nestedVideoClips.length} nested = ${totalVideoClips} video clips`);
-    return initializeParallelDecoding(regularVideoClips, mediaFiles, startTime, nestedVideoClips, clipStates, fps);
+    log.info(`Using PARALLEL decoding for ${regularVideoClips.length} regular + ${nestedVideoClips.length} nested = ${totalVideoClips} video clips`);
+    return initializeParallelDecoding(regularVideoClips, mediaFiles, startTime, nestedVideoClips, clipStates, fps, endPrepare);
   }
 
   // Single clip: use sequential approach
   for (const clip of regularVideoClips) {
     const mediaFileId = clip.source!.mediaFileId;
     const mediaFile = mediaFileId ? mediaFiles.find(f => f.id === mediaFileId) : null;
+
+    const endLoad = log.time(`loadClipFileData "${clip.name}"`);
     const fileData = await loadClipFileData(clip, mediaFile);
+    endLoad();
 
     if (!fileData) {
       throw new Error(`FAST export failed: Could not load file data for clip "${clip.name}". Try PRECISE mode instead.`);
@@ -135,14 +144,17 @@ async function initializeFastMode(
                   (header[8] === 0x71 && header[9] === 0x74);
     const fileType = isMOV ? 'MOV' : 'MP4';
 
-    console.log(`[FrameExporter] Loaded ${clip.name} (${(fileData.byteLength / 1024 / 1024).toFixed(1)}MB, ${fileType})`);
+    log.debug(`Loaded ${clip.name} (${(fileData.byteLength / 1024 / 1024).toFixed(1)}MB, ${fileType})`);
 
     // Create dedicated WebCodecs player for export
     const exportPlayer = new WebCodecsPlayer({ useSimpleMode: false, loop: false });
 
+    const endParse = log.time(`loadArrayBuffer "${clip.name}"`);
     try {
       await exportPlayer.loadArrayBuffer(fileData);
+      endParse();
     } catch (e) {
+      endParse();
       const hint = isMOV ? ' MOV containers may have unsupported audio codecs.' : '';
       throw new Error(`FAST export failed: WebCodecs/MP4Box parsing failed for clip "${clip.name}": ${e}.${hint} Try PRECISE mode instead.`);
     }
@@ -153,7 +165,9 @@ async function initializeFastMode(
       ? clip.outPoint - clipStartInExport
       : clipStartInExport + clip.inPoint;
 
+    const endSeqPrep = log.time(`prepareForSequentialExport "${clip.name}"`);
     await exportPlayer.prepareForSequentialExport(clipTime);
+    endSeqPrep();
 
     clipStates.set(clip.id, {
       clipId: clip.id,
@@ -162,10 +176,11 @@ async function initializeFastMode(
       isSequential: true,
     });
 
-    console.log(`[FrameExporter] Clip ${clip.name}: FAST mode enabled (${exportPlayer.width}x${exportPlayer.height})`);
+    log.debug(`Clip ${clip.name}: FAST mode enabled (${exportPlayer.width}x${exportPlayer.height})`);
   }
 
-  console.log(`[FrameExporter] All ${videoClips.length} clips using FAST WebCodecs sequential decoding`);
+  log.info(`All ${videoClips.length} clips using FAST WebCodecs sequential decoding`);
+  endPrepare();
 
   return {
     clipStates,
@@ -181,11 +196,13 @@ async function initializeParallelDecoding(
   _startTime: number,
   nestedClips: Array<{ clip: TimelineClip; parentClip: TimelineClip }>,
   clipStates: Map<string, ExportClipState>,
-  fps: number
+  fps: number,
+  endPrepare: () => void
 ): Promise<ClipPreparationResult> {
   const parallelDecoder = new ParallelDecodeManager();
 
   // Load all clip file data in parallel
+  const endLoadAll = log.time('loadAllClipFileData');
   const loadPromises = clips.map(async (clip) => {
     const mediaFileId = clip.source!.mediaFileId;
     const mediaFile = mediaFileId ? mediaFiles.find(f => f.id === mediaFileId) : null;
@@ -214,7 +231,7 @@ async function initializeParallelDecoding(
     const fileData = await loadClipFileData(clip, mediaFile);
 
     if (!fileData) {
-      console.warn(`[FrameExporter] Could not load nested clip "${clip.name}", will use HTMLVideoElement`);
+      log.warn(`Could not load nested clip "${clip.name}", will use HTMLVideoElement`);
       return null;
     }
 
@@ -236,12 +253,15 @@ async function initializeParallelDecoding(
 
   const loadedClips = await Promise.all(loadPromises);
   const loadedNestedClips = (await Promise.all(nestedLoadPromises)).filter(c => c !== null);
+  endLoadAll();
 
   const clipInfos = [...loadedClips, ...loadedNestedClips as any[]];
 
-  console.log(`[FrameExporter] Loaded ${loadedClips.length} regular + ${loadedNestedClips.length} nested clips for parallel decoding`);
+  log.info(`Loaded ${loadedClips.length} regular + ${loadedNestedClips.length} nested clips for parallel decoding`);
 
+  const endParallelInit = log.time('parallelDecoder.initialize');
   await parallelDecoder.initialize(clipInfos, fps);
+  endParallelInit();
 
   // Mark clips as using parallel decoding
   for (const clip of clips) {
@@ -262,7 +282,8 @@ async function initializeParallelDecoding(
     });
   }
 
-  console.log(`[FrameExporter] Parallel decoding initialized for ${clipInfos.length} total clips`);
+  log.info(`Parallel decoding initialized for ${clipInfos.length} total clips`);
+  endPrepare();
 
   return {
     clipStates,
@@ -285,7 +306,7 @@ export async function loadClipFileData(clip: TimelineClip, mediaFile: any): Prom
       const file = await storedHandle.getFile();
       fileData = await file.arrayBuffer();
     } catch (e) {
-      console.warn(`[FrameExporter] Media file handle failed for ${clip.name}:`, e);
+      log.warn(`Media file handle failed for ${clip.name}:`, e);
     }
   }
 
@@ -294,7 +315,7 @@ export async function loadClipFileData(clip: TimelineClip, mediaFile: any): Prom
     try {
       fileData = await clip.file.arrayBuffer();
     } catch (e) {
-      console.warn(`[FrameExporter] Clip file access failed for ${clip.name}:`, e);
+      log.warn(`Clip file access failed for ${clip.name}:`, e);
     }
   }
 
@@ -304,7 +325,7 @@ export async function loadClipFileData(clip: TimelineClip, mediaFile: any): Prom
       const response = await fetch(mediaFile.url);
       fileData = await response.arrayBuffer();
     } catch (e) {
-      console.warn(`[FrameExporter] Media blob URL fetch failed for ${clip.name}:`, e);
+      log.warn(`Media blob URL fetch failed for ${clip.name}:`, e);
     }
   }
 
@@ -314,7 +335,7 @@ export async function loadClipFileData(clip: TimelineClip, mediaFile: any): Prom
       const response = await fetch(clip.source.videoElement.src);
       fileData = await response.arrayBuffer();
     } catch (e) {
-      console.warn(`[FrameExporter] Video src fetch failed for ${clip.name}:`, e);
+      log.warn(`Video src fetch failed for ${clip.name}:`, e);
     }
   }
 
@@ -346,5 +367,5 @@ export function cleanupExportMode(
   }
 
   clipStates.clear();
-  console.log('[FrameExporter] Export cleanup complete');
+  log.info('Export cleanup complete');
 }

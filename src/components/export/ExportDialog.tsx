@@ -2,6 +2,9 @@
 // After Effects-style precise rendering
 
 import { useState, useEffect, useCallback } from 'react';
+import { Logger } from '../../services/logger';
+
+const log = Logger.create('ExportDialog');
 import { FrameExporter, downloadBlob } from '../../engine/export';
 import type { ExportProgress, VideoCodec, ContainerFormat } from '../../engine/export';
 import { useTimelineStore } from '../../stores/timeline';

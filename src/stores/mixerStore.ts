@@ -5,6 +5,9 @@ import { subscribeWithSelector } from 'zustand/middleware';
 import type { Layer, BlendMode, Effect, OutputWindow, MIDIMapping, EngineStats } from '../types';
 import { WebCodecsPlayer } from '../engine/WebCodecsPlayer';
 import { audioManager } from '../services/audioManager';
+import { Logger } from '../services/logger';
+
+const log = Logger.create('MixerStore');
 
 // Slot group - slots that are visually linked together
 export type SlotGroup = number[];

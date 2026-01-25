@@ -4,6 +4,9 @@ import type { MediaFile, MediaSliceCreator, ProxyStatus } from '../types';
 import { PROXY_FPS } from '../constants';
 import { projectFileService } from '../../../services/projectFileService';
 import { useTimelineStore } from '../../timeline';
+import { Logger } from '../../../services/logger';
+
+const log = Logger.create('Proxy');
 
 // Track active generations for cancellation
 const activeProxyGenerations = new Map<string, { cancelled: boolean }>();

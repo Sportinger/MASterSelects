@@ -8,6 +8,9 @@ import type {
   ProResProfile,
   FFmpegVideoCodec,
 } from './types';
+import { Logger } from '../../services/logger';
+
+const log = Logger.create('FFmpegBridge');
 
 // FFmpeg WASM core interface (direct core, not @ffmpeg/ffmpeg wrapper)
 interface FFmpegCore {
@@ -74,14 +77,14 @@ export class FFmpegBridge {
   }
 
   private async doLoad(): Promise<void> {
-    console.log('[FFmpegBridge] Loading FFmpeg WASM...');
+    log.info('Loading FFmpeg WASM...');
     const startTime = performance.now();
 
     try {
       // Load FFmpeg core directly (bypassing @ffmpeg/ffmpeg wrapper which has issues)
       const baseURL = `${window.location.origin}/ffmpeg`;
 
-      console.log('[FFmpegBridge] Fetching ffmpeg-core.js...');
+      log.debug('Fetching ffmpeg-core.js...');
 
       // Load via script tag since it's a UMD module, not ES module
       await new Promise<void>((resolve, reject) => {
@@ -107,21 +110,21 @@ export class FFmpegBridge {
         throw new Error('createFFmpegCore not found after script load');
       }
 
-      console.log('[FFmpegBridge] Fetching ffmpeg-core.wasm...');
+      log.debug('Fetching ffmpeg-core.wasm...');
       const wasmBinary = await fetch(`${baseURL}/ffmpeg-core.wasm`).then(r => r.arrayBuffer());
 
-      console.log('[FFmpegBridge] Initializing FFmpeg core...');
+      log.debug('Initializing FFmpeg core...');
       const core = await createFFmpegCore({
         wasmBinary,
         locateFile: (path: string) => `${baseURL}/${path}`,
         // Capture stdout/stderr
         print: (message: string) => {
-          console.log('[FFmpeg]', message);
+          log.debug('FFmpeg output', message);
           this.handleLog('info', message);
         },
         printErr: (message: string) => {
           if (!message.startsWith('Aborted')) {
-            console.log('[FFmpeg ERR]', message);
+            log.debug('FFmpeg stderr', message);
             this.handleLog('warning', message);
           }
         },
@@ -155,9 +158,9 @@ export class FFmpegBridge {
       this.ffmpeg = core;
 
       const loadTime = ((performance.now() - startTime) / 1000).toFixed(2);
-      console.log(`[FFmpegBridge] Loaded in ${loadTime}s`);
+      log.info(`Loaded in ${loadTime}s`);
     } catch (error) {
-      console.error('[FFmpegBridge] Failed to load:', error);
+      log.error('Failed to load', error);
       throw new Error(`Failed to load FFmpeg: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
@@ -206,7 +209,7 @@ export class FFmpegBridge {
         time = hours * 3600 + minutes * 60 + seconds;
       }
 
-      console.log(`[FFmpegBridge] Progress: frame=${frame}/${this.totalFrames} (${percent.toFixed(1)}%)`);
+      log.debug(`Progress: frame=${frame}/${this.totalFrames} (${percent.toFixed(1)}%)`);
 
       this.onProgress({
         frame,
@@ -261,8 +264,8 @@ export class FFmpegBridge {
       // This bypasses the pattern matching issue in WASM FFmpeg's image2 demuxer
       const frameSize = frames[0].byteLength;
       const totalSize = frameSize * frames.length;
-      console.log(`[FFmpegBridge] Writing ${frames.length} frames (${(totalSize / 1024 / 1024).toFixed(1)} MB)...`);
-      console.log(`[FFmpegBridge] Frame size: ${frameSize} bytes (expected: ${settings.width * settings.height * 4})`);
+      log.debug(`Writing ${frames.length} frames (${(totalSize / 1024 / 1024).toFixed(1)} MB)...`);
+      log.debug(`Frame size: ${frameSize} bytes (expected: ${settings.width * settings.height * 4})`);
 
       // Debug: check if frames have unique content
       if (frames.length >= 2) {
@@ -270,7 +273,7 @@ export class FFmpegBridge {
         for (let i = 0; i < Math.min(100, frameSize); i++) {
           if (frames[0][i] === frames[1][i]) sameCount++;
         }
-        console.log(`[FFmpegBridge] Frame 0 vs 1: ${sameCount}/100 bytes identical (should be <90 if different)`);
+        log.debug(`Frame 0 vs 1: ${sameCount}/100 bytes identical (should be <90 if different)`);
       }
 
       const allFrames = new Uint8Array(totalSize);
@@ -280,7 +283,7 @@ export class FFmpegBridge {
       }
 
       fs.writeFile('/input/frames.raw', allFrames);
-      console.log(`[FFmpegBridge] Wrote /input/frames.raw: ${allFrames.byteLength} bytes`);
+      log.debug(`Wrote /input/frames.raw: ${allFrames.byteLength} bytes`);
 
       // Write audio if provided
       let hasAudio = false;
@@ -288,32 +291,32 @@ export class FFmpegBridge {
         const audioData = this.audioBufferToPCM(audioBuffer);
         fs.writeFile('/input/audio.raw', new Uint8Array(audioData.buffer));
         hasAudio = true;
-        console.log(`[FFmpegBridge] Audio: ${audioBuffer.duration.toFixed(2)}s, ${audioBuffer.sampleRate}Hz`);
+        log.debug(`Audio: ${audioBuffer.duration.toFixed(2)}s, ${audioBuffer.sampleRate}Hz`);
       }
 
       // Build FFmpeg arguments (using single file input)
       const args = this.buildArgs(settings, frames.length, hasAudio ? audioBuffer : null);
-      console.log('[FFmpegBridge] Running: ffmpeg', args.join(' '));
+      log.debug('Running: ffmpeg', args.join(' '));
 
       // NOTE: Do NOT call reset() here - it clears the virtual filesystem!
       // The files we just wrote would be deleted.
 
       // Execute FFmpeg (callMain is synchronous but may take a while)
-      console.log('[FFmpegBridge] Starting FFmpeg encode...');
+      log.info('Starting FFmpeg encode...');
       const encodeStart = performance.now();
       const exitCode = this.ffmpeg.callMain(args);
       const encodeTime = ((performance.now() - encodeStart) / 1000).toFixed(2);
-      console.log(`[FFmpegBridge] FFmpeg finished in ${encodeTime}s with exit code ${exitCode}`);
+      log.info(`FFmpeg finished in ${encodeTime}s with exit code ${exitCode}`);
 
       if (exitCode !== 0) {
-        console.error('[FFmpegBridge] FFmpeg logs:', this.logs.map(l => l.message).join('\n'));
+        log.error('FFmpeg logs:', this.logs.map(l => l.message).join('\n'));
         throw new Error(`FFmpeg exited with code ${exitCode}`);
       }
 
       // Read output file
       const outputPath = `/output/output.${settings.container}`;
       const data = fs.readFile(outputPath);
-      console.log(`[FFmpegBridge] Output file size: ${(data.byteLength / 1024 / 1024).toFixed(2)} MB`);
+      log.info(`Output file size: ${(data.byteLength / 1024 / 1024).toFixed(2)} MB`);
 
       // Create a copy of the data to ensure it's a standard ArrayBuffer
       const buffer = new ArrayBuffer(data.byteLength);
@@ -488,7 +491,7 @@ export class FFmpegBridge {
 
       default:
         // Fallback to mjpeg as it's most widely compatible
-        console.warn(`[FFmpegBridge] Unknown codec "${settings.codec}", falling back to mjpeg`);
+        log.warn(`Unknown codec "${settings.codec}", falling back to mjpeg`);
         args.push('-c:v', 'mjpeg');
         args.push('-q:v', '2');
         args.push('-pix_fmt', 'yuvj422p');
@@ -551,7 +554,7 @@ export class FFmpegBridge {
         }
       }
     } catch (e) {
-      console.warn('[FFmpegBridge] Cleanup error:', e);
+      log.warn('Cleanup error', e);
     }
   }
 
@@ -592,7 +595,7 @@ export class FFmpegBridge {
       try { fs.mkdir('/output'); } catch { /* exists */ }
 
       // Write input file to virtual filesystem
-      console.log(`[FFmpegBridge] Loading ${file.name} for audio extraction...`);
+      log.info(`Loading ${file.name} for audio extraction...`);
       onProgress?.(5);
 
       const inputData = new Uint8Array(await file.arrayBuffer());
@@ -614,7 +617,7 @@ export class FFmpegBridge {
         '/output/audio.m4a',     // Output file
       ];
 
-      console.log('[FFmpegBridge] Extracting audio: ffmpeg', args.join(' '));
+      log.debug('Extracting audio: ffmpeg', args.join(' '));
       onProgress?.(30);
 
       // Reset state before running
@@ -628,7 +631,7 @@ export class FFmpegBridge {
       onProgress?.(90);
 
       if (exitCode !== 0) {
-        console.warn('[FFmpegBridge] Audio extraction failed with code', exitCode);
+        log.warn('Audio extraction failed with code', exitCode);
         return null;
       }
 
@@ -641,10 +644,10 @@ export class FFmpegBridge {
 
       onProgress?.(100);
 
-      console.log(`[FFmpegBridge] Audio extracted: ${(data.byteLength / 1024 / 1024).toFixed(2)} MB`);
+      log.info(`Audio extracted: ${(data.byteLength / 1024 / 1024).toFixed(2)} MB`);
       return new Blob([buffer], { type: 'audio/mp4' });
     } catch (error) {
-      console.error('[FFmpegBridge] Audio extraction error:', error);
+      log.error('Audio extraction error', error);
       return null;
     } finally {
       this.cleanup();

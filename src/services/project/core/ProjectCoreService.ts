@@ -1,7 +1,10 @@
 // Project lifecycle management service
 // Handles create, open, save, close, rename, backup operations
 
+import { Logger } from '../../logger';
 import { projectDB } from '../../projectDB';
+
+const log = Logger.create('ProjectCore');
 import { FileStorageService } from './FileStorageService';
 import { MAX_BACKUPS, PROJECT_FOLDERS } from './constants';
 import type { ProjectFile, ProjectMediaFile, ProjectComposition, ProjectFolder } from '../types';
@@ -73,7 +76,7 @@ export class ProjectCoreService {
         }
       }
     } catch (e) {
-      console.warn('[ProjectCore] Failed to request permission:', e);
+      log.warn('Failed to request permission:', e);
     }
     return false;
   }
@@ -84,7 +87,7 @@ export class ProjectCoreService {
 
   async createProject(name: string): Promise<boolean> {
     if (!this.isSupported()) {
-      console.error('[ProjectCore] File System Access API not supported');
+      log.error('File System Access API not supported');
       return false;
     }
 
@@ -98,14 +101,14 @@ export class ProjectCoreService {
       return await this.initializeProject(projectFolder, name);
     } catch (e: any) {
       if (e.name === 'AbortError') return false;
-      console.error('[ProjectCore] Failed to create project:', e);
+      log.error('Failed to create project:', e);
       return false;
     }
   }
 
   async createProjectInFolder(handle: FileSystemDirectoryHandle, name: string): Promise<boolean> {
     if (!this.isSupported()) {
-      console.error('[ProjectCore] File System Access API not supported');
+      log.error('File System Access API not supported');
       return false;
     }
 
@@ -114,7 +117,7 @@ export class ProjectCoreService {
       const projectFolder = await handle.getDirectoryHandle(name, { create: true });
       return await this.initializeProject(projectFolder, name);
     } catch (e: any) {
-      console.error('[ProjectCore] Failed to create project in folder:', e);
+      log.error('Failed to create project in folder:', e);
       return false;
     }
   }
@@ -168,17 +171,17 @@ export class ProjectCoreService {
       await this.storeLastProject(projectFolder);
       this.startAutoSave();
 
-      console.log(`[ProjectCore] Created project: ${name}`);
+      log.info(`Created project: ${name}`);
       return true;
     } catch (e) {
-      console.error('[ProjectCore] Failed to initialize project:', e);
+      log.error('Failed to initialize project:', e);
       return false;
     }
   }
 
   async openProject(): Promise<boolean> {
     if (!this.isSupported()) {
-      console.error('[ProjectCore] File System Access API not supported');
+      log.error('File System Access API not supported');
       return false;
     }
 
@@ -191,7 +194,7 @@ export class ProjectCoreService {
       return await this.loadProject(handle);
     } catch (e: any) {
       if (e.name === 'AbortError') return false;
-      console.error('[ProjectCore] Failed to open project:', e);
+      log.error('Failed to open project:', e);
       return false;
     }
   }
@@ -204,7 +207,7 @@ export class ProjectCoreService {
       const projectData = JSON.parse(content) as ProjectFile;
 
       if (projectData.version !== 1) {
-        console.error('[ProjectCore] Unsupported project version:', projectData.version);
+        log.error('Unsupported project version:', projectData.version);
         return false;
       }
 
@@ -217,17 +220,17 @@ export class ProjectCoreService {
       await this.storeLastProject(handle);
       this.startAutoSave();
 
-      console.log(`[ProjectCore] Opened project: ${projectData.name}`);
+      log.info(`Opened project: ${projectData.name}`);
       return true;
     } catch (e) {
-      console.error('[ProjectCore] Failed to load project:', e);
+      log.error('Failed to load project:', e);
       return false;
     }
   }
 
   async saveProject(): Promise<boolean> {
     if (!this.projectHandle || !this.projectData) {
-      console.error('[ProjectCore] No project open');
+      log.error('No project open');
       return false;
     }
 
@@ -235,10 +238,10 @@ export class ProjectCoreService {
       this.projectData.updatedAt = new Date().toISOString();
       await this.writeProjectJson(this.projectHandle, this.projectData);
       this.isDirty = false;
-      console.log('[ProjectCore] Project saved');
+      log.debug('Project saved');
       return true;
     } catch (e) {
-      console.error('[ProjectCore] Failed to save project:', e);
+      log.error('Failed to save project:', e);
       return false;
     }
   }
@@ -248,7 +251,7 @@ export class ProjectCoreService {
     this.projectHandle = null;
     this.projectData = null;
     this.isDirty = false;
-    console.log('[ProjectCore] Project closed');
+    log.info('Project closed');
   }
 
   // ============================================
@@ -279,13 +282,13 @@ export class ProjectCoreService {
       await writable.write(content);
       await writable.close();
 
-      console.log(`[ProjectCore] Created backup: ${backupFileName}`);
+      log.debug(`Created backup: ${backupFileName}`);
 
       await this.cleanupOldBackups(backupsFolder);
 
       return true;
     } catch (e) {
-      console.error('[ProjectCore] Failed to create backup:', e);
+      log.error('Failed to create backup:', e);
       return false;
     }
   }
@@ -307,11 +310,11 @@ export class ProjectCoreService {
         const toRemove = backups.slice(MAX_BACKUPS);
         for (const backup of toRemove) {
           await backupsFolder.removeEntry(backup.name);
-          console.log(`[ProjectCore] Removed old backup: ${backup.name}`);
+          log.debug(`Removed old backup: ${backup.name}`);
         }
       }
     } catch (e) {
-      console.warn('[ProjectCore] Failed to cleanup old backups:', e);
+      log.warn('Failed to cleanup old backups:', e);
     }
   }
 
@@ -321,7 +324,7 @@ export class ProjectCoreService {
 
   async renameProject(newName: string): Promise<boolean> {
     if (!this.projectHandle || !this.projectData) {
-      console.error('[ProjectCore] No project open');
+      log.error('No project open');
       return false;
     }
 
@@ -332,7 +335,7 @@ export class ProjectCoreService {
 
     const invalidChars = /[<>:"/\\|?*]/;
     if (invalidChars.test(trimmedName)) {
-      console.error('[ProjectCore] Invalid characters in project name');
+      log.error('Invalid characters in project name');
       return false;
     }
 
@@ -349,7 +352,7 @@ export class ProjectCoreService {
 
       try {
         await parentDir.getDirectoryHandle(trimmedName, { create: false });
-        console.error('[ProjectCore] Folder with that name already exists');
+        log.error('Folder with that name already exists');
         return false;
       } catch {
         // Good - folder doesn't exist
@@ -370,16 +373,16 @@ export class ProjectCoreService {
 
       try {
         await parentDir.removeEntry(oldName, { recursive: true });
-        console.log(`[ProjectCore] Deleted old folder: ${oldName}`);
+        log.debug(`Deleted old folder: ${oldName}`);
       } catch (e) {
-        console.warn('[ProjectCore] Failed to delete old folder:', e);
+        log.warn('Failed to delete old folder:', e);
       }
 
       this.isDirty = false;
-      console.log(`[ProjectCore] Project renamed from "${oldName}" to "${trimmedName}"`);
+      log.info(`Project renamed from "${oldName}" to "${trimmedName}"`);
       return true;
     } catch (e) {
-      console.error('[ProjectCore] Failed to rename project:', e);
+      log.error('Failed to rename project:', e);
       return false;
     }
   }
@@ -416,7 +419,7 @@ export class ProjectCoreService {
         const loaded = await this.loadProject(handle as FileSystemDirectoryHandle);
 
         if (!loaded) {
-          console.log('[ProjectCore] Project not found, trying to recreate...');
+          log.info('Project not found, trying to recreate...');
           return await this.recreateProjectFromParent();
         }
 
@@ -424,11 +427,11 @@ export class ProjectCoreService {
       } else {
         this.pendingHandle = handle as FileSystemDirectoryHandle;
         this.permissionNeeded = true;
-        console.log('[ProjectCore] Permission needed for:', handle.name);
+        log.info('Permission needed for:', handle.name);
         return false;
       }
     } catch (e) {
-      console.warn('[ProjectCore] Failed to restore last project:', e);
+      log.warn('Failed to restore last project:', e);
       return await this.recreateProjectFromParent();
     }
   }
@@ -437,7 +440,7 @@ export class ProjectCoreService {
     try {
       const parentHandle = await projectDB.getStoredHandle('projectsFolder');
       if (!parentHandle || parentHandle.kind !== 'directory') {
-        console.log('[ProjectCore] No parent folder stored, cannot recreate');
+        log.info('No parent folder stored, cannot recreate');
         await this.clearStoredHandles();
         return false;
       }
@@ -446,18 +449,18 @@ export class ProjectCoreService {
       if (permission !== 'granted') {
         this.pendingHandle = parentHandle as FileSystemDirectoryHandle;
         this.permissionNeeded = true;
-        console.log('[ProjectCore] Permission needed for parent folder');
+        log.info('Permission needed for parent folder');
         return false;
       }
 
-      console.log('[ProjectCore] Recreating Untitled project...');
+      log.info('Recreating Untitled project...');
       const success = await this.createProjectInFolder(parentHandle as FileSystemDirectoryHandle, 'Untitled');
       if (success) {
-        console.log('[ProjectCore] Successfully recreated Untitled project');
+        log.info('Successfully recreated Untitled project');
       }
       return success;
     } catch (e) {
-      console.warn('[ProjectCore] Failed to recreate project from parent:', e);
+      log.warn('Failed to recreate project from parent:', e);
       await this.clearStoredHandles();
       return false;
     }
@@ -467,9 +470,9 @@ export class ProjectCoreService {
     try {
       await projectDB.deleteHandle('lastProject');
       await projectDB.deleteHandle('projectsFolder');
-      console.log('[ProjectCore] Cleared stored handles');
+      log.debug('Cleared stored handles');
     } catch (e) {
-      console.warn('[ProjectCore] Failed to clear stored handles:', e);
+      log.warn('Failed to clear stored handles:', e);
     }
   }
 
@@ -536,7 +539,7 @@ export class ProjectCoreService {
     try {
       await projectDB.storeHandle('lastProject', handle);
     } catch (e) {
-      console.warn('[ProjectCore] Failed to store last project:', e);
+      log.warn('Failed to store last project:', e);
     }
   }
 }

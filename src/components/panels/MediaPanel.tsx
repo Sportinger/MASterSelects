@@ -1,6 +1,9 @@
 // Media Panel - Project browser like After Effects
 
 import React, { useCallback, useRef, useState, useEffect } from 'react';
+import { Logger } from '../../services/logger';
+
+const log = Logger.create('MediaPanel');
 import { useMediaStore } from '../../stores/mediaStore';
 import type { MediaFile, Composition, ProjectItem } from '../../stores/mediaStore';
 import { useTimelineStore } from '../../stores/timeline';

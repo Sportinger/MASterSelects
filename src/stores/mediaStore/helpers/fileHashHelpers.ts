@@ -1,6 +1,9 @@
 // File hash calculation for proxy deduplication
 
 import { HASH_SIZE } from '../constants';
+import { Logger } from '../../../services/logger';
+
+const log = Logger.create('FileHash');
 
 /**
  * Calculate SHA-256 hash of file (first 2MB + file size for speed).

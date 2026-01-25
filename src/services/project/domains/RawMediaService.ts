@@ -1,6 +1,9 @@
 // Raw folder operations and media import service
 
+import { Logger } from '../../logger';
 import { PROJECT_FOLDERS } from '../core/constants';
+
+const log = Logger.create('RawMedia');
 import { FileStorageService } from '../core/FileStorageService';
 import type { ProjectMediaFile } from '../types';
 

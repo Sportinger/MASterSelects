@@ -1,6 +1,9 @@
 // Export Panel - embedded panel for frame-by-frame video export
 
 import { useState, useEffect, useCallback } from 'react';
+import { Logger } from '../../services/logger';
+
+const log = Logger.create('ExportPanel');
 import { FrameExporter, downloadBlob } from '../../engine/export';
 import type { ExportProgress, VideoCodec, ContainerFormat } from '../../engine/export';
 import { AudioExportPipeline, AudioEncoderWrapper, type AudioCodec } from '../../engine/audio';
@@ -39,7 +42,7 @@ async function seekAllClipsToTime(time: number): Promise<void> {
     c => time >= c.startTime && time < c.startTime + c.duration
   );
 
-  console.log(`[seekAllClipsToTime] time=${time.toFixed(3)}, total clips=${clips.length}, clips at time=${clipsAtTime.length}`);
+  log.debug(`seekAllClipsToTime: time=${time.toFixed(3)}, total clips=${clips.length}, clips at time=${clipsAtTime.length}`);
 
   for (const clip of clipsAtTime) {
     const track = tracks.find(t => t.id === clip.trackId);
@@ -88,9 +91,9 @@ async function seekAllClipsToTime(time: number): Promise<void> {
     }
   }
 
-  console.log(`[seekAllClipsToTime] Waiting for ${seekPromises.length} seek promises...`);
+  log.debug(`seekAllClipsToTime: Waiting for ${seekPromises.length} seek promises...`);
   await Promise.all(seekPromises);
-  console.log(`[seekAllClipsToTime] All seeks complete`);
+  log.debug('seekAllClipsToTime: All seeks complete');
 }
 
 // Helper: Seek HTMLVideoElement to exact time
@@ -294,11 +297,11 @@ export function ExportPanel() {
       if (result) {
         setIsAudioSupported(true);
         setAudioCodec(result.codec);
-        console.log(`[ExportPanel] Audio codec detected: ${result.codec.toUpperCase()}`);
+        log.info(`Audio codec detected: ${result.codec.toUpperCase()}`);
       } else {
         setIsAudioSupported(false);
         setIncludeAudio(false);
-        console.warn('[ExportPanel] No audio encoding supported in this browser');
+        log.warn('No audio encoding supported in this browser');
       }
     });
   }, []);
@@ -367,7 +370,7 @@ export function ExportPanel() {
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to load FFmpeg';
       setFfmpegLoadError(msg);
-      console.error('[ExportPanel] FFmpeg load error:', e);
+      log.error('FFmpeg load error', e);
     } finally {
       setIsFFmpegLoading(false);
     }
@@ -482,7 +485,7 @@ export function ExportPanel() {
         downloadBlob(blob, `${filename}.${fileExtension}`);
       }
     } catch (e) {
-      console.error('[ExportPanel] Export failed:', e);
+      log.error('Export failed', e);
       setError(e instanceof Error ? e.message : 'Export failed');
     } finally {
       setIsExporting(false);
@@ -551,12 +554,12 @@ export function ExportPanel() {
       };
 
       // Render frames
-      console.log('[ExportPanel] Rendering frames for FFmpeg...');
+      log.info('Rendering frames for FFmpeg...');
       const frames: Uint8Array[] = [];
       const totalFrames = Math.ceil((endTime - startTime) * exportFps);
       const frameDuration = 1 / exportFps;
 
-      console.log(`[ExportPanel] Total frames: ${totalFrames}, duration: ${frameDuration.toFixed(4)}s per frame`);
+      log.info(`Total frames: ${totalFrames}, duration: ${frameDuration.toFixed(4)}s per frame`);
 
       // Set engine to export mode and correct resolution
       engine.setExporting(true);
@@ -567,35 +570,35 @@ export function ExportPanel() {
       for (let i = 0; i < totalFrames; i++) {
         const time = startTime + i * frameDuration;
 
-        if (i === 0) console.log('[ExportPanel] Frame 0: Starting seek...');
+        if (i === 0) log.debug('Frame 0: Starting seek...');
 
         // Seek all video clips to the exact frame time
         await seekAllClipsToTime(time);
 
-        if (i === 0) console.log('[ExportPanel] Frame 0: Seek complete, waiting for decode...');
+        if (i === 0) log.debug('Frame 0: Seek complete, waiting for decode...');
 
         // Small delay to ensure video frame is decoded (browser needs time after seek)
         await new Promise(resolve => setTimeout(resolve, 16));
 
-        if (i === 0) console.log('[ExportPanel] Frame 0: Building layers...');
+        if (i === 0) log.debug('Frame 0: Building layers...');
 
         // Build layers at this time and render
         const layers = buildLayersAtTime(time);
 
-        if (i === 0) console.log(`[ExportPanel] Frame 0: Got ${layers.length} layers`);
+        if (i === 0) log.debug(`Frame 0: Got ${layers.length} layers`);
 
         if (layers.length === 0) {
-          console.warn(`[ExportPanel] No layers at time ${time.toFixed(3)}`);
+          log.warn(`No layers at time ${time.toFixed(3)}`);
         }
 
         engine.render(layers);
 
-        if (i === 0) console.log('[ExportPanel] Frame 0: Render complete, reading pixels...');
+        if (i === 0) log.debug('Frame 0: Render complete, reading pixels...');
 
         // Read pixels
         const pixels = await engine.readPixels();
 
-        if (i === 0) console.log(`[ExportPanel] Frame 0: Got pixels: ${pixels ? pixels.length : 'null'}`);
+        if (i === 0) log.debug(`Frame 0: Got pixels: ${pixels ? pixels.length : 'null'}`);
         if (pixels) {
           // Make a COPY of pixels (not a view) to ensure each frame is unique
           const frameCopy = new Uint8Array(pixels.length);
@@ -605,7 +608,7 @@ export function ExportPanel() {
           // Debug: check first few pixels to see if content changes
           if (i < 3 || i % 30 === 0) {
             const sample = [pixels[0], pixels[1], pixels[2], pixels[3], pixels[1000], pixels[2000]];
-            console.log(`[ExportPanel] Frame ${i} sample pixels: [${sample.join(', ')}]`);
+            log.debug(`Frame ${i} sample pixels: [${sample.join(', ')}]`);
           }
         }
 
@@ -613,7 +616,7 @@ export function ExportPanel() {
         if (i === 0 || i % 30 === 0) {
           const elapsed = (performance.now() - frameStartTime) / 1000;
           const renderFps = (i + 1) / elapsed;
-          console.log(`[ExportPanel] Frame ${i + 1}/${totalFrames} at ${time.toFixed(3)}s, ${renderFps.toFixed(1)} fps, ${layers.length} layers`);
+          log.debug(`Frame ${i + 1}/${totalFrames} at ${time.toFixed(3)}s, ${renderFps.toFixed(1)} fps, ${layers.length} layers`);
         }
 
         // Update progress during rendering (0-30% - frame capture is fast, encoding is slow)
@@ -644,7 +647,7 @@ export function ExportPanel() {
 
       if (includeAudio) {
         setExportPhase('audio');
-        console.log('[ExportPanel] Extracting audio for FFmpeg...');
+        log.info('Extracting audio for FFmpeg...');
 
         try {
           const audioPipeline = new AudioExportPipeline({
@@ -674,9 +677,9 @@ export function ExportPanel() {
           );
 
           if (audioBuffer && audioBuffer.length > 0) {
-            console.log(`[ExportPanel] Audio extracted: ${audioBuffer.duration.toFixed(2)}s, ${audioBuffer.numberOfChannels}ch, ${audioBuffer.length} samples`);
+            log.info(`Audio extracted: ${audioBuffer.duration.toFixed(2)}s, ${audioBuffer.numberOfChannels}ch, ${audioBuffer.length} samples`);
           } else {
-            console.warn('[ExportPanel] Audio extraction returned empty or null buffer');
+            log.warn('Audio extraction returned empty or null buffer');
           }
         } catch (audioError) {
           console.warn('[ExportPanel] Audio extraction failed, continuing without audio:', audioError);
@@ -685,7 +688,7 @@ export function ExportPanel() {
 
       // Encode with FFmpeg - this is the slow part (40-100%)
       setExportPhase('encoding');
-      console.log(`[ExportPanel] Encoding ${frames.length} frames with FFmpeg...`);
+      log.info(`Encoding ${frames.length} frames with FFmpeg...`);
 
       // Show 40% while encoding starts
       setFfmpegProgress({
@@ -728,7 +731,7 @@ export function ExportPanel() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      console.log('[ExportPanel] FFmpeg export complete');
+      log.info('FFmpeg export complete');
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Export failed';
       setError(msg);

@@ -1,6 +1,10 @@
 // API Key Manager
 // Securely stores and retrieves API keys using Web Crypto API encryption
 
+import { Logger } from './logger';
+
+const log = Logger.create('ApiKeyManager');
+
 const DB_NAME = 'multicam-settings';
 const STORE_NAME = 'api-keys';
 const KEY_ID = 'claude-api-key';
@@ -166,7 +170,7 @@ class ApiKeyManager {
       data: Array.from(new Uint8Array(data)),
     });
 
-    console.log('[ApiKeyManager] API key stored');
+    log.info('API key stored');
   }
 
   /**
@@ -185,7 +189,7 @@ class ApiKeyManager {
     try {
       return await decrypt(data, iv, key);
     } catch (error) {
-      console.error('[ApiKeyManager] Failed to decrypt API key:', error);
+      log.error('Failed to decrypt API key', error);
       return null;
     }
   }
@@ -203,7 +207,7 @@ class ApiKeyManager {
    */
   async clearKey(): Promise<void> {
     await dbDelete(KEY_ID);
-    console.log('[ApiKeyManager] API key cleared');
+    log.info('API key cleared');
   }
 }
 

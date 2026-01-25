@@ -1,5 +1,9 @@
 // WebGPU device, adapter, and queue initialization
 
+import { Logger } from '../../services/logger';
+
+const log = Logger.create('WebGPUContext');
+
 export type DeviceLostCallback = (reason: string) => void;
 export type DeviceRestoredCallback = () => void;
 export type GPUPowerPreference = 'high-performance' | 'low-power';
@@ -25,18 +29,18 @@ export class WebGPUContext {
     }
     // Prevent multiple initializations with promise-based lock
     if (this.isInitialized && this.device) {
-      console.log('[WebGPU] Already initialized, skipping');
+      log.debug('Already initialized, skipping');
       return true;
     }
 
     // If initialization is in progress, wait for it
     if (this.initPromise) {
-      console.log('[WebGPU] Initialization in progress, waiting...');
+      log.debug('Initialization in progress, waiting...');
       return this.initPromise;
     }
 
     if (!navigator.gpu) {
-      console.error('WebGPU not supported');
+      log.error('WebGPU not supported');
       return false;
     }
 
@@ -50,10 +54,10 @@ export class WebGPUContext {
       this.adapter = await navigator.gpu.requestAdapter({
         powerPreference: this.currentPowerPreference,
       });
-      console.log(`[WebGPU] Requested adapter with powerPreference: ${this.currentPowerPreference}`);
+      log.info(`Requested adapter with powerPreference: ${this.currentPowerPreference}`);
 
       if (!this.adapter) {
-        console.error('Failed to get GPU adapter');
+        log.error('Failed to get GPU adapter');
         return false;
       }
 
@@ -65,7 +69,7 @@ export class WebGPUContext {
       });
 
       this.device.lost.then((info) => {
-        console.error('WebGPU device lost:', info.message);
+        log.error('Device lost', info.message);
         this.isInitialized = false;
 
         // Notify listeners about device loss BEFORE attempting recovery
@@ -73,13 +77,13 @@ export class WebGPUContext {
           try {
             callback(info.message);
           } catch (e) {
-            console.error('[WebGPU] Error in device lost callback:', e);
+            log.error('Error in device lost callback', e);
           }
         }
 
         // Attempt auto-recovery after a short delay
         if (info.reason !== 'destroyed') {
-          console.log('[WebGPU] Attempting device recovery...');
+          log.info('Attempting device recovery...');
           this.initPromise = null;
           this.isRecovering = true;
           setTimeout(async () => {
@@ -91,7 +95,7 @@ export class WebGPUContext {
                 try {
                   callback();
                 } catch (e) {
-                  console.error('[WebGPU] Error in device restored callback:', e);
+                  log.error('Error in device restored callback', e);
                 }
               }
             }
@@ -107,9 +111,9 @@ export class WebGPUContext {
         const isIntegrated = adapterInfo.description?.toLowerCase().includes('intel') ||
                             adapterInfo.description?.toLowerCase().includes('integrated') ||
                             adapterInfo.vendor?.toLowerCase().includes('intel');
-        const gpuType = isIntegrated ? '⚠️ INTEGRATED' : '✅ DISCRETE';
-        console.log(`%c[WebGPU] ${gpuType} GPU`, `color: ${isIntegrated ? '#ff9900' : '#00ff00'}; font-weight: bold`);
-        console.log('[WebGPU] GPU Info:', {
+        const gpuType = isIntegrated ? 'INTEGRATED' : 'DISCRETE';
+        log.info(`${gpuType} GPU detected`);
+        log.info('GPU Info', {
           vendor: adapterInfo.vendor || 'unknown',
           architecture: adapterInfo.architecture || 'unknown',
           device: adapterInfo.device || 'unknown',
@@ -117,15 +121,14 @@ export class WebGPUContext {
           powerPreference: this.currentPowerPreference,
         });
         if (isIntegrated && this.currentPowerPreference === 'high-performance') {
-          console.warn('[WebGPU] ⚠️ high-performance was requested but integrated GPU was selected!');
-          console.warn('[WebGPU] To fix: Open Windows Graphics Settings > Add Chrome/Edge > Options > High Performance');
+          log.warn('high-performance was requested but integrated GPU was selected! To fix: Open Windows Graphics Settings > Add Chrome/Edge > Options > High Performance');
         }
       }
 
-      console.log('[WebGPU] Context initialized successfully');
+      log.info('Context initialized successfully');
       return true;
     } catch (error) {
-      console.error('Failed to initialize WebGPU:', error);
+      log.error('Failed to initialize WebGPU', error);
       this.initPromise = null;
       return false;
     }
@@ -179,7 +182,7 @@ export class WebGPUContext {
         format: preferredFormat,
         alphaMode: 'premultiplied',
       });
-      console.log(`[WebGPU] Canvas configured with preferred format: ${preferredFormat}`);
+      log.debug(`Canvas configured with preferred format: ${preferredFormat}`);
     }
     return context;
   }
@@ -271,11 +274,11 @@ export class WebGPUContext {
    * This destroys the current device and creates a new one
    */
   async reinitializeWithPreference(preference: GPUPowerPreference): Promise<boolean> {
-    console.log(`[WebGPU] Reinitializing with powerPreference: ${preference}`);
+    log.info(`Reinitializing with powerPreference: ${preference}`);
 
     // Skip if preference hasn't changed
     if (preference === this.currentPowerPreference && this.isInitialized) {
-      console.log('[WebGPU] Power preference unchanged, skipping reinit');
+      log.debug('Power preference unchanged, skipping reinit');
       return true;
     }
 

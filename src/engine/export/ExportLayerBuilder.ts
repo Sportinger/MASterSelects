@@ -1,6 +1,9 @@
 // Layer building for export rendering
 
+import { Logger } from '../../services/logger';
 import type { Layer, NestedCompositionData, BlendMode } from '../../types';
+
+const log = Logger.create('ExportLayerBuilder');
 import type { TimelineClip, TimelineTrack } from '../../stores/timeline/types';
 import type { ExportClipState, BaseLayerProps, FrameContext } from './types';
 import { useMediaStore } from '../../stores/mediaStore';
@@ -34,7 +37,7 @@ export function buildLayersAtTime(
   const layers: Layer[] = [];
 
   if (!cachedVideoTracks) {
-    console.error('[ExportLayerBuilder] Not initialized - call initializeLayerBuilder first');
+    log.error('Not initialized - call initializeLayerBuilder first');
     return [];
   }
 

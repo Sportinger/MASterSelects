@@ -8,6 +8,10 @@
  * - Handle files without audio gracefully
  */
 
+import { Logger } from '../../services/logger';
+
+const log = Logger.create('AudioExtractor');
+
 export interface ExtractedAudio {
   buffer: AudioBuffer;
   duration: number;

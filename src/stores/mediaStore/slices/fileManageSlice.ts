@@ -6,6 +6,9 @@ import { projectFileService } from '../../../services/projectFileService';
 import { fileSystemService } from '../../../services/fileSystemService';
 import { projectDB } from '../../../services/projectDB';
 import { useTimelineStore } from '../../timeline';
+import { Logger } from '../../../services/logger';
+
+const log = Logger.create('Reload');
 
 export interface FileManageActions {
   removeFile: (id: string) => void;
@@ -48,7 +51,7 @@ export const createFileManageSlice: MediaSliceCreator<FileManageActions> = (set,
       if (result) {
         file = result.file;
         handle = result.handle;
-        console.log('[Reload] Got file from RAW folder:', mediaFile.projectPath);
+        log.debug('Got file from RAW folder:', mediaFile.projectPath);
       }
     }
 
@@ -61,17 +64,17 @@ export const createFileManageSlice: MediaSliceCreator<FileManageActions> = (set,
           if (permission === 'granted') {
             file = await (storedHandle as FileSystemFileHandle).getFile();
             handle = storedHandle as FileSystemFileHandle;
-            console.log('[Reload] Got file from stored handle:', mediaFile.name);
+            log.debug('Got file from stored handle:', mediaFile.name);
           } else {
             const newPermission = await (storedHandle as FileSystemFileHandle).requestPermission({ mode: 'read' });
             if (newPermission === 'granted') {
               file = await (storedHandle as FileSystemFileHandle).getFile();
               handle = storedHandle as FileSystemFileHandle;
-              console.log('[Reload] Got file from stored handle (after permission):', mediaFile.name);
+              log.debug('Got file from stored handle (after permission):', mediaFile.name);
             }
           }
         } catch (e) {
-          console.warn('[Reload] Failed to get file from stored handle:', e);
+          log.warn('Failed to get file from stored handle:', e);
         }
       }
     }

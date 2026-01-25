@@ -1,7 +1,10 @@
 // Low-level file I/O operations for project storage
 // Provides reusable primitives for all domain services
 
+import { Logger } from '../../logger';
 import { PROJECT_FOLDERS, PROJECT_FOLDER_PATHS, type ProjectFolderKey } from './constants';
+
+const log = Logger.create('FileStorage');
 
 export class FileStorageService {
   /**
@@ -62,7 +65,7 @@ export class FileStorageService {
       await writable.close();
       return true;
     } catch (e) {
-      console.error(`[FileStorage] Failed to write ${subFolder}/${fileName}:`, e);
+      log.error(`Failed to write ${subFolder}/${fileName}:`, e);
       return false;
     }
   }

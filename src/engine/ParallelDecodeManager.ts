@@ -8,6 +8,9 @@
  * per clip, with a frame buffer that stays ahead of the render position.
  */
 
+import { Logger } from '../services/logger';
+const log = Logger.create('ParallelDecode');
+
 import * as MP4BoxModule from 'mp4box';
 const MP4Box = (MP4BoxModule as any).default || MP4BoxModule;
 
@@ -103,18 +106,20 @@ export class ParallelDecodeManager {
    * Initialize the manager with clips to decode
    */
   async initialize(clips: ClipInfo[], exportFps: number): Promise<void> {
+    const endInit = log.time('initialize');
     this.isActive = true;
     this.exportFps = exportFps;
     // FPS-based tolerance: 1.5 frame duration
     this.frameTolerance = Math.round((1_000_000 / exportFps) * 1.5);
 
-    console.log(`[ParallelDecode] Initializing ${clips.length} clips at ${exportFps}fps (tolerance: ${this.frameTolerance}μs)...`);
+    log.info(`Initializing ${clips.length} clips at ${exportFps}fps (tolerance: ${this.frameTolerance}μs)...`);
 
     // Parse all clips in parallel
     const initPromises = clips.map(clip => this.initializeClip(clip));
     await Promise.all(initPromises);
 
-    console.log(`[ParallelDecode] All ${clips.length} clips initialized`);
+    log.info(`All ${clips.length} clips initialized`);
+    endInit();
   }
 
   /**
@@ -155,7 +160,7 @@ export class ParallelDecodeManager {
             }
           }
         } catch (e) {
-          console.warn(`[ParallelDecode] Failed to extract codec description for ${clipInfo.clipName}:`, e);
+          log.warn(`Failed to extract codec description for ${clipInfo.clipName}: ${e}`);
         }
 
         const codecConfig: VideoDecoderConfig = {
@@ -178,7 +183,7 @@ export class ParallelDecodeManager {
             }
           },
           error: (e) => {
-            console.error(`[ParallelDecode] Decoder error for ${clipInfo.clipName}:`, e);
+            log.error(`Decoder error for ${clipInfo.clipName}: ${e}`);
           },
         });
 
@@ -210,7 +215,7 @@ export class ParallelDecodeManager {
 
         // RESOLVE IMMEDIATELY - don't wait for samples!
         clearTimeout(timeout);
-        console.log(`[ParallelDecode] Clip "${clipInfo.clipName}" initialized: ${videoTrack.video.width}x${videoTrack.video.height} (samples loading in background)`);
+        log.info(`Clip "${clipInfo.clipName}" initialized: ${videoTrack.video.width}x${videoTrack.video.height} (samples loading in background)`);
         resolved = true;
         resolve();
       };
@@ -361,16 +366,18 @@ export class ParallelDecodeManager {
 
       // Wait for samples if lazy loading hasn't delivered them yet
       if (clipDecoder.samples.length === 0) {
+        const endWaitSamples = log.time(`waitForSamples "${clipInfo.clipName}"`);
         const maxWaitMs = 5000; // 5 second max wait per clip
         const startWait = performance.now();
         while (clipDecoder.samples.length === 0 && performance.now() - startWait < maxWaitMs) {
           await new Promise(r => setTimeout(r, 20));
         }
+        endWaitSamples();
         if (clipDecoder.samples.length === 0) {
-          console.warn(`[ParallelDecode] "${clipInfo.clipName}" has no samples after waiting`);
+          log.warn(`"${clipInfo.clipName}" has no samples after waiting`);
           continue;
         }
-        console.log(`[ParallelDecode] "${clipInfo.clipName}" samples ready: ${clipDecoder.samples.length} (waited ${(performance.now() - startWait).toFixed(0)}ms)`);
+        log.info(`"${clipInfo.clipName}" samples ready: ${clipDecoder.samples.length} (waited ${(performance.now() - startWait).toFixed(0)}ms)`);
       }
 
       // Calculate target source time and sample index
@@ -513,7 +520,7 @@ export class ParallelDecodeManager {
           await clipDecoder.decoder.flush();
         }
       } catch (e) {
-        console.error(`[ParallelDecode] Decode error for ${clipDecoder.clipName}:`, e);
+        log.error(`Decode error for ${clipDecoder.clipName}: ${e}`);
       } finally {
         clipDecoder.isDecoding = false;
         clipDecoder.pendingDecode = null;
@@ -610,13 +617,13 @@ export class ParallelDecodeManager {
         // Debug: log if diff is significant (> half frame duration)
         const halfFrameDuration = 500_000 / this.exportFps;
         if (closestDiff > halfFrameDuration) {
-          console.log(`[ParallelDecode] ${clipDecoder.clipName}: frame diff ${(closestDiff/1000).toFixed(1)}ms`);
+          log.debug(`${clipDecoder.clipName}: frame diff ${(closestDiff/1000).toFixed(1)}ms`);
         }
         return decodedFrame.frame;
       }
     }
 
-    console.warn(`[ParallelDecode] ${clipDecoder.clipName}: No frame within tolerance at ${(targetTimestamp/1_000_000).toFixed(3)}s`);
+    log.warn(`${clipDecoder.clipName}: No frame within tolerance at ${(targetTimestamp/1_000_000).toFixed(3)}s`);
     return null;
   }
 
@@ -730,6 +737,6 @@ export class ParallelDecodeManager {
 
     this.clipDecoders.clear();
     this.decodePromises.clear();
-    console.log('[ParallelDecode] Cleaned up');
+    log.info('Cleaned up');
   }
 }

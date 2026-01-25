@@ -2,6 +2,9 @@
 
 import { THUMBNAIL_TIMEOUT } from '../constants';
 import { projectFileService } from '../../../services/projectFileService';
+import { Logger } from '../../../services/logger';
+
+const log = Logger.create('Thumbnail');
 
 /**
  * Create thumbnail for video or image.

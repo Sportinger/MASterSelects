@@ -4,6 +4,9 @@ import type { MediaFile, MediaSliceCreator } from '../types';
 import { generateId, processImport } from '../helpers/importPipeline';
 import { fileSystemService } from '../../../services/fileSystemService';
 import { projectDB } from '../../../services/projectDB';
+import { Logger } from '../../../services/logger';
+
+const log = Logger.create('Import');
 
 export interface FileImportActions {
   importFile: (file: File) => Promise<MediaFile>;
@@ -18,7 +21,7 @@ export interface FileImportActions {
 
 export const createFileImportSlice: MediaSliceCreator<FileImportActions> = (set, _get) => ({
   importFile: async (file: File) => {
-    console.log('[Import] Starting:', file.name, 'type:', file.type, 'size:', file.size);
+    log.info('Starting:', file.name, 'type:', file.type, 'size:', file.size);
 
     const result = await processImport({
       file,
@@ -29,7 +32,7 @@ export const createFileImportSlice: MediaSliceCreator<FileImportActions> = (set,
       files: [...state.files, result.mediaFile],
     }));
 
-    console.log('[Import] Complete:', result.mediaFile.name);
+    log.info('Complete:', result.mediaFile.name);
     return result.mediaFile;
   },
 
@@ -71,7 +74,7 @@ export const createFileImportSlice: MediaSliceCreator<FileImportActions> = (set,
       // Store original handle (for reference, but RAW folder is primary)
       fileSystemService.storeFileHandle(id, handle);
       await projectDB.storeHandle(`media_${id}`, handle);
-      console.log('[Import] Stored file handle for ID:', id);
+      log.debug('Stored file handle for ID:', id);
 
       const importResult = await processImport({ file, id, handle });
 
@@ -94,7 +97,7 @@ export const createFileImportSlice: MediaSliceCreator<FileImportActions> = (set,
       // Store original handle (for reference, but RAW folder is primary)
       fileSystemService.storeFileHandle(id, handle);
       await projectDB.storeHandle(`media_${id}`, handle);
-      console.log('[Import] Stored file handle for ID:', id);
+      log.debug('Stored file handle for ID:', id);
 
       const importResult = await processImport({ file, id, handle, absolutePath });
 
