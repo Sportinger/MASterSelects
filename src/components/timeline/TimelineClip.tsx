@@ -582,8 +582,9 @@ function TimelineClipComponent({
     const x = e.clientX - rect.left;
     // Convert pixel position to time
     const rawCutTime = displayStartTime + (x / width) * displayDuration;
-    // Snap: enabled without Alt, or disabled with Alt
-    const shouldSnap = snappingEnabled ? !e.altKey : e.altKey;
+    // When snapping enabled: snap by default, Alt temporarily disables
+    // When snapping disabled: don't snap, Alt temporarily enables
+    const shouldSnap = snappingEnabled !== e.altKey;
     const cutTime = snapCutTime(rawCutTime, shouldSnap);
     onCutHover(clip.id, cutTime);
   };
@@ -599,8 +600,9 @@ function TimelineClipComponent({
     const x = e.clientX - rect.left;
     // Convert pixel position to time within clip
     const rawCutTime = displayStartTime + (x / width) * displayDuration;
-    // Snap: enabled without Alt, or disabled with Alt
-    const shouldSnap = snappingEnabled ? !e.altKey : e.altKey;
+    // When snapping enabled: snap by default, Alt temporarily disables
+    // When snapping disabled: don't snap, Alt temporarily enables
+    const shouldSnap = snappingEnabled !== e.altKey;
     const cutTime = snapCutTime(rawCutTime, shouldSnap);
     onCutAtPosition(clip.id, cutTime);
     onCutHover(null, null);

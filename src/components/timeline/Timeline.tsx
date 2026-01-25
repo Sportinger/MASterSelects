@@ -178,6 +178,7 @@ export function Timeline() {
     clipMap,
     selectedClipIds,
     scrollX,
+    snappingEnabled,
     selectClip,
     moveClip,
     openCompositionTab,
