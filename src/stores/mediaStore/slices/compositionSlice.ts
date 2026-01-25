@@ -226,6 +226,9 @@ function finishCompositionSwitch(
 ): void {
   const timelineStore = useTimelineStore.getState();
 
+  // Reset animation phase before loading new composition
+  timelineStore.setClipAnimationPhase('idle');
+
   // Update active composition
   set({ activeCompositionId: newId });
 

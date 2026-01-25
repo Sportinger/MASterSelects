@@ -394,14 +394,24 @@ function TimelineClipComponent({
 
   // Animation phase for enter/exit transitions
   const clipAnimationPhase = useTimelineStore(s => s.clipAnimationPhase);
+  const clipEntranceKey = useTimelineStore(s => s.clipEntranceAnimationKey);
+  const mountKeyRef = useRef(clipEntranceKey);
 
   // Calculate stagger delay based on track index (vertical) + startTime (horizontal)
   const trackIndex = track ? tracks.findIndex(t => t.id === track.id) : 0;
   // 80ms per track + 20ms per second of timeline position
   const animationDelay = (trackIndex * 0.08) + Math.min(clip.startTime * 0.02, 0.5);
 
-  // Determine animation class based on phase
-  const animationClass = clipAnimationPhase === 'exiting' ? 'exit-animate' : 'entrance-animate';
+  // Determine animation class:
+  // - 'exiting': apply exit animation
+  // - New clips (mounted with current key): apply entrance animation
+  // - Otherwise: no animation
+  const isNewClip = mountKeyRef.current === clipEntranceKey && clipEntranceKey > 0;
+  const animationClass = clipAnimationPhase === 'exiting'
+    ? 'exit-animate'
+    : isNewClip
+      ? 'entrance-animate'
+      : '';
 
   // Check if this clip should show cut indicator (either directly hovered or linked to hovered clip)
   const isDirectlyHovered = cutHoverInfo?.clipId === clip.id;
