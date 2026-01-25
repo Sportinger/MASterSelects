@@ -136,7 +136,7 @@ export function seekVideo(video: HTMLVideoElement, time: number): Promise<void> 
     const targetTime = Math.max(0, Math.min(time, video.duration || 0));
 
     const timeout = setTimeout(() => {
-      console.warn('[FrameExporter] Seek timeout at', targetTime);
+      log.warn(`Seek timeout at ${targetTime}`);
       resolve();
     }, 500); // 500ms for AV1 and other slow-decoding codecs
 
@@ -240,5 +240,5 @@ export async function waitForAllVideosReady(
     await new Promise(r => setTimeout(r, 16));
   }
 
-  console.warn('[FrameExporter] Timeout waiting for videos to be ready at time', ctx.time);
+  log.warn(`Timeout waiting for videos to be ready at time ${ctx.time}`);
 }

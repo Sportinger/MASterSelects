@@ -27,7 +27,7 @@ export async function createThumbnail(
       video.playsInline = true;
 
       const timeout = setTimeout(() => {
-        console.warn('[Thumbnail] Timeout:', file.name);
+        log.warn('Timeout:', file.name);
         URL.revokeObjectURL(url);
         resolve(undefined);
       }, THUMBNAIL_TIMEOUT);

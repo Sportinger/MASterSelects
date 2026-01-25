@@ -49,11 +49,11 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
     }
 
     if ((mediaType === 'video' || mediaType === 'image') && targetTrack.type !== 'video') {
-      console.warn('[Timeline] Cannot add video/image to audio track');
+      log.warn('Cannot add video/image to audio track');
       return;
     }
     if (mediaType === 'audio' && targetTrack.type !== 'audio') {
-      console.warn('[Timeline] Cannot add audio to video track');
+      log.warn('Cannot add audio to video track');
       return;
     }
 
@@ -289,7 +289,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
 
     const clipEnd = clip.startTime + clip.duration;
     if (splitTime <= clip.startTime || splitTime >= clipEnd) {
-      console.warn('[Timeline] Cannot split at edge or outside clip');
+      log.warn('Cannot split at edge or outside clip');
       return;
     }
 
@@ -347,7 +347,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
     set({ clips: newClips, selectedClipIds: new Set([secondClip.id]) });
     updateDuration();
     invalidateCache();
-    console.log(`[Timeline] Split clip "${clip.name}" at ${splitTime.toFixed(2)}s`);
+    log.debug('Split clip', { clip: clip.name, splitTime: splitTime.toFixed(2) });
   },
 
   splitClipAtPlayhead: () => {
@@ -357,7 +357,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
     );
 
     if (clipsAtPlayhead.length === 0) {
-      console.warn('[Timeline] No clip at playhead position');
+      log.warn('No clip at playhead position');
       return;
     }
 

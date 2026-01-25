@@ -40,6 +40,11 @@ export interface ProjectUIState {
     inPoint?: number | null;
     outPoint?: number | null;
   }>;
+  // Media panel settings
+  mediaPanelColumns?: string[];
+  mediaPanelNameWidth?: number;
+  // Transcript settings
+  transcriptLanguage?: string;
 }
 
 export interface ProjectFile {

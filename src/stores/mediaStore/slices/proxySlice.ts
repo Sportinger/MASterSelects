@@ -95,22 +95,22 @@ export const createProxySlice: MediaSliceCreator<ProxyActions> = (set, get) => (
 
     const mediaFile = files.find((f) => f.id === mediaFileId);
     if (!mediaFile || mediaFile.type !== 'video' || !mediaFile.file) {
-      console.warn('[Proxy] Invalid media file:', mediaFileId);
+      log.warn('Invalid media file:', mediaFileId);
       return;
     }
 
     if (!projectFileService.isProjectOpen()) {
-      console.error('[Proxy] No project open!');
+      log.error('No project open!');
       return;
     }
 
-    console.log(`[Proxy] Starting generation for ${mediaFile.name}...`);
+    log.info(`Starting generation for ${mediaFile.name}...`);
 
     // Check if already exists
     const storageKey = mediaFile.fileHash || mediaFileId;
     const existingCount = await projectFileService.getProxyFrameCount(storageKey);
     if (existingCount > 0) {
-      console.log('[Proxy] Already exists:', mediaFile.name);
+      log.debug('Already exists:', mediaFile.name);
       set((s) => ({
         files: s.files.map((f) =>
           f.id === mediaFileId
@@ -174,7 +174,7 @@ export const createProxySlice: MediaSliceCreator<ProxyActions> = (set, get) => (
           ),
         }));
 
-        console.log(`[Proxy] Complete: ${result.frameCount} frames for ${mediaFile.name}`);
+        log.info(`Complete: ${result.frameCount} frames for ${mediaFile.name}`);
       } else if (!controller.cancelled) {
         // Set error status inline
         set((state) => ({
@@ -184,7 +184,7 @@ export const createProxySlice: MediaSliceCreator<ProxyActions> = (set, get) => (
         }));
       }
     } catch (e) {
-      console.error('[Proxy] Generation failed:', e);
+      log.error('Generation failed:', e);
       set((state) => ({
         files: state.files.map((f) =>
           f.id === mediaFileId ? { ...f, proxyStatus: 'error' as ProxyStatus } : f
@@ -200,7 +200,7 @@ export const createProxySlice: MediaSliceCreator<ProxyActions> = (set, get) => (
     const controller = activeProxyGenerations.get(mediaFileId);
     if (controller) {
       controller.cancelled = true;
-      console.log('[Proxy] Cancelled:', mediaFileId);
+      log.info('Cancelled:', mediaFileId);
     }
 
     const { currentlyGeneratingProxyId } = get();
@@ -244,15 +244,15 @@ async function extractAudioProxy(
   storageKey: string
 ): Promise<void> {
   try {
-    console.log('[Proxy] Extracting audio...');
+    log.debug('Extracting audio...');
     const { extractAudioFromVideo } = await import('../../../services/audioExtractor');
 
     const result = await extractAudioFromVideo(mediaFile.file!, () => {});
     if (result && result.blob && result.blob.size > 0) {
       await projectFileService.saveProxyAudio(storageKey, result.blob);
-      console.log(`[Proxy] Audio saved (${(result.blob.size / 1024).toFixed(1)}KB)`);
+      log.debug(`Audio saved (${(result.blob.size / 1024).toFixed(1)}KB)`);
     }
   } catch (e) {
-    console.warn('[Proxy] Audio extraction failed (non-fatal):', e);
+    log.warn('Audio extraction failed (non-fatal):', e);
   }
 }

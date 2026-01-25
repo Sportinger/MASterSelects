@@ -2,6 +2,9 @@
 // Shows on first load to ask for project storage folder
 
 import { useState, useCallback, useEffect, useMemo } from 'react';
+import { Logger } from '../../services/logger';
+
+const log = Logger.create('WelcomeOverlay');
 import { isFileSystemAccessSupported } from '../../services/fileSystemService';
 import { projectFileService } from '../../services/projectFileService';
 import { openExistingProject } from '../../services/projectSync';
@@ -228,7 +231,7 @@ export function WelcomeOverlay({ onComplete, noFadeOnClose = false }: WelcomeOve
         // User cancelled - not an error
         return;
       }
-      console.error('[WelcomeOverlay] Failed to select folder:', e);
+      log.error('Failed to select folder', e);
       setError('Failed to select folder. Please try again.');
     } finally {
       setIsSelecting(false);
@@ -263,7 +266,7 @@ export function WelcomeOverlay({ onComplete, noFadeOnClose = false }: WelcomeOve
         // User cancelled - not an error
         return;
       }
-      console.error('[WelcomeOverlay] Failed to open project:', e);
+      log.error('Failed to open project', e);
       setError('Failed to open project. Please try again.');
     } finally {
       setIsSelecting(false);

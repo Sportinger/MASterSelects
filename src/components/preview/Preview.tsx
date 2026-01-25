@@ -295,7 +295,7 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
       return;
     }
 
-    console.log(`[Preview ${panelId}] Registering with PreviewRenderManager for composition: ${compositionId}`);
+    log.debug(`[${panelId}] Registering with PreviewRenderManager for composition: ${compositionId}`);
 
     // Register with the centralized render manager
     // It handles: preparation, single RAF loop, nested comp sync
@@ -303,7 +303,7 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
     setCompReady(true);
 
     return () => {
-      console.log(`[Preview ${panelId}] Unregistering from PreviewRenderManager`);
+      log.debug(`[${panelId}] Unregistering from PreviewRenderManager`);
       previewRenderManager.unregister(panelId);
     };
   }, [isIndependentComp, compositionId, isEngineReady, panelId]);
@@ -746,7 +746,7 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
     // Update current drag position for box visual feedback
     currentDragPos.current = { x: boxPosX, y: boxPosY };
 
-    console.log(`[Drag] mouse dx=${dx.toFixed(0)}, box=${boxPosX.toFixed(4)}, image=${imagePosX.toFixed(4)}`);
+    log.debug(`Drag: mouse dx=${dx.toFixed(0)}, box=${boxPosX.toFixed(4)}, image=${imagePosX.toFixed(4)}`);
 
     // Find the corresponding clip and update its transform
     const layer = layers.find(l => l?.id === dragLayerId);

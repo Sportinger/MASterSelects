@@ -219,9 +219,17 @@ export async function syncStoresToProject(): Promise<void> {
       }
     }
 
+    // Capture per-project UI settings from localStorage
+    const mediaPanelColumns = localStorage.getItem('media-panel-column-order');
+    const mediaPanelNameWidth = localStorage.getItem('media-panel-name-width');
+    const transcriptLanguage = localStorage.getItem('transcriptLanguage');
+
     projectData.uiState = {
       dockLayout,
       compositionViewState,
+      mediaPanelColumns: mediaPanelColumns ? JSON.parse(mediaPanelColumns) : undefined,
+      mediaPanelNameWidth: mediaPanelNameWidth ? parseInt(mediaPanelNameWidth, 10) : undefined,
+      transcriptLanguage: transcriptLanguage || undefined,
     };
   }
 
@@ -453,6 +461,17 @@ export async function loadProjectToStores(): Promise<void> {
   if (projectData.uiState?.dockLayout) {
     useDockStore.getState().setLayoutFromProject(projectData.uiState.dockLayout);
     console.log('[ProjectSync] Restored dock layout from project');
+  }
+
+  // Restore per-project UI settings to localStorage
+  if (projectData.uiState?.mediaPanelColumns) {
+    localStorage.setItem('media-panel-column-order', JSON.stringify(projectData.uiState.mediaPanelColumns));
+  }
+  if (projectData.uiState?.mediaPanelNameWidth !== undefined) {
+    localStorage.setItem('media-panel-name-width', String(projectData.uiState.mediaPanelNameWidth));
+  }
+  if (projectData.uiState?.transcriptLanguage) {
+    localStorage.setItem('transcriptLanguage', projectData.uiState.transcriptLanguage);
   }
 
   console.log('[ProjectSync] Loaded project to stores:', projectData.name);

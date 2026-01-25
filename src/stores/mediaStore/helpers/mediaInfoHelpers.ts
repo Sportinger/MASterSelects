@@ -80,7 +80,7 @@ export async function getMediaInfo(
 
   return new Promise((resolve) => {
     const timeout = setTimeout(() => {
-      console.warn('[MediaInfo] Timeout:', file.name);
+      log.warn('Timeout:', file.name);
       resolve({ container, fileSize, codec });
     }, MEDIA_INFO_TIMEOUT);
 

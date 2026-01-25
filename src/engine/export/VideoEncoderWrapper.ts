@@ -216,11 +216,11 @@ export class VideoEncoderWrapper {
 
   addAudioChunks(audioResult: EncodedAudioResult): void {
     if (!this.muxer || !this.hasAudio) {
-      console.warn('[VideoEncoder] Cannot add audio: muxer not ready or audio not enabled');
+      log.warn('Cannot add audio: muxer not ready or audio not enabled');
       return;
     }
 
-    console.log(`[VideoEncoder] Adding ${audioResult.chunks.length} audio chunks`);
+    log.debug(`Adding ${audioResult.chunks.length} audio chunks`);
 
     for (let i = 0; i < audioResult.chunks.length; i++) {
       const chunk = audioResult.chunks[i];
@@ -228,7 +228,7 @@ export class VideoEncoderWrapper {
       this.muxer.addAudioChunk(chunk, meta);
     }
 
-    console.log(`[VideoEncoder] Audio chunks added successfully`);
+    log.debug('Audio chunks added successfully');
   }
 
   async finish(): Promise<Blob> {
@@ -244,7 +244,7 @@ export class VideoEncoderWrapper {
     const { buffer } = this.muxer.target;
     const mimeType = this.containerFormat === 'webm' ? 'video/webm' : 'video/mp4';
 
-    console.log(`[VideoEncoder] Finished: ${this.encodedFrameCount} frames, ${(buffer.byteLength / 1024 / 1024).toFixed(2)}MB (${this.containerFormat.toUpperCase()})`);
+    log.info(`Finished: ${this.encodedFrameCount} frames, ${(buffer.byteLength / 1024 / 1024).toFixed(2)}MB (${this.containerFormat.toUpperCase()})`);
     return new Blob([buffer], { type: mimeType });
   }
 

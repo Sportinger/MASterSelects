@@ -71,7 +71,7 @@ export class AudioEncoderWrapper {
    */
   static async isAACSupported(): Promise<boolean> {
     if (!('AudioEncoder' in window)) {
-      console.log('[AudioEncoder] AudioEncoder not in window');
+      log.debug('AudioEncoder not in window');
       return false;
     }
 
@@ -82,12 +82,12 @@ export class AudioEncoderWrapper {
         numberOfChannels: 2,
         bitrate: 256000,
       };
-      console.log('[AudioEncoder] Checking AAC support with config:', config);
+      log.debug('Checking AAC support with config:', config);
       const support = await AudioEncoder.isConfigSupported(config);
-      console.log('[AudioEncoder] AAC support result:', support);
+      log.debug('AAC support result:', support);
       return support.supported === true;
     } catch (e) {
-      console.error('[AudioEncoder] AAC support check error:', e);
+      log.error('AAC support check error:', e);
       return false;
     }
   }

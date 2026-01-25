@@ -1,6 +1,7 @@
 // Claude Service
 // Interfaces with Claude API to generate edit decision lists
 
+import { Logger } from './logger';
 import type {
   MultiCamSource,
   MultiCamAnalysis,
@@ -9,6 +10,8 @@ import type {
   EditStyle,
 } from '../stores/multicamStore';
 import { apiKeyManager } from './apiKeyManager';
+
+const log = Logger.create('ClaudeService');
 
 // Style presets with editing instructions
 const STYLE_PRESETS: Record<EditStyle, string> = {
@@ -250,7 +253,7 @@ class ClaudeService {
     }
 
     const prompt = buildPrompt(params);
-    console.log('[ClaudeService] Generating EDL...');
+    log.info('Generating EDL...');
 
     try {
       const response = await fetch(this.apiEndpoint, {
@@ -275,7 +278,7 @@ class ClaudeService {
 
       if (!response.ok) {
         const errorBody = await response.text();
-        console.error('[ClaudeService] API error:', response.status, errorBody);
+        log.error(`API error: ${response.status}`, errorBody);
 
         if (response.status === 401) {
           throw new Error('Invalid API key. Please check your Claude API key in settings.');
@@ -293,13 +296,13 @@ class ClaudeService {
         throw new Error('Empty response from Claude');
       }
 
-      console.log('[ClaudeService] Received response, parsing EDL...');
+      log.debug('Received response, parsing EDL...');
       const edl = parseEDLResponse(content, params.cameras);
 
-      console.log('[ClaudeService] Generated', edl.length, 'edit decisions');
+      log.info(`Generated ${edl.length} edit decisions`);
       return edl;
     } catch (error) {
-      console.error('[ClaudeService] Failed to generate EDL:', error);
+      log.error('Failed to generate EDL', error);
       throw error;
     }
   }

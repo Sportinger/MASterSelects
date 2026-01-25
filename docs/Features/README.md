@@ -70,6 +70,7 @@ UI Framework      Custom dockable panel system with mobile support
 | [Proxy System](./Proxy-System.md) | GPU-accelerated proxy generation |
 | [Native Helper](./Native-Helper.md) | Turbo Mode for ProRes/DNxHD, YouTube downloads |
 | [Keyboard Shortcuts](./Keyboard-Shortcuts.md) | Complete shortcut reference |
+| [Debugging](./Debugging.md) | Logger service, module filtering, AI-agent inspection |
 
 ---
 

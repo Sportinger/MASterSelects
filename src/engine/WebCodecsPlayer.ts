@@ -381,13 +381,13 @@ export class WebCodecsPlayer {
               configBox.write(stream);
               // The write() includes the box header (8 bytes: size + type), we need to skip it
               description = stream.buffer.slice(8);
-              console.log(`[WebCodecs] Extracted codec description: ${description!.byteLength} bytes from ${entry.avcC ? 'avcC' : entry.hvcC ? 'hvcC' : entry.vpcC ? 'vpcC' : 'av1C'}`);
+              log.debug(`Extracted codec description: ${description!.byteLength} bytes from ${entry.avcC ? 'avcC' : entry.hvcC ? 'hvcC' : entry.vpcC ? 'vpcC' : 'av1C'}`);
             } else {
-              console.warn('[WebCodecs] No codec config box found in sample entry:', Object.keys(entry));
+              log.warn('No codec config box found in sample entry', Object.keys(entry));
             }
           }
         } catch (e) {
-          console.warn('[WebCodecs] Failed to extract codec description:', e);
+          log.warn('Failed to extract codec description', e);
         }
 
         this.codecConfig = {
@@ -404,7 +404,7 @@ export class WebCodecsPlayer {
           nbSamples: Infinity,
         });
         mp4File.start();
-        console.log(`[WebCodecs] Extraction started for track ${videoTrack.id}`);
+        log.debug(`Extraction started for track ${videoTrack.id}`);
 
         // Check if codec is supported (async, but extraction already started)
         VideoDecoder.isConfigSupported(this.codecConfig).then((support) => {
@@ -414,7 +414,7 @@ export class WebCodecsPlayer {
             return;
           }
 
-          console.log(`[WebCodecs] Codec ${codec} supported, config:`, support.config);
+          log.debug(`Codec ${codec} supported`, support.config);
           this.initDecoder();
 
           // RESOLVE IMMEDIATELY after decoder is configured - don't wait for samples!
@@ -435,7 +435,7 @@ export class WebCodecsPlayer {
         // Mark ready when we have samples and decoder (for playback mode)
         if (!this.ready && this.samples.length > 0 && this.decoderInitialized) {
           this.ready = true;
-          console.log(`[WebCodecs] READY: ${this.samples.length} samples loaded so far`);
+          log.info(`READY: ${this.samples.length} samples loaded so far`);
 
           this.decodeFirstFrame();
           this.onReady?.(this.width, this.height);
@@ -457,9 +457,9 @@ export class WebCodecsPlayer {
       mp4Buffer.fileStart = 0;
       try {
         const appendedBytes = mp4File.appendBuffer(mp4Buffer);
-        console.log(`[WebCodecs] Appended ${appendedBytes} bytes to MP4Box`);
+        log.debug(`Appended ${appendedBytes} bytes to MP4Box`);
         mp4File.flush();
-        console.log(`[WebCodecs] Flushed MP4Box, waiting for callbacks...`);
+        log.debug('Flushed MP4Box, waiting for callbacks...');
       } catch (e) {
         clearTimeout(timeout);
         reject(new Error(`MP4Box appendBuffer failed: ${e}`));
@@ -514,7 +514,7 @@ export class WebCodecsPlayer {
         }
       },
       error: (e) => {
-        console.error('VideoDecoder error:', e);
+        log.error('VideoDecoder error', e);
         this.onError?.(new Error(`Decoder error: ${e.message}`));
       },
     });
@@ -526,7 +526,7 @@ export class WebCodecsPlayer {
     if (this.pendingDecodeFirstFrame && this.samples.length > 0) {
       this.pendingDecodeFirstFrame = false;
       this.ready = true;
-      console.log(`[WebCodecs] READY (deferred): ${this.width}x${this.height} @ ${this.frameRate.toFixed(1)}fps, ${this.samples.length} samples`);
+      log.info(`READY (deferred): ${this.width}x${this.height} @ ${this.frameRate.toFixed(1)}fps, ${this.samples.length} samples`);
 
       this.decodeFirstFrame();
       this.onReady?.(this.width, this.height);
@@ -802,7 +802,7 @@ export class WebCodecsPlayer {
         // Longer timeout for export - we need accurate frames
         const timeout = setTimeout(() => {
           if (!resolved) {
-            console.warn('[WebCodecs] seekAsync timeout at', timeSeconds, 'readyState:', video.readyState);
+            log.warn(`seekAsync timeout at ${timeSeconds}, readyState: ${video.readyState}`);
             doResolve();
           }
         }, 2000);
@@ -824,7 +824,7 @@ export class WebCodecsPlayer {
               requestAnimationFrame(checkReady);
             } else {
               // Give up waiting for readyState, proceed anyway
-              console.warn('[WebCodecs] waitForReady gave up after', retries, 'retries, readyState:', video.readyState);
+              log.warn(`waitForReady gave up after ${retries} retries, readyState: ${video.readyState}`);
               callback();
             }
           };
@@ -1294,7 +1294,7 @@ export class WebCodecsPlayer {
     this.cleanupExportBuffer();
     this.exportFramesCts = [];
     this.exportCurrentIndex = 0;
-    console.log('[WebCodecs Export] Ended');
+    log.info('Export mode ended');
   }
 
   get duration(): number {
