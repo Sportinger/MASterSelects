@@ -556,4 +556,14 @@ export const createPlaybackSlice: SliceCreator<PlaybackAndRamPreviewActions> = (
   toggleWaveformsEnabled: () => {
     set({ waveformsEnabled: !get().waveformsEnabled });
   },
+
+  // Tool mode actions
+  setToolMode: (mode) => {
+    set({ toolMode: mode });
+  },
+
+  toggleCutTool: () => {
+    const { toolMode } = get();
+    set({ toolMode: toolMode === 'cut' ? 'select' : 'cut' });
+  },
 });

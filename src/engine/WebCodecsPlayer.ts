@@ -1033,30 +1033,22 @@ export class WebCodecsPlayer {
       }
     }
 
-    // Wait for decoder to process queued samples AND output frames
-    // decodeQueueSize=0 means chunks are accepted, not that frames are output
-    let waitCount = 0;
-    const maxWait = 150; // Max 1.5 seconds (150 * 10ms)
+    // Wait for decoder queue to drain first
     const samplesDecoded = decodeEnd - keyframeIndex;
-    const expectedFrames = Math.max(1, samplesDecoded - 5); // B-frames buffer ~5 frames
+    let waitCount = 0;
+    const maxWait = 50; // 500ms max for queue drain
 
-    while (waitCount < maxWait) {
-      // Check if decoder accepted all chunks AND we have enough frames
-      const queueEmpty = this.decoder.decodeQueueSize === 0;
-      const hasEnoughFrames = this.exportFrameBuffer.size >= expectedFrames;
-
-      if (queueEmpty && hasEnoughFrames) {
-        break;
-      }
-
+    while (this.decoder.decodeQueueSize > 0 && waitCount < maxWait) {
       await new Promise(r => setTimeout(r, 10));
       waitCount++;
     }
 
-    // One more flush to ensure all pending frames are output
-    if (this.decoder.decodeQueueSize === 0) {
-      await new Promise(r => setTimeout(r, 50));
-    }
+    // CRITICAL: Flush decoder to force output of all buffered B-frames
+    // Without flush(), B-frames stay buffered waiting for more reference frames
+    await this.decoder.flush();
+
+    // Small wait for output callbacks to complete
+    await new Promise(r => setTimeout(r, 30));
 
     // Set currentFrame to the closest frame to our target time
     const targetCts = startTimeSeconds * 1_000_000;
@@ -1073,7 +1065,7 @@ export class WebCodecsPlayer {
       this.currentFrame = bestFrame;
     }
 
-    console.log(`[WebCodecs] Export mode: started at sample ${keyframeIndex}, decoded ${samplesDecoded} samples, waited ${waitCount * 10}ms, buffer has ${this.exportFrameBuffer.size} frames (expected ${expectedFrames})`);
+    console.log(`[WebCodecs] Export mode: started at sample ${keyframeIndex}, decoded ${samplesDecoded} samples, buffer has ${this.exportFrameBuffer.size} frames`);
   }
 
   /**

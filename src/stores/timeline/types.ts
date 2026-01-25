@@ -36,6 +36,9 @@ export type {
 // Mask edit mode types
 export type MaskEditMode = 'none' | 'drawing' | 'editing' | 'drawingRect' | 'drawingEllipse' | 'drawingPen';
 
+// Timeline tool mode types
+export type TimelineToolMode = 'select' | 'cut';
+
 // Timeline state interface
 export interface TimelineState {
   // Core state
@@ -89,6 +92,9 @@ export interface TimelineState {
   selectedVertexIds: Set<string>;
   maskDrawStart: { x: number; y: number } | null;
   maskDragging: boolean; // True during vertex/mask drag - skips texture regeneration
+
+  // Tool mode
+  toolMode: TimelineToolMode;
 }
 
 // Track actions interface
@@ -160,6 +166,9 @@ export interface PlaybackActions {
   setLoopPlayback: (loop: boolean) => void;
   toggleLoopPlayback: () => void;
   setDuration: (duration: number) => void;
+  // Tool mode
+  setToolMode: (mode: TimelineToolMode) => void;
+  toggleCutTool: () => void;
 }
 
 // RAM Preview actions interface
