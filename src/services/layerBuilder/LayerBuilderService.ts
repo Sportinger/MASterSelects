@@ -629,6 +629,7 @@ export class LayerBuilderService {
         : nestedLocalTime + nestedClip.inPoint;
 
       const video = nestedClip.source.videoElement;
+      const webCodecsPlayer = nestedClip.source.webCodecsPlayer;
       const timeDiff = Math.abs(video.currentTime - nestedClipTime);
 
       // Always pause nested videos (we render frame by frame)
@@ -638,6 +639,14 @@ export class LayerBuilderService {
       const seekThreshold = ctx.isDraggingPlayhead ? 0.1 : 0.05;
       if (timeDiff > seekThreshold) {
         this.throttledSeek(nestedClip.id, video, nestedClipTime, ctx);
+      }
+
+      // Seek WebCodecsPlayer for nested clips (critical for video preview)
+      if (webCodecsPlayer) {
+        const wcTimeDiff = Math.abs(webCodecsPlayer.currentTime - nestedClipTime);
+        if (wcTimeDiff > seekThreshold) {
+          webCodecsPlayer.seek(nestedClipTime);
+        }
       }
     }
   }

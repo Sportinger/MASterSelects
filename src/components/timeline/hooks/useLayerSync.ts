@@ -160,12 +160,20 @@ export function useLayerSync({
           ? nestedClip.outPoint - nestedLocalTime
           : nestedLocalTime + nestedClip.inPoint;
 
-        // Update video currentTime
+        // Update video currentTime and WebCodecsPlayer
         if (nestedClip.source?.videoElement) {
           const video = nestedClip.source.videoElement;
+          const webCodecsPlayer = nestedClip.source.webCodecsPlayer;
           const timeDiff = Math.abs(video.currentTime - nestedClipTime);
           if (timeDiff > 0.05) {
             video.currentTime = nestedClipTime;
+          }
+          // Seek WebCodecsPlayer for nested clips (critical for preview during playback)
+          if (webCodecsPlayer) {
+            const wcTimeDiff = Math.abs(webCodecsPlayer.currentTime - nestedClipTime);
+            if (wcTimeDiff > 0.05) {
+              webCodecsPlayer.seek(nestedClipTime);
+            }
           }
           if (isPlaying && video.paused) {
             video.play().catch(() => {});

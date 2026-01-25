@@ -388,6 +388,14 @@ export interface SerializableClip {
   textProperties?: TextClipProperties;
 }
 
+// Serializable timeline marker (for project save/load)
+export interface SerializableMarker {
+  id: string;
+  time: number;
+  label: string;
+  color: string;
+}
+
 // Serializable timeline data for composition storage
 export interface CompositionTimelineData {
   tracks: TimelineTrack[];
@@ -400,6 +408,7 @@ export interface CompositionTimelineData {
   inPoint: number | null;
   outPoint: number | null;
   loopPlayback: boolean;
+  markers?: SerializableMarker[];  // Timeline markers
 }
 
 // Keyframe animation types

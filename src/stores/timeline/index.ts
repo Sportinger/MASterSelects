@@ -372,7 +372,7 @@ export const useTimelineStore = create<TimelineStore>()(
 
       // Get serializable timeline state for saving to composition
       getSerializableState: (): CompositionTimelineData => {
-        const { tracks, clips, playheadPosition, duration, durationLocked, zoom, scrollX, inPoint, outPoint, loopPlayback, clipKeyframes } = get();
+        const { tracks, clips, playheadPosition, duration, durationLocked, zoom, scrollX, inPoint, outPoint, loopPlayback, clipKeyframes, markers } = get();
 
         // Convert clips to serializable format (without DOM elements)
         const mediaStore = useMediaStore.getState();
@@ -435,6 +435,7 @@ export const useTimelineStore = create<TimelineStore>()(
           inPoint,
           outPoint,
           loopPlayback,
+          markers: markers.length > 0 ? markers : undefined,  // Only save if there are markers
         };
       },
 
@@ -462,6 +463,7 @@ export const useTimelineStore = create<TimelineStore>()(
             outPoint: null,
             loopPlayback: false,
             selectedClipIds: new Set(),
+            markers: [],
           });
           return;
         }
@@ -486,6 +488,8 @@ export const useTimelineStore = create<TimelineStore>()(
           expandedTrackPropertyGroups: new Map<string, Set<string>>(),
           selectedKeyframeIds: new Set<string>(),
           expandedCurveProperties: new Map<string, Set<import('../../types').AnimatableProperty>>(),
+          // Restore markers
+          markers: data.markers || [],
         });
 
         // Restore keyframes from serialized clips
