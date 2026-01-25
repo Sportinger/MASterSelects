@@ -7,6 +7,7 @@ interface UsePlayheadSnapProps {
   timelineRef: React.RefObject<HTMLDivElement>;
   scrollX: number;
   duration: number;
+  snappingEnabled: boolean;
   pixelToTime: (pixel: number) => number;
   getSnapTargetTimes: () => number[];
   setPlayheadPosition: (position: number) => void;
@@ -18,6 +19,7 @@ export function usePlayheadSnap({
   timelineRef,
   scrollX,
   duration,
+  snappingEnabled,
   pixelToTime,
   getSnapTargetTimes,
   setPlayheadPosition,
@@ -32,8 +34,12 @@ export function usePlayheadSnap({
       const x = e.clientX - rect.left + scrollX;
       let time = pixelToTime(x);
 
-      // Shift key enables snapping to clip edges and keyframes
-      if (e.shiftKey) {
+      // Snapping with Alt-key toggle:
+      // - When snapping enabled: snap by default, Alt temporarily disables
+      // - When snapping disabled: don't snap, Alt temporarily enables
+      const shouldSnap = snappingEnabled !== e.altKey;
+
+      if (shouldSnap) {
         const snapTimes = getSnapTargetTimes();
         const snapThreshold = pixelToTime(10);
 
@@ -70,6 +76,7 @@ export function usePlayheadSnap({
     isDraggingPlayhead,
     scrollX,
     duration,
+    snappingEnabled,
     setPlayheadPosition,
     setDraggingPlayhead,
     pixelToTime,

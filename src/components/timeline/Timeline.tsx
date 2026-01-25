@@ -454,6 +454,7 @@ export function Timeline() {
     timelineRef,
     scrollX,
     duration,
+    snappingEnabled,
     pixelToTime,
     getSnapTargetTimes,
     setPlayheadPosition,
