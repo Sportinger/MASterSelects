@@ -4432,21 +4432,26 @@ input[type="checkbox"] {
 .timeline-marker .timeline-marker-flag {
   position: absolute;
   top: 0;
-  left: -6px;
-  width: 12px;
-  height: 16px;
+  left: -7px;
+  width: 14px;
+  height: 14px;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
-  color: var(--marker-color);
+  background: var(--marker-color);
+  color: white;
+  font-size: 9px;
+  font-weight: bold;
+  border-radius: 2px;
   cursor: grab;
   pointer-events: auto;
-  transition: transform 0.1s, filter 0.1s;
+  transition: transform 0.1s, filter 0.1s, box-shadow 0.1s;
 }
 
 .timeline-marker .timeline-marker-flag:hover {
-  transform: scale(1.2);
+  transform: scale(1.15);
   filter: brightness(1.2);
+  box-shadow: 0 0 6px var(--marker-color);
 }
 
 .timeline-marker.dragging .timeline-marker-flag {
@@ -4457,8 +4462,8 @@ input[type="checkbox"] {
 
 .timeline-marker .timeline-marker-line {
   position: absolute;
-  top: 12px;
-  left: -1px;
+  top: 14px;
+  left: 0;
   bottom: 0;
   width: 2px;
   background: var(--marker-color);
@@ -4537,23 +4542,30 @@ input[type="checkbox"] {
 .ruler-header {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
+  justify-content: space-between;
+  padding: 0 8px;
+}
+
+.ruler-header > span {
+  flex: 1;
+  text-align: center;
 }
 
 .add-marker-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   padding: 0;
   background: transparent;
   border: 1px solid transparent;
   border-radius: 3px;
   color: var(--text-secondary);
-  cursor: pointer;
+  cursor: grab;
   transition: all 0.15s ease;
+  font-size: 10px;
+  font-weight: bold;
 }
 
 .add-marker-btn:hover {

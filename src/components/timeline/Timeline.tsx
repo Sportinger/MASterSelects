@@ -356,52 +356,59 @@ export function Timeline() {
     if (!markerCreateDrag || !markerCreateDrag.isDragging) return;
 
     const handleMouseMove = (e: MouseEvent) => {
-      if (!timelineRef.current) return;
+      // Use timelineBodyRef for wider detection (includes ruler area)
+      const bodyRef = timelineBodyRef.current;
+      const trackRef = timelineRef.current;
+      if (!bodyRef || !trackRef) return;
 
-      const rect = timelineRef.current.getBoundingClientRect();
-      const isOverTimeline = e.clientY >= rect.top && e.clientY <= rect.bottom;
+      const bodyRect = bodyRef.getBoundingClientRect();
+      const trackRect = trackRef.getBoundingClientRect();
 
-      if (isOverTimeline) {
-        const x = e.clientX - rect.left + scrollX;
-        let time = pixelToTime(x);
+      // Calculate time from X position (using track area for proper offset)
+      const x = e.clientX - trackRect.left + scrollX;
+      let time = pixelToTime(x);
 
-        // Apply snapping if enabled (and not holding Alt)
-        const shouldSnap = snappingEnabled !== e.altKey;
-        if (shouldSnap) {
-          const snapTimes = getSnapTargetTimes();
-          snapTimes.push(playheadPosition);
-          if (inPoint !== null) snapTimes.push(inPoint);
-          if (outPoint !== null) snapTimes.push(outPoint);
+      // Apply snapping if enabled (and not holding Alt)
+      const shouldSnap = snappingEnabled !== e.altKey;
+      if (shouldSnap) {
+        const snapTimes = getSnapTargetTimes();
+        snapTimes.push(playheadPosition);
+        if (inPoint !== null) snapTimes.push(inPoint);
+        if (outPoint !== null) snapTimes.push(outPoint);
 
-          const snapThresholdTime = pixelToTime(10);
-          let closestSnap = time;
-          let minDist = Infinity;
+        const snapThresholdTime = pixelToTime(10);
+        let closestSnap = time;
+        let minDist = Infinity;
 
-          for (const snapTime of snapTimes) {
-            const dist = Math.abs(time - snapTime);
-            if (dist < minDist && dist < snapThresholdTime) {
-              minDist = dist;
-              closestSnap = snapTime;
-            }
+        for (const snapTime of snapTimes) {
+          const dist = Math.abs(time - snapTime);
+          if (dist < minDist && dist < snapThresholdTime) {
+            minDist = dist;
+            closestSnap = snapTime;
           }
-          time = closestSnap;
         }
-
-        time = Math.max(0, Math.min(time, duration));
-        setMarkerCreateDrag(prev => prev ? { ...prev, currentTime: time, isOverTimeline: true } : null);
-      } else {
-        setMarkerCreateDrag(prev => prev ? { ...prev, isOverTimeline: false } : null);
+        time = closestSnap;
       }
+
+      time = Math.max(0, Math.min(time, duration));
+
+      // Check if mouse is over the timeline body (more generous area)
+      const isOverTimeline = e.clientX >= bodyRect.left && e.clientX <= bodyRect.right &&
+                             e.clientY >= bodyRect.top && e.clientY <= bodyRect.bottom;
+
+      setMarkerCreateDrag(prev => prev ? { ...prev, currentTime: time, isOverTimeline } : null);
     };
 
     const handleMouseUp = (e: MouseEvent) => {
-      if (!timelineRef.current || !markerCreateDrag) {
+      const bodyRef = timelineBodyRef.current;
+      if (!bodyRef || !markerCreateDrag) {
         setMarkerCreateDrag(null);
         return;
       }
 
-      const rect = timelineRef.current.getBoundingClientRect();
-      const isOverTimeline = e.clientY >= rect.top && e.clientY <= rect.bottom;
+      const bodyRect = bodyRef.getBoundingClientRect();
+      const isOverTimeline = e.clientX >= bodyRect.left && e.clientX <= bodyRect.right &&
+                             e.clientY >= bodyRect.top && e.clientY <= bodyRect.bottom;
 
       if (isOverTimeline) {
         // Add the marker and trigger drop animation
@@ -849,10 +856,7 @@ export function Timeline() {
                 onMouseDown={handleMarkerButtonDragStart}
                 title="Drag to place marker, or click to add at playhead (M)"
               >
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-                  <path d="M12 2L8 10H16L12 2Z" />
-                  <rect x="10" y="10" width="4" height="12" />
-                </svg>
+                M
               </button>
             </div>
             <div className="time-ruler-wrapper">
@@ -1217,11 +1221,7 @@ export function Timeline() {
                 removeMarker(marker.id);
               }}
             >
-              <div className="timeline-marker-flag">
-                <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
-                  <path d="M12 2L8 10H16L12 2Z" />
-                </svg>
-              </div>
+              <div className="timeline-marker-flag">M</div>
               <div className="timeline-marker-line" />
             </div>
           ))}
@@ -1235,11 +1235,7 @@ export function Timeline() {
                 '--marker-color': '#00d4ff',
               } as React.CSSProperties}
             >
-              <div className="timeline-marker-flag">
-                <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
-                  <path d="M12 2L8 10H16L12 2Z" />
-                </svg>
-              </div>
+              <div className="timeline-marker-flag">M</div>
               <div className="timeline-marker-line" />
             </div>
           )}
