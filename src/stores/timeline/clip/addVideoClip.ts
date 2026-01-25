@@ -169,6 +169,7 @@ export async function loadVideoMedia(params: LoadVideoMediaParams): Promise<void
   }
 
   // Fallback to HTMLVideoElement if not using native decoder
+  let videoHasAudio = true; // Default to true for safety
   if (!nativeDecoder) {
     video = createVideoElement(file);
     // Track the blob URL for cleanup
@@ -176,6 +177,15 @@ export async function loadVideoMedia(params: LoadVideoMediaParams): Promise<void
     await waitForVideoMetadata(video);
 
     naturalDuration = video.duration || 5;
+
+    // Check if video has audio tracks
+    if ('audioTracks' in video) {
+      const audioTracks = (video as HTMLVideoElement & { audioTracks?: { length: number } }).audioTracks;
+      videoHasAudio = (audioTracks?.length ?? 0) > 0;
+      if (!videoHasAudio) {
+        log.debug('Video has no audio tracks', { file: file.name });
+      }
+    }
 
     // Update clip with actual duration
     updateClip(clipId, {
@@ -185,7 +195,12 @@ export async function loadVideoMedia(params: LoadVideoMediaParams): Promise<void
       isLoading: false,
     });
 
-    if (audioClipId) {
+    // If video has no audio, remove the audio clip if one was created
+    if (!videoHasAudio && audioClipId) {
+      log.debug('Removing audio clip for video without audio', { file: file.name });
+      setClips(clips => clips.filter(c => c.id !== audioClipId));
+      blobUrlManager.remove(audioClipId);
+    } else if (audioClipId) {
       updateClip(audioClipId, { duration: naturalDuration, outPoint: naturalDuration });
     }
 
@@ -216,10 +231,11 @@ export async function loadVideoMedia(params: LoadVideoMediaParams): Promise<void
   }
 
   // Load audio for linked clip (skip for NativeDecoder - browser can't decode ProRes/DNxHD audio)
-  if (audioClipId && !nativeDecoder) {
+  // Also skip if video doesn't have audio
+  if (audioClipId && !nativeDecoder && videoHasAudio) {
     await loadLinkedAudio(file, audioClipId, naturalDuration, mediaFileId, waveformsEnabled, updateClip, setClips);
-  } else if (audioClipId && nativeDecoder) {
-    log.debug('Skipping audio for NativeDecoder file', { file: file.name });
+  } else if (audioClipId && nativeDecoder && videoHasAudio) {
+    log.debug('Skipping audio decoding for NativeDecoder file (audio clip kept)', { file: file.name });
     updateClip(audioClipId, {
       source: { type: 'audio', naturalDuration, mediaFileId },
       isLoading: false,

@@ -843,8 +843,10 @@ export function Timeline() {
           })}
 
           {/* New audio track preview for linked video audio */}
+          {/* Only show if video has audio (hasAudio !== false) */}
           {externalDrag &&
             externalDrag.isVideo &&
+            externalDrag.hasAudio !== false &&
             externalDrag.audioTrackId === '__new_audio_track__' &&
             externalDrag.newTrackType !== 'video' && (
               <div className="track-lane audio new-track-preview" style={{ height: 40 }}>
