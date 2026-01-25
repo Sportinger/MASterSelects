@@ -990,7 +990,11 @@ export class WebCodecsPlayer {
 
     // Reset decoder once at the start
     this.decoder.reset();
-    this.decoder.configure(this.codecConfig!);
+    if (!this.codecConfig) {
+      console.error('[WebCodecs] prepareForSequentialExport: codecConfig is null');
+      return;
+    }
+    this.decoder.configure(this.codecConfig);
 
     // IMPORTANT: Set export mode BEFORE decoding so frames get buffered
     this.isInExportMode = true;
@@ -998,6 +1002,7 @@ export class WebCodecsPlayer {
     // Queue samples from keyframe up to target + extra for B-frame buffering
     // B-frames need future reference frames to be decoded, so we decode ahead
     const decodeEnd = Math.min(targetIndex + 20, this.samples.length);
+    console.log(`[WebCodecs] Export mode: initializing, keyframe=${keyframeIndex}, target=${targetIndex}, decoding ${decodeEnd - keyframeIndex} samples`);
     this.sampleIndex = keyframeIndex;
 
     for (let i = keyframeIndex; i < decodeEnd; i++) {
@@ -1017,15 +1022,20 @@ export class WebCodecsPlayer {
       }
     }
 
-    // Wait for decoder to process queued samples (quick poll, not slow timeout)
-    while (this.decoder.decodeQueueSize > 0) {
-      await new Promise(r => requestAnimationFrame(r));
+    // Wait for decoder to process queued samples with timeout safety
+    let waitCount = 0;
+    const maxWait = 100; // Max 1 second (100 * 10ms)
+    const initialQueueSize = this.decoder.decodeQueueSize;
+
+    while (this.decoder.decodeQueueSize > 0 && waitCount < maxWait) {
+      await new Promise(r => setTimeout(r, 10));
+      waitCount++;
     }
 
-    // One more frame for output callbacks to complete
-    await new Promise(r => requestAnimationFrame(r));
+    // Small additional wait for output callbacks
+    await new Promise(r => setTimeout(r, 50));
 
-    console.log(`[WebCodecs] Export mode: started at sample ${keyframeIndex}, decoded ${decodeEnd - keyframeIndex} samples, buffer has ${this.exportFrameBuffer.size} frames`);
+    console.log(`[WebCodecs] Export mode: started at sample ${keyframeIndex}, decoded ${decodeEnd - keyframeIndex} samples (initial queue=${initialQueueSize}, waited ${waitCount}), buffer has ${this.exportFrameBuffer.size} frames`);
   }
 
   /**
@@ -1142,17 +1152,17 @@ export class WebCodecsPlayer {
       this.queueNextSampleForDecode();
     }
 
-    // Wait for decoder to process - use requestAnimationFrame for speed
+    // Wait for decoder to process with timeout safety
     let waitCount = 0;
-    const maxWaits = 30;
+    const maxWaits = 50; // 50 * 10ms = 500ms max
 
     while (waitCount < maxWaits && this.decoder.decodeQueueSize > 0) {
-      await new Promise(r => requestAnimationFrame(r));
+      await new Promise(r => setTimeout(r, 10));
       waitCount++;
     }
 
-    // One more frame for output callbacks
-    await new Promise(r => requestAnimationFrame(r));
+    // Small wait for output callbacks
+    await new Promise(r => setTimeout(r, 20));
 
     // Check if we now have our frame
     ({ frame: bestFrame, diff: bestDiff } = findBestFrame());
@@ -1206,11 +1216,14 @@ export class WebCodecsPlayer {
         this.queueNextSampleForDecode();
       }
 
-      // Wait for decoder - use requestAnimationFrame for speed
-      while (this.decoder.decodeQueueSize > 0) {
-        await new Promise(r => requestAnimationFrame(r));
+      // Wait for decoder with timeout safety
+      let resetWaitCount = 0;
+      const maxResetWaits = 100; // 100 * 10ms = 1s max
+      while (this.decoder.decodeQueueSize > 0 && resetWaitCount < maxResetWaits) {
+        await new Promise(r => setTimeout(r, 10));
+        resetWaitCount++;
       }
-      await new Promise(r => requestAnimationFrame(r));
+      await new Promise(r => setTimeout(r, 20));
 
       // Now find best match in buffer
       ({ frame: bestFrame, diff: bestDiff } = findBestFrame());

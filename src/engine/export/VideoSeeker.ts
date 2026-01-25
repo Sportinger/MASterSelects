@@ -146,7 +146,7 @@ export function seekVideo(video: HTMLVideoElement, time: number): Promise<void> 
           resolve();
         });
       } else {
-        // Fallback: wait for readyState
+        // Fallback: wait for readyState using setTimeout for export reliability
         let retries = 0;
         const maxRetries = 30;
 
@@ -154,11 +154,12 @@ export function seekVideo(video: HTMLVideoElement, time: number): Promise<void> 
           retries++;
           if (!video.seeking && video.readyState >= 3) {
             clearTimeout(timeout);
-            requestAnimationFrame(() => {
-              requestAnimationFrame(() => resolve());
-            });
+            // Use setTimeout instead of requestAnimationFrame for export
+            setTimeout(() => {
+              setTimeout(() => resolve(), 16);
+            }, 16);
           } else if (retries < maxRetries) {
-            requestAnimationFrame(waitForReady);
+            setTimeout(waitForReady, 16);
           } else {
             clearTimeout(timeout);
             resolve();
@@ -213,7 +214,7 @@ export async function waitForAllVideosReady(
 
   if (htmlVideoClips.length === 0) return;
 
-  // Wait for HTMLVideoElement clips
+  // Wait for HTMLVideoElement clips using setTimeout for export reliability
   const maxWaitTime = 100;
   const startWait = performance.now();
 
@@ -229,11 +230,11 @@ export async function waitForAllVideosReady(
     }
 
     if (allReady) {
-      await new Promise(r => requestAnimationFrame(r));
+      await new Promise(r => setTimeout(r, 16));
       return;
     }
 
-    await new Promise(r => requestAnimationFrame(r));
+    await new Promise(r => setTimeout(r, 16));
   }
 
   console.warn('[FrameExporter] Timeout waiting for videos to be ready at time', ctx.time);
