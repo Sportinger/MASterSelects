@@ -59,7 +59,7 @@ export class TimeStretchProcessor {
     // Clamp speed to valid range
     const clampedSpeed = Math.max(0.1, Math.min(10, speed));
 
-    console.log(`[TimeStretch] Processing constant speed: ${clampedSpeed}x, preservePitch: ${shouldPreservePitch}`);
+    log.debug(`Processing constant speed: ${clampedSpeed}x, preservePitch: ${shouldPreservePitch}`);
 
     // If speed is 1.0, no processing needed
     if (Math.abs(clampedSpeed - 1.0) < 0.001) {
@@ -110,7 +110,7 @@ export class TimeStretchProcessor {
       return this.processConstantSpeed(buffer, speedKeyframes[0].value, shouldPreservePitch);
     }
 
-    console.log(`[TimeStretch] Processing with ${speedKeyframes.length} speed keyframes`);
+    log.debug(`Processing with ${speedKeyframes.length} speed keyframes`);
 
     // For variable speed, we need to process in segments
     return this.processVariableSpeed(

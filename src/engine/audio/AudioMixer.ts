@@ -65,7 +65,7 @@ export class AudioMixer {
     const { sampleRate, numberOfChannels } = this.settings;
     const totalSamples = Math.ceil(duration * sampleRate);
 
-    console.log(`[AudioMixer] Mixing ${tracks.length} tracks into ${duration.toFixed(2)}s output`);
+    log.info(`Mixing ${tracks.length} tracks into ${duration.toFixed(2)}s output`);
 
     onProgress?.({
       phase: 'preparing',
@@ -78,11 +78,11 @@ export class AudioMixer {
     const activeTracks = this.getActiveTracks(tracks);
 
     if (activeTracks.length === 0) {
-      console.log('[AudioMixer] No active tracks, returning silence');
+      log.debug('No active tracks, returning silence');
       return this.createSilentBuffer(duration);
     }
 
-    console.log(`[AudioMixer] ${activeTracks.length} active tracks after mute/solo filtering`);
+    log.debug(`${activeTracks.length} active tracks after mute/solo filtering`);
 
     // Create output buffer
     const offlineContext = new OfflineAudioContext(
@@ -134,7 +134,7 @@ export class AudioMixer {
       totalTracks: activeTracks.length,
     });
 
-    console.log(`[AudioMixer] Mix complete: ${mixedBuffer.duration.toFixed(2)}s`);
+    log.info(`Mix complete: ${mixedBuffer.duration.toFixed(2)}s`);
 
     return mixedBuffer;
   }
@@ -196,7 +196,7 @@ export class AudioMixer {
     const startTime = Math.max(0, track.startTime);
     source.start(startTime);
 
-    console.log(`[AudioMixer] Added clip ${track.clipId} at ${startTime.toFixed(2)}s (${buffer.duration.toFixed(2)}s)`);
+    log.debug(`Added clip ${track.clipId} at ${startTime.toFixed(2)}s (${buffer.duration.toFixed(2)}s)`);
   }
 
   /**
@@ -282,7 +282,7 @@ export class AudioMixer {
     // Only normalize if we would reduce (prevent amplifying noise)
     if (normalizeGain >= 1) return;
 
-    console.log(`[AudioMixer] Normalizing: peak=${peak.toFixed(4)}, gain=${normalizeGain.toFixed(4)}`);
+    log.debug(`Normalizing: peak=${peak.toFixed(4)}, gain=${normalizeGain.toFixed(4)}`);
 
     // Apply gain
     for (let ch = 0; ch < buffer.numberOfChannels; ch++) {

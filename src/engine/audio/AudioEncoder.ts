@@ -138,7 +138,7 @@ export class AudioEncoderWrapper {
    */
   async init(): Promise<boolean> {
     if (!('AudioEncoder' in window)) {
-      console.error('[AudioEncoder] WebCodecs AudioEncoder not available');
+      log.error('WebCodecs AudioEncoder not available');
       return false;
     }
 
@@ -159,7 +159,7 @@ export class AudioEncoderWrapper {
     }
 
     if (!codecToUse) {
-      console.error('[AudioEncoder] No supported audio codec found (tried AAC and Opus)');
+      log.error('No supported audio codec found (tried AAC and Opus)');
       return false;
     }
 
@@ -181,11 +181,11 @@ export class AudioEncoderWrapper {
     try {
       const support = await AudioEncoder.isConfigSupported(config);
       if (!support.supported) {
-        console.error(`[AudioEncoder] ${this.activeCodec.toUpperCase()} configuration not supported`);
+        log.error(`${this.activeCodec.toUpperCase()} configuration not supported`);
         return false;
       }
     } catch (e) {
-      console.error('[AudioEncoder] Config support check failed:', e);
+      log.error('Config support check failed:', e);
       return false;
     }
 
@@ -196,10 +196,10 @@ export class AudioEncoderWrapper {
 
     try {
       this.encoder.configure(config);
-      console.log(`[AudioEncoder] Initialized with ${this.activeCodec.toUpperCase()}: ${this.settings.sampleRate}Hz, ${this.settings.numberOfChannels}ch, ${bitrate / 1000}kbps`);
+      log.info(`Initialized with ${this.activeCodec.toUpperCase()}: ${this.settings.sampleRate}Hz, ${this.settings.numberOfChannels}ch, ${bitrate / 1000}kbps`);
       return true;
     } catch (e) {
-      console.error('[AudioEncoder] Configure failed:', e);
+      log.error('Configure failed:', e);
       return false;
     }
   }
@@ -218,7 +218,7 @@ export class AudioEncoderWrapper {
    * Handle encoder errors
    */
   private handleError(error: DOMException): void {
-    console.error('[AudioEncoder] Encode error:', error);
+    log.error('Encode error:', error);
   }
 
   /**
@@ -244,7 +244,7 @@ export class AudioEncoderWrapper {
     const frameSize = 1024;
     const totalFrames = Math.ceil(buffer.length / frameSize);
 
-    console.log(`[AudioEncoder] Encoding ${buffer.duration.toFixed(2)}s audio (${totalFrames} frames)`);
+    log.info(`Encoding ${buffer.duration.toFixed(2)}s audio (${totalFrames} frames)`);
 
     for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
       const startSample = frameIndex * frameSize;
@@ -286,7 +286,7 @@ export class AudioEncoderWrapper {
       }
     }
 
-    console.log(`[AudioEncoder] Encoding complete, ${this.chunks.length} chunks`);
+    log.info(`Encoding complete, ${this.chunks.length} chunks`);
   }
 
   /**
@@ -332,7 +332,7 @@ export class AudioEncoderWrapper {
 
     const duration = this.totalSamples / this.settings.sampleRate;
 
-    console.log(`[AudioEncoder] Finalized: ${this.chunks.length} chunks, ${duration.toFixed(2)}s (${this.activeCodec.toUpperCase()})`);
+    log.info(`Finalized: ${this.chunks.length} chunks, ${duration.toFixed(2)}s (${this.activeCodec.toUpperCase()})`);
 
     return {
       chunks: this.chunks,

@@ -79,17 +79,17 @@ export class AudioExportPipeline {
     const { clips, tracks, clipKeyframes } = useTimelineStore.getState();
     const duration = endTime - startTime;
 
-    console.log(`[AudioExportPipeline] Starting export: ${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s (${duration.toFixed(2)}s)`);
+    log.info(`Starting export: ${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s (${duration.toFixed(2)}s)`);
 
     // 1. Find all clips with audio in the export range
     const audioClips = this.getClipsWithAudio(clips, tracks, startTime, endTime);
 
     if (audioClips.length === 0) {
-      console.log('[AudioExportPipeline] No audio clips found in export range');
+      log.info('No audio clips found in export range');
       return null;
     }
 
-    console.log(`[AudioExportPipeline] Found ${audioClips.length} clips with audio`);
+    log.info(`Found ${audioClips.length} clips with audio`);
 
     try {
       // 2. Extract audio from all clips
@@ -136,11 +136,11 @@ export class AudioExportPipeline {
 
       onProgress?.({ phase: 'complete', percent: 100, message: 'Audio export complete' });
 
-      console.log(`[AudioExportPipeline] Export complete: ${result.chunks.length} chunks`);
+      log.info(`Export complete: ${result.chunks.length} chunks`);
       return result;
 
     } catch (error) {
-      console.error('[AudioExportPipeline] Export failed:', error);
+      log.error('Export failed:', error);
       this.extractor.clearCache();
       throw error;
     }
@@ -163,17 +163,17 @@ export class AudioExportPipeline {
     const { clips, tracks, clipKeyframes } = useTimelineStore.getState();
     const duration = endTime - startTime;
 
-    console.log(`[AudioExportPipeline] Starting raw audio export: ${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s`);
+    log.info(`Starting raw audio export: ${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s`);
 
     // 1. Find all clips with audio in the export range
     const audioClips = this.getClipsWithAudio(clips, tracks, startTime, endTime);
 
     if (audioClips.length === 0) {
-      console.log('[AudioExportPipeline] No audio clips found in export range');
+      log.info('No audio clips found in export range');
       return null;
     }
 
-    console.log(`[AudioExportPipeline] Found ${audioClips.length} clips with audio`);
+    log.info(`Found ${audioClips.length} clips with audio`);
 
     try {
       // 2. Extract audio from all clips
@@ -214,11 +214,11 @@ export class AudioExportPipeline {
 
       onProgress?.({ phase: 'complete', percent: 100, message: 'Audio mixing complete' });
 
-      console.log(`[AudioExportPipeline] Raw audio export complete: ${mixedBuffer.duration.toFixed(2)}s, ${mixedBuffer.numberOfChannels}ch`);
+      log.info(`Raw audio export complete: ${mixedBuffer.duration.toFixed(2)}s, ${mixedBuffer.numberOfChannels}ch`);
       return mixedBuffer;
 
     } catch (error) {
-      console.error('[AudioExportPipeline] Raw audio export failed:', error);
+      log.error('Raw audio export failed:', error);
       this.extractor.clearCache();
       throw error;
     }
@@ -229,7 +229,7 @@ export class AudioExportPipeline {
    */
   cancel(): void {
     this.cancelled = true;
-    console.log('[AudioExportPipeline] Export cancelled');
+    log.info('Export cancelled');
   }
 
   /**
@@ -303,7 +303,7 @@ export class AudioExportPipeline {
         // Nested composition with pre-mixed audio buffer
         if (clip.isComposition && clip.mixdownBuffer) {
           buffer = clip.mixdownBuffer;
-          console.log(`[AudioExportPipeline] Using mixdown buffer for nested comp ${clip.name}`);
+          log.debug(`Using mixdown buffer for nested comp ${clip.name}`);
         } else if (clip.source?.audioElement) {
           // Extract from audio element
           buffer = await this.extractor.extractFromElement(
@@ -314,7 +314,7 @@ export class AudioExportPipeline {
           // Extract from file
           buffer = await this.extractor.extractAudio(clip.file, clip.id);
         } else {
-          console.warn(`[AudioExportPipeline] No audio source for clip ${clip.id}`);
+          log.warn(`No audio source for clip ${clip.id}`);
           continue;
         }
 
@@ -327,7 +327,7 @@ export class AudioExportPipeline {
 
         buffers.set(clip.id, trimmedBuffer);
       } catch (error) {
-        console.error(`[AudioExportPipeline] Failed to extract audio from ${clip.name}:`, error);
+        log.error(`Failed to extract audio from ${clip.name}:`, error);
         // Create silent buffer as fallback
         buffers.set(clip.id, this.extractor.createSilentBuffer(clip.duration));
       }

@@ -63,11 +63,11 @@ export class AudioEffectRenderer {
 
     // If no effects or all defaults, return original buffer
     if (!hasVolumeKeyframes && !hasEQKeyframes && !hasNonDefaultVolume && !hasNonDefaultEQ) {
-      console.log('[AudioEffectRenderer] No effects to apply, returning original');
+      log.debug('No effects to apply, returning original');
       return buffer;
     }
 
-    console.log(`[AudioEffectRenderer] Rendering effects for ${duration.toFixed(2)}s audio`);
+    log.debug(`Rendering effects for ${duration.toFixed(2)}s audio`);
 
     onProgress?.({ phase: 'preparing', percent: 0 });
 
@@ -118,7 +118,7 @@ export class AudioEffectRenderer {
 
     onProgress?.({ phase: 'complete', percent: 100 });
 
-    console.log(`[AudioEffectRenderer] Rendered ${renderedBuffer.duration.toFixed(2)}s with effects`);
+    log.debug(`Rendered ${renderedBuffer.duration.toFixed(2)}s with effects`);
 
     return renderedBuffer;
   }

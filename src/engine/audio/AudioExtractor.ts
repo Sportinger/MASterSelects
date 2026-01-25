@@ -43,11 +43,11 @@ export class AudioExtractor {
   async extractAudio(file: File, cacheKey?: string): Promise<AudioBuffer> {
     // Check cache first
     if (cacheKey && this.cache.has(cacheKey)) {
-      console.log(`[AudioExtractor] Cache hit for ${cacheKey}`);
+      log.debug(`Cache hit for ${cacheKey}`);
       return this.cache.get(cacheKey)!;
     }
 
-    console.log(`[AudioExtractor] Extracting audio from ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB)`);
+    log.info(`Extracting audio from ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB)`);
 
     try {
       // Read file as ArrayBuffer
@@ -57,7 +57,7 @@ export class AudioExtractor {
       const context = this.getContext();
       const audioBuffer = await context.decodeAudioData(arrayBuffer);
 
-      console.log(`[AudioExtractor] Decoded: ${audioBuffer.duration.toFixed(2)}s, ${audioBuffer.numberOfChannels}ch, ${audioBuffer.sampleRate}Hz`);
+      log.debug(`Decoded: ${audioBuffer.duration.toFixed(2)}s, ${audioBuffer.numberOfChannels}ch, ${audioBuffer.sampleRate}Hz`);
 
       // Cache the result
       if (cacheKey) {
@@ -68,7 +68,7 @@ export class AudioExtractor {
     } catch (error) {
       // Check if this might be a video without audio
       if (error instanceof DOMException && error.name === 'EncodingError') {
-        console.warn(`[AudioExtractor] No audio track in ${file.name}, creating silent buffer`);
+        log.warn(`No audio track in ${file.name}, creating silent buffer`);
         return this.createSilentBuffer(1, 48000); // 1 second silent buffer
       }
       throw new AudioExtractionError(
@@ -88,7 +88,7 @@ export class AudioExtractor {
   ): Promise<AudioBuffer> {
     // Check cache first
     if (cacheKey && this.cache.has(cacheKey)) {
-      console.log(`[AudioExtractor] Cache hit for ${cacheKey}`);
+      log.debug(`Cache hit for ${cacheKey}`);
       return this.cache.get(cacheKey)!;
     }
 
@@ -135,7 +135,7 @@ export class AudioExtractor {
     const newLength = endSample - startSample;
 
     if (newLength <= 0) {
-      console.warn('[AudioExtractor] Trim resulted in empty buffer');
+      log.warn('Trim resulted in empty buffer');
       return this.createSilentBuffer(0.001, sampleRate);
     }
 
@@ -246,13 +246,13 @@ export class AudioExtractor {
     if (this.cache.size >= this.maxCacheSize) {
       const firstKey = this.cache.keys().next().value;
       if (firstKey) {
-        console.log(`[AudioExtractor] Evicting cached buffer: ${firstKey}`);
+        log.debug(`Evicting cached buffer: ${firstKey}`);
         this.cache.delete(firstKey);
       }
     }
 
     this.cache.set(key, buffer);
-    console.log(`[AudioExtractor] Cached buffer: ${key} (${this.cache.size}/${this.maxCacheSize})`);
+    log.debug(`Cached buffer: ${key} (${this.cache.size}/${this.maxCacheSize})`);
   }
 
   /**
@@ -275,7 +275,7 @@ export class AudioExtractor {
   clearCache(): void {
     const count = this.cache.size;
     this.cache.clear();
-    console.log(`[AudioExtractor] Cleared ${count} cached buffers`);
+    log.debug(`Cleared ${count} cached buffers`);
   }
 
   /**
@@ -315,7 +315,7 @@ export class AudioExtractor {
       this.audioContext.close();
       this.audioContext = null;
     }
-    console.log('[AudioExtractor] Destroyed');
+    log.info('Destroyed');
   }
 }
 
