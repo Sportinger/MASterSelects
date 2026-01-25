@@ -1,6 +1,5 @@
 // Pick whip drag overlay for layer parenting
 
-import React from 'react';
 import { PhysicsCable } from '../PhysicsCable';
 import type { PickWhipDragState } from '../types';
 

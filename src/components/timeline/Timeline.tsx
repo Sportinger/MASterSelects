@@ -29,12 +29,8 @@ import { usePlaybackLoop } from './hooks/usePlaybackLoop';
 import { useVideoPreload } from './hooks/useVideoPreload';
 import { useAutoFeatures } from './hooks/useAutoFeatures';
 import { useExternalDrop } from './hooks/useExternalDrop';
-import { NewTrackDropZone } from './components/NewTrackDropZone';
-import { TimelineOverlays } from './components/TimelineOverlays';
-import { PickWhipOverlay } from './components/PickWhipOverlay';
 import { MIN_ZOOM, MAX_ZOOM } from '../../stores/timeline/constants';
 import type {
-  ExternalDragState,
   ContextMenuState,
   PickWhipDragState,
 } from './types';
@@ -135,8 +131,6 @@ export function Timeline() {
     files: mediaFiles,
     currentlyGeneratingProxyId,
     showInExplorer,
-    getNextFileNeedingProxy,
-    generateProxy,
   } = useMediaStore();
   const activeComposition = getActiveComposition() ?? null;
   const openCompositions = getOpenCompositions();
@@ -214,7 +208,6 @@ export function Timeline() {
   // External file drag & drop - extracted to hook
   const {
     externalDrag,
-    setExternalDrag,
     dragCounterRef,
     handleTrackDragEnter,
     handleTrackDragOver,
