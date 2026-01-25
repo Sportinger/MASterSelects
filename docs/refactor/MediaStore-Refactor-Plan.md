@@ -25,6 +25,18 @@
 5. **MediaFile object creation** - 3x similar (~150 LOC wasted)
 6. **File handle storage** - repeated pattern (~50 LOC wasted)
 
+### Overcomplicated Relinking Logic (~275 LOC)
+
+Since all imported files are now copied to the project's `/RAW/` folder, the complex file handle management is unnecessary:
+
+| Old Approach | LOC | New Approach | LOC |
+|--------------|-----|--------------|-----|
+| `reloadFile` with handle lookup, IndexedDB, user prompts | 113 | Simple RAW folder lookup | ~20 |
+| `reloadAllFiles` with multiple passes | 162 | Batch RAW folder reload | ~30 |
+| `handleHelpers.ts` complex handle management | ~90 | Minimal helpers | ~30 |
+
+**Total savings: ~315 LOC** from simplified relinking alone!
+
 ### Duplicate Utilities
 - `getMediaType` duplicates `detectMediaType` from clipSlice helpers
 - `createThumbnail` similar to clipSlice thumbnail helpers
@@ -45,7 +57,7 @@ src/stores/mediaStore/
 ├── constants.ts                  # PROXY_FPS, DEFAULT_COMPOSITION (~40 LOC)
 ├── slices/
 │   ├── fileImportSlice.ts       # importFile, importFiles* unified (~200 LOC)
-│   ├── fileManageSlice.ts       # remove, rename, reload (~180 LOC)
+│   ├── fileManageSlice.ts       # remove, rename, reload (~80 LOC) ← SIMPLIFIED!
 │   ├── compositionSlice.ts      # Composition CRUD + tabs (~150 LOC)
 │   ├── folderSlice.ts           # Folder operations (~80 LOC)
 │   ├── selectionSlice.ts        # Selection actions (~50 LOC)
@@ -55,10 +67,11 @@ src/stores/mediaStore/
 │   ├── mediaInfoHelpers.ts      # getMediaInfo, codec, container (~130 LOC)
 │   ├── thumbnailHelpers.ts      # createThumbnail + dedup logic (~70 LOC)
 │   ├── fileHashHelpers.ts       # calculateFileHash (~35 LOC)
-│   ├── handleHelpers.ts         # Handle storage, permissions (~90 LOC)
 │   └── importPipeline.ts        # Shared import logic (~120 LOC)
 └── init.ts                       # Auto-init, autosave, beforeunload (~60 LOC)
 ```
+
+**Note**: `handleHelpers.ts` removed! Since files are copied to `/RAW/`, we use `projectFileService` directly.
 
 ---
 
@@ -556,108 +569,7 @@ async function fetchThumbnailBlob(url: string): Promise<Blob | null> {
 }
 ```
 
-### Step 2.4: Create handleHelpers.ts
-
-**File**: `src/stores/mediaStore/helpers/handleHelpers.ts`
-
-```typescript
-// File handle storage and permission helpers
-
-import { fileSystemService } from '../../../services/fileSystemService';
-import { projectDB } from '../../../services/projectDB';
-
-/**
- * Get media handle key for storage.
- */
-export function getMediaKey(id: string, suffix?: string): string {
-  return suffix ? `media_${id}_${suffix}` : `media_${id}`;
-}
-
-/**
- * Store file handle in memory and IndexedDB.
- */
-export async function storeHandle(
-  mediaId: string,
-  handle: FileSystemFileHandle,
-  suffix?: string
-): Promise<void> {
-  const key = getMediaKey(mediaId, suffix);
-  fileSystemService.storeFileHandle(suffix ? `${mediaId}_${suffix}` : mediaId, handle);
-  await projectDB.storeHandle(key, handle);
-  console.log('[HandleHelper] Stored handle:', key);
-}
-
-/**
- * Get file handle from memory or IndexedDB.
- */
-export async function getHandle(mediaId: string): Promise<FileSystemFileHandle | null> {
-  // Try memory first
-  let handle = fileSystemService.getFileHandle(mediaId);
-  if (handle) return handle;
-
-  // Try IndexedDB
-  try {
-    const key = getMediaKey(mediaId);
-    const stored = await projectDB.getStoredHandle(key);
-    if (stored && stored.kind === 'file') {
-      handle = stored as FileSystemFileHandle;
-      fileSystemService.storeFileHandle(mediaId, handle);
-      console.log('[HandleHelper] Retrieved from IndexedDB:', key);
-      return handle;
-    }
-  } catch (e) {
-    console.warn('[HandleHelper] Failed to get from IndexedDB:', e);
-  }
-
-  return null;
-}
-
-/**
- * Request permission and get file from handle.
- */
-export async function getFileFromHandle(
-  handle: FileSystemFileHandle
-): Promise<{ file: File; url: string } | null> {
-  try {
-    const permission = await handle.requestPermission({ mode: 'read' });
-    if (permission !== 'granted') {
-      console.warn('[HandleHelper] Permission denied');
-      return null;
-    }
-
-    const file = await handle.getFile();
-    const url = URL.createObjectURL(file);
-    return { file, url };
-  } catch (e) {
-    console.error('[HandleHelper] Failed to get file:', e);
-    return null;
-  }
-}
-
-/**
- * Prompt user to select a file (for relinking).
- */
-export async function promptForFile(): Promise<FileSystemFileHandle | null> {
-  try {
-    const showOpenFilePicker = (window as any).showOpenFilePicker;
-    const [handle] = await showOpenFilePicker({
-      multiple: false,
-      types: [{
-        description: 'Media Files',
-        accept: { 'video/*': [], 'audio/*': [], 'image/*': [] },
-      }],
-    });
-    return handle || null;
-  } catch (e) {
-    if ((e as Error).name !== 'AbortError') {
-      console.warn('[HandleHelper] File picker failed:', e);
-    }
-    return null;
-  }
-}
-```
-
-### Step 2.5: Create importPipeline.ts
+### Step 2.4: Create importPipeline.ts
 
 **File**: `src/stores/mediaStore/helpers/importPipeline.ts`
 
@@ -670,8 +582,9 @@ import { detectMediaType } from '../../timeline/helpers/mediaTypeHelpers';
 import { calculateFileHash } from './fileHashHelpers';
 import { getMediaInfo } from './mediaInfoHelpers';
 import { createThumbnail, handleThumbnailDedup } from './thumbnailHelpers';
-import { storeHandle } from './handleHelpers';
 import { projectFileService } from '../../../services/projectFileService';
+import { fileSystemService } from '../../../services/fileSystemService';
+import { projectDB } from '../../../services/projectDB';
 import { useSettingsStore } from '../../settingsStore';
 
 export interface ImportParams {
@@ -700,9 +613,10 @@ export function generateId(): string {
 export async function processImport(params: ImportParams): Promise<ImportResult> {
   const { file, id, handle, absolutePath } = params;
 
-  // Store handle if provided
+  // Store handle if provided (for original file location)
   if (handle) {
-    await storeHandle(id, handle);
+    fileSystemService.storeFileHandle(id, handle);
+    await projectDB.storeHandle(`media_${id}`, handle);
   }
 
   // Detect type using shared helper from clipSlice
@@ -799,8 +713,9 @@ async function copyToRawIfEnabled(
 
   const result = await projectFileService.copyToRawFolder(file);
   if (result) {
-    // Store the project file handle
-    await storeHandle(mediaId, result.handle, 'project');
+    // Store the project file handle for the RAW copy
+    fileSystemService.storeFileHandle(`${mediaId}_project`, result.handle);
+    await projectDB.storeHandle(`media_${mediaId}_project`, result.handle);
     console.log('[Import] Copied to Raw folder:', result.relativePath);
     return result;
   }
@@ -837,6 +752,7 @@ export async function batchImport<T>(
 import type { MediaFile, MediaSliceCreator } from '../types';
 import { generateId, processImport } from '../helpers/importPipeline';
 import { fileSystemService } from '../../../services/fileSystemService';
+import { projectDB } from '../../../services/projectDB';
 
 export interface FileImportActions {
   importFile: (file: File) => Promise<MediaFile>;
@@ -889,11 +805,13 @@ export const createFileImportSlice: MediaSliceCreator<FileImportActions> = (set,
     const imported: MediaFile[] = [];
 
     for (const { file, handle } of result) {
-      const importResult = await processImport({
-        file,
-        id: generateId(),
-        handle,
-      });
+      const id = generateId();
+
+      // Store original handle (for reference, but RAW folder is primary)
+      fileSystemService.storeFileHandle(id, handle);
+      await projectDB.storeHandle(`media_${id}`, handle);
+
+      const importResult = await processImport({ file, id, handle });
 
       set((state) => ({
         files: [...state.files, importResult.mediaFile],
@@ -909,12 +827,13 @@ export const createFileImportSlice: MediaSliceCreator<FileImportActions> = (set,
     const imported: MediaFile[] = [];
 
     for (const { file, handle, absolutePath } of filesWithHandles) {
-      const importResult = await processImport({
-        file,
-        id: generateId(),
-        handle,
-        absolutePath,
-      });
+      const id = generateId();
+
+      // Store original handle (for reference, but RAW folder is primary)
+      fileSystemService.storeFileHandle(id, handle);
+      await projectDB.storeHandle(`media_${id}`, handle);
+
+      const importResult = await processImport({ file, id, handle, absolutePath });
 
       set((state) => ({
         files: [...state.files, importResult.mediaFile],
@@ -928,15 +847,22 @@ export const createFileImportSlice: MediaSliceCreator<FileImportActions> = (set,
 });
 ```
 
-### Step 3.2: Create fileManageSlice.ts
+### Step 3.2: Create fileManageSlice.ts (SIMPLIFIED with RAW folder)
 
 **File**: `src/stores/mediaStore/slices/fileManageSlice.ts`
 
+Since all imported files are copied to the project's `/RAW/` folder, relinking is now trivial:
+- No complex handle lookups
+- No IndexedDB handle retrieval
+- No user prompts to locate files
+- Just read from the project folder (already have permission!)
+
 ```typescript
 // File management actions - remove, rename, reload
+// SIMPLIFIED: Uses RAW folder for easy relinking
 
 import type { MediaSliceCreator } from '../types';
-import { getHandle, getFileFromHandle, promptForFile, storeHandle } from '../helpers/handleHelpers';
+import { projectFileService } from '../../../services/projectFileService';
 import { useTimelineStore } from '../../timeline';
 
 export interface FileManageActions {
@@ -964,104 +890,88 @@ export const createFileManageSlice: MediaSliceCreator<FileManageActions> = (set,
     }));
   },
 
+  /**
+   * Reload a single file from the project's RAW folder.
+   * SIMPLIFIED: No handle lookups needed - just read from RAW folder!
+   */
   reloadFile: async (id: string) => {
     const mediaFile = get().files.find(f => f.id === id);
     if (!mediaFile) return false;
 
-    // Try to get handle
-    let handle = await getHandle(id);
-
-    // Prompt user if no handle
-    if (!handle) {
-      console.log('[Reload] No handle, prompting user for:', mediaFile.name);
-      handle = await promptForFile();
-      if (handle) {
-        await storeHandle(id, handle);
-      }
+    // Get file from project RAW folder (we already have folder permission!)
+    if (!mediaFile.projectPath) {
+      console.warn('[Reload] No projectPath for:', mediaFile.name);
+      return false;
     }
 
-    if (!handle) return false;
-
-    // Get file from handle
-    const result = await getFileFromHandle(handle);
-    if (!result) return false;
+    const file = await projectFileService.getFileFromRaw(mediaFile.projectPath);
+    if (!file) {
+      console.warn('[Reload] File not found in RAW:', mediaFile.projectPath);
+      return false;
+    }
 
     // Revoke old URL
     if (mediaFile.url) URL.revokeObjectURL(mediaFile.url);
 
+    // Create new URL
+    const url = URL.createObjectURL(file);
+
     // Update store
     set((state) => ({
       files: state.files.map((f) =>
-        f.id === id ? { ...f, file: result.file, url: result.url } : f
+        f.id === id ? { ...f, file, url } : f
       ),
     }));
 
     // Update timeline clips
-    await updateTimelineClips(id, result.file);
+    await updateTimelineClips(id, file);
 
-    console.log('[Reload] Success:', mediaFile.name);
+    console.log('[Reload] Success from RAW folder:', mediaFile.name);
     return true;
   },
 
+  /**
+   * Reload all files that need reloading from the project's RAW folder.
+   * SIMPLIFIED: Just batch read from RAW folder - no prompts needed!
+   */
   reloadAllFiles: async () => {
-    let filesToReload = get().files.filter(f => !f.file);
-    if (filesToReload.length === 0) return 0;
+    const filesToReload = get().files.filter(f => !f.file && f.projectPath);
+    if (filesToReload.length === 0) {
+      console.log('[Reload] No files need reloading');
+      return 0;
+    }
 
+    console.log('[Reload] Reloading', filesToReload.length, 'files from RAW folder...');
     let totalReloaded = 0;
 
-    // First pass: try stored handles
-    for (const mediaFile of [...filesToReload]) {
-      const handle = await getHandle(mediaFile.id);
-      if (!handle) continue;
-
-      const result = await getFileFromHandle(handle);
-      if (!result) continue;
-
-      if (mediaFile.url) URL.revokeObjectURL(mediaFile.url);
-
-      set((state) => ({
-        files: state.files.map((f) =>
-          f.id === mediaFile.id ? { ...f, file: result.file, url: result.url, hasFileHandle: true } : f
-        ),
-      }));
-
-      await updateTimelineClips(mediaFile.id, result.file);
-      totalReloaded++;
-    }
-
-    // Second pass: prompt for remaining files
-    filesToReload = get().files.filter(f => !f.file);
+    // Batch reload from RAW folder (all files, one pass!)
     for (const mediaFile of filesToReload) {
-      console.log('[Reload] Prompting for:', mediaFile.name);
-      const handle = await promptForFile();
-      if (!handle) break; // User cancelled
-
-      await storeHandle(mediaFile.id, handle);
-      const result = await getFileFromHandle(handle);
-      if (!result) continue;
+      const file = await projectFileService.getFileFromRaw(mediaFile.projectPath!);
+      if (!file) {
+        console.warn('[Reload] Not found:', mediaFile.projectPath);
+        continue;
+      }
 
       if (mediaFile.url) URL.revokeObjectURL(mediaFile.url);
+      const url = URL.createObjectURL(file);
 
       set((state) => ({
         files: state.files.map((f) =>
-          f.id === mediaFile.id
-            ? { ...f, file: result.file, url: result.url, hasFileHandle: true, name: result.file.name }
-            : f
+          f.id === mediaFile.id ? { ...f, file, url } : f
         ),
       }));
 
-      await updateTimelineClips(mediaFile.id, result.file);
+      await updateTimelineClips(mediaFile.id, file);
       totalReloaded++;
     }
 
-    console.log('[Reload] Total relinked:', totalReloaded);
+    console.log('[Reload] Complete:', totalReloaded, 'files reloaded');
     return totalReloaded;
   },
 });
 
 /**
  * Update timeline clips with reloaded file.
- * UNIFIED: Replaces duplicate pattern in reloadFile and reloadAllFiles.
  */
 async function updateTimelineClips(mediaFileId: string, file: File): Promise<void> {
   const timelineStore = useTimelineStore.getState();
@@ -1082,6 +992,12 @@ async function updateTimelineClips(mediaFileId: string, file: File): Promise<voi
   }
 }
 ```
+
+**Key simplifications:**
+- `reloadFile`: 113 LOC → 35 LOC (-78 LOC)
+- `reloadAllFiles`: 162 LOC → 40 LOC (-122 LOC)
+- No `handleHelpers.ts` needed (-90 LOC)
+- **Total savings: ~290 LOC**
 
 ### Step 3.3: Create compositionSlice.ts
 
@@ -1768,13 +1684,31 @@ rm -rf src/stores/mediaStore/
 
 3. **Import pipeline**: The `processImport` function unifies all 3 import methods - this is the key deduplication
 
-4. **Handle helpers**: Centralize all file handle operations to eliminate scattered `media_${id}` patterns
+4. **RAW folder simplification**: All files are copied to `/RAW/` on import, so relinking just reads from there:
+   - No `handleHelpers.ts` needed
+   - `projectFileService.getFileFromRaw(path)` is all you need
+   - One permission for the project folder covers all files
 
 5. **Proxy slice**: Keep `activeProxyGenerations` Map inside the slice file, not at module level of main store
 
 6. **Init separation**: Side effects (auto-init, intervals, event listeners) are isolated in init.ts
 
 7. **Type safety**: Ensure `MediaSliceCreator` type is used for all slices for consistent typing
+
+8. **projectFileService.getFileFromRaw()**: This method needs to exist in projectFileService.ts. If it doesn't, add:
+   ```typescript
+   async getFileFromRaw(relativePath: string): Promise<File | null> {
+     if (!this.projectHandle) return null;
+     try {
+       const rawFolder = await this.projectHandle.getDirectoryHandle('Raw');
+       const fileHandle = await rawFolder.getFileHandle(relativePath.replace('Raw/', ''));
+       return await fileHandle.getFile();
+     } catch (e) {
+       console.warn('[ProjectFileService] Failed to get file from Raw:', e);
+       return null;
+     }
+   }
+   ```
 
 ---
 
@@ -1785,5 +1719,8 @@ rm -rf src/stores/mediaStore/
 | Main file LOC | 2046 | ~300 |
 | Largest slice | - | ~220 (proxySlice) |
 | Duplicate code | ~600 LOC | ~0 |
-| Files | 1 | 14 |
+| Relinking code | ~275 LOC | ~75 LOC |
+| Files | 1 | 13 (no handleHelpers) |
 | Shared with clipSlice | 0 | 1 helper |
+
+**Total LOC reduction: ~900 LOC** (including RAW folder simplification)
