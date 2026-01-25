@@ -1,7 +1,7 @@
 // WebVJ Mixer - Main Application
 
 // DEV: Disable changelog dialog for development
-const DEV_DISABLE_WHATS_NEW = true;
+const DEV_DISABLE_WHATS_NEW = false;
 
 import { useState, useCallback, useEffect } from 'react';
 import { Toolbar } from './components';
