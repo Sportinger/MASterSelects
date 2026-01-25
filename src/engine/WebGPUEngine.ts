@@ -434,12 +434,22 @@ export class WebGPUEngine {
   /**
    * Create VideoFrame directly from the export canvas (zero-copy path).
    * Must call render() first to populate the canvas.
+   * Waits for GPU work to complete before capturing the frame.
    */
-  createVideoFrameFromExport(timestamp: number, duration: number): VideoFrame | null {
+  async createVideoFrameFromExport(timestamp: number, duration: number): Promise<VideoFrame | null> {
     if (!this.exportCanvas) {
       console.error('[WebGPUEngine] Export canvas not initialized');
       return null;
     }
+
+    const device = this.context.getDevice();
+    if (!device) {
+      console.error('[WebGPUEngine] No GPU device');
+      return null;
+    }
+
+    // CRITICAL: Wait for GPU to finish rendering before capturing frame
+    await device.queue.onSubmittedWorkDone();
 
     try {
       // Create VideoFrame directly from OffscreenCanvas - browser handles GPU→VideoFrame

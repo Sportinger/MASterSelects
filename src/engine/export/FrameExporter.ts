@@ -132,7 +132,8 @@ export class FrameExporter {
 
         if (useZeroCopy) {
           // Zero-copy path: create VideoFrame directly from OffscreenCanvas
-          const videoFrame = engine.createVideoFrameFromExport(timestampMicros, durationMicros);
+          // await ensures GPU has finished rendering before we capture
+          const videoFrame = await engine.createVideoFrameFromExport(timestampMicros, durationMicros);
           if (!videoFrame) {
             if (!engine.isDeviceValid()) {
               throw new Error('WebGPU device lost during export. Try keeping the browser tab in focus.');
