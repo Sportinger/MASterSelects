@@ -998,8 +998,10 @@ export class WebCodecsPlayer {
     }
     this.sampleIndex = decodeEnd;
 
-    // CRITICAL: Flush decoder to ensure ALL frames are output
-    await this.decoder.flush();
+    console.log(`[WebCodecs Export] Queued ${decodeEnd - keyframeIndex} samples, queue size: ${this.decoder.decodeQueueSize}`);
+
+    // Wait for decoder to output frames (with timeout)
+    await this.waitForDecoderFlush(2000);
 
     // Build sorted CTS array for index-based access
     this.exportFramesCts = Array.from(this.exportFrameBuffer.keys()).sort((a, b) => a - b);
@@ -1013,6 +1015,42 @@ export class WebCodecsPlayer {
     }
 
     console.log(`[WebCodecs Export] Ready: ${this.exportFrameBuffer.size} frames buffered, CTS range: ${this.exportFramesCts[0]?.toFixed(0)} - ${this.exportFramesCts[this.exportFramesCts.length - 1]?.toFixed(0)}`);
+  }
+
+  /**
+   * Wait for decoder to flush with timeout fallback
+   */
+  private async waitForDecoderFlush(timeoutMs: number): Promise<void> {
+    if (!this.decoder) return;
+
+    const startTime = performance.now();
+    const startBufferSize = this.exportFrameBuffer.size;
+
+    // Try flush() with a race against timeout
+    const flushPromise = this.decoder.flush().catch(e => {
+      console.warn('[WebCodecs Export] Flush error:', e);
+    });
+
+    const timeoutPromise = new Promise<void>((resolve) => {
+      setTimeout(resolve, timeoutMs);
+    });
+
+    // Race: either flush completes or timeout
+    await Promise.race([flushPromise, timeoutPromise]);
+
+    // If flush didn't complete, wait for queue to drain manually
+    if (this.decoder.decodeQueueSize > 0) {
+      console.log(`[WebCodecs Export] Flush timeout, waiting for queue (${this.decoder.decodeQueueSize} remaining)...`);
+      let waitCount = 0;
+      while (this.decoder.decodeQueueSize > 0 && waitCount < 100) {
+        await new Promise(r => setTimeout(r, 20));
+        waitCount++;
+      }
+    }
+
+    const elapsed = performance.now() - startTime;
+    const framesOutput = this.exportFrameBuffer.size - startBufferSize;
+    console.log(`[WebCodecs Export] Flush complete: ${framesOutput} frames output in ${elapsed.toFixed(0)}ms, buffer now ${this.exportFrameBuffer.size}`);
   }
 
   /**
@@ -1129,6 +1167,7 @@ export class WebCodecsPlayer {
       return;
     }
 
+    const startIndex = this.sampleIndex;
     const endIndex = Math.min(this.sampleIndex + count, this.samples.length);
 
     for (let i = this.sampleIndex; i < endIndex; i++) {
@@ -1145,8 +1184,8 @@ export class WebCodecsPlayer {
     }
     this.sampleIndex = endIndex;
 
-    // Flush to ensure frames are output
-    await this.decoder.flush();
+    // Wait for frames to be output (with timeout)
+    await this.waitForDecoderFlush(1000);
 
     // Update sorted CTS array
     this.exportFramesCts = Array.from(this.exportFrameBuffer.keys()).sort((a, b) => a - b);
