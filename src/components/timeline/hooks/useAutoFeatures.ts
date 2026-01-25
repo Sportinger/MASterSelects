@@ -8,6 +8,9 @@ import {
   PROXY_IDLE_DELAY,
 } from '../constants';
 import type { TimelineClip } from '../../../types';
+import { Logger } from '../../../services/logger';
+
+const log = Logger.create('useAutoFeatures');
 
 interface UseAutoFeaturesProps {
   ramPreviewEnabled: boolean;
@@ -126,7 +129,7 @@ export function useAutoFeatures({
       if (mediaStore.proxyEnabled && !mediaStore.currentlyGeneratingProxyId) {
         const nextFile = mediaStore.getNextFileNeedingProxy();
         if (nextFile) {
-          console.log('[Proxy] Auto-starting proxy generation for:', nextFile.name);
+          log.debug('Auto-starting proxy generation for:', nextFile.name);
           mediaStore.generateProxy(nextFile.id);
         }
       }

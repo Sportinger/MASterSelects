@@ -8,6 +8,9 @@ import type { ContextMenuState } from './types';
 import { useContextMenuPosition } from '../../hooks/useContextMenuPosition';
 import { useMediaStore } from '../../stores/mediaStore';
 import { projectFileService } from '../../services/projectFileService';
+import { Logger } from '../../services/logger';
+
+const log = Logger.create('TimelineContextMenu');
 
 interface TimelineContextMenuProps {
   contextMenu: ContextMenuState | null;
@@ -96,7 +99,7 @@ export function TimelineContextMenu({
     const mediaFile = getMediaFileForClip(contextMenu.clipId);
 
     if (!mediaFile) {
-      console.warn('[Timeline] Media file not found for clip');
+      log.warn('Media file not found for clip');
       setContextMenu(null);
       return;
     }
@@ -115,7 +118,7 @@ export function TimelineContextMenu({
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        console.log('[Timeline] Downloaded raw file:', mediaFile.name);
+        log.debug('Downloaded raw file:', mediaFile.name);
       } else {
         alert(result.message);
       }
@@ -138,10 +141,10 @@ export function TimelineContextMenu({
 
     if (action === 'start') {
       mediaStore.generateProxy(mediaFile.id);
-      console.log('[Timeline] Starting proxy generation for:', mediaFile.name);
+      log.debug('Starting proxy generation for:', mediaFile.name);
     } else {
       mediaStore.cancelProxyGeneration(mediaFile.id);
-      console.log('[Timeline] Cancelled proxy generation for:', mediaFile.name);
+      log.debug('Cancelled proxy generation for:', mediaFile.name);
     }
 
     setContextMenu(null);

@@ -11,6 +11,9 @@ import {
 import type { ExternalDragState } from '../types';
 import type { TimelineTrack, TimelineClip } from '../../../types';
 import type { Composition } from '../../../stores/mediaStore';
+import { Logger } from '../../../services/logger';
+
+const log = Logger.create('useExternalDrop');
 
 interface UseExternalDropProps {
   timelineRef: React.RefObject<HTMLDivElement | null>;
@@ -246,11 +249,11 @@ export function useExternalDrop({
         if (mediaFile?.file) {
           const fileIsAudio = isAudioFile(mediaFile.file);
           if (fileIsAudio && trackType === 'video') {
-            console.log('[Timeline] Audio files can only be dropped on audio tracks');
+            log.debug('Audio files can only be dropped on audio tracks');
             return;
           }
           if (!fileIsAudio && trackType === 'audio') {
-            console.log('[Timeline] Video/image files can only be dropped on video tracks');
+            log.debug('Video/image files can only be dropped on video tracks');
             return;
           }
         }
@@ -260,11 +263,11 @@ export function useExternalDrop({
         const file = e.dataTransfer.files[0];
         const fileIsAudio = isAudioFile(file);
         if (fileIsAudio && trackType === 'video') {
-          console.log('[Timeline] Audio files can only be dropped on audio tracks');
+          log.debug('Audio files can only be dropped on audio tracks');
           return;
         }
         if (!fileIsAudio && trackType === 'audio') {
-          console.log('[Timeline] Video/image files can only be dropped on video tracks');
+          log.debug('Video/image files can only be dropped on video tracks');
           return;
         }
       }
@@ -321,13 +324,13 @@ export function useExternalDrop({
                   ]);
                   if (imported.length > 0) {
                     addClip(newTrackId, file, startTime, cachedDuration, imported[0].id);
-                    console.log('[Timeline] Imported file with handle:', file.name, 'absolutePath:', filePath);
+                    log.debug('Imported file with handle:', { name: file.name, absolutePath: filePath });
                   }
                   return;
                 }
               }
             } catch (err) {
-              console.warn('[Timeline] Could not get file handle, falling back:', err);
+              log.warn('Could not get file handle, falling back:', err);
             }
           }
 
@@ -380,11 +383,11 @@ export function useExternalDrop({
         if (mediaFile?.file) {
           const fileIsAudio = isAudioFile(mediaFile.file);
           if (fileIsAudio && isVideoTrack) {
-            console.log('[Timeline] Audio files can only be dropped on audio tracks');
+            log.debug('Audio files can only be dropped on audio tracks');
             return;
           }
           if (!fileIsAudio && isAudioTrack) {
-            console.log('[Timeline] Video/image files can only be dropped on video tracks');
+            log.debug('Video/image files can only be dropped on video tracks');
             return;
           }
 
@@ -400,12 +403,12 @@ export function useExternalDrop({
       const items = e.dataTransfer.items;
       const filePath = extractFilePath(e);
 
-      console.log('[Timeline] External drop - items:', items?.length, 'types:', Array.from(e.dataTransfer.types));
-      console.log('[Timeline] Final file path:', filePath || 'NOT AVAILABLE');
+      log.debug('External drop', { items: items?.length, types: Array.from(e.dataTransfer.types) });
+      log.debug('Final file path:', filePath || 'NOT AVAILABLE');
 
       if (items && items.length > 0) {
         const item = items[0];
-        console.log('[Timeline] Item kind:', item.kind, 'type:', item.type);
+        log.debug('Item details:', { kind: item.kind, type: item.type });
         if (item.kind === 'file') {
           // Capture rect before async operations (e.currentTarget becomes null after await)
           const rect = e.currentTarget.getBoundingClientRect();
@@ -423,29 +426,29 @@ export function useExternalDrop({
                 if (filePath) {
                   (file as any).path = filePath;
                 }
-                console.log('[Timeline] File from handle:', file.name, 'type:', file.type, 'size:', file.size, 'path:', filePath);
+                log.debug('File from handle:', { name: file.name, type: file.type, size: file.size, path: filePath });
                 if (isMediaFile(file)) {
                   // Validate track type
                   const fileIsAudio = isAudioFile(file);
                   if (fileIsAudio && isVideoTrack) {
-                    console.log('[Timeline] Audio files can only be dropped on audio tracks');
+                    log.debug('Audio files can only be dropped on audio tracks');
                     return;
                   }
                   if (!fileIsAudio && isAudioTrack) {
-                    console.log('[Timeline] Video/image files can only be dropped on video tracks');
+                    log.debug('Video/image files can only be dropped on video tracks');
                     return;
                   }
 
                   const imported = await mediaStore.importFilesWithHandles([{ file, handle, absolutePath: filePath }]);
                   if (imported.length > 0) {
                     addClip(trackId, file, startTime, cachedDuration, imported[0].id);
-                    console.log('[Timeline] Imported file with handle:', file.name, 'absolutePath:', filePath);
+                    log.debug('Imported file with handle:', { name: file.name, absolutePath: filePath });
                   }
                   return;
                 }
               }
             } catch (err) {
-              console.warn('[Timeline] Could not get file handle, falling back:', err);
+              log.warn('Could not get file handle, falling back:', err);
             }
           }
 
@@ -454,15 +457,15 @@ export function useExternalDrop({
           if (file && filePath) {
             (file as any).path = filePath;
           }
-          console.log('[Timeline] Fallback file:', file?.name, 'type:', file?.type, 'path:', filePath);
+          log.debug('Fallback file:', { name: file?.name, type: file?.type, path: filePath });
           if (file && isMediaFile(file)) {
             const fileIsAudio = isAudioFile(file);
             if (fileIsAudio && isVideoTrack) {
-              console.log('[Timeline] Audio files can only be dropped on audio tracks');
+              log.debug('Audio files can only be dropped on audio tracks');
               return;
             }
             if (!fileIsAudio && isAudioTrack) {
-              console.log('[Timeline] Video/image files can only be dropped on video tracks');
+              log.debug('Video/image files can only be dropped on video tracks');
               return;
             }
 

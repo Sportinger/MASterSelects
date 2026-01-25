@@ -4,6 +4,9 @@
 import { useState, useCallback, useRef } from 'react';
 import type { TimelineClip, TimelineTrack } from '../../../types';
 import type { ClipDragState } from '../types';
+import { Logger } from '../../../services/logger';
+
+const log = Logger.create('useClipDrag');
 
 interface UseClipDragProps {
   // Refs
@@ -214,7 +217,7 @@ export function useClipDrag({
 
       // If this clip is a composition, open it in a new tab and switch to it
       if (clip.isComposition && clip.compositionId) {
-        console.log('[Timeline] Double-click on composition clip, opening:', clip.compositionId);
+        log.debug('Double-click on composition clip, opening:', clip.compositionId);
         openCompositionTab(clip.compositionId);
       }
     },

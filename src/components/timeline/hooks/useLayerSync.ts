@@ -9,6 +9,9 @@ import { useMediaStore } from '../../../stores/mediaStore';
 import { engine } from '../../../engine/WebGPUEngine';
 import { proxyFrameCache } from '../../../services/proxyFrameCache';
 import { audioManager, audioStatusTracker } from '../../../services/audioManager';
+import { Logger } from '../../../services/logger';
+
+const log = Logger.create('useLayerSync');
 
 interface UseLayerSyncProps {
   // Refs
@@ -430,7 +433,7 @@ export function useLayerSync({
             })
             .catch((err) => {
               nativeDecoderPendingRef.current[clip.id] = false;
-              console.warn('[NativeDecoder] Seek failed:', err);
+              log.warn('NativeDecoder seek failed:', err);
             });
         }
 
@@ -960,7 +963,7 @@ export function useLayerSync({
           if (audio.paused) {
             audio.currentTime = clipTime;
             audio.play().catch((err) => {
-              console.warn('[Audio] Failed to play:', err.message);
+              log.warn('Audio failed to play:', err.message);
               hasAudioError = true;
             });
           }
@@ -1045,7 +1048,7 @@ export function useLayerSync({
           if (audio.paused) {
             audio.currentTime = clipTime;
             audio.play().catch((err) => {
-              console.warn('[Nested Comp Audio] Failed to play:', err.message);
+              log.warn('Nested Comp Audio failed to play:', err.message);
             });
           }
 

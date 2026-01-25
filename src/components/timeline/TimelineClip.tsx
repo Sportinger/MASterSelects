@@ -6,6 +6,9 @@ import { THUMB_WIDTH } from './constants';
 import type { ClipAnalysis } from '../../types';
 import { useTimelineStore } from '../../stores/timeline';
 import { PickWhip } from './PickWhip';
+import { Logger } from '../../services/logger';
+
+const log = Logger.create('TimelineClip');
 
 // Render waveform for audio clips using canvas for better performance
 // Supports trimming: only displays the portion of waveform between inPoint and outPoint
@@ -542,7 +545,7 @@ function TimelineClipComponent({
 
   // Cut tool snapping helper
   const snapCutTime = (rawTime: number, shouldSnap: boolean): number => {
-    console.log('[CUT SNAP]', { shouldSnap, snappingEnabled, rawTime, zoom, playheadPosition });
+    log.debug('CUT SNAP', { shouldSnap, snappingEnabled, rawTime, zoom, playheadPosition });
     if (!shouldSnap) return rawTime;
 
     const snapThresholdPixels = 10;
@@ -555,7 +558,7 @@ function TimelineClipComponent({
       snapTargets.push(c.startTime + c.duration);
     });
 
-    console.log('[CUT SNAP] targets:', snapTargets, 'threshold:', snapThresholdTime);
+    log.debug('CUT SNAP targets:', { snapTargets, threshold: snapThresholdTime });
 
     // Find nearest snap target
     let nearestTarget = rawTime;
@@ -568,7 +571,7 @@ function TimelineClipComponent({
       }
     }
 
-    console.log('[CUT SNAP] result:', { nearestTarget, nearestDistance, snapped: nearestTarget !== rawTime });
+    log.debug('CUT SNAP result:', { nearestTarget, nearestDistance, snapped: nearestTarget !== rawTime });
     return nearestTarget;
   };
 

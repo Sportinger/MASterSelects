@@ -4,6 +4,9 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useTimelineStore } from '../../stores/timeline';
 import type { TimelineClip, TranscriptWord } from '../../types';
+import { Logger } from '../../services/logger';
+
+const log = Logger.create('MulticamDialog');
 
 type SyncMethod = 'audio' | 'transcript';
 
@@ -167,7 +170,7 @@ export function MulticamDialog({ open, onClose, selectedClipIds }: MulticamDialo
         for (const [clipId, result] of syncResults) {
           clipOffsets.set(clipId, result.offsetMs);
           if (result.confidence < 0.3 && clipId !== masterClipId) {
-            console.warn(`[MulticamDialog] Low confidence sync for ${clipId}: ${(result.confidence * 100).toFixed(1)}%`);
+            log.warn(`Low confidence sync for ${clipId}: ${(result.confidence * 100).toFixed(1)}%`);
           }
         }
 
