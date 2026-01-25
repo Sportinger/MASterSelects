@@ -32,14 +32,6 @@ export function Toolbar() {
   const { isEngineReady, createOutputWindow } = useEngine();
   const { gpuInfo } = useEngineStore();
   const { outputWindows } = useSettingsStore();
-  const { play } = useTimelineStore();
-
-  // Auto-start playback when engine is ready
-  useEffect(() => {
-    if (isEngineReady) {
-      play();
-    }
-  }, [isEngineReady, play]);
   const { resetLayout, isPanelTypeVisible, togglePanelType, saveLayoutAsDefault } = useDockStore();
   const { isSupported: midiSupported, isEnabled: midiEnabled, enableMIDI, disableMIDI, devices } = useMIDI();
   const {
