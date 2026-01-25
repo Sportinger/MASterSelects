@@ -511,13 +511,18 @@ export class ParallelDecodeManager {
     const targetTime = sourceTime * clipDecoder.videoTrack.timescale;
     const samples = clipDecoder.samples;
 
-    // Binary search for the sample with cts <= targetTime
+    // Add half-frame tolerance to handle floating point precision issues
+    // e.g., at 30fps: 1/30 = 0.0333... but floating point may give slightly less
+    const halfFrame = (samples[0]?.duration ?? 1) / 2;
+    const targetTimeWithTolerance = targetTime + halfFrame;
+
+    // Binary search for the sample with cts <= targetTimeWithTolerance
     let left = 0;
     let right = samples.length - 1;
 
     while (left < right) {
       const mid = Math.floor((left + right + 1) / 2);
-      if (samples[mid].cts <= targetTime) {
+      if (samples[mid].cts <= targetTimeWithTolerance) {
         left = mid;
       } else {
         right = mid - 1;

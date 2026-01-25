@@ -904,11 +904,15 @@ export class WebCodecsPlayer {
 
     const targetTime = startTimeSeconds * this.videoTrack.timescale;
 
+    // Add half-frame tolerance to handle floating point precision issues
+    const halfFrame = (this.samples[0]?.duration ?? 1) / 2;
+    const targetTimeWithTolerance = targetTime + halfFrame;
+
     // Find the nearest keyframe before the target time
     let keyframeIndex = 0;
     let targetIndex = 0;
     for (let i = 0; i < this.samples.length; i++) {
-      if (this.samples[i].cts > targetTime) break;
+      if (this.samples[i].cts > targetTimeWithTolerance) break;
       targetIndex = i;
       if (this.samples[i].is_sync) {
         keyframeIndex = i;
@@ -1043,10 +1047,15 @@ export class WebCodecsPlayer {
 
     const targetTime = timeSeconds * this.videoTrack.timescale;
 
-    // Find target sample index
+    // Add half-frame tolerance to handle floating point precision issues
+    // e.g., at 30fps: 1/30 = 0.0333... but floating point may give us slightly less
+    const halfFrame = (this.samples[0]?.duration ?? 1) / 2;
+    const targetTimeWithTolerance = targetTime + halfFrame;
+
+    // Find target sample index - use tolerance-adjusted time
     let targetIndex = 0;
     for (let i = 0; i < this.samples.length; i++) {
-      if (this.samples[i].cts > targetTime) break;
+      if (this.samples[i].cts > targetTimeWithTolerance) break;
       targetIndex = i;
     }
 
@@ -1112,9 +1121,12 @@ export class WebCodecsPlayer {
     }
 
     const targetTime = timeSeconds * this.videoTrack.timescale;
+    // Add half-frame tolerance to handle floating point precision issues
+    const halfFrame = (this.samples[0]?.duration ?? 1) / 2;
+    const targetTimeWithTolerance = targetTime + halfFrame;
     let targetIndex = 0;
     for (let i = 0; i < this.samples.length; i++) {
-      if (this.samples[i].cts > targetTime) break;
+      if (this.samples[i].cts > targetTimeWithTolerance) break;
       targetIndex = i;
     }
     return targetIndex;
