@@ -831,6 +831,10 @@ export class LayerBuilderService {
       const clip = getClipForTrack(ctx, track.id);
       if (!clip?.source?.audioElement) continue;
 
+      // Skip audio elements without a valid source (e.g., empty audio from nested comps without audio)
+      const audio = clip.source.audioElement;
+      if (!audio.src && audio.readyState === 0) continue;
+
       const timeInfo = getClipTimeInfo(ctx, clip);
       const isMuted = !ctx.unmutedAudioTrackIds.has(track.id);
 
