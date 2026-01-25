@@ -1,8 +1,17 @@
 # FrameExporter Refactoring Plan
 
+## ✅ COMPLETED (2026-01-25)
+
 **Target**: Reduce `src/engine/FrameExporter.ts` from 1510 LOC to ~350 LOC main file with helpers below ~300 LOC each.
 
 **Performance Target**: ~30% faster export through algorithmic improvements.
+
+### Results:
+- **Main file**: 289 LOC (target: ~350) ✅
+- **8 modules** created with single responsibilities
+- **Binary search** implemented in ParallelDecodeManager
+- **FrameContext** caching implemented
+- **FPS-based tolerance** replaces hardcoded values
 
 ---
 
