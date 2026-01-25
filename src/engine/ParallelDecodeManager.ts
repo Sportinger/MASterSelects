@@ -365,6 +365,8 @@ export class ParallelDecodeManager {
   async prefetchFramesForTime(timelineTime: number): Promise<void> {
     if (!this.isActive) return;
 
+    log.info(`prefetchFramesForTime(${timelineTime.toFixed(3)}) - ${this.clipDecoders.size} decoders`);
+
     const clipsNeedingFlush: ClipDecoder[] = [];
 
     for (const [, clipDecoder] of this.clipDecoders) {
@@ -372,6 +374,7 @@ export class ParallelDecodeManager {
 
       // Skip if timeline time is outside this clip's range (handles nested clips too)
       if (!this.isTimeInClipRange(clipInfo, timelineTime)) {
+        log.info(`"${clipInfo.clipName}": Skipped - not in range (start=${clipInfo.startTime}, dur=${clipInfo.duration}, nested=${clipInfo.isNested})`);
         continue;
       }
 
@@ -408,11 +411,11 @@ export class ParallelDecodeManager {
       // Trigger decode ahead - await if we need the frame NOW
       const needsDecoding = clipDecoder.sampleIndex < targetSampleIndex + BUFFER_AHEAD_FRAMES;
       if (needsDecoding && !clipDecoder.isDecoding) {
-        log.debug(`"${clipInfo.clipName}": Triggering decode - samples=${clipDecoder.samples.length}, targetIdx=${targetSampleIndex}, currentIdx=${clipDecoder.sampleIndex}`);
+        log.info(`"${clipInfo.clipName}": Triggering decode - samples=${clipDecoder.samples.length}, targetIdx=${targetSampleIndex}, currentIdx=${clipDecoder.sampleIndex}`);
         if (!frameInBuffer) {
           // Need frame NOW - await the decode with flush
           await this.decodeAhead(clipDecoder, targetSampleIndex + BUFFER_AHEAD_FRAMES, true);
-          log.debug(`"${clipInfo.clipName}": After decode - buffer=${clipDecoder.frameBuffer.size} frames, decoderState=${clipDecoder.decoder.state}`);
+          log.info(`"${clipInfo.clipName}": After decode - buffer=${clipDecoder.frameBuffer.size} frames, decoderState=${clipDecoder.decoder.state}`);
         } else {
           // Fire and forget for frames already in buffer
           this.decodeAhead(clipDecoder, targetSampleIndex + BUFFER_AHEAD_FRAMES, false);
