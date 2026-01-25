@@ -126,15 +126,8 @@ export function WhatsNewDialog({ onClose }: WhatsNewDialogProps) {
       <div className="welcome-overlay whats-new-dialog changelog-dialog">
         {/* Header */}
         <div className="changelog-header">
-          <div className="changelog-header-left">
-            <h2 className="changelog-title">Changelog</h2>
-            <span className="changelog-version">v{APP_VERSION}</span>
-          </div>
-          <button className="changelog-close" onClick={handleClose}>
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            </svg>
-          </button>
+          <h2 className="changelog-title">Changelog</h2>
+          <span className="changelog-version">v{APP_VERSION}</span>
         </div>
 
         {/* Filter tabs */}

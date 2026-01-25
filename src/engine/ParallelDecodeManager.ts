@@ -100,7 +100,7 @@ export class ParallelDecodeManager {
   private clipDecoders: Map<string, ClipDecoder> = new Map();
   private isActive = false;
   private decodePromises: Map<string, Promise<void>> = new Map();
-  private exportFps = 30;
+  private _exportFps = 30;
   private frameTolerance = 50_000;  // Default 50ms in microseconds
 
   /**
@@ -109,7 +109,7 @@ export class ParallelDecodeManager {
   async initialize(clips: ClipInfo[], exportFps: number): Promise<void> {
     const endInit = log.time('initialize');
     this.isActive = true;
-    this.exportFps = exportFps;
+    this._exportFps = exportFps;
     // FPS-based tolerance: 1.5 frame duration
     this.frameTolerance = Math.round((1_000_000 / exportFps) * 1.5);
 

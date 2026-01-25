@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 
 interface UsePlayheadSnapProps {
   isDraggingPlayhead: boolean;
-  timelineRef: React.RefObject<HTMLDivElement>;
+  timelineRef: React.RefObject<HTMLDivElement | null>;
   scrollX: number;
   duration: number;
   snappingEnabled: boolean;

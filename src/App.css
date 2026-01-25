@@ -7875,8 +7875,8 @@ input[type="checkbox"] {
 .changelog-version {
   font-size: 12px;
   font-weight: 600;
-  color: var(--accent-timeline);
-  background: rgba(0, 212, 255, 0.1);
+  color: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.08);
   padding: 4px 10px;
   border-radius: 10px;
 }

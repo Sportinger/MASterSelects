@@ -925,12 +925,12 @@ export function Timeline() {
               );
             })}
             {/* New audio track preview header - appears when dragging over new track zone or linked audio needs new track */}
-            {/* Only show if the video has audio (hasAudio !== false) */}
-            {externalDrag && externalDrag.hasAudio !== false && (
+            {/* Only show if the video has audio */}
+            {externalDrag && externalDrag.hasAudio && (
               <div
                 className={`track-header-preview audio ${
                   externalDrag.newTrackType === 'audio' ||
-                  (externalDrag.newTrackType === 'video' && externalDrag.hasAudio !== false) ||
+                  (externalDrag.newTrackType === 'video' && externalDrag.hasAudio) ||
                   (externalDrag.isVideo && externalDrag.audioTrackId === '__new_audio_track__')
                     ? 'active'
                     : ''
