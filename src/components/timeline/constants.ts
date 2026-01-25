@@ -2,7 +2,7 @@
 
 import type { BlendMode } from '../../types';
 
-// All blend modes in order for cycling with Shift + "+"
+// All blend modes in order for cycling with Shift+Plus/Minus or Numpad +/-
 export const ALL_BLEND_MODES: BlendMode[] = [
   // Normal
   'normal', 'dissolve', 'dancing-dissolve',
