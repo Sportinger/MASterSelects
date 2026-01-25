@@ -14,6 +14,7 @@ import { createPlaybackSlice } from './playbackSlice';
 import { createSelectionSlice } from './selectionSlice';
 import { createKeyframeSlice } from './keyframeSlice';
 import { createMaskSlice } from './maskSlice';
+import { createMarkerSlice } from './markerSlice';
 import { projectFileService } from '../../services/projectFileService';
 import type { ClipAnalysis, FrameAnalysisData } from '../../types';
 import { Logger } from '../../services/logger';
@@ -34,6 +35,7 @@ export const useTimelineStore = create<TimelineStore>()(
     const selectionActions = createSelectionSlice(set, get);
     const keyframeActions = createKeyframeSlice(set, get);
     const maskActions = createMaskSlice(set, get);
+    const markerActions = createMarkerSlice(set, get);
 
     // Utils that need to be defined inline due to cross-dependencies
     const utils: TimelineUtils = {
@@ -1082,6 +1084,9 @@ export const useTimelineStore = create<TimelineStore>()(
 
       // Tool mode
       toolMode: 'select' as const,
+
+      // Timeline markers
+      markers: [] as import('./types').TimelineMarker[],
     };
 
     // Layer actions (render layers for engine, moved from mixerStore)
@@ -1123,6 +1128,7 @@ export const useTimelineStore = create<TimelineStore>()(
       ...keyframeActions,
       ...layerActions,
       ...maskActions,
+      ...markerActions,
       ...utils,
     };
   })

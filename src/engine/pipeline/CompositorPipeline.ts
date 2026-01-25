@@ -386,6 +386,9 @@ export class CompositorPipeline {
   private uniformData = new Float32Array(this.uniformBuffer);
   private uniformDataU32 = new Uint32Array(this.uniformBuffer);
 
+  // Indices that use u32 values (for proper change detection)
+  private static readonly U32_INDICES = [1, 10, 11, 16]; // blendMode, hasMask, maskInvert, maskFeatherQuality
+
   // Per-layer uniform buffers
   private layerUniformBuffers: Map<string, GPUBuffer> = new Map();
 
@@ -399,7 +402,7 @@ export class CompositorPipeline {
   private currentFrameId = 0;
 
   // Uniform change detection - track last values per layer
-  private lastUniformValues: Map<string, Float32Array> = new Map();
+  private lastUniformValues: Map<string, { float: Float32Array; u32: Uint32Array }> = new Map();
 
   constructor(device: GPUDevice) {
     this.device = device;
@@ -536,26 +539,46 @@ export class CompositorPipeline {
     this.uniformData[19] = 0;           // _pad3
 
     // Change detection - only write to GPU if values changed
-    const lastValues = this.lastUniformValues.get(layer.id);
+    const lastValuesEntry = this.lastUniformValues.get(layer.id);
     let needsUpdate = true;
 
-    if (lastValues) {
+    if (lastValuesEntry) {
       needsUpdate = false;
+      const lastFloat = lastValuesEntry.float;
+      const lastU32 = lastValuesEntry.u32;
+
+      // Check float values
       for (let i = 0; i < 20; i++) {
-        if (Math.abs(this.uniformData[i] - lastValues[i]) > 0.00001) {
+        // Skip indices that are u32 - compare them separately
+        if (CompositorPipeline.U32_INDICES.includes(i)) continue;
+        if (Math.abs(this.uniformData[i] - lastFloat[i]) > 0.00001) {
           needsUpdate = true;
           break;
+        }
+      }
+
+      // Check u32 values (blendMode, hasMask, maskInvert, maskFeatherQuality)
+      if (!needsUpdate) {
+        for (const i of CompositorPipeline.U32_INDICES) {
+          if (this.uniformDataU32[i] !== lastU32[i]) {
+            needsUpdate = true;
+            break;
+          }
         }
       }
     }
 
     if (needsUpdate) {
       this.device.queue.writeBuffer(uniformBuffer, 0, this.uniformData);
-      // Store copy of current values
-      if (!lastValues) {
-        this.lastUniformValues.set(layer.id, new Float32Array(this.uniformData));
+      // Store copy of current values (both float and u32 views)
+      if (!lastValuesEntry) {
+        this.lastUniformValues.set(layer.id, {
+          float: new Float32Array(this.uniformData),
+          u32: new Uint32Array(this.uniformDataU32),
+        });
       } else {
-        lastValues.set(this.uniformData);
+        lastValuesEntry.float.set(this.uniformData);
+        lastValuesEntry.u32.set(this.uniformDataU32);
       }
     }
   }

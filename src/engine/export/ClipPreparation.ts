@@ -279,6 +279,44 @@ async function initializeParallelDecoding(
   }
   endPrefetch();
 
+  // Also seek all HTMLVideoElements to their correct start positions as fallback
+  // This ensures correct frame if parallel decoder fails and falls back to video element
+  const seekPromises: Promise<void>[] = [];
+  for (const clip of clips) {
+    if (clip.source?.videoElement) {
+      const video = clip.source.videoElement;
+      const clipLocalTime = Math.max(0, _startTime - clip.startTime);
+      const sourceTime = clip.reversed
+        ? clip.outPoint - clipLocalTime
+        : clip.inPoint + clipLocalTime;
+
+      seekPromises.push(new Promise<void>((resolve) => {
+        const targetTime = Math.max(0, Math.min(sourceTime, video.duration || 0));
+        if (Math.abs(video.currentTime - targetTime) < 0.01) {
+          resolve();
+          return;
+        }
+        const onSeeked = () => {
+          video.removeEventListener('seeked', onSeeked);
+          resolve();
+        };
+        video.addEventListener('seeked', onSeeked);
+        video.currentTime = targetTime;
+        // Timeout fallback
+        setTimeout(() => {
+          video.removeEventListener('seeked', onSeeked);
+          resolve();
+        }, 500);
+      }));
+    }
+  }
+  if (seekPromises.length > 0) {
+    await Promise.all(seekPromises);
+    // Wait for frames to be ready after seek
+    await new Promise(r => setTimeout(r, 50));
+    log.info(`Seeked ${seekPromises.length} video elements to start positions as fallback`);
+  }
+
   // Mark clips as using parallel decoding
   for (const clip of clips) {
     clipStates.set(clip.id, {

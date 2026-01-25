@@ -22,7 +22,6 @@ export async function seekAllClipsToTime(
   if (useParallelDecode && parallelDecoder) {
     await parallelDecoder.prefetchFramesForTime(time);
 
-    // Handle composition clips not in parallel decode
     const seekPromises: Promise<void>[] = [];
 
     for (const clip of clipsAtTime) {
@@ -48,6 +47,15 @@ export async function seekAllClipsToTime(
             }
           }
         }
+      }
+      // Also seek regular video clips as fallback for parallel decoder
+      // This ensures correct frame if parallel decoder fails
+      else if (clip.source?.type === 'video' && clip.source.videoElement) {
+        const clipLocalTime = time - clip.startTime;
+        const clipTime = clip.reversed
+          ? clip.outPoint - clipLocalTime
+          : clipLocalTime + clip.inPoint;
+        seekPromises.push(seekVideo(clip.source.videoElement, clipTime));
       }
     }
 

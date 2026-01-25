@@ -41,6 +41,14 @@ export type MaskEditMode = 'none' | 'drawing' | 'editing' | 'drawingRect' | 'dra
 // Timeline tool mode types
 export type TimelineToolMode = 'select' | 'cut';
 
+// Timeline marker type
+export interface TimelineMarker {
+  id: string;
+  time: number;
+  label: string;
+  color: string;
+}
+
 // Timeline state interface
 export interface TimelineState {
   // Core state
@@ -101,6 +109,9 @@ export interface TimelineState {
 
   // Tool mode
   toolMode: TimelineToolMode;
+
+  // Timeline markers
+  markers: TimelineMarker[];
 }
 
 // Track actions interface
@@ -247,6 +258,15 @@ export interface LayerActions {
   selectLayer: (id: string | null) => void;
 }
 
+// Marker actions interface
+export interface MarkerActions {
+  addMarker: (time: number, label?: string, color?: string) => string;
+  removeMarker: (markerId: string) => void;
+  updateMarker: (markerId: string, updates: Partial<Omit<TimelineMarker, 'id'>>) => void;
+  moveMarker: (markerId: string, newTime: number) => void;
+  clearMarkers: () => void;
+}
+
 // Mask actions interface
 export interface MaskActions {
   setMaskEditMode: (mode: MaskEditMode) => void;
@@ -297,6 +317,7 @@ export interface TimelineStore extends
   KeyframeActions,
   LayerActions,
   MaskActions,
+  MarkerActions,
   TimelineUtils {}
 
 // Slice creator type

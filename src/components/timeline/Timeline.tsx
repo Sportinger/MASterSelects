@@ -123,6 +123,11 @@ export function Timeline() {
     toolMode,
     toggleCutTool,
     splitClip,
+    // Markers
+    markers,
+    addMarker,
+    moveMarker,
+    removeMarker,
   } = useTimelineStore();
 
   const {
@@ -245,8 +250,87 @@ export function Timeline() {
   // Transcript markers visibility toggle
   const [showTranscriptMarkers, setShowTranscriptMarkers] = useState(true);
 
+  // Timeline marker drag state
+  const [timelineMarkerDrag, setTimelineMarkerDrag] = useState<{
+    markerId: string;
+    startX: number;
+    originalTime: number;
+  } | null>(null);
+
   // Multicam dialog state
   const [multicamDialogOpen, setMulticamDialogOpen] = useState(false);
+
+  // Handle timeline marker drag start
+  const handleTimelineMarkerMouseDown = useCallback((e: React.MouseEvent, markerId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const marker = markers.find(m => m.id === markerId);
+    if (!marker) return;
+
+    setTimelineMarkerDrag({
+      markerId,
+      startX: e.clientX,
+      originalTime: marker.time,
+    });
+  }, [markers]);
+
+  // Handle timeline marker drag - effect for mouse move/up
+  useEffect(() => {
+    if (!timelineMarkerDrag) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!timelineRef.current) return;
+
+      const rect = timelineRef.current.getBoundingClientRect();
+      const x = e.clientX - rect.left + scrollX;
+      let time = pixelToTime(x);
+
+      // Apply snapping if enabled (and not holding Alt)
+      const shouldSnap = snappingEnabled !== e.altKey;
+      if (shouldSnap) {
+        const snapTimes = getSnapTargetTimes();
+        // Also snap to playhead
+        snapTimes.push(playheadPosition);
+        // Snap to in/out points if set
+        if (inPoint !== null) snapTimes.push(inPoint);
+        if (outPoint !== null) snapTimes.push(outPoint);
+
+        const snapThresholdTime = pixelToTime(10); // 10 pixels threshold
+        let closestSnap = time;
+        let minDist = Infinity;
+
+        for (const snapTime of snapTimes) {
+          const dist = Math.abs(time - snapTime);
+          if (dist < minDist && dist < snapThresholdTime) {
+            minDist = dist;
+            closestSnap = snapTime;
+          }
+        }
+        time = closestSnap;
+      }
+
+      // Clamp to valid range
+      time = Math.max(0, Math.min(time, duration));
+      moveMarker(timelineMarkerDrag.markerId, time);
+    };
+
+    const handleMouseUp = () => {
+      setTimelineMarkerDrag(null);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [timelineMarkerDrag, scrollX, snappingEnabled, duration, pixelToTime, getSnapTargetTimes, moveMarker, playheadPosition, inPoint, outPoint]);
+
+  // Handle add marker at playhead
+  const handleAddMarkerAtPlayhead = useCallback(() => {
+    addMarker(playheadPosition);
+  }, [addMarker, playheadPosition]);
 
   // Marquee selection - extracted to hook
   const { marquee, handleMarqueeMouseDown } = useMarqueeSelection({
@@ -663,7 +747,19 @@ export function Timeline() {
       <div className="timeline-body" ref={timelineBodyRef}>
         <div className="timeline-body-content">
           <div className="timeline-header-row">
-            <div className="ruler-header">Time</div>
+            <div className="ruler-header">
+              <span>Time</span>
+              <button
+                className="add-marker-btn"
+                onClick={handleAddMarkerAtPlayhead}
+                title="Add marker at playhead (M)"
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                  <path d="M12 2L8 10H16L12 2Z" />
+                  <rect x="10" y="10" width="4" height="12" />
+                </svg>
+              </button>
+            </div>
             <div className="time-ruler-wrapper">
               <TimelineRuler
                 duration={duration}
@@ -1008,6 +1104,32 @@ export function Timeline() {
               <div className="marker-line" />
             </div>
           )}
+
+          {/* Timeline markers */}
+          {markers.map(marker => (
+            <div
+              key={marker.id}
+              className={`timeline-marker ${timelineMarkerDrag?.markerId === marker.id ? 'dragging' : ''}`}
+              style={{
+                left: timeToPixel(marker.time),
+                '--marker-color': marker.color,
+              } as React.CSSProperties}
+              title={`${marker.label || 'Marker'}: ${formatTime(marker.time)} (drag to move, right-click to delete)`}
+              onMouseDown={(e) => handleTimelineMarkerMouseDown(e, marker.id)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                removeMarker(marker.id);
+              }}
+            >
+              <div className="timeline-marker-flag">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
+                  <path d="M12 2L8 10H16L12 2Z" />
+                </svg>
+              </div>
+              <div className="timeline-marker-line" />
+            </div>
+          ))}
 
               {/* Marquee selection rectangle */}
               {marquee && (

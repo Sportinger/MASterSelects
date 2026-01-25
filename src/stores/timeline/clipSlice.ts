@@ -383,7 +383,6 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
 
   updateClipTransform: (id, transform) => {
     const { clips, invalidateCache } = get();
-    console.log('[updateClipTransform] Called', { id, transform });
     set({
       clips: clips.map(c => {
         if (c.id !== id) return c;
@@ -399,9 +398,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
         };
       }),
     });
-    console.log('[updateClipTransform] Calling invalidateCache');
     invalidateCache();
-    console.log('[updateClipTransform] Done');
   },
 
   // ========== TEXT CLIP ACTIONS ==========
