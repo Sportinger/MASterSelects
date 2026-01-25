@@ -268,13 +268,39 @@ async function initializeParallelDecoding(
   const endPrefetch = log.time('parallelDecoder.prefetchFirstFrame');
   await parallelDecoder.prefetchFramesForTime(_startTime);
 
-  // Verify first frame is actually decoded for each clip
+  // Verify first frame is actually decoded for clips active at start time
+  const MAX_RETRIES = 5;
   for (const clipInfo of clipInfos) {
-    const frame = parallelDecoder.getFrameForClip(clipInfo.clipId, _startTime);
+    // Check if clip is active at start time
+    let clipActiveAtStart: boolean;
+    if (clipInfo.isNested && clipInfo.parentStartTime !== undefined) {
+      // Nested clip: check if parent comp is active and clip is active within it
+      const compTime = _startTime - clipInfo.parentStartTime - (clipInfo.parentInPoint || 0);
+      clipActiveAtStart = compTime >= clipInfo.startTime && compTime < clipInfo.startTime + clipInfo.duration;
+    } else {
+      // Regular clip
+      clipActiveAtStart = _startTime >= clipInfo.startTime && _startTime < clipInfo.startTime + clipInfo.duration;
+    }
+
+    if (!clipActiveAtStart) {
+      log.debug(`Skipping first-frame check for "${clipInfo.clipName}" - not active at start time ${_startTime}`);
+      continue;
+    }
+
+    let frame = parallelDecoder.getFrameForClip(clipInfo.clipId, _startTime);
+
     if (!frame) {
-      log.warn(`First frame not ready for "${clipInfo.clipName}" after prefetch, retrying...`);
-      // Force another prefetch with extra wait
-      await parallelDecoder.prefetchFramesForTime(_startTime);
+      // Retry with delays
+      for (let retry = 0; retry < MAX_RETRIES && !frame; retry++) {
+        log.warn(`First frame not ready for "${clipInfo.clipName}" (attempt ${retry + 1}/${MAX_RETRIES}), retrying...`);
+        await new Promise(r => setTimeout(r, 200)); // Give decoder time
+        await parallelDecoder.prefetchFramesForTime(_startTime);
+        frame = parallelDecoder.getFrameForClip(clipInfo.clipId, _startTime);
+      }
+    }
+
+    if (!frame) {
+      throw new Error(`Failed to decode first frame for clip "${clipInfo.clipName}" after ${MAX_RETRIES} attempts. The video file may be corrupted or use an unsupported codec.`);
     }
   }
   endPrefetch();
