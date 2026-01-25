@@ -994,16 +994,14 @@ export class WebCodecsPlayer {
     this.decoder.configure(this.codecConfig!);
     this.sampleIndex = keyframeIndex;
 
-    // For short clips (<1000 samples), decode ALL samples upfront
-    // This ensures B-frames get all their reference frames
-    // For longer clips, we'd need a smarter streaming approach
-    const decodeEnd = this.samples.length < 1000
-      ? this.samples.length
-      : Math.min(startSampleIndex + this.exportAheadCount, this.samples.length);
+    // Only decode enough to reach start position + small buffer (30 frames)
+    // More frames will be decoded on-demand during export
+    const INITIAL_BUFFER = 30;
+    const decodeEnd = Math.min(startSampleIndex + INITIAL_BUFFER, this.samples.length);
 
-    console.log(`[WebCodecs Export] Preparing: keyframe=${keyframeIndex}, start=${startSampleIndex}, decoding ALL ${decodeEnd - keyframeIndex} samples (total: ${this.samples.length})`);
+    console.log(`[WebCodecs Export] Preparing: keyframe=${keyframeIndex}, start=${startSampleIndex}, decoding ${decodeEnd - keyframeIndex} samples (total: ${this.samples.length})`);
 
-    // Decode all samples in batch
+    // Decode from keyframe to start position + buffer
     for (let i = keyframeIndex; i < decodeEnd; i++) {
       const sample = this.samples[i];
       const chunk = new EncodedVideoChunk({
