@@ -43,7 +43,7 @@ export class RawMediaService {
         if (existingFile.size === file.size) {
           // File with same name and size already exists - reuse it
           const relativePath = `${PROJECT_FOLDERS.RAW}/${targetName}`;
-          console.log(`[RawMedia] File already exists in Raw folder with same size: ${relativePath}`);
+          log.debug(`File already exists in Raw folder with same size: ${relativePath}`);
           return { handle: existingHandle, relativePath, alreadyExisted: true };
         }
       } catch {
@@ -77,11 +77,11 @@ export class RawMediaService {
       await writable.close();
 
       const relativePath = `${PROJECT_FOLDERS.RAW}/${finalName}`;
-      console.log(`[RawMedia] Copied ${file.name} to ${relativePath} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+      log.debug(`Copied ${file.name} to ${relativePath} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
 
       return { handle: fileHandle, relativePath, alreadyExisted: false };
     } catch (e) {
-      console.error('[RawMedia] Failed to copy file to Raw folder:', e);
+      log.error('Failed to copy file to Raw folder:', e);
       return null;
     }
   }
@@ -249,16 +249,16 @@ export class RawMediaService {
       // Write to YT folder
       const success = await this.fileStorage.writeFile(projectHandle, 'YT', fileName, blob);
       if (!success) {
-        console.error('[RawMedia] Failed to write YouTube file');
+        log.error('Failed to write YouTube file');
         return null;
       }
 
       // Return as File object
       const file = new File([blob], fileName, { type: 'video/mp4' });
-      console.log(`[RawMedia] Saved YouTube download: YT/${fileName}`);
+      log.debug(`Saved YouTube download: YT/${fileName}`);
       return file;
     } catch (e) {
-      console.error('[RawMedia] Failed to save YouTube download:', e);
+      log.error('Failed to save YouTube download:', e);
       return null;
     }
   }

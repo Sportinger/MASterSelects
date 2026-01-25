@@ -7,8 +7,24 @@ const log = Logger.create('ApiKeyManager');
 
 const DB_NAME = 'multicam-settings';
 const STORE_NAME = 'api-keys';
-const KEY_ID = 'claude-api-key';
 const ENCRYPTION_KEY_ID = 'encryption-key';
+
+// Supported API key types
+export type ApiKeyType = 'openai' | 'assemblyai' | 'deepgram' | 'piapi' | 'youtube' | 'klingAccessKey' | 'klingSecretKey';
+
+// Key IDs for each API key type (stored in IndexedDB)
+const KEY_IDS: Record<ApiKeyType, string> = {
+  openai: 'openai-api-key',
+  assemblyai: 'assemblyai-api-key',
+  deepgram: 'deepgram-api-key',
+  piapi: 'piapi-api-key',
+  youtube: 'youtube-api-key',
+  klingAccessKey: 'kling-access-key',
+  klingSecretKey: 'kling-secret-key',
+};
+
+// Legacy key ID for backwards compatibility
+const LEGACY_KEY_ID = 'claude-api-key';
 
 /**
  * Generate a random encryption key
@@ -159,25 +175,129 @@ class ApiKeyManager {
   }
 
   /**
-   * Store an API key securely
+   * Store an API key securely by type
    */
-  async storeKey(apiKey: string): Promise<void> {
+  async storeKeyByType(keyType: ApiKeyType, apiKey: string): Promise<void> {
+    if (!apiKey) {
+      // If empty, delete the key
+      await this.clearKeyByType(keyType);
+      return;
+    }
+
     const key = await this.getEncryptionKey();
     const { iv, data } = await encrypt(apiKey, key);
+    const keyId = KEY_IDS[keyType];
 
-    await dbSet(KEY_ID, {
+    await dbSet(keyId, {
       iv: Array.from(iv),
       data: Array.from(new Uint8Array(data)),
     });
 
-    log.info('API key stored');
+    log.info(`API key stored: ${keyType}`);
   }
 
   /**
-   * Retrieve the stored API key
+   * Retrieve an API key by type
+   */
+  async getKeyByType(keyType: ApiKeyType): Promise<string | null> {
+    const keyId = KEY_IDS[keyType];
+    const stored = await dbGet<{ iv: number[]; data: number[] }>(keyId);
+    if (!stored) {
+      return null;
+    }
+
+    const key = await this.getEncryptionKey();
+    const iv = new Uint8Array(stored.iv);
+    const data = new Uint8Array(stored.data).buffer;
+
+    try {
+      return await decrypt(data, iv, key);
+    } catch (error) {
+      log.error(`Failed to decrypt API key: ${keyType}`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Check if an API key is stored by type
+   */
+  async hasKeyByType(keyType: ApiKeyType): Promise<boolean> {
+    const keyId = KEY_IDS[keyType];
+    const stored = await dbGet(keyId);
+    return stored !== null;
+  }
+
+  /**
+   * Clear an API key by type
+   */
+  async clearKeyByType(keyType: ApiKeyType): Promise<void> {
+    const keyId = KEY_IDS[keyType];
+    await dbDelete(keyId);
+    log.info(`API key cleared: ${keyType}`);
+  }
+
+  /**
+   * Get all stored API keys
+   */
+  async getAllKeys(): Promise<Record<ApiKeyType, string>> {
+    const keys: Record<ApiKeyType, string> = {
+      openai: '',
+      assemblyai: '',
+      deepgram: '',
+      piapi: '',
+      youtube: '',
+      klingAccessKey: '',
+      klingSecretKey: '',
+    };
+
+    for (const keyType of Object.keys(KEY_IDS) as ApiKeyType[]) {
+      const value = await this.getKeyByType(keyType);
+      if (value) {
+        keys[keyType] = value;
+      }
+    }
+
+    return keys;
+  }
+
+  /**
+   * Store multiple API keys at once
+   */
+  async storeAllKeys(keys: Partial<Record<ApiKeyType, string>>): Promise<void> {
+    for (const [keyType, value] of Object.entries(keys)) {
+      if (value !== undefined) {
+        await this.storeKeyByType(keyType as ApiKeyType, value);
+      }
+    }
+  }
+
+  // ============================================
+  // Legacy methods for backwards compatibility
+  // ============================================
+
+  /**
+   * Store an API key securely (legacy - uses openai key)
+   * @deprecated Use storeKeyByType instead
+   */
+  async storeKey(apiKey: string): Promise<void> {
+    // Store in legacy location for backwards compatibility
+    const key = await this.getEncryptionKey();
+    const { iv, data } = await encrypt(apiKey, key);
+
+    await dbSet(LEGACY_KEY_ID, {
+      iv: Array.from(iv),
+      data: Array.from(new Uint8Array(data)),
+    });
+
+    log.info('API key stored (legacy)');
+  }
+
+  /**
+   * Retrieve the stored API key (legacy)
+   * @deprecated Use getKeyByType instead
    */
   async getKey(): Promise<string | null> {
-    const stored = await dbGet<{ iv: number[]; data: number[] }>(KEY_ID);
+    const stored = await dbGet<{ iv: number[]; data: number[] }>(LEGACY_KEY_ID);
     if (!stored) {
       return null;
     }
@@ -195,19 +315,21 @@ class ApiKeyManager {
   }
 
   /**
-   * Check if an API key is stored
+   * Check if an API key is stored (legacy)
+   * @deprecated Use hasKeyByType instead
    */
   async hasKey(): Promise<boolean> {
-    const stored = await dbGet(KEY_ID);
+    const stored = await dbGet(LEGACY_KEY_ID);
     return stored !== null;
   }
 
   /**
-   * Clear the stored API key
+   * Clear the stored API key (legacy)
+   * @deprecated Use clearKeyByType instead
    */
   async clearKey(): Promise<void> {
-    await dbDelete(KEY_ID);
-    log.info('API key cleared');
+    await dbDelete(LEGACY_KEY_ID);
+    log.info('API key cleared (legacy)');
   }
 }
 

@@ -8,6 +8,9 @@ import { DEFAULT_TRANSFORM, DEFAULT_TEXT_PROPERTIES, DEFAULT_TEXT_DURATION } fro
 import { generateWaveform, generateWaveformFromBuffer, getDefaultEffectParams } from './utils';
 import { textRenderer } from '../../services/textRenderer';
 import { googleFontsService } from '../../services/googleFontsService';
+import { Logger } from '../../services/logger';
+
+const log = Logger.create('ClipSlice');
 
 // Import extracted modules
 import { detectMediaType } from './helpers/mediaTypeHelpers';
@@ -35,13 +38,13 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
     const mediaType = detectMediaType(file);
     const estimatedDuration = providedDuration ?? 5;
 
-    console.log(`[Timeline] Adding ${mediaType}: ${file.name}`);
+    log.debug('Adding clip', { mediaType, file: file.name });
 
     // Validate track exists and matches media type
     const { tracks, clips, updateDuration, findAvailableAudioTrack, thumbnailsEnabled, waveformsEnabled, invalidateCache } = get();
     const targetTrack = tracks.find(t => t.id === trackId);
     if (!targetTrack) {
-      console.warn('[Timeline] Track not found:', trackId);
+      log.warn('Track not found', { trackId });
       return;
     }
 

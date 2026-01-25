@@ -180,7 +180,7 @@ export function MediaPanel() {
     const hasFiles = e.dataTransfer.types.includes('Files');
     const isInternalDrag = e.dataTransfer.types.includes('application/x-media-panel-item');
 
-    console.log('[MediaPanel] DragOver - hasFiles:', hasFiles, 'isInternalDrag:', isInternalDrag, 'types:', e.dataTransfer.types);
+    log.debug('DragOver', { hasFiles, isInternalDrag, types: [...e.dataTransfer.types] });
 
     if (hasFiles && !isInternalDrag) {
       e.dataTransfer.dropEffect = 'copy';
@@ -224,7 +224,7 @@ export function MediaPanel() {
       // Media file needs reload - request permission
       const success = await reloadFile(item.id);
       if (success) {
-        console.log('[MediaPanel] File reloaded successfully');
+        log.info('File reloaded successfully');
       }
     }
   }, [toggleFolderExpanded, openCompositionTab, reloadFile]);
@@ -445,7 +445,7 @@ export function MediaPanel() {
     e.stopPropagation();
     setIsExternalDragOver(false);
 
-    console.log('[MediaPanel] Drop event - types:', e.dataTransfer.types, 'files:', e.dataTransfer.files.length);
+    log.debug('Drop event', { types: [...e.dataTransfer.types], filesCount: e.dataTransfer.files.length });
 
     // Check if this is an external file drop
     if (!e.dataTransfer.types.includes('application/x-media-panel-item')) {
@@ -465,7 +465,7 @@ export function MediaPanel() {
                 if (handle && handle.kind === 'file') {
                   const file = await handle.getFile();
                   filesWithHandles.push({ file, handle });
-                  console.log('[MediaPanel] Got file handle from drop:', file.name);
+                  log.debug('Got file handle from drop', { name: file.name });
                 }
               } catch (err) {
                 // Fallback to regular file
@@ -482,7 +482,7 @@ export function MediaPanel() {
 
         // Import files with handles using the store's method that saves handles
         if (filesWithHandles.length > 0) {
-          console.log('[MediaPanel] Importing', filesWithHandles.length, 'files WITH handles from drop');
+          log.info('Importing files WITH handles from drop', { count: filesWithHandles.length });
           const { importFilesWithHandles } = useMediaStore.getState();
           if (importFilesWithHandles) {
             await importFilesWithHandles(filesWithHandles);
@@ -494,7 +494,7 @@ export function MediaPanel() {
 
         // Import files without handles (old way)
         if (filesWithoutHandles.length > 0) {
-          console.log('[MediaPanel] Importing', filesWithoutHandles.length, 'files WITHOUT handles from drop');
+          log.info('Importing files WITHOUT handles from drop', { count: filesWithoutHandles.length });
           importFiles(filesWithoutHandles);
         }
       }

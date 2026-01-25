@@ -30,7 +30,7 @@ export class VideoEncoderWrapper {
 
   async init(): Promise<boolean> {
     if (!('VideoEncoder' in window)) {
-      console.error('[VideoEncoder] WebCodecs not supported');
+      log.error('WebCodecs not supported');
       return false;
     }
 
@@ -40,7 +40,7 @@ export class VideoEncoderWrapper {
     // Determine effective video codec based on container compatibility
     this.effectiveVideoCodec = this.settings.codec;
     if (!isCodecSupportedInContainer(this.settings.codec, this.containerFormat)) {
-      console.warn(`[VideoEncoder] ${this.settings.codec} not supported in ${this.containerFormat}, using fallback`);
+      log.warn(`${this.settings.codec} not supported in ${this.containerFormat}, using fallback`);
       this.effectiveVideoCodec = getFallbackCodec(this.containerFormat);
     }
 
@@ -56,11 +56,11 @@ export class VideoEncoderWrapper {
       });
 
       if (!support.supported) {
-        console.error('[VideoEncoder] Codec not supported:', codecString);
+        log.error(`Codec not supported: ${codecString}`);
         return false;
       }
     } catch (e) {
-      console.error('[VideoEncoder] Codec support check failed:', e);
+      log.error('Codec support check failed:', e);
       return false;
     }
 
@@ -76,7 +76,7 @@ export class VideoEncoderWrapper {
         this.encodedFrameCount++;
       },
       error: (e) => {
-        console.error('[VideoEncoder] Encode error:', e);
+        log.error('Encode error:', e);
       },
     });
 
@@ -90,7 +90,7 @@ export class VideoEncoderWrapper {
       bitrateMode: 'variable',
     });
 
-    console.log(`[VideoEncoder] Initialized: ${this.settings.width}x${this.settings.height} @ ${this.settings.fps}fps (${this.effectiveVideoCodec.toUpperCase()})`);
+    log.info(`Initialized: ${this.settings.width}x${this.settings.height} @ ${this.settings.fps}fps (${this.effectiveVideoCodec.toUpperCase()})`);
     return true;
   }
 
@@ -101,23 +101,23 @@ export class VideoEncoderWrapper {
       const opusSupported = await AudioEncoderWrapper.isOpusSupported();
       if (opusSupported) {
         this.audioCodec = 'opus';
-        console.log('[VideoEncoder] Using Opus audio for WebM');
+        log.info('Using Opus audio for WebM');
       } else {
-        console.warn('[VideoEncoder] Opus not supported, disabling audio for WebM');
+        log.warn('Opus not supported, disabling audio for WebM');
         this.hasAudio = false;
       }
     } else {
       const aacSupported = await AudioEncoderWrapper.isAACSupported();
       if (aacSupported) {
         this.audioCodec = 'aac';
-        console.log('[VideoEncoder] Using AAC audio for MP4');
+        log.info('Using AAC audio for MP4');
       } else {
         const opusSupported = await AudioEncoderWrapper.isOpusSupported();
         if (opusSupported) {
           this.audioCodec = 'opus';
-          console.log('[VideoEncoder] AAC not supported, using Opus audio for MP4 (fallback)');
+          log.info('AAC not supported, using Opus audio for MP4 (fallback)');
         } else {
-          console.warn('[VideoEncoder] No audio codec supported, disabling audio');
+          log.warn('No audio codec supported, disabling audio');
           this.hasAudio = false;
         }
       }
@@ -140,7 +140,7 @@ export class VideoEncoderWrapper {
             target: new WebmTarget(),
             video: { codec: webmVideoCodec, width: this.settings.width, height: this.settings.height },
           });
-      console.log(`[VideoEncoder] Using WebM/${this.effectiveVideoCodec.toUpperCase()} with ${this.hasAudio ? 'Opus' : 'no'} audio`);
+      log.info(`Using WebM/${this.effectiveVideoCodec.toUpperCase()} with ${this.hasAudio ? 'Opus' : 'no'} audio`);
     } else {
       this.muxer = this.hasAudio
         ? new Mp4Muxer({
@@ -154,7 +154,7 @@ export class VideoEncoderWrapper {
             video: { codec: mp4VideoCodec, width: this.settings.width, height: this.settings.height },
             fastStart: 'in-memory',
           });
-      console.log(`[VideoEncoder] Using MP4/${this.effectiveVideoCodec.toUpperCase()} with ${this.hasAudio ? this.audioCodec.toUpperCase() : 'no'} audio`);
+      log.info(`Using MP4/${this.effectiveVideoCodec.toUpperCase()} with ${this.hasAudio ? this.audioCodec.toUpperCase() : 'no'} audio`);
     }
   }
 

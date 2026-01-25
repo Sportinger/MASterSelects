@@ -1,6 +1,7 @@
 // Clip Analyzer Service
 // Analyzes individual clips for focus, motion, and face detection
 
+import { Logger } from './logger';
 import { useTimelineStore } from '../stores/timeline';
 import { triggerTimelineSave } from '../stores/mediaStore';
 import { projectFileService } from './projectFileService';
@@ -13,6 +14,8 @@ import {
   type MotionResult,
 } from '../engine/analysis/OpticalFlowAnalyzer';
 import type { ClipAnalysis, FrameAnalysisData, AnalysisStatus } from '../types';
+
+const log = Logger.create('ClipAnalyzer');
 
 // Analysis sample interval in milliseconds
 const SAMPLE_INTERVAL_MS = 500;
@@ -182,7 +185,7 @@ function detectFaceCount(_frame: ImageData): number {
 async function initGPUAnalyzer(forceRecreate = false): Promise<boolean> {
   // If force recreate or no analyzer exists, destroy and create new
   if (forceRecreate && flowAnalyzer) {
-    console.log('[ClipAnalyzer] Destroying existing GPU analyzer for fresh start');
+    log.debug('Destroying existing GPU analyzer for fresh start');
     destroyOpticalFlowAnalyzer();
     flowAnalyzer = null;
   }
@@ -192,16 +195,16 @@ async function initGPUAnalyzer(forceRecreate = false): Promise<boolean> {
   try {
     const device = engine.getDevice();
     if (!device) {
-      console.warn('[ClipAnalyzer] WebGPU device not available, falling back to CPU');
+      log.warn('WebGPU device not available, falling back to CPU');
       useGPUAnalysis = false;
       return false;
     }
 
     flowAnalyzer = await getOpticalFlowAnalyzer(device);
-    console.log('[ClipAnalyzer] GPU optical flow analyzer initialized');
+    log.info('GPU optical flow analyzer initialized');
     return true;
   } catch (error) {
-    console.warn('[ClipAnalyzer] Failed to init GPU analyzer, falling back to CPU:', error);
+    log.warn('Failed to init GPU analyzer, falling back to CPU', error);
     useGPUAnalysis = false;
     flowAnalyzer = null;
     return false;
@@ -219,7 +222,7 @@ async function analyzeMotionGPU(bitmap: ImageBitmap): Promise<MotionResult> {
   try {
     return await flowAnalyzer.analyzeFrame(bitmap);
   } catch (error) {
-    console.warn('[ClipAnalyzer] GPU motion analysis failed:', error);
+    log.warn('GPU motion analysis failed', error);
     return { total: 0, global: 0, local: 0, isSceneCut: false };
   }
 }
@@ -272,7 +275,7 @@ export function getCurrentAnalyzingClipId(): string | null {
 export function cancelAnalysis(): void {
   if (isAnalyzing) {
     shouldCancel = true;
-    console.log('[ClipAnalyzer] Cancel requested');
+    log.info('Cancel requested');
   }
 }
 
@@ -283,7 +286,7 @@ export function cancelAnalysis(): void {
 export async function analyzeClip(clipId: string): Promise<void> {
   // Prevent concurrent analysis
   if (isAnalyzing) {
-    console.warn('[ClipAnalyzer] Already analyzing');
+    log.warn('Already analyzing');
     return;
   }
 
@@ -291,13 +294,13 @@ export async function analyzeClip(clipId: string): Promise<void> {
   const clip = store.clips.find(c => c.id === clipId);
 
   if (!clip || !clip.file) {
-    console.warn('[ClipAnalyzer] Clip not found or has no file:', clipId);
+    log.warn('Clip not found or has no file', { clipId });
     return;
   }
 
   // Only analyze video files
   if (!clip.file.type.startsWith('video/')) {
-    console.warn('[ClipAnalyzer] Not a video file:', clip.file.type);
+    log.warn('Not a video file', { type: clip.file.type });
     return;
   }
 
@@ -318,7 +321,7 @@ export async function analyzeClip(clipId: string): Promise<void> {
     try {
       const cachedAnalysis = await projectFileService.getAnalysis(mediaFileId, inPoint, outPoint);
       if (cachedAnalysis) {
-        console.log('[ClipAnalyzer] Found cached analysis in project folder, loading...');
+        log.info('Found cached analysis in project folder, loading...');
 
         const analysis: ClipAnalysis = {
           frames: cachedAnalysis.frames as FrameAnalysisData[],
@@ -337,7 +340,7 @@ export async function analyzeClip(clipId: string): Promise<void> {
         return;
       }
     } catch (err) {
-      console.warn('[ClipAnalyzer] Failed to check analysis cache:', err);
+      log.warn('Failed to check analysis cache', err);
     }
   }
 
@@ -362,10 +365,10 @@ export async function analyzeClip(clipId: string): Promise<void> {
     // Force recreate analyzer to ensure fresh state (avoids stale GPU errors)
     const gpuAvailable = useGPUAnalysis && await initGPUAnalyzer(true);
     if (gpuAvailable) {
-      console.log('[ClipAnalyzer] Using GPU optical flow analysis');
+      log.debug('Using GPU optical flow analysis');
       resetOpticalFlowAnalyzer(); // Reset state for new clip
     } else {
-      console.log('[ClipAnalyzer] Using CPU motion analysis (fallback)');
+      log.debug('Using CPU motion analysis (fallback)');
     }
 
     // Create canvas for frame extraction
@@ -390,13 +393,13 @@ export async function analyzeClip(clipId: string): Promise<void> {
     const frames: FrameAnalysisData[] = [];
     let previousFrame: ImageData | null = null;
 
-    console.log(`[ClipAnalyzer] Analyzing ${totalSamples} frames from ${analysisStartTime.toFixed(1)}s to ${analysisEndTime.toFixed(1)}s (${analysisDuration.toFixed(1)}s)`);
+    log.info(`Analyzing ${totalSamples} frames from ${analysisStartTime.toFixed(1)}s to ${analysisEndTime.toFixed(1)}s (${analysisDuration.toFixed(1)}s)`);
 
     // Analyze frames
     for (let i = 0; i < totalSamples; i++) {
       // Check for cancellation
       if (shouldCancel) {
-        console.log('[ClipAnalyzer] Analysis cancelled');
+        log.info('Analysis cancelled');
         updateClipAnalysis(clipId, { status: 'none', progress: 0 });
         return;
       }
@@ -424,7 +427,7 @@ export async function analyzeClip(clipId: string): Promise<void> {
 
       const analysisTime = performance.now() - analysisStart;
       if (i === 0) {
-        console.log(`[ClipAnalyzer] First frame analysis took ${analysisTime.toFixed(1)}ms (${gpuAvailable ? 'GPU' : 'CPU'})`);
+        log.debug(`First frame analysis took ${analysisTime.toFixed(1)}ms (${gpuAvailable ? 'GPU' : 'CPU'})`);
       }
 
       const focus = analyzeSharpness(frame);
@@ -462,7 +465,7 @@ export async function analyzeClip(clipId: string): Promise<void> {
 
     // Final cancellation check
     if (shouldCancel) {
-      console.log('[ClipAnalyzer] Analysis cancelled');
+      log.info('Analysis cancelled');
       updateClipAnalysis(clipId, { status: 'none', progress: 0 });
       return;
     }
@@ -489,17 +492,17 @@ export async function analyzeClip(clipId: string): Promise<void> {
           frames,
           SAMPLE_INTERVAL_MS
         );
-        console.log('[ClipAnalyzer] Analysis saved to project folder');
+        log.info('Analysis saved to project folder');
       } catch (err) {
-        console.warn('[ClipAnalyzer] Failed to save analysis to project folder:', err);
+        log.warn('Failed to save analysis to project folder', err);
       }
     }
 
     triggerTimelineSave();
-    console.log('[ClipAnalyzer] Done:', frames.length, 'frames analyzed');
+    log.info(`Done: ${frames.length} frames analyzed`);
 
   } catch (error) {
-    console.error('[ClipAnalyzer] Analysis failed:', error);
+    log.error('Analysis failed', error);
     if (!shouldCancel) {
       updateClipAnalysis(clipId, { status: 'error', progress: 0 });
     }

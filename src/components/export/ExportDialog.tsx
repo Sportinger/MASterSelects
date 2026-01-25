@@ -131,7 +131,7 @@ export function ExportDialog({ onClose }: ExportDialogProps) {
         onClose();
       }
     } catch (e) {
-      console.error('[ExportDialog] Export failed:', e);
+      log.error('Export failed', e);
       setError(e instanceof Error ? e.message : 'Export failed');
     } finally {
       setIsExporting(false);

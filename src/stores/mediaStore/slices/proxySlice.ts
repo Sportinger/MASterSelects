@@ -38,7 +38,7 @@ export const createProxySlice: MediaSliceCreator<ProxyActions> = (set, get) => (
           }
         }
       });
-      console.log('[Proxy] Mode enabled - muted all videos');
+      log.info('Mode enabled - muted all videos');
     }
   },
 
@@ -89,7 +89,7 @@ export const createProxySlice: MediaSliceCreator<ProxyActions> = (set, get) => (
     const { files, currentlyGeneratingProxyId } = get();
 
     if (currentlyGeneratingProxyId) {
-      console.log('[Proxy] Already generating, queuing:', mediaFileId);
+      log.debug('Already generating, queuing:', mediaFileId);
       return;
     }
 

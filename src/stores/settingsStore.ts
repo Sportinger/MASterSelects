@@ -1,8 +1,10 @@
 // Settings store for API keys and app configuration
-// NO browser storage - settings are stored in project folder
+// Global settings persisted in browser localStorage
+// API keys stored encrypted in IndexedDB via apiKeyManager
 
 import { create } from 'zustand';
-import { subscribeWithSelector } from 'zustand/middleware';
+import { subscribeWithSelector, persist } from 'zustand/middleware';
+import { apiKeyManager, type ApiKeyType } from '../services/apiKeyManager';
 
 // Transcription provider options
 export type TranscriptionProvider = 'local' | 'openai' | 'assemblyai' | 'deepgram';
@@ -83,11 +85,15 @@ interface SettingsState {
   // Helpers
   getActiveApiKey: () => string | null;
   hasApiKey: (provider: keyof APIKeys) => boolean;
+
+  // API key persistence (encrypted in IndexedDB)
+  loadApiKeys: () => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsState>()(
   subscribeWithSelector(
-    (set, get) => ({
+    persist(
+      (set, get) => ({
       // Initial state
       apiKeys: {
         openai: '',
@@ -120,6 +126,10 @@ export const useSettingsStore = create<SettingsState>()(
             [provider]: key,
           },
         }));
+        // Also save to encrypted IndexedDB
+        apiKeyManager.storeKeyByType(provider as ApiKeyType, key).catch((err) => {
+          console.error('[SettingsStore] Failed to save API key:', err);
+        });
       },
 
       setTranscriptionProvider: (provider) => {
@@ -184,6 +194,36 @@ export const useSettingsStore = create<SettingsState>()(
       hasApiKey: (provider) => {
         return !!get().apiKeys[provider];
       },
-    })
+
+      // Load API keys from encrypted IndexedDB (call on app startup)
+      loadApiKeys: async () => {
+        try {
+          const keys = await apiKeyManager.getAllKeys();
+          set({ apiKeys: keys });
+          console.log('[SettingsStore] API keys loaded from encrypted storage');
+        } catch (err) {
+          console.error('[SettingsStore] Failed to load API keys:', err);
+        }
+      },
+    }),
+    {
+      name: 'masterselects-settings',
+      // Don't persist API keys in localStorage - they go to encrypted IndexedDB
+      // Don't persist transient UI state like isSettingsOpen
+      partialize: (state) => ({
+        transcriptionProvider: state.transcriptionProvider,
+        previewQuality: state.previewQuality,
+        showTransparencyGrid: state.showTransparencyGrid,
+        autosaveEnabled: state.autosaveEnabled,
+        autosaveInterval: state.autosaveInterval,
+        turboModeEnabled: state.turboModeEnabled,
+        nativeHelperPort: state.nativeHelperPort,
+        forceDesktopMode: state.forceDesktopMode,
+        gpuPowerPreference: state.gpuPowerPreference,
+        copyMediaToProject: state.copyMediaToProject,
+        hasCompletedSetup: state.hasCompletedSetup,
+      }),
+    }
+  )
   )
 );

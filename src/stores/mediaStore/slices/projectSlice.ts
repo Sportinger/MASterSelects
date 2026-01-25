@@ -66,18 +66,18 @@ export const createProjectSlice: MediaSliceCreator<ProjectActions> = (set, get) 
                 file = await (handle as FileSystemFileHandle).getFile();
                 url = URL.createObjectURL(file);
                 fileSystemService.storeFileHandle(mediaFile.id, handle as FileSystemFileHandle);
-                console.log('[Init] Restored file from handle:', stored.name);
+                log.debug('Restored file from handle:', stored.name);
               } else {
                 const newPermission = await (handle as FileSystemFileHandle).requestPermission({ mode: 'read' });
                 if (newPermission === 'granted') {
                   file = await (handle as FileSystemFileHandle).getFile();
                   url = URL.createObjectURL(file);
                   fileSystemService.storeFileHandle(mediaFile.id, handle as FileSystemFileHandle);
-                  console.log('[Init] Restored file from handle (after permission):', stored.name);
+                  log.debug('Restored file from handle (after permission):', stored.name);
                 }
               }
             } catch (e) {
-              console.warn('[Init] Failed to restore file from handle:', stored.name, e);
+              log.warn('Failed to restore file from handle:', stored.name, e);
             }
           }
 
@@ -123,9 +123,9 @@ export const createProjectSlice: MediaSliceCreator<ProjectActions> = (set, get) 
       );
 
       set({ files: updatedFiles, isLoading: false });
-      console.log('[Init] Restored', storedFiles.length, 'files from IndexedDB');
+      log.info('Restored', storedFiles.length, 'files from IndexedDB');
     } catch (e) {
-      console.error('[Init] Failed to init from IndexedDB:', e);
+      log.error('Failed to init from IndexedDB:', e);
       set({ isLoading: false });
     }
   },
@@ -163,7 +163,7 @@ export const createProjectSlice: MediaSliceCreator<ProjectActions> = (set, get) 
 
     await projectDB.saveProject(project);
     set({ currentProjectId: projectId, currentProjectName: projectName });
-    console.log('[Project] Saved:', projectName);
+    log.info('Saved:', projectName);
     return projectId;
   },
 
@@ -245,9 +245,9 @@ export const createProjectSlice: MediaSliceCreator<ProjectActions> = (set, get) 
         }
       }
 
-      console.log('[Project] Loaded:', project.name);
+      log.info('Loaded:', project.name);
     } catch (e) {
-      console.error('[Project] Failed to load:', e);
+      log.error('Failed to load:', e);
       set({ isLoading: false });
       throw e;
     }
@@ -288,7 +288,7 @@ export const createProjectSlice: MediaSliceCreator<ProjectActions> = (set, get) 
     // Load empty timeline
     timelineStore.loadState(undefined);
 
-    console.log('[Project] New project created');
+    log.info('New project created');
   },
 
   getProjectList: async () => {
@@ -297,6 +297,6 @@ export const createProjectSlice: MediaSliceCreator<ProjectActions> = (set, get) 
 
   deleteProject: async (projectId: string) => {
     await projectDB.deleteProject(projectId);
-    console.log('[Project] Deleted:', projectId);
+    log.info('Deleted:', projectId);
   },
 });

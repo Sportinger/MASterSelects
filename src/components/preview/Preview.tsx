@@ -1,6 +1,9 @@
 // Preview canvas component with After Effects-style editing overlay
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { Logger } from '../../services/logger';
+
+const log = Logger.create('Preview');
 import { useEngine } from '../../hooks/useEngine';
 import { useMixerStore } from '../../stores/mixerStore';
 import { useTimelineStore } from '../../stores/timeline';
@@ -254,19 +257,19 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
 
     // Clean up previous registration
     if (currentMode === 'main') {
-      console.log(`[Preview ${panelId}] Unregistering from main canvas map`);
+      log.debug(`[${panelId}] Unregistering from main canvas map`);
       unregisterPreviewCanvas(panelId);
     } else if (currentMode === 'independent') {
-      console.log(`[Preview ${panelId}] Unregistering from independent canvas map`);
+      log.debug(`[${panelId}] Unregistering from independent canvas map`);
       unregisterIndependentPreviewCanvas(panelId);
     }
 
     // Register with new mode
     if (targetMode === 'main') {
-      console.log(`[Preview ${panelId}] Registering with main canvas map (Active mode)`);
+      log.debug(`[${panelId}] Registering with main canvas map (Active mode)`);
       registerPreviewCanvas(panelId, canvasRef.current);
     } else {
-      console.log(`[Preview ${panelId}] Registering with independent canvas map (composition: ${compositionId})`);
+      log.debug(`[${panelId}] Registering with independent canvas map (composition: ${compositionId})`);
       registerIndependentPreviewCanvas(panelId, canvasRef.current, compositionId || undefined);
     }
 

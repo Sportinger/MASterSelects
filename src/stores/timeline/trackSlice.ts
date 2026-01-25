@@ -2,6 +2,9 @@
 
 import type { TimelineTrack } from '../../types';
 import type { TrackActions, SliceCreator } from './types';
+import { Logger } from '../../services/logger';
+
+const log = Logger.create('TrackSlice');
 
 export const createTrackSlice: SliceCreator<TrackActions> = (set, get) => ({
   addTrack: (type) => {
@@ -134,7 +137,7 @@ export const createTrackSlice: SliceCreator<TrackActions> = (set, get) => ({
       };
 
       if (wouldCreateCycle(parentTrackId)) {
-        console.warn('Cannot create circular track parent reference');
+        log.warn('Cannot create circular track parent reference');
         return;
       }
     }

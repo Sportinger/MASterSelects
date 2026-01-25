@@ -137,7 +137,7 @@ export class WebCodecsPlayer {
     this.streamReader = processor.readable.getReader();
 
     this.ready = true;
-    console.log(`[WebCodecs Stream] Attached: ${this.width}x${this.height}`);
+    log.info(`Stream attached: ${this.width}x${this.height}`);
 
     // Start reading frames
     this.startStreamCapture();
@@ -149,14 +149,14 @@ export class WebCodecsPlayer {
     if (!this.streamReader || this.streamActive) return;
 
     this.streamActive = true;
-    console.log('[WebCodecs Stream] Starting frame capture');
+    log.debug('Starting stream frame capture');
 
     try {
       while (this.streamActive) {
         const { value: frame, done } = await this.streamReader.read();
 
         if (done) {
-          console.log('[WebCodecs Stream] Stream ended');
+          log.debug('Stream ended');
           break;
         }
 
@@ -170,7 +170,7 @@ export class WebCodecsPlayer {
         }
       }
     } catch (e) {
-      console.warn('[WebCodecs Stream] Error reading frames:', e);
+      log.warn('Error reading frames from stream', e);
     }
 
     this.streamActive = false;
@@ -224,18 +224,18 @@ export class WebCodecsPlayer {
     this.height = video.videoHeight;
     this.ready = true;
 
-    console.log(`[WebCodecs Simple] Attached to existing video: ${this.width}x${this.height}`);
+    log.info(`Simple mode attached to existing video: ${this.width}x${this.height}`);
 
     // Listen to video element events - Timeline controls the video, we just capture frames
     this.boundOnPlay = () => {
       if (this._isPlaying) return; // Already playing
-      console.log('[WebCodecs Simple] Video play event - starting frame capture');
+      log.debug('Video play event - starting frame capture');
       this._isPlaying = true;
       this.startSimpleFrameCapture();
     };
     this.boundOnPause = () => {
       if (!this._isPlaying) return; // Already paused
-      console.log('[WebCodecs Simple] Video pause event');
+      log.debug('Video pause event');
       this._isPlaying = false;
       this.stopSimpleFrameCapture();
       // Capture the paused frame
@@ -288,7 +288,7 @@ export class WebCodecsPlayer {
         this.frameRate = 30;
         this.frameInterval = 1000 / this.frameRate;
 
-        console.log(`[WebCodecs Simple] Video loaded: ${this.width}x${this.height}`);
+        log.debug(`Video loaded: ${this.width}x${this.height}`);
       };
 
       video.oncanplay = () => {
@@ -298,7 +298,7 @@ export class WebCodecsPlayer {
         // Create initial frame
         this.captureCurrentFrame();
 
-        console.log(`[WebCodecs Simple] READY: ${this.width}x${this.height}`);
+        log.info(`Simple mode READY: ${this.width}x${this.height}`);
         this.onReady?.(this.width, this.height);
         resolve();
       };
@@ -347,7 +347,7 @@ export class WebCodecsPlayer {
       let resolved = false;
 
       mp4File.onReady = (info) => {
-        console.log(`[WebCodecs] MP4 onReady: ${info.videoTracks.length} video tracks`);
+        log.info(`MP4 onReady: ${info.videoTracks.length} video tracks`);
         const videoTrack = info.videoTracks[0];
         if (!videoTrack) {
           clearTimeout(timeout);

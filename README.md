@@ -53,6 +53,7 @@ A browser-based video editing application with After Effects-style compositing, 
 | File System Access API | Local project storage with Raw folder |
 | OpenAI API | AI editing tools (GPT-4/GPT-5) |
 | Native Helper (Rust) | Optional hardware-accelerated decode/encode |
+| Logger Service | Professional debugging with module filtering |
 
 ---
 
@@ -195,6 +196,47 @@ tools/
 ```
 
 See [CLAUDE.md](CLAUDE.md) for detailed structure and patterns.
+
+---
+
+## Debugging
+
+MASterSelects includes a professional Logger service for debugging and AI-assisted development.
+
+### Console Commands
+
+```javascript
+// Enable debug logs for specific modules
+Logger.enable('WebGPU,FFmpeg,Export')   // Comma-separated modules
+Logger.enable('*')                       // All modules
+Logger.disable()                         // Turn off debug logs
+
+// Set minimum log level
+Logger.setLevel('DEBUG')                 // Show all (DEBUG, INFO, WARN, ERROR)
+Logger.setLevel('WARN')                  // Only warnings and errors
+
+// Inspect logs
+Logger.getBuffer()                       // Get all buffered logs
+Logger.search('device')                  // Search by keyword
+Logger.errors()                          // Recent errors only
+Logger.dump(50)                          // Pretty print last 50 entries
+
+// Status
+Logger.status()                          // Show current config
+Logger.modules()                         // List all registered modules
+```
+
+### Usage in Code
+
+```typescript
+import { Logger } from '@/services/logger';
+const log = Logger.create('MyModule');
+
+log.debug('Verbose info', { data });     // Only shows if DEBUG enabled
+log.info('Important event');             // Always shows
+log.warn('Warning', data);               // Orange in console
+log.error('Error occurred', error);      // Red, always shows
+```
 
 ---
 

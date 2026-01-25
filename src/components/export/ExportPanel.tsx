@@ -682,7 +682,7 @@ export function ExportPanel() {
             log.warn('Audio extraction returned empty or null buffer');
           }
         } catch (audioError) {
-          console.warn('[ExportPanel] Audio extraction failed, continuing without audio:', audioError);
+          log.warn('Audio extraction failed, continuing without audio', audioError);
         }
       }
 
@@ -735,7 +735,7 @@ export function ExportPanel() {
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Export failed';
       setError(msg);
-      console.error('[ExportPanel] FFmpeg export error:', e);
+      log.error('FFmpeg export error', e);
     } finally {
       // Always reset export mode
       engine.setExporting(false);
@@ -810,7 +810,7 @@ export function ExportPanel() {
         setError('No audio clips found in the selected range');
       }
     } catch (e) {
-      console.error('[ExportPanel] Audio export failed:', e);
+      log.error('Audio export failed', e);
       setError(e instanceof Error ? e.message : 'Audio export failed');
     } finally {
       setIsExporting(false);
@@ -875,7 +875,7 @@ export function ExportPanel() {
         }, 'image/png');
       }
     } catch (e) {
-      console.error('[ExportPanel] Frame render failed:', e);
+      log.error('Frame render failed', e);
       setError(e instanceof Error ? e.message : 'Frame render failed');
     }
   }, [width, height, customWidth, customHeight, useCustomResolution, filename, playheadPosition]);

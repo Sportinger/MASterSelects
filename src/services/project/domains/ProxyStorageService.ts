@@ -31,11 +31,11 @@ export class ProxyStorageService {
       await writable.close();
 
       if (frameIndex === 0 || frameIndex === 5) {
-        console.log(`[ProxyStorage] Saved proxy frame ${frameIndex} to ${projectHandle.name}/${PROJECT_FOLDERS.PROXY}/${mediaId}/${fileName} (${blob.size} bytes)`);
+        log.debug(`Saved proxy frame ${frameIndex} to ${projectHandle.name}/${PROJECT_FOLDERS.PROXY}/${mediaId}/${fileName} (${blob.size} bytes)`);
       }
       return true;
     } catch (e) {
-      console.error('[ProxyStorage] Failed to save proxy frame:', e);
+      log.error('Failed to save proxy frame:', e);
       return false;
     }
   }
@@ -123,10 +123,10 @@ export class ProxyStorageService {
       await writable.write(blob);
       await writable.close();
 
-      console.log(`[ProxyStorage] Saved audio proxy to ${projectHandle.name}/${PROJECT_FOLDERS.PROXY}/${mediaId}/${fileName} (${(blob.size / 1024 / 1024).toFixed(2)} MB)`);
+      log.debug(`Saved audio proxy to ${projectHandle.name}/${PROJECT_FOLDERS.PROXY}/${mediaId}/${fileName} (${(blob.size / 1024 / 1024).toFixed(2)} MB)`);
       return true;
     } catch (e) {
-      console.error('[ProxyStorage] Failed to save audio proxy:', e);
+      log.error('Failed to save audio proxy:', e);
       return false;
     }
   }

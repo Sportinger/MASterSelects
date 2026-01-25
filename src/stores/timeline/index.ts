@@ -861,7 +861,7 @@ export const useTimelineStore = create<TimelineStore>()(
 
           // Skip media loading if file needs reload (no valid File object)
           if (needsReload) {
-            console.log('[loadState] Skipping media load for clip that needs reload:', clip.name);
+            log.debug('Skipping media load for clip that needs reload', { clip: clip.name });
             continue;
           }
 
@@ -901,19 +901,19 @@ export const useTimelineStore = create<TimelineStore>()(
               if (hasWebCodecs) {
                 try {
                   const { WebCodecsPlayer } = await import('../../engine/WebCodecsPlayer');
-                  console.log(`[Timeline] Initializing WebCodecsPlayer for restored clip ${clip.name}...`);
+                  log.debug('Initializing WebCodecsPlayer for restored clip', { clip: clip.name });
 
                   const webCodecsPlayer = new WebCodecsPlayer({
                     loop: false,
                     useSimpleMode: true, // Use VideoFrame from HTMLVideoElement (more compatible)
                     onError: (error) => {
-                      console.warn('[Timeline] WebCodecs error:', error.message);
+                      log.warn('WebCodecs error', { error: error.message });
                     },
                   });
 
                   // Attach to existing video element
                   webCodecsPlayer.attachToVideoElement(video);
-                  console.log(`[Timeline] WebCodecsPlayer ready for restored clip ${clip.name}`);
+                  log.debug('WebCodecsPlayer ready for restored clip', { clip: clip.name });
 
                   // Update clip source with webCodecsPlayer
                   set(state => ({
@@ -930,7 +930,7 @@ export const useTimelineStore = create<TimelineStore>()(
                     ),
                   }));
                 } catch (err) {
-                  console.warn('[Timeline] WebCodecsPlayer init failed for restored clip, using HTMLVideoElement:', err);
+                  log.warn('WebCodecsPlayer init failed for restored clip, using HTMLVideoElement', err);
                 }
               }
             }, { once: true });

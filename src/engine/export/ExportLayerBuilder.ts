@@ -127,7 +127,7 @@ function buildBaseLayerProps(
   try {
     transform = getInterpolatedTransform(clip.id, clipLocalTime);
   } catch (e) {
-    console.warn('[FrameExporter] Transform interpolation failed for clip', clip.id, e);
+    log.warn(`Transform interpolation failed for clip ${clip.id}`, e);
     transform = {
       position: { x: 0, y: 0, z: 0 },
       scale: { x: 1, y: 1 },
@@ -142,7 +142,7 @@ function buildBaseLayerProps(
   try {
     effects = getInterpolatedEffects(clip.id, clipLocalTime);
   } catch (e) {
-    console.warn('[FrameExporter] Effects interpolation failed for clip', clip.id, e);
+    log.warn(`Effects interpolation failed for clip ${clip.id}`, e);
   }
 
   return {
@@ -196,7 +196,7 @@ function buildVideoLayer(
         },
       };
     }
-    console.warn(`[FrameExporter] Parallel decode missing frame for clip "${clip.name}" at time ${time.toFixed(3)}s`);
+    log.warn(`Parallel decode missing frame for clip "${clip.name}" at time ${time.toFixed(3)}s`);
   }
 
   // Try sequential WebCodecs VideoFrame
@@ -218,7 +218,7 @@ function buildVideoLayer(
   const videoReady = video.readyState >= 2 && !video.seeking;
   if (videoReady) {
     if (useParallelDecode && parallelDecoder?.hasClip(clip.id)) {
-      console.warn(`[FrameExporter] Falling back to HTMLVideoElement for "${clip.name}" - frame may be incorrect`);
+      log.warn(`Falling back to HTMLVideoElement for "${clip.name}" - frame may be incorrect`);
     }
     return {
       ...baseLayerProps,
@@ -229,7 +229,7 @@ function buildVideoLayer(
     };
   }
 
-  console.warn('[FrameExporter] Video not ready for clip', clip.id, 'readyState:', video.readyState, 'seeking:', video.seeking);
+  log.warn(`Video not ready for clip ${clip.id}, readyState: ${video.readyState}, seeking: ${video.seeking}`);
   return null;
 }
 
@@ -276,12 +276,12 @@ function buildNestedLayersForExport(
           } as Layer);
           continue;
         }
-        console.warn(`[FrameExporter] Parallel decode missing frame for nested clip "${nestedClip.name}"`);
+        log.warn(`Parallel decode missing frame for nested clip "${nestedClip.name}"`);
       }
 
       // Fall back to video element
       if (useParallelDecode && parallelDecoder?.hasClip(nestedClip.id)) {
-        console.warn(`[FrameExporter] Falling back to HTMLVideoElement for nested clip "${nestedClip.name}"`);
+        log.warn(`Falling back to HTMLVideoElement for nested clip "${nestedClip.name}"`);
       }
       layers.push({
         ...baseLayer,

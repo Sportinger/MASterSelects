@@ -80,7 +80,7 @@ export const createFileManageSlice: MediaSliceCreator<FileManageActions> = (set,
     }
 
     if (!file) {
-      console.warn('[Reload] Could not reload file:', mediaFile.name);
+      log.warn('Could not reload file:', mediaFile.name);
       return false;
     }
 
@@ -105,7 +105,7 @@ export const createFileManageSlice: MediaSliceCreator<FileManageActions> = (set,
     // Update timeline clips
     await updateTimelineClips(id, file);
 
-    console.log('[Reload] Success:', mediaFile.name);
+    log.info('Success:', mediaFile.name);
     return true;
   },
 
@@ -116,11 +116,11 @@ export const createFileManageSlice: MediaSliceCreator<FileManageActions> = (set,
   reloadAllFiles: async () => {
     const filesToReload = get().files.filter(f => !f.file);
     if (filesToReload.length === 0) {
-      console.log('[Reload] No files need reloading');
+      log.debug('No files need reloading');
       return 0;
     }
 
-    console.log('[Reload] Reloading', filesToReload.length, 'files...');
+    log.info('Reloading', filesToReload.length, 'files...');
     let totalReloaded = 0;
 
     for (const mediaFileToReload of filesToReload) {
@@ -172,7 +172,7 @@ export const createFileManageSlice: MediaSliceCreator<FileManageActions> = (set,
       totalReloaded++;
     }
 
-    console.log('[Reload] Complete:', totalReloaded, 'files reloaded');
+    log.info('Complete:', totalReloaded, 'files reloaded');
     return totalReloaded;
   },
 });
@@ -195,6 +195,6 @@ async function updateTimelineClips(mediaFileId: string, file: File): Promise<voi
   }
 
   if (clips.length > 0) {
-    console.log('[Reload] Updated', clips.length, 'timeline clips');
+    log.debug('Updated', clips.length, 'timeline clips');
   }
 }
