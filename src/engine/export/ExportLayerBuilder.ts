@@ -78,7 +78,7 @@ export function buildLayersAtTime(
         layers.push({
           ...baseLayerProps,
           source: {
-            type: 'video',
+            type: 'image', // Nested comps are pre-rendered to texture
             nestedComposition: nestedCompData,
           },
         });
