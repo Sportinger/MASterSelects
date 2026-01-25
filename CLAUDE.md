@@ -476,7 +476,55 @@ useEngine hook
 2. Add params type and defaults in `src/stores/timeline/utils.ts:getDefaultEffectParams()`
 3. Add UI controls in `src/components/panels/PropertiesPanel.tsx` (Effects tab)
 
-## Debugging
+## Debugging & Logging
+
+### Logger Service (`src/services/logger.ts`)
+
+Professional logging with levels, module filtering, and AI-agent inspection.
+
+```typescript
+// Usage in code:
+import { Logger } from '@/services/logger';
+const log = Logger.create('ModuleName');
+
+log.debug('Details here', { data });   // Only shows if DEBUG enabled for module
+log.info('Important event');            // Always shows (unless level > INFO)
+log.warn('Warning message', data);      // Orange in console
+log.error('Error occurred', error);     // Red, always shows, captures stack
+
+// Timing helper:
+const done = log.time('Operation');
+// ... work ...
+done(); // Logs "Operation completed in 42.50ms"
+```
+
+### Console Commands (Runtime)
+
+```javascript
+// Enable debug logs for specific modules:
+Logger.enable('WebGPU,FFmpeg')     // Only these modules
+Logger.enable('*')                  // All modules
+Logger.disable()                    // Turn off debug logs
+
+// Set minimum log level:
+Logger.setLevel('DEBUG')            // Show all
+Logger.setLevel('WARN')             // Only warnings and errors
+
+// Inspect logs (for AI agents):
+Logger.getBuffer()                  // Get all buffered logs
+Logger.getBuffer('ERROR')           // Only errors
+Logger.search('device')             // Search by keyword
+Logger.errors()                     // Recent errors only
+
+// Status & diagnostics:
+Logger.status()                     // Show current config
+Logger.modules()                    // List registered modules
+Logger.dump(50)                     // Pretty print last 50 entries
+Logger.summary()                    // Quick summary for AI agents
+Logger.export()                     // Export as JSON
+```
+
+### Performance Monitoring
 
 ```typescript
 // Profile output (automatic, every 1s)
@@ -487,6 +535,20 @@ chrome://gpu
 
 // Slow frame warnings (automatic)
 // [RAF] Very slow frame: rafDelay=150ms
+```
+
+### Migrating console.log to Logger
+
+```typescript
+// OLD:
+console.log('[ModuleName] Something happened:', data);
+console.error('[ModuleName] Failed:', error);
+
+// NEW:
+import { Logger } from '@/services/logger';
+const log = Logger.create('ModuleName');
+log.info('Something happened', data);
+log.error('Failed', error);
 ```
 
 ## Panel System
