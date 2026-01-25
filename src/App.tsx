@@ -8,6 +8,7 @@ import { Toolbar } from './components';
 import { DockContainer } from './components/dock';
 import { WelcomeOverlay } from './components/common/WelcomeOverlay';
 import { WhatsNewDialog } from './components/common/WhatsNewDialog';
+import { IndexedDBErrorDialog } from './components/common/IndexedDBErrorDialog';
 import { MobileApp } from './components/mobile';
 import { useGlobalHistory } from './hooks/useGlobalHistory';
 import { useClipPanelSync } from './hooks/useClipPanelSync';
@@ -54,6 +55,9 @@ function App() {
   // What's New dialog state - show on every refresh after welcome (if any)
   const [showWhatsNew, setShowWhatsNew] = useState(false);
 
+  // IndexedDB error dialog state
+  const [showIndexedDBError, setShowIndexedDBError] = useState(false);
+
   // Load API keys from encrypted storage on mount
   const loadApiKeys = useSettingsStore((s) => s.loadApiKeys);
   useEffect(() => {
@@ -64,10 +68,24 @@ function App() {
   // This handles the case where Toolbar's restore fails and clears handles
   useEffect(() => {
     const checkProject = async () => {
-      // Check both: IndexedDB handle exists AND project is actually open
-      const hasHandle = await projectDB.hasLastProject();
-      const isOpen = projectFileService.isProjectOpen();
-      setHasStoredProject(hasHandle || isOpen);
+      // Check if IndexedDB has failed to initialize
+      if (projectDB.hasInitFailed()) {
+        setShowIndexedDBError(true);
+        setIsChecking(false);
+        return;
+      }
+
+      try {
+        // Check both: IndexedDB handle exists AND project is actually open
+        const hasHandle = await projectDB.hasLastProject();
+        const isOpen = projectFileService.isProjectOpen();
+        setHasStoredProject(hasHandle || isOpen);
+      } catch {
+        // If hasLastProject fails, IndexedDB is corrupted
+        if (projectDB.hasInitFailed()) {
+          setShowIndexedDBError(true);
+        }
+      }
       setIsChecking(false);
     };
 
@@ -75,9 +93,21 @@ function App() {
 
     // Poll for changes (handles cleared after failed restore)
     const interval = setInterval(async () => {
-      const hasHandle = await projectDB.hasLastProject();
-      const isOpen = projectFileService.isProjectOpen();
-      setHasStoredProject(hasHandle || isOpen);
+      // Check if IndexedDB has failed (could happen after initial load)
+      if (projectDB.hasInitFailed()) {
+        setShowIndexedDBError(true);
+        return;
+      }
+
+      try {
+        const hasHandle = await projectDB.hasLastProject();
+        const isOpen = projectFileService.isProjectOpen();
+        setHasStoredProject(hasHandle || isOpen);
+      } catch {
+        if (projectDB.hasInitFailed()) {
+          setShowIndexedDBError(true);
+        }
+      }
     }, 500);
 
     return () => clearInterval(interval);
@@ -112,6 +142,10 @@ function App() {
     setShowWhatsNew(false);
   }, []);
 
+  const handleIndexedDBErrorClose = useCallback(() => {
+    setShowIndexedDBError(false);
+  }, []);
+
   return (
     <div className="app">
       <Toolbar />
@@ -121,6 +155,9 @@ function App() {
       )}
       {showWhatsNew && (
         <WhatsNewDialog onClose={handleWhatsNewClose} />
+      )}
+      {showIndexedDBError && (
+        <IndexedDBErrorDialog onClose={handleIndexedDBErrorClose} />
       )}
     </div>
   );
