@@ -706,9 +706,37 @@ async function autoRelinkFromRawFolder(): Promise<void> {
         };
 
         relinkedCount++;
-        log.debug(`Auto-relinked: ${file.name}`);
+        log.debug(`Auto-relinked from Raw: ${file.name}`);
       } catch (e) {
         log.warn(`Could not read file from Raw: ${file.name}`, e);
+      }
+    } else {
+      // Try to get from stored file handle in IndexedDB
+      try {
+        const storedHandle = await projectDB.getStoredHandle(`media_${file.id}`);
+        if (storedHandle && storedHandle.kind === 'file') {
+          const fileHandle = storedHandle as FileSystemFileHandle;
+          const permission = await fileHandle.queryPermission({ mode: 'read' });
+
+          if (permission === 'granted') {
+            const fileObj = await fileHandle.getFile();
+            const url = URL.createObjectURL(fileObj);
+
+            fileSystemService.storeFileHandle(file.id, fileHandle);
+
+            updatedFiles[i] = {
+              ...file,
+              file: fileObj,
+              url,
+              hasFileHandle: true,
+            };
+
+            relinkedCount++;
+            log.debug(`Auto-relinked from IndexedDB handle: ${file.name}`);
+          }
+        }
+      } catch (e) {
+        // Silently ignore - will need manual reload
       }
     }
   }
