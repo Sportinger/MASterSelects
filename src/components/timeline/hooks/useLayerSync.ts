@@ -392,7 +392,7 @@ export function useLayerSync({
             opacity: interpolatedTransform.opacity,
             blendMode: interpolatedTransform.blendMode,
             source: {
-              type: 'video', // Will be pre-rendered to texture
+              type: 'image', // Nested comps are pre-rendered to texture
               nestedComposition: nestedCompData,
             },
             effects: interpolatedEffects,

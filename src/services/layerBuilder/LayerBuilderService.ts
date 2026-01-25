@@ -168,7 +168,7 @@ export class LayerBuilderService {
       visible: true,
       opacity: transform.opacity,
       blendMode: transform.blendMode,
-      source: { type: 'video', nestedComposition: nestedCompData },
+      source: { type: 'image', nestedComposition: nestedCompData },
       effects,
       position: transform.position,
       scale: transform.scale,
