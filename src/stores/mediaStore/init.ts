@@ -65,6 +65,10 @@ export function triggerTimelineSave(): void {
  */
 async function initializeStore(): Promise<void> {
   const useMediaStore = getMediaStore();
+  if (!useMediaStore) {
+    log.warn('Media store not ready during initialization');
+    return;
+  }
 
   // Initialize file system service
   await fileSystemService.init();
