@@ -48,7 +48,7 @@ export class OutputPipeline {
       fragment: {
         module: outputModule,
         entryPoint: 'fragmentMain',
-        targets: [{ format: 'bgra8unorm' }],
+        targets: [{ format: navigator.gpu.getPreferredCanvasFormat() }],
       },
       primitive: { topology: 'triangle-list' },
     });
