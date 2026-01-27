@@ -7,4 +7,6 @@
 export { SharedDecoderPool } from './SharedDecoderPool'
 export { FrameCacheManager } from './FrameCacheManager'
 export { ExportPlanner } from './ExportPlanner'
+export { SystemSelector } from './SystemSelector'
+export { V2ExportBridge } from './V2ExportBridge'
 export * from './types'
