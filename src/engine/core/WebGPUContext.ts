@@ -65,12 +65,14 @@ export class WebGPUContext {
         return false;
       }
 
-      this.device = await this.adapter.requestDevice({
-        requiredFeatures: [],
-        requiredLimits: {
-          maxTextureDimension2D: 4096,
-        },
-      });
+      // Request device with minimal requirements to avoid Vulkan memory issues
+      // The default limits are usually sufficient for our needs
+      log.info('Requesting GPU device...');
+      this.device = await this.adapter.requestDevice();
+      log.info('GPU device created successfully');
+
+      // Small delay to let Vulkan driver fully initialize the device
+      await new Promise(resolve => setTimeout(resolve, 50));
 
       this.device.lost.then((info) => {
         log.error('Device lost', info.message);
