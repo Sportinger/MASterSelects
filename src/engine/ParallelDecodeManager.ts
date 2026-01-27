@@ -409,6 +409,14 @@ export class ParallelDecodeManager {
       const targetTimestamp = sourceTime * 1_000_000;
       let frameInBuffer = false;
       const checkTolerance = this.frameTolerance * 2; // Double tolerance for buffer check
+
+      // Get buffer time range for logging
+      const bufferTimes = Array.from(clipDecoder.frameBuffer.values())
+        .map(f => f.timestamp)
+        .sort((a, b) => a - b);
+      const bufferStart = bufferTimes.length > 0 ? (bufferTimes[0] / 1_000_000).toFixed(3) : 'N/A';
+      const bufferEnd = bufferTimes.length > 0 ? (bufferTimes[bufferTimes.length - 1] / 1_000_000).toFixed(3) : 'N/A';
+
       for (const [, decodedFrame] of clipDecoder.frameBuffer) {
         if (Math.abs(decodedFrame.timestamp - targetTimestamp) < checkTolerance) {
           frameInBuffer = true;
@@ -416,19 +424,25 @@ export class ParallelDecodeManager {
         }
       }
 
-      // Trigger decode ahead - await if we need the frame NOW
+      console.log(`[ParallelDecode] "${clipInfo.clipName}": Frame check - target=${(targetTimestamp/1_000_000).toFixed(3)}s, buffer=${clipDecoder.frameBuffer.size} frames [${bufferStart}s-${bufferEnd}s], frameInBuffer=${frameInBuffer}, tolerance=${(checkTolerance/1000).toFixed(1)}ms`);
+
+      // Trigger decode ahead - ALWAYS await if we're behind the target sample
       const needsDecoding = clipDecoder.sampleIndex < targetSampleIndex + BUFFER_AHEAD_FRAMES;
+      const isBehindTarget = clipDecoder.sampleIndex <= targetSampleIndex; // Are we behind the current target?
+
       if (needsDecoding && !clipDecoder.isDecoding) {
         const decodeTarget = targetSampleIndex + BUFFER_AHEAD_FRAMES;
-        console.log(`[ParallelDecode] "${clipInfo.clipName}": Triggering decode - samples=${clipDecoder.samples.length}, targetIdx=${targetSampleIndex}, currentIdx=${clipDecoder.sampleIndex}, decodeTarget=${decodeTarget}, frameInBuffer=${frameInBuffer}`);
-        if (!frameInBuffer) {
+        console.log(`[ParallelDecode] "${clipInfo.clipName}": Triggering decode - samples=${clipDecoder.samples.length}, targetIdx=${targetSampleIndex}, currentIdx=${clipDecoder.sampleIndex}, decodeTarget=${decodeTarget}, frameInBuffer=${frameInBuffer}, isBehindTarget=${isBehindTarget}`);
+
+        // ALWAYS await if we're behind target OR frame is not in buffer
+        if (isBehindTarget || !frameInBuffer) {
           // Need frame NOW - await the decode with flush
-          console.log(`[ParallelDecode] "${clipInfo.clipName}": Awaiting decode (frame not in buffer yet)`);
+          console.log(`[ParallelDecode] "${clipInfo.clipName}": Awaiting decode (${!frameInBuffer ? 'frame not in buffer' : 'behind target sample'})`);
           await this.decodeAhead(clipDecoder, decodeTarget, true);
           console.log(`[ParallelDecode] "${clipInfo.clipName}": After decode - buffer=${clipDecoder.frameBuffer.size} frames, decoderState=${clipDecoder.decoder.state}`);
         } else {
-          // Fire and forget for frames already in buffer
-          console.log(`[ParallelDecode] "${clipInfo.clipName}": Background decode (frame already in buffer)`);
+          // Only fire-and-forget if we're AHEAD of target AND frame is in buffer
+          console.log(`[ParallelDecode] "${clipInfo.clipName}": Background decode (ahead of target, frame in buffer)`);
           this.decodeAhead(clipDecoder, decodeTarget, false);
         }
       }
