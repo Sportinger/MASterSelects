@@ -6,4 +6,5 @@
 
 export { SharedDecoderPool } from './SharedDecoderPool'
 export { FrameCacheManager } from './FrameCacheManager'
+export { ExportPlanner } from './ExportPlanner'
 export * from './types'
