@@ -679,28 +679,42 @@ export class ParallelDecodeManager {
     const targetSourceTime = this.timelineToSourceTime(clipInfo, timelineTime);
     const targetTimestamp = targetSourceTime * 1_000_000;  // Convert to microseconds
 
-    // Quick bounds check - but allow returning first/last frame if target is outside
+    // Quick bounds check - return first/last frame if target is outside buffer range
     // This handles videos where first frame isn't at exactly 0 or clip extends beyond video
+    const bufferEmpty = clipDecoder.sortedTimestamps.length === 0;
+    if (bufferEmpty) {
+      log.warn(`${clipDecoder.clipName}: Buffer empty for target ${(targetTimestamp/1_000_000).toFixed(3)}s`);
+      return null;
+    }
+
     const useLastFrame = targetTimestamp > clipDecoder.newestTimestamp + this.frameTolerance;
-    if (useLastFrame && clipDecoder.sortedTimestamps.length > 0) {
+    if (useLastFrame) {
       // Return last frame for targets beyond video end
       const lastTimestamp = clipDecoder.sortedTimestamps[clipDecoder.sortedTimestamps.length - 1];
       const lastFrame = clipDecoder.frameBuffer.get(lastTimestamp);
       if (lastFrame) {
-        console.log(`[ParallelDecode] "${clipDecoder.clipName}": using last frame for target ${(targetTimestamp/1_000_000).toFixed(3)}s (video ends at ${(lastTimestamp/1_000_000).toFixed(3)}s)`);
+        log.debug(`${clipDecoder.clipName}: using last frame for target ${(targetTimestamp/1_000_000).toFixed(3)}s (video ends at ${(lastTimestamp/1_000_000).toFixed(3)}s)`);
         return lastFrame.frame;
       }
-    }
-    if (useLastFrame) {
-      return null;  // No frames available
+      log.warn(`${clipDecoder.clipName}: No last frame available`);
+      return null;
     }
 
     // If target is before first frame, use first frame (common for clips starting at 0)
     const useFirstFrame = targetTimestamp < clipDecoder.oldestTimestamp - this.frameTolerance;
+    if (useFirstFrame) {
+      const firstTimestamp = clipDecoder.sortedTimestamps[0];
+      const firstFrame = clipDecoder.frameBuffer.get(firstTimestamp);
+      if (firstFrame) {
+        log.debug(`${clipDecoder.clipName}: using first frame for target ${(targetTimestamp/1_000_000).toFixed(3)}s (video starts at ${(firstTimestamp/1_000_000).toFixed(3)}s)`);
+        return firstFrame.frame;
+      }
+      log.warn(`${clipDecoder.clipName}: No first frame available`);
+      return null;
+    }
 
     // Binary search for closest timestamp - O(log n) instead of O(n)
     const timestamps = clipDecoder.sortedTimestamps;
-    if (timestamps.length === 0) return null;
 
     let left = 0;
     let right = timestamps.length - 1;
@@ -724,23 +738,25 @@ export class ParallelDecodeManager {
       }
     }
 
-    // If target is before first frame, use the first frame
-    const frameTimestamp = useFirstFrame ? timestamps[0] : timestamps[closestIdx];
+    const frameTimestamp = timestamps[closestIdx];
     const frameDiff = Math.abs(frameTimestamp - targetTimestamp);
 
-    // Accept if within tolerance OR if we're using first frame for early target
-    if (frameDiff < this.frameTolerance || useFirstFrame) {
+    // Accept if within tolerance
+    if (frameDiff < this.frameTolerance) {
       const decodedFrame = clipDecoder.frameBuffer.get(frameTimestamp);
       if (decodedFrame) {
-        // Debug: log if using first frame for early target
-        if (useFirstFrame) {
-          log.debug(`${clipDecoder.clipName}: using first frame at ${(frameTimestamp/1000).toFixed(1)}ms for target ${(targetTimestamp/1000).toFixed(1)}ms`);
-        }
         return decodedFrame.frame;
       }
     }
 
-    log.warn(`${clipDecoder.clipName}: No frame within tolerance at ${(targetTimestamp/1_000_000).toFixed(3)}s`);
+    // Log detailed info about what went wrong
+    const bufferTimes = Array.from(clipDecoder.frameBuffer.values())
+      .map(f => (f.timestamp / 1_000_000).toFixed(3))
+      .sort()
+      .slice(0, 5)
+      .join(', ');
+
+    log.warn(`${clipDecoder.clipName}: No frame within tolerance at ${(targetTimestamp/1_000_000).toFixed(3)}s - tolerance=${(this.frameTolerance/1000).toFixed(1)}ms, buffer=${clipDecoder.frameBuffer.size} frames [${bufferTimes}...], oldest=${(clipDecoder.oldestTimestamp/1_000_000).toFixed(3)}s, newest=${(clipDecoder.newestTimestamp/1_000_000).toFixed(3)}s`);
     return null;
   }
 
