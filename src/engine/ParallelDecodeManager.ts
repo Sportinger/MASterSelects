@@ -428,12 +428,15 @@ export class ParallelDecodeManager {
       console.log(`[ParallelDecode] "${clipInfo.clipName}": Frame check - target=${(targetTimestamp/1_000_000).toFixed(3)}s, buffer=${clipDecoder.frameBuffer.size} frames [${bufferStart}s-${bufferEnd}s], frameInBuffer=${frameInBuffer}, tolerance=${(checkTolerance/1000).toFixed(1)}ms`);
 
       // Trigger decode ahead - ALWAYS await if we're behind the target sample
-      const needsDecoding = clipDecoder.sampleIndex < targetSampleIndex + BUFFER_AHEAD_FRAMES;
+      // Also need to decode if frame is not in buffer (we might be too far ahead and need to seek back)
+      const needsDecodingAhead = clipDecoder.sampleIndex < targetSampleIndex + BUFFER_AHEAD_FRAMES;
+      const needsDecodingBack = !frameInBuffer && clipDecoder.sampleIndex > targetSampleIndex + 30; // Too far ahead
+      const needsDecoding = needsDecodingAhead || needsDecodingBack;
       const isBehindTarget = clipDecoder.sampleIndex <= targetSampleIndex; // Are we behind the current target?
 
       if (needsDecoding && !clipDecoder.isDecoding) {
         const decodeTarget = targetSampleIndex + BUFFER_AHEAD_FRAMES;
-        console.log(`[ParallelDecode] "${clipInfo.clipName}": Triggering decode - samples=${clipDecoder.samples.length}, targetIdx=${targetSampleIndex}, currentIdx=${clipDecoder.sampleIndex}, decodeTarget=${decodeTarget}, frameInBuffer=${frameInBuffer}, isBehindTarget=${isBehindTarget}`);
+        console.log(`[ParallelDecode] "${clipInfo.clipName}": Triggering decode - samples=${clipDecoder.samples.length}, targetIdx=${targetSampleIndex}, currentIdx=${clipDecoder.sampleIndex}, decodeTarget=${decodeTarget}, frameInBuffer=${frameInBuffer}, isBehindTarget=${isBehindTarget}, needsBackSeek=${needsDecodingBack}`);
 
         // ALWAYS await if we're behind target OR frame is not in buffer
         if (isBehindTarget || !frameInBuffer) {
@@ -570,8 +573,10 @@ export class ParallelDecodeManager {
           log.warn(`${clipDecoder.clipName}: Decoder closed during decode setup`);
           return;
         }
-        // Check if we need to seek (target is far ahead of current position)
-        const needsSeek = targetSampleIndex > clipDecoder.sampleIndex + 30;
+        // Check if we need to seek (target is far from current position - either ahead OR behind)
+        const isTooFarAhead = targetSampleIndex > clipDecoder.sampleIndex + 30;
+        const isTooFarBehind = clipDecoder.sampleIndex > targetSampleIndex + 30;
+        const needsSeek = isTooFarAhead || isTooFarBehind;
 
         const endIndex = Math.min(targetSampleIndex, clipDecoder.samples.length);
         let framesToDecode = endIndex - clipDecoder.sampleIndex;
@@ -586,7 +591,7 @@ export class ParallelDecodeManager {
         const batchSize = needsSeek ? DECODE_BATCH_SIZE * SEEK_BATCH_MULTIPLIER : DECODE_BATCH_SIZE;
         framesToDecode = Math.min(framesToDecode, batchSize);
 
-        console.log(`[ParallelDecode] ${clipDecoder.clipName}: Decoding ${framesToDecode} frames (from sample ${clipDecoder.sampleIndex} to ${clipDecoder.sampleIndex + framesToDecode}), forceFlush=${forceFlush}, needsSeek=${needsSeek}, batchSize=${batchSize}`);
+        console.log(`[ParallelDecode] ${clipDecoder.clipName}: Decoding ${framesToDecode} frames (from sample ${clipDecoder.sampleIndex} to ${clipDecoder.sampleIndex + framesToDecode}), forceFlush=${forceFlush}, needsSeek=${needsSeek} (ahead=${isTooFarAhead}, behind=${isTooFarBehind}), batchSize=${batchSize}`);
 
         // After flush, we need to start from a keyframe
         if (clipDecoder.needsKeyframe && !needsSeek) {
@@ -678,7 +683,10 @@ export class ParallelDecodeManager {
     // BUT: Don't recurse if we just did a seek (needsSeek), as the seek resets sampleIndex
     // and would cause infinite recursion. Instead, let the next prefetch call handle it.
     const stillBehind = clipDecoder.sampleIndex < targetSampleIndex;
-    const didSeek = targetSampleIndex > clipDecoder.sampleIndex + 30; // Check if seek happened
+    // Check if a seek happened (either direction) - recompute same logic as above
+    const didSeekAhead = targetSampleIndex > clipDecoder.sampleIndex + 30;
+    const didSeekBehind = clipDecoder.sampleIndex > targetSampleIndex + 30;
+    const didSeek = didSeekAhead || didSeekBehind;
 
     if (forceFlush && stillBehind && !didSeek && recursionDepth < 3) {
       const remainingFrames = targetSampleIndex - clipDecoder.sampleIndex;
