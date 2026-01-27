@@ -178,15 +178,23 @@ export class ParallelDecodeManager {
             if (clipDecoder) {
               this.handleDecodedFrame(clipDecoder, frame);
             } else {
+              log.warn(`Frame output for unknown clip ${clipInfo.clipId}`);
               frame.close();
             }
           },
           error: (e) => {
-            log.error(`Decoder error for ${clipInfo.clipName}: ${e}`);
+            log.error(`Decoder error for ${clipInfo.clipName}: ${e.message || e}`);
+            // Don't throw - let decoding continue if possible
           },
         });
 
-        decoder.configure(codecConfig);
+        try {
+          decoder.configure(codecConfig);
+          log.info(`Decoder configured for "${clipInfo.clipName}": ${codec} ${videoTrack.video.width}x${videoTrack.video.height}`);
+        } catch (e) {
+          log.error(`Failed to configure decoder for "${clipInfo.clipName}": ${e}`);
+          throw e;
+        }
 
         const clipDecoder: ClipDecoder = {
           clipId: clipInfo.clipId,
@@ -261,9 +269,9 @@ export class ParallelDecodeManager {
     const timestamp = frame.timestamp;  // microseconds
     const sourceTime = timestamp / 1_000_000;  // convert to seconds
 
-    // Log first frame for debugging
-    if (clipDecoder.frameBuffer.size === 0) {
-      console.log(`[ParallelDecode] "${clipDecoder.clipName}": First frame decoded at ${sourceTime.toFixed(3)}s`);
+    // Log first 3 frames for debugging
+    if (clipDecoder.frameBuffer.size < 3) {
+      log.info(`"${clipDecoder.clipName}": Frame ${clipDecoder.frameBuffer.size + 1} decoded at ${sourceTime.toFixed(3)}s`);
     }
 
     // Store frame by its timestamp
@@ -361,7 +369,7 @@ export class ParallelDecodeManager {
    * Optimized for speed: fires decode ahead in background, only waits if frame is missing
    */
   async prefetchFramesForTime(timelineTime: number): Promise<void> {
-    console.log(`[ParallelDecode] prefetchFramesForTime(${timelineTime.toFixed(3)}) - isActive=${this.isActive}, decoders=${this.clipDecoders.size}`);
+    log.debug(`prefetchFramesForTime(${timelineTime.toFixed(3)}) - isActive=${this.isActive}, decoders=${this.clipDecoders.size}`);
     if (!this.isActive) return;
 
     const clipsNeedingFlush: ClipDecoder[] = [];
@@ -371,9 +379,11 @@ export class ParallelDecodeManager {
 
       // Skip if timeline time is outside this clip's range (handles nested clips too)
       if (!this.isTimeInClipRange(clipInfo, timelineTime)) {
-        log.info(`"${clipInfo.clipName}": Skipped - not in range (start=${clipInfo.startTime}, dur=${clipInfo.duration}, nested=${clipInfo.isNested})`);
+        log.debug(`"${clipInfo.clipName}": Skipped - not in range (start=${clipInfo.startTime}, dur=${clipInfo.duration}, nested=${clipInfo.isNested})`);
         continue;
       }
+
+      log.debug(`"${clipInfo.clipName}": Processing - samples=${clipDecoder.samples.length}, buffer=${clipDecoder.frameBuffer.size}, decoderState=${clipDecoder.decoder.state}`);
 
       // Wait for samples if lazy loading hasn't delivered them yet
       if (clipDecoder.samples.length === 0) {
@@ -521,11 +531,13 @@ export class ParallelDecodeManager {
    */
   private async decodeAhead(clipDecoder: ClipDecoder, targetSampleIndex: number, forceFlush: boolean = false): Promise<void> {
     if (clipDecoder.isDecoding) {
+      log.debug(`${clipDecoder.clipName}: Already decoding, skipping`);
       return; // Let current decode continue, don't wait
     }
 
     // Check if decoder is still valid
     if (!clipDecoder.decoder || clipDecoder.decoder.state === 'closed') {
+      log.warn(`${clipDecoder.clipName}: Decoder is ${clipDecoder.decoder?.state || 'null'}, cannot decode`);
       return;
     }
 
@@ -535,17 +547,21 @@ export class ParallelDecodeManager {
       try {
         // Double-check decoder state inside async block
         if (!clipDecoder.decoder || clipDecoder.decoder.state === 'closed') {
+          log.warn(`${clipDecoder.clipName}: Decoder closed during decode setup`);
           return;
         }
         const endIndex = Math.min(targetSampleIndex, clipDecoder.samples.length);
         let framesToDecode = endIndex - clipDecoder.sampleIndex;
 
         if (framesToDecode <= 0) {
+          log.debug(`${clipDecoder.clipName}: No frames to decode (sampleIndex=${clipDecoder.sampleIndex}, target=${targetSampleIndex})`);
           return;
         }
 
         // Decode in larger batches for throughput
         framesToDecode = Math.min(framesToDecode, DECODE_BATCH_SIZE);
+
+        log.info(`${clipDecoder.clipName}: Decoding ${framesToDecode} frames (from sample ${clipDecoder.sampleIndex} to ${clipDecoder.sampleIndex + framesToDecode}), forceFlush=${forceFlush}`);
 
         // Check if we need to seek (target is far ahead of current position)
         const needsSeek = targetSampleIndex > clipDecoder.sampleIndex + 30;
@@ -599,6 +615,7 @@ export class ParallelDecodeManager {
         }
 
         // Queue frames for decode (non-blocking - output callback handles results)
+        let decodedCount = 0;
         for (let i = 0; i < framesToDecode && clipDecoder.sampleIndex < clipDecoder.samples.length; i++) {
           const sample = clipDecoder.samples[clipDecoder.sampleIndex];
           clipDecoder.sampleIndex++;
@@ -612,10 +629,13 @@ export class ParallelDecodeManager {
 
           try {
             clipDecoder.decoder.decode(chunk);
+            decodedCount++;
           } catch (e) {
             log.warn(`${clipDecoder.clipName}: decode error at sample ${clipDecoder.sampleIndex - 1}: ${e}`);
           }
         }
+
+        log.debug(`${clipDecoder.clipName}: Queued ${decodedCount} chunks to decoder, decodeQueueSize=${clipDecoder.decoder.decodeQueueSize}`);
 
         // Only flush if explicitly requested (when we need frames NOW)
         if (forceFlush) {
