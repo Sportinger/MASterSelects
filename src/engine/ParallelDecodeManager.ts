@@ -378,15 +378,16 @@ export class ParallelDecodeManager {
       // Wait for samples if lazy loading hasn't delivered them yet
       if (clipDecoder.samples.length === 0) {
         const endWaitSamples = log.time(`waitForSamples "${clipInfo.clipName}"`);
-        const maxWaitMs = 5000; // 5 second max wait per clip
+        const maxWaitMs = 10000; // 10 second max wait per clip (increased for large files)
         const startWait = performance.now();
         while (clipDecoder.samples.length === 0 && performance.now() - startWait < maxWaitMs) {
-          await new Promise(r => setTimeout(r, 20));
+          await new Promise(r => setTimeout(r, 50));
         }
         endWaitSamples();
         if (clipDecoder.samples.length === 0) {
-          log.warn(`"${clipInfo.clipName}" has no samples after waiting`);
-          continue;
+          const errorMsg = `"${clipInfo.clipName}" has no samples after waiting ${maxWaitMs}ms`;
+          log.error(errorMsg);
+          throw new Error(`Parallel decode initialization failed: ${errorMsg}`);
         }
         log.info(`"${clipInfo.clipName}" samples ready: ${clipDecoder.samples.length} (waited ${(performance.now() - startWait).toFixed(0)}ms)`);
       }
@@ -398,8 +399,9 @@ export class ParallelDecodeManager {
       // Check if frame is already in buffer (fast path)
       const targetTimestamp = sourceTime * 1_000_000;
       let frameInBuffer = false;
+      const checkTolerance = this.frameTolerance * 2; // Double tolerance for buffer check
       for (const [, decodedFrame] of clipDecoder.frameBuffer) {
-        if (Math.abs(decodedFrame.timestamp - targetTimestamp) < 50_000) { // 50ms tolerance
+        if (Math.abs(decodedFrame.timestamp - targetTimestamp) < checkTolerance) {
           frameInBuffer = true;
           break;
         }
@@ -408,14 +410,17 @@ export class ParallelDecodeManager {
       // Trigger decode ahead - await if we need the frame NOW
       const needsDecoding = clipDecoder.sampleIndex < targetSampleIndex + BUFFER_AHEAD_FRAMES;
       if (needsDecoding && !clipDecoder.isDecoding) {
-        log.info(`"${clipInfo.clipName}": Triggering decode - samples=${clipDecoder.samples.length}, targetIdx=${targetSampleIndex}, currentIdx=${clipDecoder.sampleIndex}`);
+        const decodeTarget = targetSampleIndex + BUFFER_AHEAD_FRAMES;
+        log.info(`"${clipInfo.clipName}": Triggering decode - samples=${clipDecoder.samples.length}, targetIdx=${targetSampleIndex}, currentIdx=${clipDecoder.sampleIndex}, decodeTarget=${decodeTarget}`);
         if (!frameInBuffer) {
           // Need frame NOW - await the decode with flush
-          await this.decodeAhead(clipDecoder, targetSampleIndex + BUFFER_AHEAD_FRAMES, true);
+          log.debug(`"${clipInfo.clipName}": Awaiting decode (frame not in buffer yet)`);
+          await this.decodeAhead(clipDecoder, decodeTarget, true);
           log.info(`"${clipInfo.clipName}": After decode - buffer=${clipDecoder.frameBuffer.size} frames, decoderState=${clipDecoder.decoder.state}`);
         } else {
           // Fire and forget for frames already in buffer
-          this.decodeAhead(clipDecoder, targetSampleIndex + BUFFER_AHEAD_FRAMES, false);
+          log.debug(`"${clipInfo.clipName}": Background decode (frame already in buffer)`);
+          this.decodeAhead(clipDecoder, decodeTarget, false);
         }
       }
 
@@ -432,8 +437,8 @@ export class ParallelDecodeManager {
       const targetTimestamp = sourceTime * 1_000_000;
       const targetSampleIndex = this.findSampleIndexForTime(clipDecoder, sourceTime);
 
-      // Loop until frame is in buffer (max 8 attempts - fail fast to fallback)
-      for (let attempt = 0; attempt < 8; attempt++) {
+      // Loop until frame is in buffer (max 15 attempts - more patience for complex videos)
+      for (let attempt = 0; attempt < 15; attempt++) {
         // Wait for pending decode
         if (clipDecoder.pendingDecode) {
           await clipDecoder.pendingDecode;
@@ -448,7 +453,17 @@ export class ParallelDecodeManager {
           }
         }
 
-        if (frameFound) break;
+        if (frameFound) {
+          if (attempt > 0) {
+            log.debug(`"${clipDecoder.clipName}": Frame found after ${attempt + 1} attempts`);
+          }
+          break;
+        }
+
+        // Log progress every 3 attempts
+        if (attempt % 3 === 0 && attempt > 0) {
+          log.debug(`"${clipDecoder.clipName}": Attempt ${attempt + 1}/15 - buffer=${clipDecoder.frameBuffer.size}, samples=${clipDecoder.samples.length}, decodeQueue=${clipDecoder.decoder.decodeQueueSize}`);
+        }
 
         // Still missing - flush decoder queue if there are pending frames
         if (clipDecoder.decoder.decodeQueueSize > 0) {
@@ -471,19 +486,31 @@ export class ParallelDecodeManager {
         }
 
         // Small delay between attempts to allow async operations to complete
-        await new Promise(r => setTimeout(r, 20));
+        // Use shorter delay for early attempts, longer for later ones
+        const delay = attempt < 5 ? 10 : 30;
+        await new Promise(r => setTimeout(r, delay));
       }
 
-      // Final check - log warning if frame still not found
+      // Final check - throw error if frame still not found
       let finalCheck = false;
+      const finalTolerance = this.frameTolerance * 3; // 3x tolerance for final check
       for (const [, decodedFrame] of clipDecoder.frameBuffer) {
-        if (Math.abs(decodedFrame.timestamp - targetTimestamp) < 100_000) {
+        if (Math.abs(decodedFrame.timestamp - targetTimestamp) < finalTolerance) {
           finalCheck = true;
           break;
         }
       }
       if (!finalCheck) {
-        log.warn(`"${clipDecoder.clipName}": Frame at ${(targetTimestamp/1_000_000).toFixed(3)}s still not ready after all attempts`);
+        // Show available frames for debugging
+        const availableFrames = Array.from(clipDecoder.frameBuffer.values())
+          .map(f => (f.timestamp / 1_000_000).toFixed(3))
+          .sort()
+          .slice(0, 10) // Show first 10
+          .join(', ');
+
+        const errorMsg = `"${clipDecoder.clipName}": Frame at ${(targetTimestamp/1_000_000).toFixed(3)}s not ready after all attempts (buffer: ${clipDecoder.frameBuffer.size} frames, samples: ${clipDecoder.samples.length}, decoderState: ${clipDecoder.decoder.state}, available frames: [${availableFrames}...])`;
+        log.error(errorMsg);
+        throw new Error(`Parallel decode failed: ${errorMsg}`);
       }
     }
   }
