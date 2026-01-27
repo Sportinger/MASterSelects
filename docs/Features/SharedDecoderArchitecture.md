@@ -181,202 +181,220 @@ interface CacheStats {
 
 ### 3. Export Planner
 
-**Purpose**: Analyze timeline and create optimal frame decode order
+**Purpose**: Analyze timeline and optimize decode scheduling (no pre-rendering!)
 
 **Key Features:**
-- Analyzes full export range before starting
+- Analyzes full export range to understand file usage patterns
 - Groups clips by file to minimize decoder switches
-- Sorts by timeline order to minimize seeks
-- Pre-renders nested compositions
-- Generates decode plan with priorities
+- Pre-calculates decode positions to minimize seeks
+- Plans ahead 2-3 seconds for smooth pipeline
+- Adaptive planning based on decoder performance
 
-**Algorithm:**
+**API Design:**
 ```typescript
 class ExportPlanner {
-  // Analyze timeline and create plan
-  async createPlan(
+  // Analyze timeline and create decode schedule
+  async createSchedule(
     startTime: number,
     endTime: number,
     fps: number
-  ): Promise<ExportPlan>
+  ): Promise<DecodeSchedule>
 
-  // Plan structure
-  interface ExportPlan {
-    phases: ExportPhase[]      // Sequential phases
-    totalFrames: number
-    estimatedTime: number      // Based on benchmarks
-  }
+  // Get next batch of frames to decode (called every frame)
+  getNextDecodeBatch(currentTime: number): FrameRequest[]
+}
 
-  interface ExportPhase {
-    type: 'prerender' | 'decode' | 'render'
-    description: string
-    tasks: Task[]
-  }
+interface DecodeSchedule {
+  fileUsage: Map<fileHash, UsagePattern>
+  totalFrames: number
+  estimatedTime: number
+}
+
+interface UsagePattern {
+  fileHash: string
+  clipIds: string[]          // All clips using this file
+  timeRanges: TimeRange[]    // When file is needed
+  totalFrames: number        // Total frames needed from file
+  isHeavyUsage: boolean      // Used frequently? (increase cache)
+}
+
+interface FrameRequest {
+  fileHash: string
+  clipId: string
+  sourceTime: number
+  priority: number           // Higher = needed sooner
+  isNestedComp: boolean
+  nestedDepth: number        // 0 = main timeline, 1+ = nested
 }
 ```
 
 **Planning Algorithm:**
 
-**Phase 1: Pre-render Nested Compositions**
+**Phase 1: Analyze File Usage**
 ```
-For each nested composition:
-  1. Recursively pre-render from deepest to shallowest
-  2. Cache result as single video/image sequence
-  3. Replace nested comp with cached version
-```
-
-**Phase 2: Group and Sort Clips**
-```
-1. Group all clips by fileHash
-2. For each file group:
-   - Sort clips by timeline startTime
-   - Calculate required time ranges
-   - Merge overlapping/adjacent ranges
-3. Sort groups by timeline coverage (most used first)
+1. Walk through entire export range
+2. For each frame:
+   - Find active clips (including nested)
+   - Record: fileHash, time range, nesting depth
+3. Group by fileHash:
+   - Merge overlapping/close time ranges
+   - Calculate total frame count needed
+   - Mark files with heavy usage (> 20% of export)
 ```
 
-**Phase 3: Generate Decode Schedule**
+**Phase 2: Optimize Decode Order**
 ```
-For each frame in export range:
-  1. Determine active clips at this time
-  2. For each clip:
-     - Check if frame in cache
-     - If not, add to decode batch
-  3. Group decode requests by fileHash
-  4. Sort by timeline order within group
+1. For files with heavy usage:
+   - Increase cache size (150 frames vs 60)
+   - Mark for aggressive pre-fetching
+2. For files with scattered usage:
+   - Lower cache size to save memory
+   - Decode just-in-time
 ```
 
-**Example Plan Output:**
+**Phase 3: Runtime Decode Scheduling**
+```
+While exporting frame N:
+  1. Get frames needed at N (current)
+  2. Get frames needed at N+60 to N+90 (look-ahead)
+  3. Group by fileHash
+  4. Sort by:
+     - Priority: current > near future > far future
+     - Position: minimize seeks within file
+  5. Submit to SharedDecoderPool
+```
+
+**Example Schedule Output:**
 ```typescript
 {
-  phases: [
-    {
-      type: 'prerender',
-      description: 'Pre-render nested composition "Comp 2"',
-      tasks: [
-        { action: 'render', compId: 'comp2', frames: 180 }
-      ]
+  fileUsage: {
+    'abc123': {
+      fileHash: 'abc123',
+      clipIds: ['clip1', 'clip3_nested'],
+      timeRanges: [[0.0, 15.0], [20.0, 30.0]],
+      totalFrames: 750,
+      isHeavyUsage: true
     },
-    {
-      type: 'decode',
-      description: 'Pre-decode frames for export',
-      tasks: [
-        {
-          action: 'decode',
-          fileHash: 'abc123',
-          ranges: [[0, 5.0], [10.0, 15.0]],
-          frames: 300
-        }
-      ]
-    },
-    {
-      type: 'render',
-      description: 'Render export frames',
-      tasks: [
-        { action: 'render', frameStart: 0, frameEnd: 600 }
-      ]
+    'def456': {
+      fileHash: 'def456',
+      clipIds: ['clip2'],
+      timeRanges: [[5.0, 10.0]],
+      totalFrames: 150,
+      isHeavyUsage: false
     }
-  ]
+  },
+  totalFrames: 900,
+  estimatedTime: 300  // 5 minutes
 }
 ```
 
-### 4. Nested Composition Renderer
+### 4. Nested Composition Renderer (Just-In-Time)
 
-**Purpose**: Pre-render nested compositions to avoid real-time nested rendering
+**Purpose**: Render nested compositions on-demand during export (After Effects style)
 
-**Key Features:**
-- Recursively render from deepest to shallowest
-- Cache result as ImageBitmap sequence or OffscreenCanvas
-- Invalidate cache only when composition changes
-- Support for double/triple nesting
+**Key Strategy:**
+- **NO pre-rendering** - render nested comps frame-by-frame as needed
+- Recursively resolve from deepest to shallowest for each frame
+- Optional single-frame cache for repeated access within same frame
+- Minimal memory footprint
 
 **API Design:**
 ```typescript
 class NestedCompRenderer {
-  // Pre-render composition to cache
-  async prerenderComposition(
+  // Render single frame of composition at specific time
+  async renderFrame(
     compId: string,
-    startTime: number,
-    endTime: number,
-    fps: number
-  ): Promise<CachedComposition>
+    time: number,
+    width: number,
+    height: number
+  ): Promise<ImageBitmap>
 
-  // Get cached frame
-  getFrame(compId: string, time: number): ImageBitmap | null
+  // Recursively build layers for nested comp at time
+  private async buildNestedLayers(
+    comp: Composition,
+    time: number
+  ): Promise<Layer[]>
 
-  // Check if composition is cached
-  isCached(compId: string): boolean
-
-  // Clear cache
-  clearCache(compId?: string): void
-}
-
-interface CachedComposition {
-  compId: string
-  frames: Map<timestamp, ImageBitmap>
-  width: number
-  height: number
-  duration: number
-  cacheSize: number  // Memory in bytes
+  // Single-frame cache (optional optimization)
+  private frameCache: Map<compId_timestamp, ImageBitmap>
 }
 ```
 
-**Rendering Strategy:**
-1. Detect all nested compositions in export range
-2. Sort by nesting depth (deepest first)
-3. For each composition:
-   - Render all frames to ImageBitmap
-   - Store in cache
-   - Replace in timeline with cached version
-4. Main timeline render uses cached compositions
+**Rendering Flow (per export frame):**
+```
+For each frame in export:
+  1. Get clips at current time
+  2. For each clip:
+     - If regular video → SharedDecoderPool.getFrame()
+     - If nested comp → NestedCompRenderer.renderFrame()
+       → Recursively resolve nested clips
+       → If nested clip is video → SharedDecoderPool.getFrame()
+       → If nested clip is nested comp → recurse deeper
+       → Composite layers on GPU
+  3. Composite main timeline layers
+  4. Encode frame
+```
+
+**Why This is Better:**
+- **No upfront wait**: Export starts immediately
+- **Lower memory**: Only one frame at a time in memory
+- **Simpler code**: No cache invalidation logic needed
+- **More flexible**: Easy to handle changes during export (not that we need it)
+- **After Effects proven**: This is how professional tools do it
 
 ## Implementation Plan
 
 ### Phase 1: Core Infrastructure (Week 1)
-- [ ] Implement `SharedDecoderPool` with single decoder
+- [ ] Implement `SharedDecoderPool` with worker-based decoders
+- [ ] Implement file-hash based decoder mapping
 - [ ] Implement `FrameCacheManager` with LRU cache
-- [ ] Add tests for decoder reuse patterns
+- [ ] Add decoder reuse via reset() + configure()
+- [ ] Add tests for decoder lifecycle
 - [ ] Benchmark single file export vs current system
 
-### Phase 2: Export Planner (Week 2)
+### Phase 2: Export Planner & Scheduling (Week 2)
 - [ ] Implement `ExportPlanner` timeline analysis
-- [ ] Implement grouping and sorting algorithms
-- [ ] Add decode schedule generation
+- [ ] Implement file usage pattern detection
+- [ ] Add runtime decode scheduling (look-ahead)
+- [ ] Implement priority-based batch requests
 - [ ] Test with complex timelines (10+ clips)
 
-### Phase 3: Nested Comp Rendering (Week 3)
-- [ ] Implement `NestedCompRenderer`
-- [ ] Add recursive pre-rendering
-- [ ] Integrate with export planner
+### Phase 3: Nested Comp Just-In-Time Rendering (Week 3)
+- [ ] Implement `NestedCompRenderer` for on-demand rendering
+- [ ] Add recursive layer building
+- [ ] Integrate with SharedDecoderPool for nested clips
 - [ ] Test with double/triple nested comps
+- [ ] Verify no memory leaks with deep nesting
 
-### Phase 4: Integration & Optimization (Week 4)
+### Phase 4: Integration & Main Export Loop (Week 4)
 - [ ] Integrate all components into `FrameExporter`
-- [ ] Add progress reporting for all phases
+- [ ] Implement new export loop with just-in-time nested rendering
+- [ ] Add progress reporting (accurate for nested comps)
 - [ ] Implement fallback to HTMLVideoElement on errors
-- [ ] Performance testing and optimization
+- [ ] Performance testing with 10+ nested compositions
 - [ ] Memory profiling and leak detection
 
-### Phase 5: Polish & Documentation (Week 5)
-- [ ] Add export settings UI (cache size, decoder count)
+### Phase 5: Polish & Production Ready (Week 5)
+- [ ] Add export settings UI (cache size: 200MB/500MB/2GB)
+- [ ] Optimize worker communication (SharedArrayBuffer?)
+- [ ] Add detailed logging for debugging complex exports
 - [ ] Write user documentation
-- [ ] Add developer documentation
-- [ ] Create example projects for testing
+- [ ] Create example complex projects for testing
+- [ ] Final performance validation
 
 ## Migration Strategy
 
-**Backward Compatibility:**
-- Keep existing `ParallelDecodeManager` as fallback
-- New system opt-in via export setting: "Use Shared Decoders (Beta)"
-- Automatic fallback to old system on errors
-- Feature flag for gradual rollout
+**Deployment Plan:**
+- Release V2 as **default for all projects immediately** (per user request)
+- Keep V1 as fallback via export setting: "Use Legacy Export (if issues)"
+- Automatic fallback to V1 on critical errors with user notification
+- Deprecate V1 after 4 weeks if no major issues reported
 
-**Gradual Migration:**
-1. Release V2 as beta feature
-2. Collect feedback and fix bugs
-3. Enable by default for simple projects (< 5 clips)
-4. Enable by default for complex projects
-5. Deprecate V1 system
+**Rollout:**
+1. Deploy V2 as default
+2. Monitor error rates and user feedback first week
+3. Quick fixes for critical bugs
+4. Deprecate V1 after 4 weeks of stability
 
 ## Performance Targets
 
@@ -399,16 +417,24 @@ interface CachedComposition {
 
 **Risks:**
 1. **Decoder reuse bugs**: VideoDecoder may have issues with reset/configure
-   - Mitigation: Extensive testing, fallback to new decoder on errors
+   - Mitigation: Extensive testing, fallback to new decoder instance on errors
+   - Monitoring: Log all reset/configure operations
 
-2. **Cache thrashing**: LRU may evict needed frames
-   - Mitigation: Smart pre-warming, configurable cache size
+2. **Cache thrashing**: LRU may evict needed frames causing re-decode
+   - Mitigation: Adaptive cache sizing based on file usage patterns
+   - Monitoring: Track cache hit rate, warn if < 80%
 
-3. **Nested comp memory**: Pre-rendering all nested comps uses memory
-   - Mitigation: Render on-demand for very large comps, disk cache option
+3. **Just-in-time rendering overhead**: Rendering nested comps per-frame may be slow
+   - Mitigation: GPU acceleration for all compositing, single-frame cache
+   - Fallback: Optional pre-render mode for very slow systems (can add later)
 
-4. **Worker overhead**: Communication between workers may be slow
-   - Mitigation: Batch frame transfers, use SharedArrayBuffer where possible
+4. **Worker communication overhead**: Transferring VideoFrames between workers
+   - Mitigation: Use transferable objects, batch transfers where possible
+   - Alternative: Consider SharedArrayBuffer for zero-copy (if supported)
+
+5. **Complex nested structures**: Triple-nested comps with many layers
+   - Mitigation: Flatten layers where possible, optimize GPU compositing
+   - Limit: Warn user if nesting depth > 5 levels
 
 ## Open Questions
 
