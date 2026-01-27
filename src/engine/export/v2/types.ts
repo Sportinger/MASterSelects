@@ -85,6 +85,16 @@ export interface MP4VideoTrack {
   video: { width: number; height: number }
 }
 
+// Clip metadata for V2ExportBridge
+export interface ClipMetadata {
+  clip: import('../../../stores/timeline/types').TimelineClip
+  fileHash: string
+  fileName: string
+  mediaFileId: string | null
+  isNested: boolean
+  parentClipId: string | null
+}
+
 // Error types
 export type ExportErrorComponent = 'SharedDecoder' | 'FrameCache' | 'Worker' | 'NestedRenderer'
 

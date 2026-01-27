@@ -12,7 +12,7 @@ import { Logger } from '../../../services/logger'
 import { SharedDecoderPool } from './SharedDecoderPool'
 import { ExportPlanner } from './ExportPlanner'
 import type { TimelineClip } from '../../../stores/timeline/types'
-import type { SharedDecoderConfig, FrameRequest, DecodeSchedule } from './types'
+import type { SharedDecoderConfig, FrameRequest, DecodeSchedule, ClipMetadata } from './types'
 import { ExportError as ExportErrorClass } from './types'
 import { loadClipFileData } from '../ClipPreparation'
 import { useMediaStore } from '../../../stores/mediaStore'
@@ -27,6 +27,8 @@ export class V2ExportBridge {
   private planner: ExportPlanner | null = null
   private schedule: DecodeSchedule | null = null
   private isInitialized = false
+  private allClips: TimelineClip[] = []
+  private clipMetadata: Map<string, ClipMetadata> = new Map()
 
   constructor(private options: {
     maxCacheMemoryMB?: number
@@ -47,6 +49,10 @@ export class V2ExportBridge {
     const endInit = log.time('V2 initialization')
 
     try {
+      // Step 0: Store clips for later lookup
+      this.allClips = clips
+      this.clipMetadata = new Map()
+
       // Step 1: Create planner and analyze timeline
       log.info('Step 1: Creating export plan...')
       this.planner = new ExportPlanner({
@@ -60,6 +66,9 @@ export class V2ExportBridge {
 
       this.schedule = await this.planner.createSchedule()
       log.info(`Schedule created: ${this.schedule.fileUsage.size} files`)
+
+      // Build clip metadata for fast lookup
+      this.buildClipMetadata(this.schedule)
 
       // Step 2: Load file data and parse MP4
       log.info('Step 2: Loading and parsing video files...')
@@ -108,17 +117,26 @@ export class V2ExportBridge {
       })
     }
 
-    // Find clip to get file hash
-    // TODO: Store clip metadata during initialization for faster lookup
-    const fileHash = 'TODO' // Need to map clipId -> fileHash
+    // Get clip metadata for fileHash and source time calculation
+    const metadata = this.clipMetadata.get(clipId)
+    if (!metadata) {
+      throw new ExportErrorClass({
+        component: 'SharedDecoder',
+        message: 'Clip not found in metadata',
+        detailedMessage: `Clip ${clipId} not found in clipMetadata. This may indicate the clip was not part of the export schedule.`,
+        suggestedAction: 'Ensure the clip is visible in the export range'
+      })
+    }
+
+    const sourceTime = this.calculateSourceTime(metadata.clip, timelineTime)
 
     const request: FrameRequest = {
-      fileHash,
+      fileHash: metadata.fileHash,
       clipId,
-      sourceTime: timelineTime, // TODO: Calculate actual source time
+      sourceTime,
       priority: 100,
-      isNestedComp: false,
-      nestedDepth: 0
+      isNestedComp: metadata.isNested,
+      nestedDepth: metadata.isNested ? 1 : 0
     }
 
     return await this.decoderPool.requestFrame(request)
@@ -165,6 +183,8 @@ export class V2ExportBridge {
     }
     this.planner = null
     this.schedule = null
+    this.allClips = []
+    this.clipMetadata.clear()
     this.isInitialized = false
     log.info('V2 export system cleaned up')
   }
@@ -226,14 +246,39 @@ export class V2ExportBridge {
           message: 'MP4 parsing timeout',
           clipName: fileName,
           fileHash,
-          detailedMessage: `MP4Box parsing timed out after 10 seconds for "${fileName}"`,
+          detailedMessage: `MP4Box parsing timed out after 30 seconds for "${fileName}"`,
           suggestedAction: 'File may be corrupted or in unsupported format'
         }))
-      }, 10000)
+      }, 30000) // Increased timeout for large files
 
       const mp4File = MP4Box.createFile()
       let videoTrack: any = null
+      let codecConfig: VideoDecoderConfig | null = null
       const samples: any[] = []
+      let resolved = false
+
+      const tryResolve = () => {
+        if (resolved) return
+        if (!videoTrack || !codecConfig) return
+
+        // Wait for all samples (or at least enough for the file)
+        const expectedSamples = videoTrack.nb_samples
+        if (samples.length < expectedSamples) {
+          log.debug(`Waiting for samples: ${samples.length}/${expectedSamples} for ${fileName}`)
+          return
+        }
+
+        resolved = true
+        clearTimeout(timeout)
+        log.info(`MP4 parsed: ${fileName} - ${samples.length} samples, ${videoTrack.video.width}x${videoTrack.video.height}`)
+        resolve({
+          fileHash,
+          fileData,
+          codecConfig,
+          videoTrack,
+          samples
+        })
+      }
 
       mp4File.onReady = (info: any) => {
         videoTrack = info.videoTracks[0]
@@ -269,7 +314,7 @@ export class V2ExportBridge {
           log.warn(`Failed to extract codec description for ${fileName}: ${e}`)
         }
 
-        const codecConfig: VideoDecoderConfig = {
+        codecConfig = {
           codec,
           codedWidth: videoTrack.video.width,
           codedHeight: videoTrack.video.height,
@@ -278,6 +323,8 @@ export class V2ExportBridge {
           description
         }
 
+        log.debug(`Starting sample extraction for ${fileName}: expecting ${videoTrack.nb_samples} samples`)
+
         // Start sample extraction
         mp4File.setExtractionOptions(videoTrack.id, null, { nbSamples: Infinity })
         mp4File.start()
@@ -285,22 +332,40 @@ export class V2ExportBridge {
 
       mp4File.onSamples = (_trackId: number, _ref: any, newSamples: any[]) => {
         samples.push(...newSamples)
+        tryResolve()
+      }
 
-        // Resolve once we have all samples (or at least some)
-        // For large files, we might want to resolve earlier
-        if (samples.length >= 100) {
+      // onFlush is called when all data has been processed
+      mp4File.onFlush = () => {
+        if (resolved) return
+        if (!videoTrack || !codecConfig) {
           clearTimeout(timeout)
-          resolve({
+          reject(new ExportErrorClass({
+            component: 'SharedDecoder',
+            message: 'MP4 flush without ready',
+            clipName: fileName,
             fileHash,
-            fileData,
-            codecConfig: null as any, // Will be set by onReady
-            videoTrack,
-            samples
-          })
+            detailedMessage: `MP4Box flushed before onReady for "${fileName}"`,
+            suggestedAction: 'File may be corrupted'
+          }))
+          return
         }
+
+        // Force resolve even if we don't have all samples (edge case)
+        resolved = true
+        clearTimeout(timeout)
+        log.info(`MP4 parsed (flush): ${fileName} - ${samples.length}/${videoTrack.nb_samples} samples`)
+        resolve({
+          fileHash,
+          fileData,
+          codecConfig,
+          videoTrack,
+          samples
+        })
       }
 
       mp4File.onError = (e: string) => {
+        if (resolved) return
         clearTimeout(timeout)
         reject(new ExportErrorClass({
           component: 'SharedDecoder',
@@ -333,11 +398,56 @@ export class V2ExportBridge {
   }
 
   /**
-   * Find clip by ID (helper method - should be optimized with a map)
+   * Find clip by ID using metadata map
    */
   private findClip(clipId: string): TimelineClip | null {
-    // TODO: Store clips in a map during initialization
-    // For now, this is a placeholder
-    return null
+    return this.clipMetadata.get(clipId)?.clip || null
+  }
+
+  /**
+   * Build clip metadata map from schedule for fast O(1) lookup
+   */
+  private buildClipMetadata(schedule: DecodeSchedule): void {
+    for (const [fileHash, pattern] of schedule.fileUsage) {
+      for (const clipId of pattern.clipIds) {
+        const clip = this.allClips.find(c => c.id === clipId)
+        if (!clip) {
+          log.warn(`Clip ${clipId} not found in timeline during metadata build`)
+          continue
+        }
+
+        this.clipMetadata.set(clipId, {
+          clip,
+          fileHash,
+          fileName: clip.name,
+          mediaFileId: clip.source?.mediaFileId || null,
+          isNested: false, // TODO: Detect from composition structure
+          parentClipId: clip.parentClipId || null
+        })
+      }
+    }
+
+    log.info(`Built metadata for ${this.clipMetadata.size} clips`)
+  }
+
+  /**
+   * Calculate source time from timeline time
+   * Handles reversed clips and in/out points
+   */
+  private calculateSourceTime(clip: TimelineClip, timelineTime: number): number {
+    // Convert timeline time to clip local time
+    const clipLocalTime = timelineTime - clip.startTime
+
+    // Handle speed adjustment (if any)
+    const speed = clip.speed ?? 1.0
+    const adjustedLocalTime = clipLocalTime * Math.abs(speed)
+
+    // Handle reversed clips
+    if (clip.reversed || speed < 0) {
+      return clip.outPoint - adjustedLocalTime
+    }
+
+    // Normal forward playback
+    return clip.inPoint + adjustedLocalTime
   }
 }

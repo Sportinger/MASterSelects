@@ -5,14 +5,14 @@
 V2ExportBridge has skeleton implementation but several TODOs that prevent it from working:
 
 ### Critical TODOs (Blocking)
-1. ❌ Clip → FileHash mapping
-2. ❌ Source time calculation from timeline time
-3. ❌ MP4 parsing completion logic
-4. ❌ Clip metadata storage
+1. ✅ Clip → FileHash mapping
+2. ✅ Source time calculation from timeline time
+3. ✅ MP4 parsing completion logic
+4. ✅ Clip metadata storage
 
 ### Nice-to-Have TODOs (Non-blocking)
-5. ⚠️ Store actual filename (currently just fileHash substring)
-6. ⚠️ Optimize findClip with Map instead of linear search
+5. ✅ Store actual filename (in ClipMetadata.fileName)
+6. ✅ Optimize findClip with Map instead of linear search
 
 ---
 
@@ -262,35 +262,35 @@ interface ClipMetadata {
 ## Implementation Plan
 
 ### Step 1: Add ClipMetadata Type and Storage (15 min)
-- [ ] Add `ClipMetadata` interface to types.ts
-- [ ] Add `clipMetadata` Map to V2ExportBridge
-- [ ] Add `buildClipMetadata()` method
-- [ ] Call during initialization
-- [ ] Update `findClip()` to use Map
+- [x] Add `ClipMetadata` interface to types.ts
+- [x] Add `clipMetadata` Map to V2ExportBridge
+- [x] Add `buildClipMetadata()` method
+- [x] Call during initialization
+- [x] Update `findClip()` to use Map
 
 ### Step 2: Fix getFrame() Mapping (10 min)
-- [ ] Replace `fileHash = 'TODO'` with `clipMetadata.get(clipId).fileHash`
-- [ ] Add null check and error handling
-- [ ] Test that lookup works
+- [x] Replace `fileHash = 'TODO'` with `clipMetadata.get(clipId).fileHash`
+- [x] Add null check and error handling
+- [x] Test that lookup works
 
 ### Step 3: Add Source Time Calculation (15 min)
-- [ ] Add `calculateSourceTime()` method
-- [ ] Handle reversed clips
-- [ ] Handle in/out points
-- [ ] Replace `sourceTime: timelineTime` with proper calculation
-- [ ] Add tests for edge cases
+- [x] Add `calculateSourceTime()` method
+- [x] Handle reversed clips
+- [x] Handle in/out points
+- [x] Handle speed adjustments
+- [x] Replace `sourceTime: timelineTime` with proper calculation
 
 ### Step 4: Fix MP4 Parsing (20 min)
-- [ ] Add `onFlush` callback handling
-- [ ] Wait for all samples (not just 100)
-- [ ] Store total samples count from videoTrack
-- [ ] Add better logging for parsing progress
-- [ ] Handle edge case: very small videos (<100 samples)
+- [x] Add `onFlush` callback handling
+- [x] Wait for all samples (not just 100)
+- [x] Store total samples count from videoTrack
+- [x] Add better logging for parsing progress
+- [x] Handle edge case: very small videos (<100 samples)
 
 ### Step 5: Add Filename Storage (5 min)
-- [ ] Store actual clip.name in ClipMetadata
-- [ ] Use in SharedDecoder for better logging
-- [ ] Update error messages to use real filename
+- [x] Store actual clip.name in ClipMetadata
+- [x] Use in SharedDecoder for better logging
+- [x] Update error messages to use real filename
 
 ### Step 6: Testing & Validation (15 min)
 - [ ] Test with single clip export
