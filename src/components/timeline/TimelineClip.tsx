@@ -1078,8 +1078,7 @@ function TimelineClipComponent({
           <div className="analyzing-progress" style={{ width: `${clip.analysisProgress || 0}%` }} />
         </div>
       )}
-      {/* Fade curve - SVG bezier curve showing opacity animation
-      TODO: Implement when opacityKeyframes prop is added
+      {/* Fade curve - SVG bezier curve showing opacity animation */}
       {opacityKeyframes.length >= 2 && (
         <div className="fade-curve-container">
           <FadeCurve
@@ -1090,7 +1089,6 @@ function TimelineClipComponent({
           />
         </div>
       )}
-      */}
       {/* Fade handles - corner handles for adjusting fade-in/out */}
       <div
         className={`fade-handle left${fadeInDuration > 0 ? ' active' : ''}`}
