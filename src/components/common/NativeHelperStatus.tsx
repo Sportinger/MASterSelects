@@ -50,7 +50,8 @@ export function NativeHelperStatus() {
 
   // Check on mount and when turbo mode changes
   useEffect(() => {
-    checkConnection();
+    // Use void to explicitly mark fire-and-forget async call
+    void checkConnection();
 
     // Subscribe to status changes
     const unsubscribe = NativeHelperClient.onStatusChange((newStatus) => {
@@ -59,7 +60,7 @@ export function NativeHelperStatus() {
     });
 
     // Periodic check every 30 seconds (less aggressive)
-    const interval = setInterval(checkConnection, 30000);
+    const interval = setInterval(() => void checkConnection(), 30000);
 
     return () => {
       unsubscribe();

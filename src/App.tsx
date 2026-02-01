@@ -26,21 +26,13 @@ function App() {
   const urlParams = new URLSearchParams(window.location.search);
   const testMode = urlParams.get('test');
 
-  if (testMode === 'parallel-decode') {
-    return <ParallelDecodeTest />;
-  }
+  // === ALL HOOKS MUST BE CALLED BEFORE ANY EARLY RETURNS ===
+
   // Mobile detection
   const isMobile = useIsMobile();
   const forceMobile = useForceMobile();
   const forceDesktopMode = useSettingsStore((s) => s.forceDesktopMode);
 
-  // Show mobile UI unless user explicitly requested desktop mode
-  const showMobileUI = (isMobile || forceMobile) && !forceDesktopMode;
-
-  // Render mobile UI if on mobile device (and not forcing desktop)
-  if (showMobileUI) {
-    return <MobileApp />;
-  }
   // Initialize global undo/redo system
   useGlobalHistory();
 
@@ -145,6 +137,19 @@ function App() {
   const handleIndexedDBErrorClose = useCallback(() => {
     setShowIndexedDBError(false);
   }, []);
+
+  // === EARLY RETURNS AFTER ALL HOOKS ===
+
+  // Test mode
+  if (testMode === 'parallel-decode') {
+    return <ParallelDecodeTest />;
+  }
+
+  // Show mobile UI unless user explicitly requested desktop mode
+  const showMobileUI = (isMobile || forceMobile) && !forceDesktopMode;
+  if (showMobileUI) {
+    return <MobileApp />;
+  }
 
   return (
     <div className="app">

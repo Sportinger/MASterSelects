@@ -13,9 +13,10 @@ interface DockPanelContentProps {
 
 export function DockPanelContent({ panel }: DockPanelContentProps) {
   switch (panel.type) {
-    case 'preview':
+    case 'preview': {
       const previewData = panel.data as PreviewPanelData | undefined;
       return <Preview panelId={panel.id} compositionId={previewData?.compositionId ?? null} />;
+    }
     case 'export':
       return <ExportPanel />;
     case 'clip-properties':

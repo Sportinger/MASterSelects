@@ -689,7 +689,7 @@ export function Toolbar() {
               {midiSupported ? (
                 <button
                   className={`menu-option ${midiEnabled ? 'checked' : ''}`}
-                  onClick={() => { midiEnabled ? disableMIDI() : enableMIDI(); closeMenu(); }}
+                  onClick={() => { if (midiEnabled) { disableMIDI(); } else { enableMIDI(); } closeMenu(); }}
                 >
                   <span>{midiEnabled ? '✓ ' : '   '}MIDI Control {midiEnabled && devices.length > 0 ? `(${devices.length} devices)` : ''}</span>
                 </button>
