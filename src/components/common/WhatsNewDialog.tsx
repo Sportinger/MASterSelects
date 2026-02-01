@@ -2,7 +2,7 @@
 // Displays changes categorized as "Today", "Last Week", "This Month", "Earlier"
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { APP_VERSION, getGroupedChangelog, type ChangeEntry } from '../../version';
+import { APP_VERSION, BUILD_NOTICE, getGroupedChangelog, type ChangeEntry } from '../../version';
 
 interface WhatsNewDialogProps {
   onClose: () => void;
@@ -160,6 +160,30 @@ export function WhatsNewDialog({ onClose }: WhatsNewDialogProps) {
 
         {/* Scrollable content */}
         <div className="changelog-content">
+          {/* Platform notice */}
+          {BUILD_NOTICE && (
+            <div className={`changelog-notice changelog-notice-${BUILD_NOTICE.type}`}>
+              <div className="changelog-notice-icon">
+                {BUILD_NOTICE.type === 'info' && (
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5"/>
+                    <path d="M8 7v4M8 5v.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                  </svg>
+                )}
+                {BUILD_NOTICE.type === 'warning' && (
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <path d="M8 2L1 14h14L8 2z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+                    <path d="M8 6v4M8 12v.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                  </svg>
+                )}
+              </div>
+              <div className="changelog-notice-content">
+                <span className="changelog-notice-title">{BUILD_NOTICE.title}</span>
+                <span className="changelog-notice-message">{BUILD_NOTICE.message}</span>
+              </div>
+            </div>
+          )}
+
           {filteredGroups.map((group, groupIndex) => (
             <div key={group.label} className="changelog-group">
               <div className="changelog-group-header">

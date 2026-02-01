@@ -8084,6 +8084,49 @@ input[type="checkbox"] {
   gap: 24px;
 }
 
+/* Platform/Build Notice */
+.changelog-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+
+.changelog-notice-info {
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  color: #93c5fd;
+}
+
+.changelog-notice-warning {
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #fcd34d;
+}
+
+.changelog-notice-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.changelog-notice-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.changelog-notice-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.changelog-notice-message {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
 /* Time group */
 .changelog-group {
   display: flex;

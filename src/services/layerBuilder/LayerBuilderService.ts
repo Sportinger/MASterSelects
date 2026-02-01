@@ -439,13 +439,11 @@ export class LayerBuilderService {
 
       if (!nestedClip) continue;
 
+      // nestedLocalTime is the time within the clip (0 to duration) - used for keyframe interpolation
       const nestedLocalTime = clipTime - nestedClip.startTime;
-      const nestedClipTime = nestedClip.reversed
-        ? nestedClip.outPoint - nestedLocalTime
-        : nestedLocalTime + nestedClip.inPoint;
 
-      // Build layer based on source type
-      const nestedLayer = this.buildNestedClipLayer(nestedClip, nestedClipTime, ctx);
+      // Build layer based on source type (pass nestedLocalTime for keyframe interpolation)
+      const nestedLayer = this.buildNestedClipLayer(nestedClip, nestedLocalTime, ctx);
       if (nestedLayer) {
         layers.push(nestedLayer);
       }
@@ -457,14 +455,10 @@ export class LayerBuilderService {
   /**
    * Build layer for a nested clip
    */
-  private buildNestedClipLayer(nestedClip: TimelineClip, _nestedClipTime: number, _ctx: FrameContext): Layer | null {
-    const transform = nestedClip.transform || {
-      position: { x: 0, y: 0, z: 0 },
-      scale: { x: 1, y: 1 },
-      rotation: { x: 0, y: 0, z: 0 },
-      opacity: 1,
-      blendMode: 'normal' as const,
-    };
+  private buildNestedClipLayer(nestedClip: TimelineClip, nestedClipLocalTime: number, ctx: FrameContext): Layer | null {
+    // Use interpolated transform and effects to support keyframe animations (including opacity fades)
+    const transform = ctx.getInterpolatedTransform(nestedClip.id, nestedClipLocalTime);
+    const effects = ctx.getInterpolatedEffects(nestedClip.id, nestedClipLocalTime);
 
     const baseLayer = {
       id: `nested-layer-${nestedClip.id}`,
@@ -472,7 +466,7 @@ export class LayerBuilderService {
       visible: true,
       opacity: transform.opacity ?? 1,
       blendMode: transform.blendMode || 'normal',
-      effects: nestedClip.effects || [],
+      effects,
       position: {
         x: transform.position?.x || 0,
         y: transform.position?.y || 0,
