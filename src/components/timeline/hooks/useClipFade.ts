@@ -1,9 +1,21 @@
 // useClipFade - Fade-in/out handle dragging with real-time keyframe generation
 // Creates opacity keyframes as the user drags the fade handles
+// Preserves existing bezier handles when adjusting fade duration
 
 import { useState, useCallback, useRef } from 'react';
 import type { TimelineClip } from '../../../types';
 import type { ClipFadeState } from '../types';
+
+interface KeyframeData {
+  id: string;
+  clipId: string;
+  time: number;
+  property: string;
+  value: number;
+  easing: string;
+  handleIn?: { x: number; y: number };
+  handleOut?: { x: number; y: number };
+}
 
 interface UseClipFadeProps {
   // Clip data
@@ -12,16 +24,8 @@ interface UseClipFadeProps {
   // Keyframe actions
   addKeyframe: (clipId: string, property: 'opacity', value: number, time: number, easing?: string) => void;
   removeKeyframe: (keyframeId: string) => void;
-  getClipKeyframes: (clipId: string) => Array<{
-    id: string;
-    clipId: string;
-    time: number;
-    property: string;
-    value: number;
-    easing: string;
-    handleIn?: { x: number; y: number };
-    handleOut?: { x: number; y: number };
-  }>;
+  moveKeyframe: (keyframeId: string, newTime: number) => void;
+  getClipKeyframes: (clipId: string) => KeyframeData[];
 
   // Helpers
   pixelToTime: (pixel: number) => number;
@@ -39,6 +43,7 @@ export function useClipFade({
   clipMap,
   addKeyframe,
   removeKeyframe,
+  moveKeyframe,
   getClipKeyframes,
   pixelToTime,
 }: UseClipFadeProps): UseClipFadeReturn {
@@ -46,10 +51,10 @@ export function useClipFade({
   const clipFadeRef = useRef<ClipFadeState | null>(clipFade);
   clipFadeRef.current = clipFade;
 
-  // Store preserved easing settings when starting fade drag
-  const preservedEasingRef = useRef<{
-    fadeInEasing?: string;
-    fadeOutEasing?: string;
+  // Store the keyframe IDs we're working with during a drag
+  const fadeKeyframeIdsRef = useRef<{
+    startKeyframeId?: string;  // The keyframe at start/end of fade (opacity 0)
+    endKeyframeId?: string;    // The keyframe at fade point (opacity 1)
   }>({});
 
   // Calculate fade-in duration from opacity keyframes
@@ -105,65 +110,6 @@ export function useClipFade({
     return 0;
   }, [clipMap, getClipKeyframes]);
 
-  // Helper function to update/create fade keyframes
-  const updateFadeKeyframes = useCallback((
-    clipId: string,
-    edge: 'left' | 'right',
-    fadeDuration: number,
-    clipDuration: number,
-    isFirstUpdate: boolean = false
-  ) => {
-    const keyframes = getClipKeyframes(clipId);
-    const opacityKeyframes = keyframes.filter(k => k.property === 'opacity').sort((a, b) => a.time - b.time);
-
-    if (edge === 'left') {
-      // Fade-in: keyframes at time 0 (opacity 0) and fadeDuration (opacity 1)
-      const fadeOutBuffer = clipDuration * 0.5;
-      const fadeInKeyframes = opacityKeyframes.filter(k => k.time < fadeOutBuffer);
-
-      // On first update, preserve the easing from existing keyframe at time 0
-      if (isFirstUpdate && fadeInKeyframes.length > 0) {
-        const firstKf = fadeInKeyframes.find(k => k.time === 0);
-        if (firstKf) {
-          preservedEasingRef.current.fadeInEasing = firstKf.easing;
-        }
-      }
-
-      // Remove existing fade-in keyframes
-      fadeInKeyframes.forEach(k => removeKeyframe(k.id));
-
-      if (fadeDuration > 0.01) {
-        // Add new fade-in keyframes with preserved easing
-        const easing = preservedEasingRef.current.fadeInEasing || 'ease-out';
-        addKeyframe(clipId, 'opacity', 0, 0, easing);
-        addKeyframe(clipId, 'opacity', 1, fadeDuration, 'linear');
-      }
-    } else {
-      // Fade-out: keyframes at (clipDuration - fadeDuration) (opacity 1) and clipDuration (opacity 0)
-      const fadeInBuffer = clipDuration * 0.5;
-      const fadeOutKeyframes = opacityKeyframes.filter(k => k.time > fadeInBuffer);
-
-      // On first update, preserve the easing from the keyframe before the final one
-      if (isFirstUpdate && fadeOutKeyframes.length >= 2) {
-        const preLastKf = fadeOutKeyframes[fadeOutKeyframes.length - 2];
-        if (preLastKf) {
-          preservedEasingRef.current.fadeOutEasing = preLastKf.easing;
-        }
-      }
-
-      // Remove existing fade-out keyframes
-      fadeOutKeyframes.forEach(k => removeKeyframe(k.id));
-
-      if (fadeDuration > 0.01) {
-        // Add new fade-out keyframes with preserved easing
-        const fadeStartTime = clipDuration - fadeDuration;
-        const easing = preservedEasingRef.current.fadeOutEasing || 'ease-in';
-        addKeyframe(clipId, 'opacity', 1, fadeStartTime, easing);
-        addKeyframe(clipId, 'opacity', 0, clipDuration, 'linear');
-      }
-    }
-  }, [addKeyframe, removeKeyframe, getClipKeyframes]);
-
   const handleFadeStart = useCallback(
     (e: React.MouseEvent, clipId: string, edge: 'left' | 'right') => {
       e.stopPropagation();
@@ -177,24 +123,30 @@ export function useClipFade({
         ? getFadeInDuration(clipId)
         : getFadeOutDuration(clipId);
 
-      // Reset preserved easing for this drag session
-      preservedEasingRef.current = {};
-
-      // Preserve existing easing before any modifications
+      // Find existing keyframes for this fade
       const keyframes = getClipKeyframes(clipId);
       const opacityKeyframes = keyframes.filter(k => k.property === 'opacity').sort((a, b) => a.time - b.time);
 
+      // Reset keyframe IDs for this drag session
+      fadeKeyframeIdsRef.current = {};
+
       if (edge === 'left') {
-        // Find the first keyframe (at time 0) for fade-in easing
-        const firstKf = opacityKeyframes.find(k => k.time === 0);
-        if (firstKf) {
-          preservedEasingRef.current.fadeInEasing = firstKf.easing;
+        // Fade-in: Look for keyframe at 0 (opacity 0) and next one (opacity 1)
+        const startKf = opacityKeyframes.find(k => k.time === 0 && k.value === 0);
+        const endKf = opacityKeyframes.find(k => k.value >= 0.99 && k.time > 0 && k.time < clip.duration * 0.5);
+
+        if (startKf && endKf) {
+          fadeKeyframeIdsRef.current.startKeyframeId = startKf.id;
+          fadeKeyframeIdsRef.current.endKeyframeId = endKf.id;
         }
       } else {
-        // Find the second-to-last keyframe for fade-out easing
-        const fadeOutStart = opacityKeyframes.find(k => k.value >= 0.99 && k.time > clip.duration * 0.5);
-        if (fadeOutStart) {
-          preservedEasingRef.current.fadeOutEasing = fadeOutStart.easing;
+        // Fade-out: Look for keyframe at end (opacity 0) and previous one (opacity 1)
+        const endKf = opacityKeyframes.find(k => Math.abs(k.time - clip.duration) < 0.01 && k.value === 0);
+        const startKf = opacityKeyframes.find(k => k.value >= 0.99 && k.time > clip.duration * 0.5);
+
+        if (startKf && endKf) {
+          fadeKeyframeIdsRef.current.startKeyframeId = startKf.id;
+          fadeKeyframeIdsRef.current.endKeyframeId = endKf.id;
         }
       }
 
@@ -208,8 +160,6 @@ export function useClipFade({
       };
       setClipFade(initialFade);
       clipFadeRef.current = initialFade;
-
-      let isFirstMove = true;
 
       const handleMouseMove = (moveEvent: MouseEvent) => {
         const fade = clipFadeRef.current;
@@ -242,14 +192,63 @@ export function useClipFade({
         const maxFade = currentClip.duration * 0.5;
         newFadeDuration = Math.max(0, Math.min(newFadeDuration, maxFade));
 
-        // Update keyframes in real-time
-        updateFadeKeyframes(fade.clipId, fade.edge, newFadeDuration, currentClip.duration, isFirstMove);
-        isFirstMove = false;
+        // Update keyframes
+        const { startKeyframeId, endKeyframeId } = fadeKeyframeIdsRef.current;
+
+        if (fade.edge === 'left') {
+          // Fade-in: move the end keyframe (opacity 1) to new position
+          if (startKeyframeId && endKeyframeId) {
+            // Just move the existing keyframe - preserves all bezier handles
+            moveKeyframe(endKeyframeId, newFadeDuration);
+          } else if (newFadeDuration > 0.01) {
+            // No existing fade - create new keyframes
+            addKeyframe(fade.clipId, 'opacity', 0, 0, 'ease-out');
+            addKeyframe(fade.clipId, 'opacity', 1, newFadeDuration, 'linear');
+
+            // Get the newly created keyframe IDs for future moves
+            const newKeyframes = getClipKeyframes(fade.clipId).filter(k => k.property === 'opacity');
+            const newStartKf = newKeyframes.find(k => k.time === 0 && k.value === 0);
+            const newEndKf = newKeyframes.find(k => k.value >= 0.99 && k.time > 0);
+            if (newStartKf && newEndKf) {
+              fadeKeyframeIdsRef.current.startKeyframeId = newStartKf.id;
+              fadeKeyframeIdsRef.current.endKeyframeId = newEndKf.id;
+            }
+          }
+        } else {
+          // Fade-out: move the start keyframe (opacity 1) to new position
+          if (startKeyframeId && endKeyframeId) {
+            // Just move the existing keyframe - preserves all bezier handles
+            const fadeStartTime = currentClip.duration - newFadeDuration;
+            moveKeyframe(startKeyframeId, fadeStartTime);
+          } else if (newFadeDuration > 0.01) {
+            // No existing fade - create new keyframes
+            const fadeStartTime = currentClip.duration - newFadeDuration;
+            addKeyframe(fade.clipId, 'opacity', 1, fadeStartTime, 'ease-in');
+            addKeyframe(fade.clipId, 'opacity', 0, currentClip.duration, 'linear');
+
+            // Get the newly created keyframe IDs for future moves
+            const newKeyframes = getClipKeyframes(fade.clipId).filter(k => k.property === 'opacity');
+            const newStartKf = newKeyframes.find(k => k.value >= 0.99 && k.time > currentClip.duration * 0.5);
+            const newEndKf = newKeyframes.find(k => Math.abs(k.time - currentClip.duration) < 0.01 && k.value === 0);
+            if (newStartKf && newEndKf) {
+              fadeKeyframeIdsRef.current.startKeyframeId = newStartKf.id;
+              fadeKeyframeIdsRef.current.endKeyframeId = newEndKf.id;
+            }
+          }
+        }
+
+        // Handle removing fade when duration goes to 0
+        if (newFadeDuration <= 0.01 && startKeyframeId && endKeyframeId) {
+          removeKeyframe(startKeyframeId);
+          removeKeyframe(endKeyframeId);
+          fadeKeyframeIdsRef.current = {};
+        }
       };
 
       const handleMouseUp = () => {
         setClipFade(null);
         clipFadeRef.current = null;
+        fadeKeyframeIdsRef.current = {};
         document.removeEventListener('mousemove', handleMouseMove);
         document.removeEventListener('mouseup', handleMouseUp);
       };
@@ -257,7 +256,7 @@ export function useClipFade({
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
     },
-    [clipMap, getFadeInDuration, getFadeOutDuration, getClipKeyframes, pixelToTime, updateFadeKeyframes]
+    [clipMap, getFadeInDuration, getFadeOutDuration, getClipKeyframes, pixelToTime, addKeyframe, moveKeyframe, removeKeyframe]
   );
 
   return {

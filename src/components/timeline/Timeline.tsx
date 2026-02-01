@@ -210,6 +210,7 @@ export function Timeline() {
     clipMap,
     addKeyframe,
     removeKeyframe,
+    moveKeyframe,
     getClipKeyframes,
     pixelToTime,
   });
