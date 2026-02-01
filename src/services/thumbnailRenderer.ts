@@ -215,11 +215,13 @@ class ThumbnailRendererService {
       return [];
     }
 
+    // Get content-aware sample times that reflect the composition's clip structure
+    const sampleTimes = this.getContentAwareSampleTimes(compositionId, duration, count);
+
     const thumbnails: string[] = [];
 
-    // Generate frames from 0% to 100% of duration
-    for (let i = 0; i < count; i++) {
-      const time = count > 1 ? (i / (count - 1)) * duration : 0;
+    // Generate frames at content-aware positions
+    for (const time of sampleTimes) {
       // Clamp to slightly before end to avoid seek issues
       const clampedTime = Math.min(time, duration - 0.01);
 
@@ -238,6 +240,115 @@ class ThumbnailRendererService {
 
     log.debug(`Generated ${thumbnails.length} thumbnails for composition ${compositionId}`);
     return thumbnails;
+  }
+
+  /**
+   * Get content-aware sample times that reflect clip boundaries.
+   * This ensures thumbnails show where clips start/end and where gaps exist.
+   */
+  private getContentAwareSampleTimes(compositionId: string, duration: number, count: number): number[] {
+    // Get composition's clip layout
+    const { useMediaStore } = require('../stores/mediaStore');
+    const composition = useMediaStore.getState().compositions.find(
+      (c: { id: string }) => c.id === compositionId
+    );
+
+    if (!composition?.timelineData?.clips || composition.timelineData.clips.length === 0) {
+      // No clips - fall back to even distribution
+      return this.getEvenSampleTimes(duration, count);
+    }
+
+    const clips = composition.timelineData.clips;
+    const tracks = composition.timelineData.tracks || [];
+
+    // Get visible video tracks
+    const videoTrackIds = new Set(
+      tracks
+        .filter((t: { type: string; visible?: boolean }) => t.type === 'video' && t.visible !== false)
+        .map((t: { id: string }) => t.id)
+    );
+
+    // Get all video clips on visible tracks
+    const videoClips = clips.filter((c: { trackId: string; sourceType?: string }) =>
+      videoTrackIds.has(c.trackId) &&
+      (c.sourceType === 'video' || c.sourceType === 'image')
+    );
+
+    if (videoClips.length === 0) {
+      return this.getEvenSampleTimes(duration, count);
+    }
+
+    // Collect all important time points (clip boundaries)
+    const timePoints = new Set<number>();
+
+    // Add start (0) and end
+    timePoints.add(0);
+    timePoints.add(duration);
+
+    // Add clip start and end times
+    for (const clip of videoClips) {
+      const clipStart = clip.startTime || 0;
+      const clipEnd = clipStart + (clip.duration || 0);
+
+      // Add just inside clip boundaries to capture content
+      if (clipStart >= 0 && clipStart < duration) {
+        timePoints.add(clipStart);
+        timePoints.add(Math.min(clipStart + 0.1, clipEnd - 0.1)); // Just after start
+      }
+      if (clipEnd > 0 && clipEnd <= duration) {
+        timePoints.add(Math.max(clipEnd - 0.1, clipStart + 0.1)); // Just before end
+        timePoints.add(clipEnd);
+      }
+    }
+
+    // Sort time points
+    let sortedTimes = Array.from(timePoints).sort((a, b) => a - b);
+
+    // If we have fewer points than requested, fill in evenly between boundaries
+    if (sortedTimes.length < count) {
+      const filledTimes: number[] = [];
+
+      for (let i = 0; i < sortedTimes.length - 1; i++) {
+        const start = sortedTimes[i];
+        const end = sortedTimes[i + 1];
+        const gap = end - start;
+
+        filledTimes.push(start);
+
+        // Add intermediate points for larger gaps
+        const intermediateCount = Math.floor(gap / (duration / count));
+        for (let j = 1; j <= intermediateCount && filledTimes.length < count - 1; j++) {
+          filledTimes.push(start + (gap * j) / (intermediateCount + 1));
+        }
+      }
+
+      filledTimes.push(sortedTimes[sortedTimes.length - 1]);
+      sortedTimes = filledTimes;
+    }
+
+    // If we have too many points, sample evenly from them
+    if (sortedTimes.length > count) {
+      const sampled: number[] = [];
+      for (let i = 0; i < count; i++) {
+        const idx = Math.floor((i / (count - 1)) * (sortedTimes.length - 1));
+        sampled.push(sortedTimes[idx]);
+      }
+      sortedTimes = sampled;
+    }
+
+    log.debug(`Content-aware sample times for ${compositionId}:`, sortedTimes);
+    return sortedTimes;
+  }
+
+  /**
+   * Get evenly distributed sample times (fallback).
+   */
+  private getEvenSampleTimes(duration: number, count: number): number[] {
+    const times: number[] = [];
+    for (let i = 0; i < count; i++) {
+      times.push(count > 1 ? (i / (count - 1)) * duration : 0);
+    }
+    return times;
   }
 
   private async renderFrameAt(
