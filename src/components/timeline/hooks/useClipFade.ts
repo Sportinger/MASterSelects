@@ -168,13 +168,6 @@ export function useClipFade({
         const currentClip = clipMap.get(fade.clipId);
         if (!currentClip) return;
 
-        const updated = {
-          ...fade,
-          currentX: moveEvent.clientX,
-        };
-        setClipFade(updated);
-        clipFadeRef.current = updated;
-
         // Calculate new fade duration based on mouse movement
         const deltaX = moveEvent.clientX - fade.startX;
         const deltaTime = pixelToTime(Math.abs(deltaX));
@@ -192,7 +185,7 @@ export function useClipFade({
         const maxFade = currentClip.duration * 0.5;
         newFadeDuration = Math.max(0, Math.min(newFadeDuration, maxFade));
 
-        // Update keyframes
+        // Update keyframes FIRST (before triggering React re-render)
         const { startKeyframeId, endKeyframeId } = fadeKeyframeIdsRef.current;
 
         if (fade.edge === 'left') {
@@ -243,6 +236,14 @@ export function useClipFade({
           removeKeyframe(endKeyframeId);
           fadeKeyframeIdsRef.current = {};
         }
+
+        // Now update local state to trigger re-render with the fresh keyframe data
+        const updated = {
+          ...fade,
+          currentX: moveEvent.clientX,
+        };
+        setClipFade(updated);
+        clipFadeRef.current = updated;
       };
 
       const handleMouseUp = () => {

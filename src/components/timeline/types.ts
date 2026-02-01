@@ -256,6 +256,14 @@ export interface TimelineClipProps {
   hasKeyframes: (clipId: string, property?: AnimatableProperty) => boolean;
   fadeInDuration: number;  // Current fade-in duration in seconds
   fadeOutDuration: number;  // Current fade-out duration in seconds
+  opacityKeyframes: Array<{
+    id: string;
+    time: number;
+    value: number;
+    easing: string;
+    handleIn?: { x: number; y: number };
+    handleOut?: { x: number; y: number };
+  }>;  // Opacity keyframes for fade curve visualization
   timeToPixel: (time: number) => number;
   pixelToTime: (pixel: number) => number;
   formatTime: (seconds: number) => string;

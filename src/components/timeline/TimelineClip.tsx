@@ -352,7 +352,8 @@ const AnalysisOverlay = memo(function AnalysisOverlay({
 });
 
 // FadeCurve - Renders SVG bezier curve showing opacity fade
-const FadeCurve = memo(function FadeCurve({
+// Note: Not using memo() here to ensure re-render on keyframe changes
+function FadeCurve({
   keyframes,
   clipDuration,
   width,
@@ -1082,6 +1083,7 @@ function TimelineClipComponent({
       {opacityKeyframes.length >= 2 && (
         <div className="fade-curve-container">
           <FadeCurve
+            key={opacityKeyframes.map(k => `${k.id}:${k.time.toFixed(3)}:${k.value}:${k.handleIn?.x ?? ''}:${k.handleIn?.y ?? ''}:${k.handleOut?.x ?? ''}:${k.handleOut?.y ?? ''}`).join('|')}
             keyframes={opacityKeyframes}
             clipDuration={displayDuration}
             width={width}
