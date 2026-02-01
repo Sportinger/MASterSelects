@@ -649,6 +649,233 @@ class ThumbnailRendererService {
     });
   }
 
+  /**
+   * Generate thumbnails for a single clip with its effects applied.
+   * This renders the clip through WebGPU so effects are visible in thumbnails.
+   */
+  async generateClipThumbnails(
+    clip: {
+      id: string;
+      name: string;
+      source: {
+        type: string;
+        videoElement?: HTMLVideoElement;
+        imageElement?: HTMLImageElement;
+        naturalDuration?: number;
+      } | null;
+      transform?: {
+        position?: { x: number; y: number; z?: number };
+        scale?: { x: number; y: number };
+        rotation?: number | { x?: number; y?: number; z?: number };
+        opacity?: number;
+      };
+      effects?: Array<{ id: string; type: string; enabled: boolean; params: Record<string, unknown> }>;
+      inPoint: number;
+      outPoint: number;
+    },
+    options?: ThumbnailOptions
+  ): Promise<string[]> {
+    const opts = { ...DEFAULT_OPTIONS, ...options };
+    const { count, width, height } = opts;
+
+    if (!clip.source) {
+      log.warn('No source for clip thumbnail generation');
+      return [];
+    }
+
+    // Initialize if needed
+    if (!await this.initialize()) {
+      log.warn('ThumbnailRenderer not available');
+      return [];
+    }
+
+    // Ensure textures and canvas
+    if (!this.ensurePingPongTextures(width, height)) {
+      return [];
+    }
+    if (!this.ensureCanvas(width, height)) {
+      return [];
+    }
+
+    const clipDuration = (clip.outPoint - clip.inPoint) || clip.source.naturalDuration || 5;
+    const thumbnails: string[] = [];
+
+    log.info(`Generating ${count} thumbnails for clip ${clip.name} with effects`);
+
+    // Generate frames from 0% to 100% of clip duration
+    for (let i = 0; i < count; i++) {
+      const progress = count > 1 ? i / (count - 1) : 0;
+      const clipTime = clip.inPoint + progress * clipDuration;
+
+      try {
+        const dataUrl = await this.renderClipFrameAt(clip, clipTime, width, height);
+        if (dataUrl) {
+          thumbnails.push(dataUrl);
+        }
+      } catch (e) {
+        log.warn(`Failed to render clip thumbnail at ${clipTime.toFixed(2)}s`, e);
+      }
+
+      // Yield to main thread between frames
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+
+    log.debug(`Generated ${thumbnails.length} thumbnails for clip ${clip.name}`);
+    return thumbnails;
+  }
+
+  /**
+   * Render a single clip frame with effects applied.
+   */
+  private async renderClipFrameAt(
+    clip: {
+      id: string;
+      source: {
+        type: string;
+        videoElement?: HTMLVideoElement;
+        imageElement?: HTMLImageElement;
+      } | null;
+      transform?: {
+        position?: { x: number; y: number; z?: number };
+        scale?: { x: number; y: number };
+        rotation?: number | { x?: number; y?: number; z?: number };
+        opacity?: number;
+      };
+      effects?: Array<{ id: string; type: string; enabled: boolean; params: Record<string, unknown> }>;
+    },
+    time: number,
+    width: number,
+    height: number
+  ): Promise<string | null> {
+    if (!this.resources || !this.pingView || !this.pongView || !this.canvasContext || !this.canvas) {
+      return null;
+    }
+
+    const { device, sampler, compositorPipeline, effectsPipeline, outputPipeline, textureManager, maskTextureManager } = this.resources;
+
+    if (!clip.source) return null;
+
+    // Build a layer from the clip
+    const transform = clip.transform || {};
+    const layer: Layer = {
+      id: `thumb-${clip.id}`,
+      name: clip.id,
+      visible: true,
+      opacity: transform.opacity ?? 1,
+      blendMode: 'normal',
+      source: clip.source as Layer['source'],
+      effects: clip.effects || [],
+      position: transform.position || { x: 0, y: 0, z: 0 },
+      scale: transform.scale || { x: 1, y: 1 },
+      rotation: typeof transform.rotation === 'number'
+        ? transform.rotation
+        : (transform.rotation?.z || 0),
+    };
+
+    // Seek video to correct time
+    if (clip.source.videoElement) {
+      await this.seekVideoAndWait(clip.source.videoElement, time);
+    }
+
+    // Collect layer data
+    const layerData = this.collectLayerData([layer]);
+    if (layerData.length === 0) {
+      return this.createBlackThumbnail(width, height);
+    }
+
+    // Clear frame-scoped caches
+    compositorPipeline.beginFrame();
+
+    // Create command encoder
+    const commandEncoder = device.createCommandEncoder();
+
+    // Ping-pong compositing
+    let readView = this.pingView;
+    let writeView = this.pongView;
+
+    // Clear first buffer
+    const clearPass = commandEncoder.beginRenderPass({
+      colorAttachments: [{
+        view: readView,
+        clearValue: { r: 0, g: 0, b: 0, a: 0 },
+        loadOp: 'clear',
+        storeOp: 'store',
+      }],
+    });
+    clearPass.end();
+
+    // Composite the single layer
+    const outputAspect = width / height;
+    for (const data of layerData) {
+      const uniformBuffer = compositorPipeline.getOrCreateUniformBuffer(`clip-thumb-${data.layer.id}`);
+      const sourceAspect = data.sourceWidth / data.sourceHeight;
+
+      const maskLookupId = data.layer.id;
+      const maskInfo = maskTextureManager.getMaskInfo(maskLookupId);
+      const hasMask = maskInfo.hasMask;
+      const maskTextureView = maskInfo.view;
+
+      compositorPipeline.updateLayerUniforms(data.layer, sourceAspect, outputAspect, hasMask, uniformBuffer);
+
+      let pipeline: GPURenderPipeline;
+      let bindGroup: GPUBindGroup;
+
+      if (data.isVideo && data.externalTexture) {
+        pipeline = compositorPipeline.getExternalCompositePipeline()!;
+        bindGroup = compositorPipeline.createExternalCompositeBindGroup(
+          sampler, readView, data.externalTexture, uniformBuffer, maskTextureView
+        );
+      } else if (data.textureView) {
+        pipeline = compositorPipeline.getCompositePipeline()!;
+        bindGroup = compositorPipeline.createCompositeBindGroup(
+          sampler, readView, data.textureView, uniformBuffer, maskTextureView
+        );
+      } else {
+        continue;
+      }
+
+      const pass = commandEncoder.beginRenderPass({
+        colorAttachments: [{ view: writeView, loadOp: 'clear', storeOp: 'store' }],
+      });
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, bindGroup);
+      pass.draw(6);
+      pass.end();
+
+      // Apply effects
+      if (data.layer.effects?.length && effectsPipeline) {
+        const result = effectsPipeline.applyEffects(
+          commandEncoder, data.layer.effects, sampler,
+          writeView, readView, this.pingView!, this.pongView!, width, height
+        );
+        if (result.swapped) {
+          [readView, writeView] = [writeView, readView];
+        }
+      }
+
+      // Swap for next layer
+      [readView, writeView] = [writeView, readView];
+    }
+
+    // Output to canvas
+    outputPipeline.updateUniforms(false, width, height);
+    const outputBindGroup = outputPipeline.createOutputBindGroup(sampler, readView);
+    outputPipeline.renderToCanvas(commandEncoder, this.canvasContext, outputBindGroup);
+
+    // Submit and wait
+    device.queue.submit([commandEncoder.finish()]);
+    await device.queue.onSubmittedWorkDone();
+
+    // Convert to data URL
+    try {
+      const blob = await this.canvas.convertToBlob({ type: 'image/jpeg', quality: 0.6 });
+      return await this.blobToDataURL(blob);
+    } catch (e) {
+      log.warn('Failed to convert clip thumbnail to data URL', e);
+      return null;
+    }
+  }
+
   dispose(): void {
     this.pingTexture?.destroy();
     this.pongTexture?.destroy();
