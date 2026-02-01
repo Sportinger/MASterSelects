@@ -441,8 +441,10 @@ export class ParallelDecodeManager {
         // Only await if frame is NOT in buffer - that's the only case we need it NOW
         if (!frameInBuffer) {
           // Need frame NOW - await the decode with flush
+          // IMPORTANT: Pass the actual targetSampleIndex for seek calculation, not decodeTarget
+          // Otherwise we might seek to a keyframe AFTER the frame we need
           console.log(`[ParallelDecode] "${clipInfo.clipName}": Awaiting decode (frame not in buffer)`);
-          await this.decodeAhead(clipDecoder, decodeTarget, true);
+          await this.decodeAhead(clipDecoder, decodeTarget, true, 0, targetSampleIndex);
           console.log(`[ParallelDecode] "${clipInfo.clipName}": After decode - buffer=${clipDecoder.frameBuffer.size} frames, decoderState=${clipDecoder.decoder.state}`);
         } else {
           // Frame already in buffer - background decode for future frames (no seek needed)
@@ -545,8 +547,10 @@ export class ParallelDecodeManager {
   /**
    * Decode frames ahead to fill buffer - optimized for throughput
    * Does NOT flush after every batch - frames arrive via output callback asynchronously
+   * @param seekTargetSampleIndex - If provided, use this for seek keyframe calculation instead of targetSampleIndex
+   *                                This is important when targetSampleIndex includes buffer-ahead frames
    */
-  private async decodeAhead(clipDecoder: ClipDecoder, targetSampleIndex: number, forceFlush: boolean = false, recursionDepth: number = 0): Promise<void> {
+  private async decodeAhead(clipDecoder: ClipDecoder, targetSampleIndex: number, forceFlush: boolean = false, recursionDepth: number = 0, seekTargetSampleIndex?: number): Promise<void> {
     // Prevent infinite recursion
     if (recursionDepth > 3) {
       log.warn(`${clipDecoder.clipName}: Max recursion depth reached (${recursionDepth}), stopping`);
@@ -583,16 +587,19 @@ export class ParallelDecodeManager {
         // IMPORTANT: Do seek FIRST before calculating framesToDecode
         // Otherwise if we're past the target, framesToDecode will be negative and we'll return early
         if (needsSeek) {
-          // Need to seek - find nearest keyframe before target
-          let keyframeIndex = targetSampleIndex;
-          for (let i = targetSampleIndex; i >= 0; i--) {
+          // Need to seek - find nearest keyframe before the ACTUAL target we need
+          // Use seekTargetSampleIndex if provided (the actual frame we need),
+          // not targetSampleIndex (which may include buffer-ahead frames)
+          const seekTarget = seekTargetSampleIndex ?? targetSampleIndex;
+          let keyframeIndex = seekTarget;
+          for (let i = seekTarget; i >= 0; i--) {
             if (clipDecoder.samples[i].is_sync) {
               keyframeIndex = i;
               break;
             }
           }
 
-          console.log(`[ParallelDecode] ${clipDecoder.clipName}: Seeking to keyframe at sample ${keyframeIndex} (target=${targetSampleIndex}, distance=${targetSampleIndex - keyframeIndex})`);
+          console.log(`[ParallelDecode] ${clipDecoder.clipName}: Seeking to keyframe at sample ${keyframeIndex} (seekTarget=${seekTarget}, bufferTarget=${targetSampleIndex}, distance=${seekTarget - keyframeIndex})`);
 
           // Reset decoder for seek
           clipDecoder.decoder.reset();
