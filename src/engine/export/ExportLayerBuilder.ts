@@ -183,48 +183,37 @@ function buildVideoLayer(
   const video = clip.source!.videoElement!;
   const clipState = clipStates.get(clip.id);
 
-  // Try parallel decoder first
-  if (useParallelDecode && parallelDecoder && parallelDecoder.hasClip(clip.id)) {
+  // PARALLEL DECODE MODE - no HTMLVideoElement fallback
+  if (useParallelDecode && parallelDecoder) {
+    if (!parallelDecoder.hasClip(clip.id)) {
+      throw new Error(`Clip "${clip.name}" not found in parallel decoder`);
+    }
     const videoFrame = parallelDecoder.getFrameForClip(clip.id, time);
-    if (videoFrame) {
-      return {
-        ...baseLayerProps,
-        source: {
-          type: 'video',
-          videoElement: video,
-          videoFrame: videoFrame,
-        },
-      };
+    if (!videoFrame) {
+      throw new Error(`Parallel decode failed for clip "${clip.name}" at time ${time.toFixed(3)}s - no frame available`);
     }
-    // No fallback - error out if parallel decode fails
-    throw new Error(`Parallel decode failed for clip "${clip.name}" at time ${time.toFixed(3)}s - no frame available`);
-  }
-
-  // Try sequential WebCodecs VideoFrame
-  if (clipState?.isSequential && clipState.webCodecsPlayer) {
-    const videoFrame = clipState.webCodecsPlayer.getCurrentFrame();
-    if (videoFrame) {
-      return {
-        ...baseLayerProps,
-        source: {
-          type: 'video',
-          videoElement: video,
-          webCodecsPlayer: clipState.webCodecsPlayer,
-        },
-      };
-    }
-    // No fallback for sequential either
-    throw new Error(`Sequential decode failed for clip "${clip.name}" at time ${time.toFixed(3)}s - no frame available`);
-  }
-
-  // Only use HTMLVideoElement if not using parallel/sequential decode
-  const videoReady = video.readyState >= 2 && !video.seeking;
-  if (videoReady) {
     return {
       ...baseLayerProps,
       source: {
         type: 'video',
         videoElement: video,
+        videoFrame: videoFrame,
+      },
+    };
+  }
+
+  // SEQUENTIAL MODE (single clip) - use WebCodecs player
+  if (clipState?.isSequential && clipState.webCodecsPlayer) {
+    const videoFrame = clipState.webCodecsPlayer.getCurrentFrame();
+    if (!videoFrame) {
+      throw new Error(`Sequential decode failed for clip "${clip.name}" at time ${time.toFixed(3)}s - no frame available`);
+    }
+    return {
+      ...baseLayerProps,
+      source: {
+        type: 'video',
+        videoElement: video,
+        webCodecsPlayer: clipState.webCodecsPlayer,
       },
     };
   }
@@ -260,26 +249,28 @@ function buildNestedLayersForExport(
 
     const baseLayer = buildNestedBaseLayer(nestedClip);
 
-    // Try parallel decoder first - no fallback
+    // Video clips - parallel decode only, no HTMLVideoElement fallback
     if (nestedClip.source?.videoElement) {
-      if (useParallelDecode && parallelDecoder && parallelDecoder.hasClip(nestedClip.id)) {
-        const videoFrame = parallelDecoder.getFrameForClip(nestedClip.id, mainTimelineTime);
-        if (videoFrame) {
-          layers.push({
-            ...baseLayer,
-            source: {
-              type: 'video',
-              videoElement: nestedClip.source.videoElement,
-              videoFrame: videoFrame,
-            },
-          } as Layer);
-          continue;
+      if (useParallelDecode && parallelDecoder) {
+        if (!parallelDecoder.hasClip(nestedClip.id)) {
+          throw new Error(`Nested clip "${nestedClip.name}" not found in parallel decoder`);
         }
-        // No fallback - error out
-        throw new Error(`Parallel decode failed for nested clip "${nestedClip.name}" at time ${mainTimelineTime.toFixed(3)}s`);
+        const videoFrame = parallelDecoder.getFrameForClip(nestedClip.id, mainTimelineTime);
+        if (!videoFrame) {
+          throw new Error(`Parallel decode failed for nested clip "${nestedClip.name}" at time ${mainTimelineTime.toFixed(3)}s`);
+        }
+        layers.push({
+          ...baseLayer,
+          source: {
+            type: 'video',
+            videoElement: nestedClip.source.videoElement,
+            videoFrame: videoFrame,
+          },
+        } as Layer);
+        continue;
       }
 
-      // Only use HTMLVideoElement if not using parallel decode
+      // Sequential mode only (single clip) - use WebCodecs player
       layers.push({
         ...baseLayer,
         source: {
