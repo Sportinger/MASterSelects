@@ -129,6 +129,7 @@ export function generateWaveformFromBuffer(
 }
 
 // Generate thumbnail filmstrip from video
+// Now covers 0% to 100% of duration (previously only 0% to 90%)
 export async function generateThumbnails(video: HTMLVideoElement, duration: number, count: number = 10): Promise<string[]> {
   const thumbnails: string[] = [];
   const canvas = document.createElement('canvas');
@@ -141,17 +142,20 @@ export async function generateThumbnails(video: HTMLVideoElement, duration: numb
   canvas.width = thumbWidth;
   canvas.height = thumbHeight;
 
-  // Generate frames at regular intervals
-  const interval = duration / count;
-
+  // Generate frames from 0% to 100% of duration
+  // With count=10: 0%, 11.1%, 22.2%, ... 88.9%, 100%
   for (let i = 0; i < count; i++) {
-    const time = i * interval;
+    // Use (count - 1) as divisor so last thumbnail is at 100%
+    // For count=1, just use time=0
+    const time = count > 1 ? (i / (count - 1)) * duration : 0;
+    // Clamp to slightly before end to avoid seek issues at exact duration
+    const clampedTime = Math.min(time, duration - 0.01);
     try {
-      await seekVideo(video, time);
+      await seekVideo(video, clampedTime);
       ctx.drawImage(video, 0, 0, thumbWidth, thumbHeight);
       thumbnails.push(canvas.toDataURL('image/jpeg', 0.6));
     } catch (e) {
-      log.warn('Failed to generate thumbnail', { time, error: e });
+      log.warn('Failed to generate thumbnail', { time: clampedTime, error: e });
     }
   }
 

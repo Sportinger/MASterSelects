@@ -769,7 +769,18 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
         ),
       });
 
-      log.debug('Refreshed nested clips for comp clip', {
+      // Regenerate thumbnails for the updated composition
+      const compDuration = composition.timelineData?.duration ?? composition.duration;
+      generateCompThumbnails({
+        clipId: compClip.id,
+        nestedClips,
+        compDuration,
+        thumbnailsEnabled: get().thumbnailsEnabled,
+        get,
+        set,
+      });
+
+      log.debug('Refreshed nested clips and thumbnails for comp clip', {
         compClipId: compClip.id,
         nestedClipCount: nestedClips.length,
         nestedTrackCount: nestedTracks.length,
