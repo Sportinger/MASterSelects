@@ -44,7 +44,13 @@ interface RawChangeEntry extends ChangeEntry {
 }
 
 const RAW_CHANGELOG: RawChangeEntry[] = [
-  // === Feb 1, 2026 - ESLint Cleanup ===
+  // === Feb 1, 2026 - Big Feature Day ===
+  {
+    date: '2026-02-01',
+    type: 'new',
+    title: 'Nested Comp Boundary Markers',
+    description: 'Visual markers show where clips start/end within nested compositions',
+  },
   {
     date: '2026-02-01',
     type: 'improve',
