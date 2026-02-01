@@ -17,8 +17,10 @@ export function MobileOptionsMenu({ isOpen, onClose }: MobileOptionsMenuProps) {
   // Project name state
   const [projectName, setProjectName] = useState('Untitled');
 
+  // Sync project name from service when menu opens
   useEffect(() => {
     const data = projectFileService.getProjectData();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setProjectName(data?.name || 'Untitled');
   }, [isOpen]);
 

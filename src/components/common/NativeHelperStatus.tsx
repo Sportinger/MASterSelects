@@ -49,8 +49,10 @@ export function NativeHelperStatus() {
   }, [turboModeEnabled, setNativeHelperConnected]);
 
   // Check on mount and when turbo mode changes
+  // This effect syncs with external NativeHelper service state
   useEffect(() => {
     // Use void to explicitly mark fire-and-forget async call
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void checkConnection();
 
     // Subscribe to status changes
@@ -120,10 +122,12 @@ function NativeHelperDialog({
   const isMac = platform === 'mac';
 
   // Fetch system info when connected
+  // This effect syncs UI state with external NativeHelper info
   useEffect(() => {
     if (status === 'connected') {
       NativeHelperClient.getInfo().then(setInfo).catch(() => setInfo(null));
     } else {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setInfo(null);
     }
   }, [status]);

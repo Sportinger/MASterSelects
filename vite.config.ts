@@ -21,7 +21,7 @@ function browserLogBridge(): Plugin {
               fs.writeFileSync(logFile, body);
               res.statusCode = 200;
               res.end('ok');
-            } catch (err) {
+            } catch {
               res.statusCode = 500;
               res.end('write error');
             }

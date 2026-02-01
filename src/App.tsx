@@ -110,6 +110,7 @@ function App() {
   const showWelcome = !isChecking && !hasStoredProject && !manuallyDismissed;
 
   // Show What's New dialog after initial check (when no welcome overlay)
+  // This effect intentionally sets state based on derived conditions
   useEffect(() => {
     if (DEV_DISABLE_WHATS_NEW) return;
     if (isChecking) return;
@@ -117,7 +118,8 @@ function App() {
     // If welcome is showing, don't show What's New yet
     if (showWelcome) return;
 
-    // Show What's New dialog
+    // Show What's New dialog - this is intentional state sync, not a cascading render
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setShowWhatsNew(true);
   }, [isChecking, showWelcome]);
 

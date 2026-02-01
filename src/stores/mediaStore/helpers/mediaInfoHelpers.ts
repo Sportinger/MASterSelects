@@ -196,7 +196,7 @@ export async function getMediaInfo(
   // For MP4/MOV/M4V, use mp4box for accurate codec detection
   const useMP4Box = type === 'video' && ['mp4', 'mov', 'm4v', 'mp4v', '3gp'].includes(ext || '');
 
-  return new Promise(async (resolve) => {
+  return new Promise((resolve) => {
     const timeout = setTimeout(() => {
       log.warn('Timeout:', file.name);
       resolve({ container, fileSize });

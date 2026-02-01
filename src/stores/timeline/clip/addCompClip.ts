@@ -371,7 +371,7 @@ export async function generateCompThumbnails(params: GenerateCompThumbnailsParam
 
   // Try WebGPU-based rendering first (shows all layers with effects)
   try {
-    log.debug('Generating WebGPU thumbnails for nested comp', { clipId, compositionId: compClip.compositionId });
+    log.info('Generating WebGPU thumbnails for nested comp', { clipId, compositionId: compClip.compositionId, compDuration });
 
     const thumbnails = await thumbnailRenderer.generateCompositionThumbnails(
       compClip.compositionId,
@@ -379,10 +379,14 @@ export async function generateCompThumbnails(params: GenerateCompThumbnailsParam
       { count: 10, width: 160, height: 90 }
     );
 
+    log.info('WebGPU thumbnail result', { clipId, count: thumbnails.length, hasData: thumbnails.length > 0 });
+
     if (thumbnails.length > 0) {
       set({ clips: updateClipById(get().clips, clipId, { thumbnails }) });
-      log.debug('Generated WebGPU thumbnails for nested comp', { clipId, count: thumbnails.length });
+      log.info('Set thumbnails for nested comp', { clipId, count: thumbnails.length });
       return;
+    } else {
+      log.warn('WebGPU returned empty thumbnails', { clipId, compositionId: compClip.compositionId });
     }
   } catch (e) {
     log.warn('WebGPU thumbnail generation failed, falling back to video-based', e);

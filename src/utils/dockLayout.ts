@@ -138,8 +138,8 @@ export function collapseSingleChildSplits(node: DockNode): DockNode {
   }
 
   // Recursively collapse children first
-  let child0 = collapseSingleChildSplits(node.children[0]);
-  let child1 = collapseSingleChildSplits(node.children[1]);
+  const child0 = collapseSingleChildSplits(node.children[0]);
+  const child1 = collapseSingleChildSplits(node.children[1]);
 
   // Check if either child is an empty tab group
   const child0Empty = child0.kind === 'tab-group' && child0.panels.length === 0;

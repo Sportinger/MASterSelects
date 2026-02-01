@@ -240,6 +240,7 @@ class CompositionRendererService {
   evaluateAtTime(compositionId: string, time: number): EvaluatedLayer[] {
     const sources = this.compositionSources.get(compositionId);
     if (!sources?.isReady) {
+      log.warn(`evaluateAtTime: sources not ready for ${compositionId}`);
       return [];
     }
 
@@ -248,11 +249,13 @@ class CompositionRendererService {
     const { activeCompositionId } = useMediaStore.getState();
     const composition = useMediaStore.getState().compositions.find(c => c.id === compositionId);
     if (!composition) {
+      log.warn(`evaluateAtTime: composition not found ${compositionId}`);
       return [];
     }
 
     // Check if this is the active composition
     const isActiveComp = compositionId === activeCompositionId;
+    log.debug(`evaluateAtTime: ${composition.name}, isActive=${isActiveComp}, time=${time.toFixed(2)}`);
 
     let clips: (SerializableClip | TimelineClip)[];
     let tracks: TimelineTrack[];
@@ -266,6 +269,7 @@ class CompositionRendererService {
       // Non-active composition - use serialized data
       clips = composition.timelineData.clips || [];
       tracks = composition.timelineData.tracks || [];
+      log.debug(`evaluateAtTime: using timelineData, ${clips.length} clips, ${tracks.length} tracks`);
     } else {
       log.warn(`evaluateAtTime: comp ${composition.name} has NO timelineData!`);
       return [];
@@ -273,6 +277,7 @@ class CompositionRendererService {
 
     // Find video tracks (in order for layering)
     const videoTracks = tracks.filter((t: TimelineTrack) => t.type === 'video');
+    log.debug(`evaluateAtTime: ${videoTracks.length} video tracks, clipSources: ${sources.clipSources.size}`);
 
     // Build layers from bottom to top (reverse track order)
     const layers: EvaluatedLayer[] = [];

@@ -199,11 +199,13 @@ class ThumbnailRendererService {
     }
 
     // Prepare the composition sources
+    log.info(`Preparing composition for thumbnails: ${compositionId}`);
     const prepared = await compositionRenderer.prepareComposition(compositionId);
     if (!prepared) {
       log.warn(`Failed to prepare composition ${compositionId}`);
       return [];
     }
+    log.info(`Composition prepared: ${compositionId}`);
 
     // Ensure textures and canvas
     if (!this.ensurePingPongTextures(width, height)) {
@@ -253,8 +255,11 @@ class ThumbnailRendererService {
     // Evaluate composition at the given time
     const layers = compositionRenderer.evaluateAtTime(compositionId, time);
 
+    log.debug(`evaluateAtTime result for ${compositionId} at ${time.toFixed(2)}s: ${layers.length} layers`);
+
     if (layers.length === 0) {
       // Return transparent/black thumbnail for empty frames
+      log.debug(`No layers at time ${time.toFixed(2)}s - returning black thumbnail`);
       return this.createBlackThumbnail(width, height);
     }
 
