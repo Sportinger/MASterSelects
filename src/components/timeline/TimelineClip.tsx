@@ -361,10 +361,12 @@ function TimelineClipComponent({
   isInLinkedGroup,
   isDragging,
   isTrimming,
+  isFading,
   isLinkedToDragging,
   isLinkedToTrimming,
   clipDrag,
   clipTrim,
+  clipFade,
   zoom,
   scrollX,
   timelineRef,
@@ -381,8 +383,11 @@ function TimelineClipComponent({
   onDoubleClick,
   onContextMenu,
   onTrimStart,
+  onFadeStart,
   onCutAtPosition,
   hasKeyframes,
+  fadeInDuration,
+  fadeOutDuration,
   timeToPixel,
   pixelToTime,
   formatTime,
@@ -545,6 +550,7 @@ function TimelineClipComponent({
     isLinkedToDragging ? 'linked-dragging' : '',
     isTrimming ? 'trimming' : '',
     isLinkedToTrimming ? 'linked-trimming' : '',
+    isFading ? 'fading' : '',
     isDragging && clipDrag?.forcingOverlap ? 'forcing-overlap' : '',
     clipTypeClass,
     clip.isLoading ? 'loading' : '',
@@ -878,6 +884,38 @@ function TimelineClipComponent({
           <div className="analyzing-progress" style={{ width: `${clip.analysisProgress || 0}%` }} />
         </div>
       )}
+      {/* Fade overlays - visual indication of fade regions */}
+      {fadeInDuration > 0 && (
+        <div
+          className="fade-overlay fade-in"
+          style={{ width: timeToPixel(fadeInDuration) }}
+        />
+      )}
+      {fadeOutDuration > 0 && (
+        <div
+          className="fade-overlay fade-out"
+          style={{ width: timeToPixel(fadeOutDuration) }}
+        />
+      )}
+      {/* Fade handles - corner handles for adjusting fade-in/out */}
+      <div
+        className={`fade-handle left${fadeInDuration > 0 ? ' active' : ''}`}
+        style={fadeInDuration > 0 ? { left: timeToPixel(fadeInDuration) - 6 } : undefined}
+        onMouseDown={(e) => {
+          e.stopPropagation();
+          onFadeStart(e, 'left');
+        }}
+        title={fadeInDuration > 0 ? `Fade In: ${fadeInDuration.toFixed(2)}s` : 'Drag to add fade in'}
+      />
+      <div
+        className={`fade-handle right${fadeOutDuration > 0 ? ' active' : ''}`}
+        style={fadeOutDuration > 0 ? { right: timeToPixel(fadeOutDuration) - 6 } : undefined}
+        onMouseDown={(e) => {
+          e.stopPropagation();
+          onFadeStart(e, 'right');
+        }}
+        title={fadeOutDuration > 0 ? `Fade Out: ${fadeOutDuration.toFixed(2)}s` : 'Drag to add fade out'}
+      />
       {/* Trim handles */}
       <div
         className="trim-handle left"

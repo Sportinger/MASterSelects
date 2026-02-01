@@ -4,7 +4,9 @@ import type {
   TimelineClip,
   TimelineTrack,
   Effect,
+  Transform,
 } from '../../types';
+import type { MediaFile, Composition } from '../../stores/mediaStore/types';
 
 /**
  * Clip time calculation result - memoized per clip per frame
@@ -32,7 +34,7 @@ export interface FrameContext {
   proxyEnabled: boolean;
 
   // Store functions
-  getInterpolatedTransform: (clipId: string, localTime: number) => any;
+  getInterpolatedTransform: (clipId: string, localTime: number) => Transform;
   getInterpolatedEffects: (clipId: string, localTime: number) => Effect[];
   getInterpolatedSpeed: (clipId: string, localTime: number) => number;
   getSourceTimeForClip: (clipId: string, localTime: number) => number;
@@ -55,10 +57,10 @@ export interface FrameContext {
   clipsByTrackId: Map<string, TimelineClip>;
 
   // Media lookups (lazy, cached via getters)
-  mediaFiles: any[];
-  mediaFileById: Map<string, any>;
-  mediaFileByName: Map<string, any>;
-  compositionById: Map<string, any>;
+  mediaFiles: MediaFile[];
+  mediaFileById: Map<string, MediaFile>;
+  mediaFileByName: Map<string, MediaFile>;
+  compositionById: Map<string, Composition>;
 }
 
 /**
@@ -93,7 +95,7 @@ export interface CachedTransform {
   rotation: { x: number; y: number; z: number };
   opacity: number;
   blendMode: string;
-  sourceRef: any; // Reference to detect changes
+  sourceRef: Transform | null; // Reference to detect changes
 }
 
 /**

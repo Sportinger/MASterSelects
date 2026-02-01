@@ -44,6 +44,146 @@ interface RawChangeEntry extends ChangeEntry {
 }
 
 const RAW_CHANGELOG: RawChangeEntry[] = [
+  // === Feb 1, 2026 - ESLint Cleanup ===
+  {
+    date: '2026-02-01',
+    type: 'improve',
+    title: 'ESLint Cleanup',
+    description: 'Fixed all ESLint errors for Cloudflare builds, improved type safety',
+  },
+
+  // === Jan 31, 2026 - WYSIWYG Thumbnails ===
+  {
+    date: '2026-01-31',
+    type: 'new',
+    title: 'WYSIWYG Clip Thumbnails',
+    description: 'Thumbnails now show effects applied to clips',
+  },
+  {
+    date: '2026-01-31',
+    type: 'improve',
+    title: 'Content-Aware Thumbnail Sampling',
+    description: 'Thumbnails sample at clip boundaries for better preview coverage',
+  },
+  {
+    date: '2026-01-31',
+    type: 'new',
+    title: 'Copy/Paste Clips',
+    description: 'Ctrl+C/V to copy and paste timeline clips with undo support',
+  },
+  {
+    date: '2026-01-31',
+    type: 'fix',
+    title: 'Track Header Scroll/Zoom',
+    description: 'Disabled accidental Alt+Wheel zoom and Shift+Wheel scroll over track headers',
+  },
+
+  // === Jan 30, 2026 - Nested Comp Thumbnails ===
+  {
+    date: '2026-01-30',
+    type: 'new',
+    title: 'WebGPU Thumbnail Renderer',
+    description: 'GPU-accelerated thumbnail generation for nested compositions',
+  },
+  {
+    date: '2026-01-30',
+    type: 'improve',
+    title: 'Smart Thumbnail Updates',
+    description: 'Only regenerate nested comp thumbnails when content actually changes',
+  },
+
+  // === Jan 29, 2026 - Export System V2 ===
+  {
+    date: '2026-01-29',
+    type: 'new',
+    title: 'Export System V2',
+    description: 'Shared decoder pool with intelligent frame caching for faster exports',
+  },
+  {
+    date: '2026-01-29',
+    type: 'new',
+    title: 'Export Planner',
+    description: 'Smart decode scheduling optimizes export performance',
+  },
+  {
+    date: '2026-01-29',
+    type: 'fix',
+    title: 'Export Keyframe Seeking',
+    description: 'Fixed decode seeking to wrong keyframe position',
+  },
+
+  // === Jan 28, 2026 - Nested Comp Fixes ===
+  {
+    date: '2026-01-28',
+    type: 'fix',
+    title: 'Nested Comp Layer Order',
+    description: 'Fixed layer ordering in nested compositions',
+  },
+  {
+    date: '2026-01-28',
+    type: 'fix',
+    title: 'Nested Comp Video Playback',
+    description: 'Fixed videos not rendering due to readyState timing',
+  },
+  {
+    date: '2026-01-28',
+    type: 'improve',
+    title: 'Composition Tab UX',
+    description: 'Clicking composition tabs now activates Media Panel',
+  },
+
+  // === Jan 27, 2026 - Proxy & Caching ===
+  {
+    date: '2026-01-27',
+    type: 'fix',
+    title: 'Proxy Scrubbing',
+    description: 'Use nearest cached frame as fallback for smoother scrubbing',
+  },
+  {
+    date: '2026-01-27',
+    type: 'fix',
+    title: 'Backward Seek',
+    description: 'Fixed backward seek detection in ParallelDecodeManager',
+  },
+
+  // === Jan 26, 2026 - Project Loading & Linux ===
+  {
+    date: '2026-01-26',
+    type: 'fix',
+    title: 'Project File Loading',
+    description: 'Improved reliability loading files from Raw folder',
+  },
+  {
+    date: '2026-01-26',
+    type: 'fix',
+    title: 'Linux/Vulkan Preview',
+    description: 'Fixed black preview issue on Linux with Vulkan backend',
+  },
+  {
+    date: '2026-01-26',
+    type: 'new',
+    title: 'IndexedDB Error Dialog',
+    description: 'Clear error message when browser storage is corrupted',
+  },
+  {
+    date: '2026-01-26',
+    type: 'new',
+    title: 'Clip Entrance Animation',
+    description: 'Smooth animation when switching compositions',
+  },
+  {
+    date: '2026-01-26',
+    type: 'fix',
+    title: 'Nested Clip Caching',
+    description: 'Optimized nested composition rendering with frame caching',
+  },
+  {
+    date: '2026-01-26',
+    type: 'fix',
+    title: 'NativeHelper Dialog Crash',
+    description: 'Fixed crash with lite helper configuration',
+  },
+
   // === Jan 25, 2026 - MAJOR REFACTORING DAY ===
   {
     date: '2026-01-25',

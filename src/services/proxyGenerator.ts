@@ -45,15 +45,21 @@ interface MP4VideoTrack {
   video: { width: number; height: number };
 }
 
+interface MP4Track {
+  video?: { width: number; height: number };
+  codec?: string;
+  id?: number;
+}
+
 interface MP4File {
   onReady: (info: { videoTracks: MP4VideoTrack[] }) => void;
-  onSamples: (trackId: number, ref: any, samples: Sample[]) => void;
+  onSamples: (trackId: number, ref: unknown, samples: Sample[]) => void;
   onError: (error: string) => void;
   appendBuffer: (buffer: MP4ArrayBuffer) => number;
   start: () => void;
   flush: () => void;
-  setExtractionOptions: (trackId: number, user: any, options: { nbSamples: number }) => void;
-  getTrackById: (id: number) => any;
+  setExtractionOptions: (trackId: number, user: unknown, options: { nbSamples: number }) => void;
+  getTrackById: (id: number) => MP4Track | undefined;
 }
 
 interface GeneratorResult {
@@ -430,7 +436,7 @@ class ProxyGeneratorGPU {
         checkComplete();
       };
 
-      mp4File.onSamples = (_trackId: number, _ref: any, samples: Sample[]) => {
+      mp4File.onSamples = (_trackId: number, _ref: unknown, samples: Sample[]) => {
         this.samples.push(...samples);
         log.debug(`Received ${samples.length} samples (total: ${this.samples.length}/${expectedSamples})`);
         if (this.samples.length >= expectedSamples) {
@@ -493,7 +499,7 @@ class ProxyGeneratorGPU {
     });
   }
 
-  private getCodecString(codec: string, trak: any): string {
+  private getCodecString(codec: string, trak: MP4Track | undefined): string {
     // Handle different codec types
     if (codec.startsWith('avc1')) {
       // H.264/AVC
@@ -583,7 +589,7 @@ class ProxyGeneratorGPU {
 
     let decodedCount = 0;
     let errorCount = 0;
-    let lastError: any = null;
+    let lastError: unknown = null;
 
     this.decoder = new VideoDecoder({
       output: (frame) => {

@@ -1,7 +1,7 @@
 // Composition clip addition - extracted from addCompClip
 // Handles nested composition loading, audio mixdown, and linked audio creation
 
-import type { TimelineClip, TimelineTrack } from '../../../types';
+import type { TimelineClip, TimelineTrack, CompositionTimelineData, SerializableClip } from '../../../types';
 import type { Composition } from '../types';
 import { DEFAULT_TRANSFORM } from '../constants';
 import { useMediaStore } from '../../mediaStore';
@@ -13,9 +13,20 @@ import { blobUrlManager } from '../helpers/blobUrlManager';
 import { updateClipById } from '../helpers/clipStateHelpers';
 import { Logger } from '../../../services/logger';
 import { thumbnailRenderer } from '../../../services/thumbnailRenderer';
-import { compositionRenderer } from '../../../services/compositionRenderer';
+// Note: compositionRenderer is used elsewhere for cache invalidation
 
 const log = Logger.create('AddCompClip');
+
+// Store interaction types for composition clip operations
+interface CompClipStoreState {
+  clips: TimelineClip[];
+  tracks: TimelineTrack[];
+  thumbnailsEnabled: boolean;
+  invalidateCache?: () => void;
+}
+
+type CompClipStoreGet = () => CompClipStoreState;
+type CompClipStoreSet = (state: Partial<CompClipStoreState>) => void;
 
 export interface AddCompClipParams {
   trackId: string;
@@ -25,11 +36,55 @@ export interface AddCompClipParams {
 }
 
 /**
+ * Calculate normalized boundary positions (0-1) for all clips in a nested composition.
+ * These are used to render visual markers showing where clips start/end.
+ */
+export function calculateNestedClipBoundaries(
+  timelineData: CompositionTimelineData | undefined,
+  compDuration: number
+): number[] {
+  if (!timelineData?.clips || !timelineData?.tracks || compDuration <= 0) {
+    return [];
+  }
+
+  // Get visible video track IDs
+  const videoTrackIds = new Set(
+    timelineData.tracks
+      .filter((t: { type: string; visible?: boolean }) => t.type === 'video' && t.visible !== false)
+      .map((t: { id: string }) => t.id)
+  );
+
+  // Collect all clip boundaries on video tracks
+  const boundaries = new Set<number>();
+
+  for (const clip of timelineData.clips) {
+    // Only include clips on visible video tracks
+    if (!videoTrackIds.has(clip.trackId)) continue;
+
+    const startNorm = clip.startTime / compDuration;
+    const endNorm = (clip.startTime + clip.duration) / compDuration;
+
+    // Only add if within valid range (0-1)
+    if (startNorm >= 0 && startNorm <= 1) {
+      boundaries.add(startNorm);
+    }
+    if (endNorm >= 0 && endNorm <= 1) {
+      boundaries.add(endNorm);
+    }
+  }
+
+  // Convert to sorted array, excluding 0 and 1 (the comp's own boundaries)
+  return Array.from(boundaries)
+    .filter(b => b > 0.001 && b < 0.999) // Exclude very start/end
+    .sort((a, b) => a - b);
+}
+
+/**
  * Create a content hash for nested composition change detection.
  */
-export function createNestedContentHash(timelineData: any): string {
+export function createNestedContentHash(timelineData: CompositionTimelineData | undefined): string {
   if (!timelineData) return '';
-  const clipData = timelineData.clips?.map((c: any) => ({
+  const clipData = timelineData.clips?.map((c) => ({
     id: c.id,
     inPoint: c.inPoint,
     outPoint: c.outPoint,
@@ -80,8 +135,8 @@ export function createCompClipPlaceholder(params: AddCompClipParams): TimelineCl
 export interface LoadNestedClipsParams {
   compClipId: string;
   composition: Composition;
-  get: () => any;
-  set: (state: any) => void;
+  get: CompClipStoreGet;
+  set: CompClipStoreSet;
 }
 
 /**
@@ -127,7 +182,7 @@ export async function loadNestedClips(params: LoadNestedClipsParams): Promise<Ti
     compositionId: composition.id,
     compositionName: composition.name,
     serializedClipCount: composition.timelineData.clips.length,
-    serializedClips: composition.timelineData.clips.map((c: any) => ({
+    serializedClips: composition.timelineData.clips.map((c: SerializableClip) => ({
       id: c.id,
       name: c.name,
       trackId: c.trackId,
@@ -191,8 +246,8 @@ function loadVideoNestedClip(
   nestedClipId: string,
   fileUrl: string,
   fileName: string,
-  get: () => any,
-  set: (state: any) => void
+  get: CompClipStoreGet,
+  set: CompClipStoreSet
 ): void {
   const video = document.createElement('video');
   video.src = fileUrl;
@@ -284,8 +339,8 @@ function loadAudioNestedClip(
   compClipId: string,
   nestedClipId: string,
   fileUrl: string,
-  get: () => any,
-  set: (state: any) => void
+  get: CompClipStoreGet,
+  set: CompClipStoreSet
 ): void {
   const audio = document.createElement('audio');
   audio.src = fileUrl;
@@ -316,8 +371,8 @@ function loadImageNestedClip(
   compClipId: string,
   nestedClipId: string,
   fileUrl: string,
-  get: () => any,
-  set: (state: any) => void
+  get: CompClipStoreGet,
+  set: CompClipStoreSet
 ): void {
   const img = new Image();
   img.src = fileUrl;
@@ -344,8 +399,8 @@ export interface GenerateCompThumbnailsParams {
   nestedClips: TimelineClip[];
   compDuration: number;
   thumbnailsEnabled: boolean;
-  get: () => any;
-  set: (state: any) => void;
+  get: CompClipStoreGet;
+  set: CompClipStoreSet;
 }
 
 /**
@@ -454,8 +509,8 @@ export interface CreateCompLinkedAudioParams {
   compClipStartTime: number;
   compDuration: number;
   tracks: TimelineTrack[];
-  set: (state: any) => void;
-  get: () => any;
+  set: CompClipStoreSet;
+  get: CompClipStoreGet;
 }
 
 /**

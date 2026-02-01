@@ -24,6 +24,7 @@ import { TimelineContextMenu, useClipContextMenu } from './TimelineContextMenu';
 import { useMarqueeSelection } from './hooks/useMarqueeSelection';
 import { useClipTrim } from './hooks/useClipTrim';
 import { useClipDrag } from './hooks/useClipDrag';
+import { useClipFade } from './hooks/useClipFade';
 import { useLayerSync } from './hooks/useLayerSync';
 import { usePlaybackLoop } from './hooks/usePlaybackLoop';
 import { useVideoPreload } from './hooks/useVideoPreload';
@@ -201,6 +202,15 @@ export function Timeline() {
     selectClip,
     trimClip,
     moveClip,
+    pixelToTime,
+  });
+
+  // Clip fade (fade-in/out handles) - extracted to hook
+  const { clipFade, handleFadeStart, getFadeInDuration, getFadeOutDuration } = useClipFade({
+    clipMap,
+    addKeyframe,
+    removeKeyframe,
+    getClipKeyframes,
     pixelToTime,
   });
 
@@ -679,6 +689,7 @@ export function Timeline() {
 
       const isDragging = clipDrag?.clipId === clip.id;
       const isTrimming = clipTrim?.clipId === clip.id;
+      const isFading = clipFade?.clipId === clip.id;
 
       const draggedClip = clipDrag
         ? clipMap.get(clipDrag.clipId)
@@ -719,10 +730,12 @@ export function Timeline() {
           isInLinkedGroup={!!clip.linkedGroupId}
           isDragging={isDragging}
           isTrimming={isTrimming}
+          isFading={isFading}
           isLinkedToDragging={!!isLinkedToDragging}
           isLinkedToTrimming={!!isLinkedToTrimming}
           clipDrag={clipDrag}
           clipTrim={clipTrim}
+          clipFade={clipFade}
           zoom={zoom}
           scrollX={scrollX}
           timelineRef={timelineRef}
@@ -739,8 +752,11 @@ export function Timeline() {
           onDoubleClick={(e) => handleClipDoubleClick(e, clip.id)}
           onContextMenu={(e) => handleClipContextMenu(e, clip.id)}
           onTrimStart={(e, edge) => handleTrimStart(e, clip.id, edge)}
+          onFadeStart={(e, edge) => handleFadeStart(e, clip.id, edge)}
           onCutAtPosition={splitClip}
           hasKeyframes={hasKeyframes}
+          fadeInDuration={getFadeInDuration(clip.id)}
+          fadeOutDuration={getFadeOutDuration(clip.id)}
           timeToPixel={timeToPixel}
           pixelToTime={pixelToTime}
           formatTime={formatTime}

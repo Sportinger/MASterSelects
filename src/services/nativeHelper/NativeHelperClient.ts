@@ -355,7 +355,7 @@ class NativeHelperClientImpl {
         resolve(null);
       }, 30000);
 
-      this.pendingRequests.set(id, (response: any) => {
+      this.pendingRequests.set(id, (response: Response) => {
         clearTimeout(timeout);
         if (response.ok) {
           resolve({
@@ -409,7 +409,7 @@ class NativeHelperClientImpl {
       }
 
       // Register completion callback
-      this.pendingRequests.set(id, (response: any) => {
+      this.pendingRequests.set(id, (response: Response) => {
         // Check if this is a progress message
         if (response.type === 'progress' && response.percent !== undefined) {
           // Don't resolve yet - this is just progress
@@ -437,7 +437,7 @@ class NativeHelperClientImpl {
       });
 
       // Send download command
-      const cmd: any = {
+      const cmd: { cmd: 'download_youtube'; id: string; url: string; format_id?: string } = {
         cmd: 'download_youtube',
         id,
         url,
@@ -484,7 +484,7 @@ class NativeHelperClientImpl {
       }, 120000); // 120 seconds for large files via WebSocket
 
       // For file requests, we expect base64 data in the response
-      this.pendingRequests.set(id, async (response: any) => {
+      this.pendingRequests.set(id, async (response: Response) => {
         clearTimeout(timeout);
         if (response.ok && response.data) {
           // Decode base64 to ArrayBuffer using fetch (much faster than manual loop)

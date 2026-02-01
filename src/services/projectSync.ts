@@ -6,6 +6,7 @@ import { useMediaStore, type MediaFile, type Composition, type MediaFolder } fro
 import { getMediaInfo } from '../stores/mediaStore/helpers/mediaInfoHelpers';
 import { createThumbnail } from '../stores/mediaStore/helpers/thumbnailHelpers';
 import { updateTimelineClips } from '../stores/mediaStore/slices/fileManageSlice';
+import type { SerializableClip, TimelineTrack as StoreTimelineTrack, TimelineClip, Effect, Mask, CompositionTimelineData } from '../types';
 
 const log = Logger.create('ProjectSync');
 import { useTimelineStore } from '../stores/timeline';
@@ -71,7 +72,7 @@ function convertCompositions(compositions: Composition[]): ProjectComposition[] 
     const timelineData = comp.timelineData;
 
     // Convert tracks
-    const tracks: ProjectTrack[] = (timelineData?.tracks || []).map((t: any) => ({
+    const tracks: ProjectTrack[] = (timelineData?.tracks || []).map((t: StoreTimelineTrack) => ({
       id: t.id,
       name: t.name,
       type: t.type,
@@ -83,7 +84,7 @@ function convertCompositions(compositions: Composition[]): ProjectComposition[] 
     }));
 
     // Convert clips
-    const clips: ProjectClip[] = (timelineData?.clips || []).map((c: any) => ({
+    const clips: ProjectClip[] = (timelineData?.clips || []).map((c: SerializableClip) => ({
       id: c.id,
       trackId: c.trackId,
       name: c.name || '',
@@ -112,14 +113,14 @@ function convertCompositions(compositions: Composition[]): ProjectComposition[] 
         opacity: c.transform?.opacity ?? 1,
         blendMode: c.transform?.blendMode || 'normal',
       },
-      effects: (c.effects || []).map((e: any) => ({
+      effects: (c.effects || []).map((e: Effect) => ({
         id: e.id,
         type: e.type,
         name: e.name || e.type,
         enabled: e.enabled !== false,
         params: e.params || {},
       })),
-      masks: (c.masks || []).map((m: any) => ({
+      masks: (c.masks || []).map((m: Mask) => ({
         id: m.id,
         name: m.name || 'Mask',
         mode: m.mode || 'add',
@@ -421,7 +422,7 @@ function convertProjectCompositionToStore(
       frameRate: pc.frameRate,
       duration: pc.duration,
       backgroundColor: pc.backgroundColor,
-      timelineData: timelineData as any, // Type assertion for complex nested types
+      timelineData: timelineData as CompositionTimelineData, // Type assertion for complex nested types
     };
     return comp;
   });
@@ -808,14 +809,14 @@ async function reloadNestedCompositionClips(): Promise<void> {
     const composition = mediaStore.compositions.find(c => c.id === compClip.compositionId);
     if (!composition?.timelineData) continue;
 
-    const nestedClips: any[] = [];
+    const nestedClips: Partial<TimelineClip>[] = [];
     const nestedTracks = composition.timelineData.tracks;
 
     for (const nestedSerializedClip of composition.timelineData.clips) {
       const nestedMediaFile = mediaStore.files.find(f => f.id === nestedSerializedClip.mediaFileId);
       if (!nestedMediaFile?.file) continue;
 
-      const nestedClip: any = {
+      const nestedClip: Partial<TimelineClip> = {
         id: `nested-${compClip.id}-${nestedSerializedClip.id}`,
         trackId: nestedSerializedClip.trackId,
         name: nestedSerializedClip.name,

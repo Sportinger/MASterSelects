@@ -30,6 +30,16 @@ export interface ClipTrimState {
   altKey: boolean;  // If true, don't trim linked clip
 }
 
+// Clip fade state (for fade-in/out handles)
+export interface ClipFadeState {
+  clipId: string;
+  edge: 'left' | 'right';  // left = fade-in, right = fade-out
+  startX: number;
+  currentX: number;
+  clipDuration: number;
+  originalFadeDuration: number;  // Original fade duration when drag started
+}
+
 // In/Out marker drag state
 export interface MarkerDragState {
   type: 'in' | 'out';
@@ -219,10 +229,12 @@ export interface TimelineClipProps {
   isInLinkedGroup: boolean;  // True if clip has linkedGroupId (multicam)
   isDragging: boolean;
   isTrimming: boolean;
+  isFading: boolean;  // True if this clip is being fade-adjusted
   isLinkedToDragging: boolean;
   isLinkedToTrimming: boolean;
   clipDrag: ClipDragState | null;
   clipTrim: ClipTrimState | null;
+  clipFade: ClipFadeState | null;
   zoom: number;
   scrollX: number;
   timelineRef: React.RefObject<HTMLDivElement | null>;
@@ -239,8 +251,11 @@ export interface TimelineClipProps {
   onDoubleClick: (e: React.MouseEvent) => void;
   onContextMenu: (e: React.MouseEvent) => void;
   onTrimStart: (e: React.MouseEvent, edge: 'left' | 'right') => void;
+  onFadeStart: (e: React.MouseEvent, edge: 'left' | 'right') => void;
   onCutAtPosition: (clipId: string, time: number) => void;
   hasKeyframes: (clipId: string, property?: AnimatableProperty) => boolean;
+  fadeInDuration: number;  // Current fade-in duration in seconds
+  fadeOutDuration: number;  // Current fade-out duration in seconds
   timeToPixel: (time: number) => number;
   pixelToTime: (pixel: number) => number;
   formatTime: (seconds: number) => string;

@@ -3,6 +3,7 @@
 
 import type { TimelineClip, TimelineTrack } from '../../types';
 import type { FrameContext, ClipTimeInfo } from './types';
+import type { MediaFile, Composition } from '../../stores/mediaStore/types';
 import { LAYER_BUILDER_CONSTANTS } from './types';
 import { useTimelineStore } from '../../stores/timeline';
 import { useMediaStore } from '../../stores/mediaStore';
@@ -47,9 +48,9 @@ export function createFrameContext(): FrameContext {
   let _anyAudioSolo: boolean | null = null;
   let _clipsAtTime: TimelineClip[] | null = null;
   let _clipsByTrackId: Map<string, TimelineClip> | null = null;
-  let _mediaFileById: Map<string, any> | null = null;
-  let _mediaFileByName: Map<string, any> | null = null;
-  let _compositionById: Map<string, any> | null = null;
+  let _mediaFileById: Map<string, MediaFile> | null = null;
+  let _mediaFileByName: Map<string, MediaFile> | null = null;
+  let _compositionById: Map<string, Composition> | null = null;
 
   const context: FrameContext = {
     // Raw data
@@ -189,7 +190,7 @@ export function createFrameContext(): FrameContext {
 /**
  * Get media file for a clip - O(1) lookup
  */
-export function getMediaFileForClip(ctx: FrameContext, clip: TimelineClip): any | undefined {
+export function getMediaFileForClip(ctx: FrameContext, clip: TimelineClip): MediaFile | undefined {
   // Try by ID first
   if (clip.mediaFileId) {
     const byId = ctx.mediaFileById.get(clip.mediaFileId);

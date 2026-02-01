@@ -23,6 +23,7 @@ import {
   generateCompThumbnails,
   createCompLinkedAudioClip,
   createNestedContentHash,
+  calculateNestedClipBoundaries,
 } from './clip/addCompClip';
 import { completeDownload as completeDownloadImpl } from './clip/completeDownload';
 import {
@@ -862,12 +863,16 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
         set,
       });
       const nestedTracks = composition.timelineData.tracks;
+      const compDuration = composition.timelineData?.duration ?? composition.duration;
 
-      // Update the comp clip with new nested data and content hash
+      // Calculate clip boundaries for visual markers
+      const nestedClipBoundaries = calculateNestedClipBoundaries(composition.timelineData, compDuration);
+
+      // Update the comp clip with new nested data, content hash, and boundaries
       set({
         clips: get().clips.map(c =>
           c.id === compClip.id
-            ? { ...c, nestedClips, nestedTracks, nestedContentHash: newContentHash }
+            ? { ...c, nestedClips, nestedTracks, nestedContentHash: newContentHash, nestedClipBoundaries }
             : c
         ),
       });

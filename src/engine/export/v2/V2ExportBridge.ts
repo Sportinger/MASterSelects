@@ -11,14 +11,46 @@
 import { Logger } from '../../../services/logger'
 import { SharedDecoderPool } from './SharedDecoderPool'
 import { ExportPlanner } from './ExportPlanner'
-import type { TimelineClip } from '../../../stores/timeline/types'
+import type { TimelineClip, TimelineTrack } from '../../../stores/timeline/types'
+import type { Composition } from '../../../stores/mediaStore/types'
 import type { SharedDecoderConfig, FrameRequest, DecodeSchedule, ClipMetadata } from './types'
 import { ExportError as ExportErrorClass } from './types'
 import { loadClipFileData } from '../ClipPreparation'
 import { useMediaStore } from '../../../stores/mediaStore'
 
 import * as MP4BoxModule from 'mp4box'
-const MP4Box = (MP4BoxModule as any).default || MP4BoxModule
+const MP4Box = (MP4BoxModule as unknown as { default?: typeof MP4BoxModule }).default || MP4BoxModule
+
+// MP4Box types (library doesn't provide proper TypeScript definitions)
+interface MP4VideoTrack {
+  id: number
+  codec: string
+  nb_samples: number
+  video: {
+    width: number
+    height: number
+  }
+}
+
+interface MP4Sample {
+  number: number
+  track_id: number
+  timescale: number
+  cts: number
+  dts: number
+  duration: number
+  is_sync: boolean
+  size: number
+  offset: number
+  data: ArrayBuffer
+}
+
+interface MP4Info {
+  videoTracks: MP4VideoTrack[]
+  audioTracks: unknown[]
+  duration: number
+  timescale: number
+}
 
 const log = Logger.create('V2ExportBridge')
 
@@ -46,8 +78,8 @@ export class V2ExportBridge {
    */
   async initialize(
     clips: TimelineClip[],
-    tracks: any[],
-    compositions: any[],
+    tracks: TimelineTrack[],
+    compositions: Composition[],
     startTime: number,
     endTime: number,
     fps: number
@@ -258,9 +290,9 @@ export class V2ExportBridge {
       }, 30000) // Increased timeout for large files
 
       const mp4File = MP4Box.createFile()
-      let videoTrack: any = null
+      let videoTrack: MP4VideoTrack | null = null
       let codecConfig: VideoDecoderConfig | null = null
-      const samples: any[] = []
+      const samples: MP4Sample[] = []
       let resolved = false
 
       const tryResolve = () => {
@@ -286,7 +318,7 @@ export class V2ExportBridge {
         })
       }
 
-      mp4File.onReady = (info: any) => {
+      mp4File.onReady = (info: MP4Info) => {
         videoTrack = info.videoTracks[0]
         if (!videoTrack) {
           clearTimeout(timeout)
@@ -336,7 +368,7 @@ export class V2ExportBridge {
         mp4File.start()
       }
 
-      mp4File.onSamples = (_trackId: number, _ref: any, newSamples: any[]) => {
+      mp4File.onSamples = (_trackId: number, _ref: unknown, newSamples: MP4Sample[]) => {
         samples.push(...newSamples)
         tryResolve()
       }

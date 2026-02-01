@@ -4,6 +4,9 @@
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import { Logger } from '../services/logger';
+import type { TimelineClip, TimelineTrack, Layer } from '../types';
+import type { MediaFile, Composition, MediaFolder } from './mediaStore/types';
+import type { DockNode } from '../types/dock';
 
 const log = Logger.create('History');
 
@@ -14,27 +17,27 @@ interface StateSnapshot {
 
   // Timeline state (including layers since they moved here from mixerStore)
   timeline: {
-    clips: any[];
-    tracks: any[];
+    clips: TimelineClip[];
+    tracks: TimelineTrack[];
     selectedClipIds: string[];
     zoom: number;
     scrollX: number;
-    layers: any[];
+    layers: Layer[];
     selectedLayerId: string | null;
   };
 
   // Media state
   media: {
-    files: any[];
-    compositions: any[];
-    folders: any[];
+    files: MediaFile[];
+    compositions: Composition[];
+    folders: MediaFolder[];
     selectedIds: string[];
     expandedFolderIds: string[];
   };
 
   // Dock layout state
   dock: {
-    layout: any;
+    layout: DockNode | null;
   };
 }
 
@@ -72,19 +75,42 @@ interface HistoryState {
   clearHistory: () => void;
 }
 
+// Store state types for dynamic references
+interface TimelineStoreState {
+  clips: TimelineClip[];
+  tracks: TimelineTrack[];
+  selectedClipIds: Set<string>;
+  zoom: number;
+  scrollX: number;
+  layers: Layer[];
+  selectedLayerId: string | null;
+}
+
+interface MediaStoreState {
+  files: MediaFile[];
+  compositions: Composition[];
+  folders: MediaFolder[];
+  selectedIds: string[];
+  expandedFolderIds: string[];
+}
+
+interface DockStoreState {
+  layout: DockNode | null;
+}
+
 // Import stores dynamically to avoid circular dependencies
-let getTimelineState: () => any;
-let setTimelineState: (state: any) => void;
-let getMediaState: () => any;
-let setMediaState: (state: any) => void;
-let getDockState: () => any;
-let setDockState: (state: any) => void;
+let getTimelineState: (() => TimelineStoreState) | undefined;
+let setTimelineState: ((state: Partial<TimelineStoreState>) => void) | undefined;
+let getMediaState: (() => MediaStoreState) | undefined;
+let setMediaState: ((state: Partial<MediaStoreState>) => void) | undefined;
+let getDockState: (() => DockStoreState) | undefined;
+let setDockState: ((state: Partial<DockStoreState>) => void) | undefined;
 
 // Initialize store references (called from useGlobalHistory)
 export function initHistoryStoreRefs(stores: {
-  timeline: { getState: () => any; setState: (state: any) => void };
-  media: { getState: () => any; setState: (state: any) => void };
-  dock: { getState: () => any; setState: (state: any) => void };
+  timeline: { getState: () => TimelineStoreState; setState: (state: Partial<TimelineStoreState>) => void };
+  media: { getState: () => MediaStoreState; setState: (state: Partial<MediaStoreState>) => void };
+  dock: { getState: () => DockStoreState; setState: (state: Partial<DockStoreState>) => void };
 }) {
   getTimelineState = stores.timeline.getState;
   setTimelineState = stores.timeline.setState;
@@ -97,18 +123,18 @@ export function initHistoryStoreRefs(stores: {
 // Deep clone helper (handles most objects, excluding DOM elements and functions)
 function deepClone<T>(obj: T): T {
   if (obj === null || typeof obj !== 'object') return obj;
-  if (obj instanceof Date) return new Date(obj.getTime()) as any;
-  if (Array.isArray(obj)) return obj.map(deepClone) as any;
+  if (obj instanceof Date) return new Date(obj.getTime()) as T;
+  if (Array.isArray(obj)) return obj.map(deepClone) as T;
 
   // Skip cloning DOM elements, HTMLMediaElements, File objects, etc.
   if (obj instanceof Element || obj instanceof HTMLMediaElement || obj instanceof File) {
     return obj; // Return reference, don't clone
   }
 
-  const cloned: any = {};
+  const cloned = {} as T;
   for (const key in obj) {
     if (Object.prototype.hasOwnProperty.call(obj, key)) {
-      const value = (obj as any)[key];
+      const value = obj[key];
       // Skip functions and DOM elements
       if (typeof value === 'function') continue;
       if (value instanceof Element || value instanceof HTMLMediaElement) {
@@ -157,11 +183,11 @@ function applySnapshot(snapshot: StateSnapshot) {
   if (!snapshot) return;
 
   // Apply timeline state (including layers)
-  if (setTimelineState) {
+  if (setTimelineState && getTimelineState) {
     const currentTimeline = getTimelineState();
     // Preserve source references for layers
-    const restoredLayers = snapshot.timeline.layers.map((layer: any) => {
-      const currentLayer = currentTimeline.layers?.find((l: any) => l?.id === layer.id);
+    const restoredLayers = snapshot.timeline.layers.map((layer) => {
+      const currentLayer = currentTimeline.layers?.find((l) => l?.id === layer.id);
       return {
         ...deepClone(layer),
         source: currentLayer?.source || layer.source,
@@ -180,10 +206,10 @@ function applySnapshot(snapshot: StateSnapshot) {
   }
 
   // Apply media state (preserve file references)
-  if (setMediaState) {
+  if (setMediaState && getMediaState) {
     const currentMedia = getMediaState();
-    const restoredFiles = snapshot.media.files.map((file: any) => {
-      const currentFile = currentMedia.files?.find((f: any) => f.id === file.id);
+    const restoredFiles = snapshot.media.files.map((file) => {
+      const currentFile = currentMedia.files?.find((f) => f.id === file.id);
       return {
         ...deepClone(file),
         file: currentFile?.file || file.file, // Preserve File reference
