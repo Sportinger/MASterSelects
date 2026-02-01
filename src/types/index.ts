@@ -302,6 +302,7 @@ export interface TimelineClip {
   compositionId?: string;   // ID of the nested composition
   nestedClips?: TimelineClip[];  // Loaded clips from the nested composition
   nestedTracks?: TimelineTrack[];  // Tracks from the nested composition
+  nestedContentHash?: string;  // Hash to detect changes in nested composition (for thumbnail updates)
   // Nested composition audio mixdown
   mixdownAudio?: HTMLAudioElement;  // Audio element for playing nested comp audio
   mixdownWaveform?: number[];  // Waveform of the nested comp audio mixdown

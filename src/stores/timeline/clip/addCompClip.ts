@@ -24,6 +24,25 @@ export interface AddCompClipParams {
 }
 
 /**
+ * Create a content hash for nested composition change detection.
+ */
+export function createNestedContentHash(timelineData: any): string {
+  if (!timelineData) return '';
+  const clipData = timelineData.clips?.map((c: any) => ({
+    id: c.id,
+    inPoint: c.inPoint,
+    outPoint: c.outPoint,
+    startTime: c.startTime,
+    effectCount: c.effects?.length ?? 0,
+  })) ?? [];
+  return JSON.stringify({
+    clipCount: timelineData.clips?.length ?? 0,
+    duration: timelineData.duration,
+    clips: clipData,
+  });
+}
+
+/**
  * Create placeholder composition clip immediately.
  */
 export function createCompClipPlaceholder(params: AddCompClipParams): TimelineClip {
@@ -32,6 +51,9 @@ export function createCompClipPlaceholder(params: AddCompClipParams): TimelineCl
   const clipId = generateCompClipId();
   const compDuration = composition.timelineData?.duration ?? composition.duration;
   const finalStartTime = findNonOverlappingPosition(clipId, startTime, trackId, compDuration);
+
+  // Create content hash for change detection
+  const nestedContentHash = createNestedContentHash(composition.timelineData);
 
   return {
     id: clipId,
@@ -50,6 +72,7 @@ export function createCompClipPlaceholder(params: AddCompClipParams): TimelineCl
     compositionId: composition.id,
     nestedClips: [],
     nestedTracks: [],
+    nestedContentHash,
   };
 }
 

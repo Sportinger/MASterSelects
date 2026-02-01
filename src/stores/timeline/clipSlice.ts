@@ -22,6 +22,7 @@ import {
   loadNestedClips,
   generateCompThumbnails,
   createCompLinkedAudioClip,
+  createNestedContentHash,
 } from './clip/addCompClip';
 import { completeDownload as completeDownloadImpl } from './clip/completeDownload';
 import {
@@ -736,21 +737,23 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
       return;
     }
 
+    // Create a content hash to detect changes (clips, effects, duration)
+    const newContentHash = createNestedContentHash(composition.timelineData);
+
     log.info('Refreshing nested clips for composition', {
       compositionId: sourceCompositionId,
       compositionName: composition.name,
       affectedClips: compClips.length,
       newClipCount: composition.timelineData.clips.length,
       newTrackCount: composition.timelineData.tracks.length,
-      timelineDataClips: composition.timelineData.clips.map((c: any) => ({
-        id: c.id,
-        name: c.name,
-        trackId: c.trackId,
-      })),
     });
 
     // Reload nested clips for each comp clip
     for (const compClip of compClips) {
+      // Check if content actually changed (compare hashes)
+      const oldContentHash = compClip.nestedContentHash;
+      const needsThumbnailUpdate = oldContentHash !== newContentHash;
+
       // Load updated nested clips
       const nestedClips = await loadNestedClips({
         compClipId: compClip.id,
@@ -760,31 +763,36 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
       });
       const nestedTracks = composition.timelineData.tracks;
 
-      // Update the comp clip with new nested data
+      // Update the comp clip with new nested data and content hash
       set({
         clips: get().clips.map(c =>
           c.id === compClip.id
-            ? { ...c, nestedClips, nestedTracks }
+            ? { ...c, nestedClips, nestedTracks, nestedContentHash: newContentHash }
             : c
         ),
       });
 
-      // Regenerate thumbnails for the updated composition
-      const compDuration = composition.timelineData?.duration ?? composition.duration;
-      generateCompThumbnails({
-        clipId: compClip.id,
-        nestedClips,
-        compDuration,
-        thumbnailsEnabled: get().thumbnailsEnabled,
-        get,
-        set,
-      });
+      // Only regenerate thumbnails if content actually changed
+      if (needsThumbnailUpdate) {
+        const compDuration = composition.timelineData?.duration ?? composition.duration;
+        generateCompThumbnails({
+          clipId: compClip.id,
+          nestedClips,
+          compDuration,
+          thumbnailsEnabled: get().thumbnailsEnabled,
+          get,
+          set,
+        });
 
-      log.debug('Refreshed nested clips and thumbnails for comp clip', {
-        compClipId: compClip.id,
-        nestedClipCount: nestedClips.length,
-        nestedTrackCount: nestedTracks.length,
-      });
+        log.debug('Regenerated thumbnails for comp clip (content changed)', {
+          compClipId: compClip.id,
+          nestedClipCount: nestedClips.length,
+        });
+      } else {
+        log.debug('Skipped thumbnail regeneration (no content change)', {
+          compClipId: compClip.id,
+        });
+      }
     }
 
     invalidateCache();
