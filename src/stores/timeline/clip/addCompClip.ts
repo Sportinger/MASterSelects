@@ -136,7 +136,11 @@ export async function buildClipSegments(
         try {
           // Generate thumbnails for this clip's duration
           const clipDuration = serializedClip.outPoint - serializedClip.inPoint;
-          thumbnails = await generateThumbnails(video, clipDuration, serializedClip.inPoint);
+          const inPoint = serializedClip.inPoint || 0;
+          // Calculate thumb count based on segment width, minimum 1
+          const segmentWidth = endNorm - startNorm;
+          const thumbCount = Math.max(1, Math.ceil(segmentWidth * 10)); // ~10 thumbs for full width
+          thumbnails = await generateThumbnails(video, clipDuration, inPoint, thumbCount);
         } catch (e) {
           log.warn('Failed to generate segment thumbnails', { clipId: serializedClip.id, error: e });
         }
