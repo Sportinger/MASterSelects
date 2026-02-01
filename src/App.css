@@ -4188,6 +4188,93 @@ input[type="checkbox"] {
   opacity: 1;
 }
 
+/* Fade handles - corner handles for fade-in/out */
+.fade-handle {
+  position: absolute;
+  top: 0;
+  width: 12px;
+  height: 12px;
+  cursor: ew-resize;
+  background: rgba(251, 191, 36, 0.8);
+  border-radius: 0 0 4px 0;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s, transform 0.15s;
+  z-index: 15;
+}
+
+.fade-handle:hover {
+  background: rgba(251, 191, 36, 1);
+  transform: scale(1.1);
+}
+
+.fade-handle.left {
+  left: 0;
+  border-radius: 0 0 4px 0;
+}
+
+.fade-handle.right {
+  right: 0;
+  left: auto;
+  border-radius: 0 0 0 4px;
+}
+
+/* When fade is active, position handle at end of fade region */
+.fade-handle.left.active {
+  border-radius: 2px;
+}
+
+.fade-handle.right.active {
+  border-radius: 2px;
+}
+
+.timeline-clip:hover .fade-handle {
+  opacity: 1;
+}
+
+.timeline-clip.fading .fade-handle {
+  opacity: 1;
+  background: var(--warning);
+}
+
+/* Fade overlays - visual indication of fade regions */
+.fade-overlay {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.fade-overlay.fade-in {
+  left: 0;
+  background: linear-gradient(to right, rgba(0, 0, 0, 0.6) 0%, transparent 100%);
+  border-right: 1px solid rgba(251, 191, 36, 0.6);
+}
+
+.fade-overlay.fade-out {
+  right: 0;
+  background: linear-gradient(to left, rgba(0, 0, 0, 0.6) 0%, transparent 100%);
+  border-left: 1px solid rgba(251, 191, 36, 0.6);
+}
+
+/* Fade overlay diagonal line indicator */
+.fade-overlay::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 100%;
+  pointer-events: none;
+}
+
+.fade-overlay.fade-in::after {
+  background: linear-gradient(to bottom right, transparent 49%, rgba(251, 191, 36, 0.4) 49%, rgba(251, 191, 36, 0.4) 51%, transparent 51%);
+}
+
+.fade-overlay.fade-out::after {
+  background: linear-gradient(to bottom left, transparent 49%, rgba(251, 191, 36, 0.4) 49%, rgba(251, 191, 36, 0.4) 51%, transparent 51%);
+}
+
 /* Playhead */
 .playhead {
   position: absolute;
@@ -4877,6 +4964,26 @@ input[type="checkbox"] {
   padding: 2px 6px;
   border-radius: 3px;
   z-index: 6;
+}
+
+/* Nested composition clip boundary markers */
+.nested-clip-boundaries {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 8;
+}
+
+.nested-boundary-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(0, 0, 0, 0.6);
+  box-shadow: 1px 0 0 rgba(255, 255, 255, 0.15);
 }
 
 /* Track header resize cursor on shift hover */

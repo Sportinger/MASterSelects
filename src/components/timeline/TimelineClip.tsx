@@ -791,6 +791,18 @@ function TimelineClipComponent({
           })}
         </div>
       )}
+      {/* Nested composition clip boundary markers */}
+      {clip.isComposition && clip.nestedClipBoundaries && clip.nestedClipBoundaries.length > 0 && (
+        <div className="nested-clip-boundaries">
+          {clip.nestedClipBoundaries.map((boundary, i) => (
+            <div
+              key={i}
+              className="nested-boundary-line"
+              style={{ left: `${boundary * 100}%` }}
+            />
+          ))}
+        </div>
+      )}
       {/* Needs reload indicator */}
       {clip.needsReload && (
         <div className="clip-reload-badge" title="Click media file to reload">
