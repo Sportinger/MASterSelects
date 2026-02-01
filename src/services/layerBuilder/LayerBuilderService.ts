@@ -1,7 +1,7 @@
 // LayerBuilderService - Main orchestrator for layer building
 // Uses modular components for caching, transforms, and audio sync
 
-import type { TimelineClip, Layer, NestedCompositionData, BlendMode } from '../../types';
+import type { TimelineClip, Layer, NestedCompositionData, BlendMode, ClipTransform } from '../../types';
 import type { FrameContext, NativeDecoderState } from './types';
 import { LAYER_BUILDER_CONSTANTS } from './types';
 import { playheadState } from './PlayheadState';
@@ -11,6 +11,9 @@ import { TransformCache } from './TransformCache';
 import { AudioSyncHandler, createAudioSyncState, finalizeAudioSync, resumeAudioContextIfNeeded } from './AudioSyncHandler';
 import { proxyFrameCache } from '../proxyFrameCache';
 import { Logger } from '../logger';
+import { getInterpolatedClipTransform } from '../../utils/keyframeInterpolation';
+import { useTimelineStore } from '../../stores/timeline';
+import { DEFAULT_TRANSFORM } from '../../stores/timeline/constants';
 
 const log = Logger.create('LayerBuilder');
 
@@ -455,10 +458,67 @@ export class LayerBuilderService {
   /**
    * Build layer for a nested clip
    */
-  private buildNestedClipLayer(nestedClip: TimelineClip, nestedClipLocalTime: number, ctx: FrameContext): Layer | null {
-    // Use interpolated transform and effects to support keyframe animations (including opacity fades)
-    const transform = ctx.getInterpolatedTransform(nestedClip.id, nestedClipLocalTime);
-    const effects = ctx.getInterpolatedEffects(nestedClip.id, nestedClipLocalTime);
+  private buildNestedClipLayer(nestedClip: TimelineClip, nestedClipLocalTime: number, _ctx: FrameContext): Layer | null {
+    // Get keyframes directly from the store (nested clips aren't in ctx.clips, so we can't use ctx.getInterpolatedTransform)
+    const { clipKeyframes } = useTimelineStore.getState();
+    const keyframes = clipKeyframes.get(nestedClip.id) || [];
+
+    // Build base transform from the nested clip's static transform
+    const baseTransform: ClipTransform = {
+      opacity: nestedClip.transform?.opacity ?? DEFAULT_TRANSFORM.opacity,
+      blendMode: nestedClip.transform?.blendMode ?? DEFAULT_TRANSFORM.blendMode,
+      position: {
+        x: nestedClip.transform?.position?.x ?? DEFAULT_TRANSFORM.position.x,
+        y: nestedClip.transform?.position?.y ?? DEFAULT_TRANSFORM.position.y,
+        z: nestedClip.transform?.position?.z ?? DEFAULT_TRANSFORM.position.z,
+      },
+      scale: {
+        x: nestedClip.transform?.scale?.x ?? DEFAULT_TRANSFORM.scale.x,
+        y: nestedClip.transform?.scale?.y ?? DEFAULT_TRANSFORM.scale.y,
+      },
+      rotation: {
+        x: nestedClip.transform?.rotation?.x ?? DEFAULT_TRANSFORM.rotation.x,
+        y: nestedClip.transform?.rotation?.y ?? DEFAULT_TRANSFORM.rotation.y,
+        z: nestedClip.transform?.rotation?.z ?? DEFAULT_TRANSFORM.rotation.z,
+      },
+    };
+
+    // Interpolate transform using keyframes (supports opacity fades, position animations, etc.)
+    const transform = keyframes.length > 0
+      ? getInterpolatedClipTransform(keyframes, nestedClipLocalTime, baseTransform)
+      : baseTransform;
+
+    // Interpolate effect parameters if there are effect keyframes
+    const effectKeyframes = keyframes.filter(k => k.property.startsWith('effect.'));
+    let effects = nestedClip.effects || [];
+    if (effectKeyframes.length > 0 && effects.length > 0) {
+      effects = effects.map(effect => {
+        const newParams = { ...effect.params };
+        Object.keys(effect.params).forEach(paramName => {
+          if (typeof effect.params[paramName] !== 'number') return;
+          const propertyKey = `effect.${effect.id}.${paramName}`;
+          const paramKeyframes = effectKeyframes.filter(k => k.property === propertyKey);
+          if (paramKeyframes.length > 0) {
+            // Simple linear interpolation for effect params
+            const sorted = [...paramKeyframes].sort((a, b) => a.time - b.time);
+            if (nestedClipLocalTime <= sorted[0].time) {
+              newParams[paramName] = sorted[0].value;
+            } else if (nestedClipLocalTime >= sorted[sorted.length - 1].time) {
+              newParams[paramName] = sorted[sorted.length - 1].value;
+            } else {
+              for (let i = 0; i < sorted.length - 1; i++) {
+                if (nestedClipLocalTime >= sorted[i].time && nestedClipLocalTime <= sorted[i + 1].time) {
+                  const t = (nestedClipLocalTime - sorted[i].time) / (sorted[i + 1].time - sorted[i].time);
+                  newParams[paramName] = sorted[i].value + t * (sorted[i + 1].value - sorted[i].value);
+                  break;
+                }
+              }
+            }
+          }
+        });
+        return { ...effect, params: newParams };
+      });
+    }
 
     const baseLayer = {
       id: `nested-layer-${nestedClip.id}`,
