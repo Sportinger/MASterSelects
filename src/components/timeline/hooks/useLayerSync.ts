@@ -144,7 +144,8 @@ export function useLayerSync({
 
       const layers: Layer[] = [];
 
-      for (let i = nestedVideoTracks.length - 1; i >= 0; i--) {
+      // Iterate forwards to maintain correct layer order (track 0 = bottom, track N = top)
+      for (let i = 0; i < nestedVideoTracks.length; i++) {
         const nestedTrack = nestedVideoTracks[i];
         const nestedClip = clip.nestedClips.find(
           (nc) =>
