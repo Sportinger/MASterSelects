@@ -24,6 +24,7 @@ import {
   createCompLinkedAudioClip,
   createNestedContentHash,
   calculateNestedClipBoundaries,
+  buildClipSegments,
 } from './clip/addCompClip';
 import { completeDownload as completeDownloadImpl } from './clip/completeDownload';
 import {
@@ -190,7 +191,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
       const nestedTracks = composition.timelineData.tracks;
       const compDuration = composition.timelineData?.duration ?? composition.duration;
 
-      // Calculate clip boundaries for segment-aligned thumbnails
+      // Calculate clip boundaries for visual markers
       const boundaries = calculateNestedClipBoundaries(composition.timelineData, compDuration);
 
       set({
@@ -199,16 +200,30 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
         ),
       });
 
-      // Generate segment-aligned thumbnails (await to ensure boundaries are used)
-      await generateCompThumbnails({
-        clipId: compClip.id,
-        nestedClips,
-        compDuration,
-        thumbnailsEnabled,
-        boundaries,
-        get,
-        set,
-      });
+      // Build segment-based thumbnails (waits for nested clips to load)
+      if (thumbnailsEnabled) {
+        // Wait a bit for nested clip sources to load, then build segments
+        setTimeout(async () => {
+          // Get fresh nested clips (they may have updated sources now)
+          const freshCompClip = get().clips.find(c => c.id === compClip.id);
+          const freshNestedClips = freshCompClip?.nestedClips || nestedClips;
+
+          const clipSegments = await buildClipSegments(
+            composition.timelineData,
+            compDuration,
+            freshNestedClips
+          );
+
+          if (clipSegments.length > 0) {
+            set({
+              clips: get().clips.map(c =>
+                c.id === compClip.id ? { ...c, clipSegments } : c
+              ),
+            });
+            log.info('Set clip segments for nested comp', { clipId: compClip.id, segmentCount: clipSegments.length });
+          }
+        }, 500); // Wait for video elements to load
+      }
     }
 
     // Create linked audio clip (always, even if no audio)
@@ -883,26 +898,33 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
       });
 
       // Only regenerate thumbnails if content actually changed
-      if (needsThumbnailUpdate) {
-        // Await thumbnail generation to prevent race conditions when multiple
-        // comp clips reference the same composition
-        await generateCompThumbnails({
-          clipId: compClip.id,
-          nestedClips,
-          compDuration,
-          thumbnailsEnabled: get().thumbnailsEnabled,
-          boundaries: nestedClipBoundaries,
-          get,
-          set,
-        });
+      if (needsThumbnailUpdate && get().thumbnailsEnabled) {
+        // Wait a bit for nested clip sources to load, then build segments
+        setTimeout(async () => {
+          // Get fresh nested clips (they may have updated sources now)
+          const freshCompClip = get().clips.find(c => c.id === compClip.id);
+          const freshNestedClips = freshCompClip?.nestedClips || nestedClips;
 
-        log.debug('Regenerated thumbnails for comp clip (content changed)', {
-          compClipId: compClip.id,
-          nestedClipCount: nestedClips.length,
-          boundaryCount: nestedClipBoundaries.length,
-        });
+          const clipSegments = await buildClipSegments(
+            composition.timelineData,
+            compDuration,
+            freshNestedClips
+          );
+
+          if (clipSegments.length > 0) {
+            set({
+              clips: get().clips.map(c =>
+                c.id === compClip.id ? { ...c, clipSegments } : c
+              ),
+            });
+            log.info('Updated clip segments for nested comp', {
+              clipId: compClip.id,
+              segmentCount: clipSegments.length,
+            });
+          }
+        }, 500); // Wait for video elements to load
       } else {
-        log.debug('Skipped thumbnail regeneration (no content change)', {
+        log.debug('Skipped segment regeneration (no content change or thumbnails disabled)', {
           compClipId: compClip.id,
         });
       }

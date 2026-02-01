@@ -796,6 +796,7 @@ export function Timeline() {
       getFadeInDuration,
       getFadeOutDuration,
       getClipKeyframes,
+      clipKeyframes,
       timeToPixel,
       pixelToTime,
       formatTime,

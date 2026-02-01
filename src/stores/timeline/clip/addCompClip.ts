@@ -80,6 +80,109 @@ export function calculateNestedClipBoundaries(
 }
 
 /**
+ * Build clip segments with thumbnails for nested composition display.
+ * Each segment represents one clip with its own thumbnails.
+ */
+export interface ClipSegmentData {
+  clipId: string;
+  clipName: string;
+  startNorm: number;
+  endNorm: number;
+  thumbnails: string[];
+}
+
+export async function buildClipSegments(
+  timelineData: CompositionTimelineData | undefined,
+  compDuration: number,
+  nestedClips: TimelineClip[]
+): Promise<ClipSegmentData[]> {
+  if (!timelineData?.clips || !timelineData?.tracks || compDuration <= 0) {
+    return [];
+  }
+
+  const { generateThumbnails } = await import('../utils');
+
+  // Get visible video track IDs
+  const videoTrackIds = new Set(
+    timelineData.tracks
+      .filter((t: { type: string; visible?: boolean }) => t.type === 'video' && t.visible !== false)
+      .map((t: { id: string }) => t.id)
+  );
+
+  const segments: ClipSegmentData[] = [];
+
+  // Process each serialized clip
+  for (const serializedClip of timelineData.clips) {
+    // Only include clips on visible video tracks
+    if (!videoTrackIds.has(serializedClip.trackId)) continue;
+
+    // Skip audio-only clips
+    if (serializedClip.sourceType === 'audio') continue;
+
+    const startNorm = serializedClip.startTime / compDuration;
+    const endNorm = (serializedClip.startTime + serializedClip.duration) / compDuration;
+
+    // Find the corresponding loaded nested clip
+    const nestedClip = nestedClips.find(nc =>
+      nc.id.includes(serializedClip.id) || nc.name === serializedClip.name
+    );
+
+    let thumbnails: string[] = [];
+
+    // Generate thumbnails from the nested clip's source
+    if (nestedClip?.source?.videoElement) {
+      const video = nestedClip.source.videoElement;
+      if (video.readyState >= 2) {
+        try {
+          // Generate thumbnails for this clip's duration
+          const clipDuration = serializedClip.outPoint - serializedClip.inPoint;
+          thumbnails = await generateThumbnails(video, clipDuration, serializedClip.inPoint);
+        } catch (e) {
+          log.warn('Failed to generate segment thumbnails', { clipId: serializedClip.id, error: e });
+        }
+      }
+    } else if (nestedClip?.source?.imageElement) {
+      // For images, create a single thumbnail from the image
+      const img = nestedClip.source.imageElement;
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = 160;
+        canvas.height = 90;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          thumbnails = [canvas.toDataURL('image/jpeg', 0.7)];
+        }
+      } catch (e) {
+        log.warn('Failed to generate image segment thumbnail', { clipId: serializedClip.id });
+      }
+    }
+
+    segments.push({
+      clipId: serializedClip.id,
+      clipName: serializedClip.name,
+      startNorm,
+      endNorm,
+      thumbnails,
+    });
+  }
+
+  // Sort by start position
+  segments.sort((a, b) => a.startNorm - b.startNorm);
+
+  log.info('Built clip segments', {
+    segmentCount: segments.length,
+    segments: segments.map(s => ({
+      name: s.clipName,
+      range: `${(s.startNorm * 100).toFixed(1)}%-${(s.endNorm * 100).toFixed(1)}%`,
+      thumbCount: s.thumbnails.length,
+    })),
+  });
+
+  return segments;
+}
+
+/**
  * Create a content hash for nested composition change detection.
  */
 export function createNestedContentHash(timelineData: CompositionTimelineData | undefined): string {

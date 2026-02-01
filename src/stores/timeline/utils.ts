@@ -130,7 +130,18 @@ export function generateWaveformFromBuffer(
 
 // Generate thumbnail filmstrip from video
 // Now covers 0% to 100% of duration (previously only 0% to 90%)
-export async function generateThumbnails(video: HTMLVideoElement, duration: number, count: number = 10): Promise<string[]> {
+// offset: start time in source video (for trimmed clips, pass inPoint)
+export async function generateThumbnails(video: HTMLVideoElement, duration: number, countOrOffset: number = 10, maybeCount?: number): Promise<string[]> {
+  // Support both old signature (video, duration, count) and new (video, duration, offset, count)
+  let offset = 0;
+  let count = 10;
+  if (maybeCount !== undefined) {
+    offset = countOrOffset;
+    count = maybeCount;
+  } else {
+    count = countOrOffset;
+  }
+
   const thumbnails: string[] = [];
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
@@ -142,14 +153,15 @@ export async function generateThumbnails(video: HTMLVideoElement, duration: numb
   canvas.width = thumbWidth;
   canvas.height = thumbHeight;
 
-  // Generate frames from 0% to 100% of duration
+  // Generate frames from offset to offset+duration
   // With count=10: 0%, 11.1%, 22.2%, ... 88.9%, 100%
   for (let i = 0; i < count; i++) {
     // Use (count - 1) as divisor so last thumbnail is at 100%
-    // For count=1, just use time=0
-    const time = count > 1 ? (i / (count - 1)) * duration : 0;
+    // For count=1, just use time=offset
+    const relativeTime = count > 1 ? (i / (count - 1)) * duration : 0;
+    const absoluteTime = offset + relativeTime;
     // Clamp to slightly before end to avoid seek issues at exact duration
-    const clampedTime = Math.min(time, duration - 0.01);
+    const clampedTime = Math.min(absoluteTime, video.duration - 0.01);
     try {
       await seekVideo(video, clampedTime);
       ctx.drawImage(video, 0, 0, thumbWidth, thumbHeight);

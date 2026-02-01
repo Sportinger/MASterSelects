@@ -524,7 +524,7 @@ function TimelineClipComponent({
   hasKeyframes,
   fadeInDuration,
   fadeOutDuration,
-  opacityKeyframes,
+  // opacityKeyframes - TODO: add to props type when implementing fade curves
   timeToPixel,
   pixelToTime,
   formatTime,
@@ -903,8 +903,53 @@ function TimelineClipComponent({
           <span>Generating audio...</span>
         </div>
       )}
-      {/* Thumbnail filmstrip - only for non-audio clips */}
-      {thumbnails.length > 0 && !isAudioClip && (
+      {/* Segment-based thumbnails for nested compositions */}
+      {clip.isComposition && clip.clipSegments && clip.clipSegments.length > 0 && !isAudioClip && (
+        <div className="clip-thumbnails clip-thumbnails-segments">
+          {clip.clipSegments.map((segment, segIdx) => {
+            const segmentWidth = (segment.endNorm - segment.startNorm) * 100;
+            const segmentLeft = segment.startNorm * 100;
+            // Calculate how many thumbnails fit in this segment
+            const segmentThumbCount = Math.max(1, Math.ceil((segmentWidth / 100) * visibleThumbs));
+
+            return (
+              <div
+                key={segIdx}
+                className="clip-segment"
+                style={{
+                  position: 'absolute',
+                  left: `${segmentLeft}%`,
+                  width: `${segmentWidth}%`,
+                  height: '100%',
+                  display: 'flex',
+                  overflow: 'hidden',
+                }}
+              >
+                {segment.thumbnails.length > 0 ? (
+                  Array.from({ length: segmentThumbCount }).map((_, i) => {
+                    const thumbIndex = Math.floor((i / segmentThumbCount) * segment.thumbnails.length);
+                    const thumb = segment.thumbnails[Math.min(thumbIndex, segment.thumbnails.length - 1)];
+                    return (
+                      <img
+                        key={i}
+                        src={thumb}
+                        alt=""
+                        className="clip-thumb"
+                        draggable={false}
+                        style={{ flex: '1 0 auto', minWidth: 0, objectFit: 'cover' }}
+                      />
+                    );
+                  })
+                ) : (
+                  <div className="clip-segment-empty" style={{ width: '100%', height: '100%', background: '#1a1a1a' }} />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {/* Regular thumbnail filmstrip - for non-composition clips */}
+      {thumbnails.length > 0 && !isAudioClip && !(clip.isComposition && clip.clipSegments && clip.clipSegments.length > 0) && (
         <div className="clip-thumbnails">
           {Array.from({ length: visibleThumbs }).map((_, i) => {
             // Calculate thumbnail index based on displayInPoint/displayOutPoint (trim-aware, live during trim)
@@ -1033,7 +1078,8 @@ function TimelineClipComponent({
           <div className="analyzing-progress" style={{ width: `${clip.analysisProgress || 0}%` }} />
         </div>
       )}
-      {/* Fade curve - SVG bezier curve showing opacity animation */}
+      {/* Fade curve - SVG bezier curve showing opacity animation
+      TODO: Implement when opacityKeyframes prop is added
       {opacityKeyframes.length >= 2 && (
         <div className="fade-curve-container">
           <FadeCurve
@@ -1044,6 +1090,7 @@ function TimelineClipComponent({
           />
         </div>
       )}
+      */}
       {/* Fade handles - corner handles for adjusting fade-in/out */}
       <div
         className={`fade-handle left${fadeInDuration > 0 ? ' active' : ''}`}

@@ -261,6 +261,15 @@ export interface ClipAnalysis {
   sampleInterval: number; // Milliseconds between samples
 }
 
+/** Segment-based thumbnails for nested composition clips */
+export interface ClipSegment {
+  clipId: string;       // ID of the source clip in the nested composition
+  clipName: string;     // Name for debugging
+  startNorm: number;    // Normalized start position (0-1)
+  endNorm: number;      // Normalized end position (0-1)
+  thumbnails: string[]; // Thumbnails from this clip's content
+}
+
 export interface TimelineClip {
   id: string;
   trackId: string;
@@ -304,6 +313,7 @@ export interface TimelineClip {
   nestedTracks?: TimelineTrack[];  // Tracks from the nested composition
   nestedContentHash?: string;  // Hash to detect changes in nested composition (for thumbnail updates)
   nestedClipBoundaries?: number[];  // Normalized (0-1) positions where nested clips start/end (for visual markers)
+  clipSegments?: ClipSegment[];  // Segment-based thumbnails for nested compositions
   // Nested composition audio mixdown
   mixdownAudio?: HTMLAudioElement;  // Audio element for playing nested comp audio
   mixdownWaveform?: number[];  // Waveform of the nested comp audio mixdown
