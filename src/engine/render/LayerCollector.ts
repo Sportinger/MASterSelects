@@ -40,7 +40,15 @@ export class LayerCollector {
         log.debug(`Layer ${layer.id} collected: isVideo=${data.isVideo}, hasExternalTex=${!!data.externalTexture}, hasTextureView=${!!data.textureView}`);
         this.layerRenderData.push(data);
       } else {
-        log.warn(`Layer ${layer.id} failed to collect - no texture data returned`);
+        // This is normal during loading - use debug level to reduce noise
+        const source = layer.source;
+        log.debug(`Layer ${layer.id} skipped - source not ready`, {
+          sourceType: source?.type,
+          hasVideoElement: !!source?.videoElement,
+          videoReadyState: source?.videoElement?.readyState,
+          hasImageElement: !!source?.imageElement,
+          hasNestedComp: !!source?.nestedComposition,
+        });
       }
     }
 
