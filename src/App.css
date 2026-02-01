@@ -4236,43 +4236,24 @@ input[type="checkbox"] {
   background: var(--warning);
 }
 
-/* Fade overlays - visual indication of fade regions */
-.fade-overlay {
+/* Fade curve container - SVG bezier curve showing opacity animation */
+.fade-curve-container {
   position: absolute;
   top: 0;
+  left: 0;
+  right: 0;
   bottom: 0;
   pointer-events: none;
   z-index: 5;
+  overflow: hidden;
 }
 
-.fade-overlay.fade-in {
-  left: 0;
-  background: linear-gradient(to right, rgba(0, 0, 0, 0.6) 0%, transparent 100%);
-  border-right: 1px solid rgba(251, 191, 36, 0.6);
-}
-
-.fade-overlay.fade-out {
-  right: 0;
-  background: linear-gradient(to left, rgba(0, 0, 0, 0.6) 0%, transparent 100%);
-  border-left: 1px solid rgba(251, 191, 36, 0.6);
-}
-
-/* Fade overlay diagonal line indicator */
-.fade-overlay::after {
-  content: '';
+.fade-curve-svg {
   position: absolute;
   top: 0;
-  bottom: 0;
+  left: 0;
   width: 100%;
-  pointer-events: none;
-}
-
-.fade-overlay.fade-in::after {
-  background: linear-gradient(to bottom right, transparent 49%, rgba(251, 191, 36, 0.4) 49%, rgba(251, 191, 36, 0.4) 51%, transparent 51%);
-}
-
-.fade-overlay.fade-out::after {
-  background: linear-gradient(to bottom left, transparent 49%, rgba(251, 191, 36, 0.4) 49%, rgba(251, 191, 36, 0.4) 51%, transparent 51%);
+  height: 100%;
 }
 
 /* Playhead */
