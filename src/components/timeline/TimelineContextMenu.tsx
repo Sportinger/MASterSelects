@@ -7,7 +7,6 @@ import type { MediaFile } from '../../stores/mediaStore';
 import type { ContextMenuState } from './types';
 import { useContextMenuPosition } from '../../hooks/useContextMenuPosition';
 import { useMediaStore } from '../../stores/mediaStore';
-import { useDockStore } from '../../stores/dockStore';
 import { projectFileService } from '../../services/projectFileService';
 import { Logger } from '../../services/logger';
 
@@ -151,20 +150,10 @@ export function TimelineContextMenu({
     setContextMenu(null);
   };
 
-  // Get clip info for composition detection
-  const clip = contextMenu ? clipMap.get(contextMenu.clipId) : null;
-  const isComposition = clip?.isComposition;
-
-  // Open Media Panel when right-clicking on composition clips
-  useEffect(() => {
-    if (isComposition && contextMenu) {
-      useDockStore.getState().activatePanelType('media');
-    }
-  }, [isComposition, contextMenu]);
-
   if (!contextMenu) return null;
 
   const mediaFile = getMediaFileForClip(contextMenu.clipId);
+  const clip = clipMap.get(contextMenu.clipId);
   const isVideo = clip?.source?.type === 'video';
   const isGenerating = mediaFile?.proxyStatus === 'generating';
   const hasProxy = mediaFile?.proxyStatus === 'ready';
