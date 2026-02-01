@@ -4,6 +4,7 @@
 import { Logger } from './logger';
 import { compositionRenderer } from './compositionRenderer';
 import type { Layer } from '../types';
+import { useMediaStore } from '../stores/mediaStore';
 
 const log = Logger.create('ThumbnailRenderer');
 
@@ -248,18 +249,19 @@ class ThumbnailRendererService {
    */
   private getContentAwareSampleTimes(compositionId: string, duration: number, count: number): number[] {
     // Get composition's clip layout
-    const { useMediaStore } = require('../stores/mediaStore');
     const composition = useMediaStore.getState().compositions.find(
       (c: { id: string }) => c.id === compositionId
     );
 
     if (!composition?.timelineData?.clips || composition.timelineData.clips.length === 0) {
-      // No clips - fall back to even distribution
+      log.debug(`No clips found for ${compositionId}, using even distribution`);
       return this.getEvenSampleTimes(duration, count);
     }
 
     const clips = composition.timelineData.clips;
     const tracks = composition.timelineData.tracks || [];
+
+    log.debug(`Analyzing ${clips.length} clips, ${tracks.length} tracks for ${compositionId}`);
 
     // Get visible video tracks
     const videoTrackIds = new Set(
@@ -268,11 +270,15 @@ class ThumbnailRendererService {
         .map((t: { id: string }) => t.id)
     );
 
-    // Get all video clips on visible tracks
-    const videoClips = clips.filter((c: { trackId: string; sourceType?: string }) =>
-      videoTrackIds.has(c.trackId) &&
-      (c.sourceType === 'video' || c.sourceType === 'image')
-    );
+    // Get all clips on visible video tracks (include all types that might render)
+    // Note: sourceType might be undefined, so we include clips without it too
+    const videoClips = clips.filter((c: { trackId: string; sourceType?: string }) => {
+      const isOnVideoTrack = videoTrackIds.has(c.trackId);
+      const isVisualType = !c.sourceType || c.sourceType === 'video' || c.sourceType === 'image' || c.sourceType === 'text';
+      return isOnVideoTrack && isVisualType;
+    });
+
+    log.debug(`Found ${videoClips.length} visual clips on video tracks`);
 
     if (videoClips.length === 0) {
       return this.getEvenSampleTimes(duration, count);
@@ -281,62 +287,80 @@ class ThumbnailRendererService {
     // Collect all important time points (clip boundaries)
     const timePoints = new Set<number>();
 
-    // Add start (0) and end
+    // Always add start and end
     timePoints.add(0);
-    timePoints.add(duration);
 
-    // Add clip start and end times
+    // Add clip boundaries
     for (const clip of videoClips) {
-      const clipStart = clip.startTime || 0;
-      const clipEnd = clipStart + (clip.duration || 0);
+      const clipStart = clip.startTime ?? 0;
+      const clipDuration = clip.duration ?? 0;
+      const clipEnd = clipStart + clipDuration;
 
-      // Add just inside clip boundaries to capture content
+      log.debug(`Clip boundary: ${clipStart.toFixed(2)}s - ${clipEnd.toFixed(2)}s`);
+
+      // Add clip start (with small offset to be inside the clip)
       if (clipStart >= 0 && clipStart < duration) {
         timePoints.add(clipStart);
-        timePoints.add(Math.min(clipStart + 0.1, clipEnd - 0.1)); // Just after start
+        // Add point just inside clip start
+        const insideStart = Math.min(clipStart + 0.05, clipEnd - 0.05);
+        if (insideStart > clipStart) {
+          timePoints.add(insideStart);
+        }
       }
+
+      // Add clip end (with small offset to be inside the clip)
       if (clipEnd > 0 && clipEnd <= duration) {
-        timePoints.add(Math.max(clipEnd - 0.1, clipStart + 0.1)); // Just before end
+        // Add point just inside clip end
+        const insideEnd = Math.max(clipEnd - 0.05, clipStart + 0.05);
+        if (insideEnd < clipEnd) {
+          timePoints.add(insideEnd);
+        }
         timePoints.add(clipEnd);
       }
     }
 
-    // Sort time points
+    // Always add duration end
+    timePoints.add(Math.max(0, duration - 0.01));
+
+    // Convert to sorted array
     let sortedTimes = Array.from(timePoints).sort((a, b) => a - b);
 
-    // If we have fewer points than requested, fill in evenly between boundaries
-    if (sortedTimes.length < count) {
-      const filledTimes: number[] = [];
+    log.debug(`Initial time points (${sortedTimes.length}):`, sortedTimes.map(t => t.toFixed(2)));
+
+    // Fill in additional points to reach target count
+    while (sortedTimes.length < count) {
+      // Find the largest gap
+      let maxGap = 0;
+      let maxGapIndex = 0;
 
       for (let i = 0; i < sortedTimes.length - 1; i++) {
-        const start = sortedTimes[i];
-        const end = sortedTimes[i + 1];
-        const gap = end - start;
-
-        filledTimes.push(start);
-
-        // Add intermediate points for larger gaps
-        const intermediateCount = Math.floor(gap / (duration / count));
-        for (let j = 1; j <= intermediateCount && filledTimes.length < count - 1; j++) {
-          filledTimes.push(start + (gap * j) / (intermediateCount + 1));
+        const gap = sortedTimes[i + 1] - sortedTimes[i];
+        if (gap > maxGap) {
+          maxGap = gap;
+          maxGapIndex = i;
         }
       }
 
-      filledTimes.push(sortedTimes[sortedTimes.length - 1]);
-      sortedTimes = filledTimes;
+      if (maxGap < 0.1) break; // Stop if all gaps are tiny
+
+      // Insert midpoint in the largest gap
+      const midpoint = (sortedTimes[maxGapIndex] + sortedTimes[maxGapIndex + 1]) / 2;
+      sortedTimes.splice(maxGapIndex + 1, 0, midpoint);
     }
 
     // If we have too many points, sample evenly from them
     if (sortedTimes.length > count) {
-      const sampled: number[] = [];
-      for (let i = 0; i < count; i++) {
-        const idx = Math.floor((i / (count - 1)) * (sortedTimes.length - 1));
+      const sampled: number[] = [sortedTimes[0]]; // Always include first
+      for (let i = 1; i < count - 1; i++) {
+        const idx = Math.round((i / (count - 1)) * (sortedTimes.length - 1));
         sampled.push(sortedTimes[idx]);
       }
+      sampled.push(sortedTimes[sortedTimes.length - 1]); // Always include last
       sortedTimes = sampled;
     }
 
-    log.debug(`Content-aware sample times for ${compositionId}:`, sortedTimes);
+    log.info(`Content-aware sample times for ${compositionId} (${sortedTimes.length} points):`,
+      sortedTimes.map(t => t.toFixed(2)).join(', '));
     return sortedTimes;
   }
 
