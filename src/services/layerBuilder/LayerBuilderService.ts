@@ -636,6 +636,7 @@ export class LayerBuilderService {
   /**
    * Sync nested composition video elements
    * Uses same logic as regular clips: play during playback, seek when paused
+   * Also ensures videos have decoded frames (readyState >= 2) for rendering
    */
   private syncNestedCompVideos(compClip: TimelineClip, ctx: FrameContext): void {
     if (!compClip.nestedClips || !compClip.nestedTracks) return;
@@ -685,6 +686,12 @@ export class LayerBuilderService {
         if (timeDiff > seekThreshold) {
           this.throttledSeek(nestedClip.id, video, nestedClipTime, ctx);
         }
+
+        // If video readyState < 2 (no frame data), force decode via play/pause
+        // This can happen after seeking to unbuffered regions
+        if (video.readyState < 2 && !video.seeking) {
+          this.forceNestedVideoFrameDecode(nestedClip.id, video);
+        }
       }
 
       // Sync WebCodecsPlayer only when not playing (it handles its own playback)
@@ -695,6 +702,31 @@ export class LayerBuilderService {
         }
       }
     }
+  }
+
+  // Track which videos are being force-decoded to avoid duplicate calls
+  private forceDecodeInProgress = new Set<string>();
+
+  /**
+   * Force video to decode current frame by briefly playing
+   * Used when video readyState drops below 2 after seeking
+   */
+  private forceNestedVideoFrameDecode(clipId: string, video: HTMLVideoElement): void {
+    if (this.forceDecodeInProgress.has(clipId)) return;
+    this.forceDecodeInProgress.add(clipId);
+
+    const currentTime = video.currentTime;
+    video.play()
+      .then(() => {
+        video.pause();
+        video.currentTime = currentTime;
+        this.forceDecodeInProgress.delete(clipId);
+      })
+      .catch(() => {
+        // Fallback: tiny seek to trigger decode
+        video.currentTime = currentTime + 0.001;
+        this.forceDecodeInProgress.delete(clipId);
+      });
   }
 
   /**

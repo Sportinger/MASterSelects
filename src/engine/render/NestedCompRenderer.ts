@@ -325,7 +325,14 @@ export class NestedCompRenderer {
             log.warn('Failed to import video texture', { layerId: layer.id });
           }
         } else {
-          log.debug('Video not ready', { layerId: layer.id, readyState: video.readyState, currentTime: video.currentTime });
+          log.warn('Nested video not ready', {
+            layerId: layer.id,
+            readyState: video.readyState,
+            currentTime: video.currentTime,
+            src: video.src?.substring(0, 50),
+            paused: video.paused,
+            networkState: video.networkState,
+          });
         }
       }
 
