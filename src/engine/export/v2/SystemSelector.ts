@@ -111,7 +111,9 @@ export class SystemSelector {
    * Analyze project complexity
    */
   private static analyzeComplexity(criteria: SelectionCriteria): SystemSelectionResult['stats'] {
-    const { clips, tracks, compositions, startTime, endTime } = criteria
+    const { clips, tracks, startTime, endTime } = criteria
+    // compositions preserved for future nested comp complexity analysis
+    void criteria.compositions
 
     // Get visible video tracks
     const videoTracks = tracks.filter(t => t.type === 'video' && t.visible)

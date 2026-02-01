@@ -17,14 +17,14 @@ import type {
   FrameRequest,
   DecodedFrameData,
   SharedDecoderConfig,
-  ExportError,
   Sample,
   MP4VideoTrack
 } from './types'
 import { ExportError as ExportErrorClass } from './types'
 
-import * as MP4BoxModule from 'mp4box'
-const MP4Box = (MP4BoxModule as any).default || MP4BoxModule
+// MP4Box import - kept for future direct demuxing support
+// import * as MP4BoxModule from 'mp4box'
+// const MP4Box = (MP4BoxModule as any).default || MP4BoxModule
 
 const log = Logger.create('SharedDecoderPool')
 
@@ -293,7 +293,8 @@ export class SharedDecoderPool {
   }
 
   private async decodeRange(decoder: SharedDecoder, startTime: number, endTime: number): Promise<void> {
-    const startSampleIndex = this.findSampleIndexForTime(decoder, startTime)
+    // startTime used for future partial range decoding optimization
+    void startTime
     const endSampleIndex = this.findSampleIndexForTime(decoder, endTime)
 
     await this.decodeToSample(decoder, endSampleIndex + BUFFER_AHEAD_FRAMES)

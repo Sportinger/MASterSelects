@@ -4,7 +4,6 @@
 import type { TimelineClip, TimelineTrack } from '../../../types';
 import type { Composition } from '../types';
 import { DEFAULT_TRANSFORM } from '../constants';
-import { generateThumbnails } from '../utils';
 import { useMediaStore } from '../../mediaStore';
 import { initWebCodecsPlayer } from '../helpers/webCodecsHelpers';
 import { findOrCreateAudioTrack, createCompositionAudioClip } from '../helpers/audioTrackHelpers';
@@ -13,6 +12,7 @@ import { generateCompClipId, generateClipId, generateNestedClipId } from '../hel
 import { blobUrlManager } from '../helpers/blobUrlManager';
 import { updateClipById } from '../helpers/clipStateHelpers';
 import { Logger } from '../../../services/logger';
+import { thumbnailRenderer } from '../../../services/thumbnailRenderer';
 
 const log = Logger.create('AddCompClip');
 
@@ -348,13 +348,51 @@ export interface GenerateCompThumbnailsParams {
 }
 
 /**
- * Generate thumbnails from first video in nested composition.
- * Uses polling to wait for video to load since nested clips are loaded async.
+ * Generate thumbnails for nested composition using WebGPU rendering.
+ * Shows all layers with effects, not just the first video.
+ * Falls back to polling first video if WebGPU fails.
  */
-export function generateCompThumbnails(params: GenerateCompThumbnailsParams): void {
-  const { clipId, nestedClips, compDuration, thumbnailsEnabled, get, set } = params;
+export async function generateCompThumbnails(params: GenerateCompThumbnailsParams): Promise<void> {
+  const { clipId, compDuration, thumbnailsEnabled, get, set } = params;
 
   if (!thumbnailsEnabled) return;
+
+  // Get the composition ID from the clip
+  const compClip = get().clips.find((c: TimelineClip) => c.id === clipId);
+  if (!compClip?.compositionId) {
+    log.warn('No composition ID for comp clip', { clipId });
+    return;
+  }
+
+  // Try WebGPU-based rendering first (shows all layers with effects)
+  try {
+    log.debug('Generating WebGPU thumbnails for nested comp', { clipId, compositionId: compClip.compositionId });
+
+    const thumbnails = await thumbnailRenderer.generateCompositionThumbnails(
+      compClip.compositionId,
+      compDuration,
+      { count: 10, width: 160, height: 90 }
+    );
+
+    if (thumbnails.length > 0) {
+      set({ clips: updateClipById(get().clips, clipId, { thumbnails }) });
+      log.debug('Generated WebGPU thumbnails for nested comp', { clipId, count: thumbnails.length });
+      return;
+    }
+  } catch (e) {
+    log.warn('WebGPU thumbnail generation failed, falling back to video-based', e);
+  }
+
+  // Fallback: Use the first video's frames (original method)
+  await generateCompThumbnailsFallback(params);
+}
+
+/**
+ * Fallback: Generate thumbnails from first video in nested composition.
+ * Used when WebGPU rendering is not available or fails.
+ */
+async function generateCompThumbnailsFallback(params: GenerateCompThumbnailsParams): Promise<void> {
+  const { clipId, nestedClips, compDuration, get, set } = params;
 
   // Find the first video clip by file type or source type
   const firstVideoClip = nestedClips.find(c =>
@@ -365,6 +403,9 @@ export function generateCompThumbnails(params: GenerateCompThumbnailsParams): vo
   );
   const firstVideoClipId = firstVideoClip?.id;
   if (!firstVideoClipId) return;
+
+  // Import generateThumbnails lazily for fallback
+  const { generateThumbnails } = await import('../utils');
 
   let attempts = 0;
   const maxAttempts = 50; // 5 seconds max (50 * 100ms)
@@ -381,9 +422,9 @@ export function generateCompThumbnails(params: GenerateCompThumbnailsParams): vo
       try {
         const thumbnails = await generateThumbnails(video, compDuration);
         set({ clips: updateClipById(get().clips, clipId, { thumbnails }) });
-        log.debug('Generated thumbnails for nested comp', { clipId, count: thumbnails.length });
+        log.debug('Generated fallback thumbnails for nested comp', { clipId, count: thumbnails.length });
       } catch (e) {
-        log.warn('Failed to generate thumbnails for nested comp', e);
+        log.warn('Failed to generate fallback thumbnails for nested comp', e);
       }
     } else if (attempts < maxAttempts) {
       // Video not ready yet, try again

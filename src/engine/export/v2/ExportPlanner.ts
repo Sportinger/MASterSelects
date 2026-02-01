@@ -27,7 +27,8 @@ export class ExportPlanner {
   private fps: number
   private clips: TimelineClip[]
   private tracks: TimelineTrack[]
-  private compositions: Map<string, Composition>
+  // compositions stored for future nested comp export support
+  // private compositions: Map<string, Composition>
 
   constructor(options: {
     startTime: number
@@ -42,7 +43,8 @@ export class ExportPlanner {
     this.fps = options.fps
     this.clips = options.clips
     this.tracks = options.tracks
-    this.compositions = new Map(options.compositions.map(c => [c.id, c]))
+    // Store compositions for future nested comp support
+    void options.compositions
 
     log.info(`ExportPlanner created: ${(this.endTime - this.startTime).toFixed(1)}s @ ${this.fps}fps`)
   }

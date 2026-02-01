@@ -32,7 +32,7 @@ export interface CacheStats {
   hitRate: number
   missRate: number
   evictions: number
-  perFileStats: Map<string, FileCache Stats>
+  perFileStats: Map<string, FileCacheStats>
 }
 
 export interface FileCacheStats {

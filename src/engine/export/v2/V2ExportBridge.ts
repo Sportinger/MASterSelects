@@ -29,11 +29,17 @@ export class V2ExportBridge {
   private isInitialized = false
   private allClips: TimelineClip[] = []
   private clipMetadata: Map<string, ClipMetadata> = new Map()
-
-  constructor(private options: {
+  private options: {
     maxCacheMemoryMB?: number
     defaultMaxFramesPerFile?: number
-  } = {}) {}
+  }
+
+  constructor(options: {
+    maxCacheMemoryMB?: number
+    defaultMaxFramesPerFile?: number
+  } = {}) {
+    this.options = options
+  }
 
   /**
    * Initialize V2 export system
