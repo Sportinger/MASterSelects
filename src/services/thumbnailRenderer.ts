@@ -219,6 +219,10 @@ class ThumbnailRendererService {
     }
 
     // Get sample times - use boundaries if provided, otherwise content-aware
+    log.info(`Thumbnail generation - boundaries provided: ${boundaries?.length ?? 0}, duration: ${duration}`);
+    if (boundaries && boundaries.length > 0) {
+      log.info(`Using segment-based sampling with boundaries: ${boundaries.map(b => (b * 100).toFixed(1) + '%').join(', ')}`);
+    }
     const sampleTimes = boundaries && boundaries.length > 0
       ? this.getSegmentSampleTimes(boundaries, duration, count)
       : this.getContentAwareSampleTimes(compositionId, duration, count);

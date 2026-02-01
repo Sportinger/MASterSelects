@@ -199,8 +199,8 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
         ),
       });
 
-      // Generate segment-aligned thumbnails
-      generateCompThumbnails({
+      // Generate segment-aligned thumbnails (await to ensure boundaries are used)
+      await generateCompThumbnails({
         clipId: compClip.id,
         nestedClips,
         compDuration,

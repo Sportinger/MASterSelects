@@ -434,6 +434,7 @@ export async function generateCompThumbnails(params: GenerateCompThumbnailsParam
       compositionId: compClip.compositionId,
       compDuration,
       boundaryCount: boundaries?.length ?? 0,
+      boundaries: boundaries?.map(b => (b * 100).toFixed(1) + '%'),
     });
 
     const thumbnails = await thumbnailRenderer.generateCompositionThumbnails(
@@ -452,10 +453,11 @@ export async function generateCompThumbnails(params: GenerateCompThumbnailsParam
       log.warn('WebGPU returned empty thumbnails', { clipId, compositionId: compClip.compositionId });
     }
   } catch (e) {
-    log.warn('WebGPU thumbnail generation failed, falling back to video-based', e);
+    log.error('WebGPU thumbnail generation failed, falling back to video-based', e);
   }
 
   // Fallback: Use the first video's frames (original method)
+  log.warn('Using FALLBACK thumbnail generation (first video only)');
   await generateCompThumbnailsFallback(params);
 }
 
