@@ -16,6 +16,7 @@ import { createSelectionSlice } from './selectionSlice';
 import { createKeyframeSlice } from './keyframeSlice';
 import { createMaskSlice } from './maskSlice';
 import { createMarkerSlice } from './markerSlice';
+import { createClipboardSlice } from './clipboardSlice';
 import { projectFileService } from '../../services/projectFileService';
 import type { ClipAnalysis, FrameAnalysisData } from '../../types';
 import { Logger } from '../../services/logger';
@@ -37,6 +38,7 @@ export const useTimelineStore = create<TimelineStore>()(
     const keyframeActions = createKeyframeSlice(set, get);
     const maskActions = createMaskSlice(set, get);
     const markerActions = createMarkerSlice(set, get);
+    const clipboardActions = createClipboardSlice(set, get);
 
     // Utils that need to be defined inline due to cross-dependencies
     const utils: TimelineUtils = {
@@ -1240,6 +1242,9 @@ export const useTimelineStore = create<TimelineStore>()(
 
       // Clip animation phase for enter/exit transitions
       clipAnimationPhase: 'idle' as const,
+
+      // Clipboard state for copy/paste
+      clipboardData: null as import('./types').ClipboardClipData[] | null,
     };
 
     // Layer actions (render layers for engine, moved from mixerStore)
@@ -1282,6 +1287,7 @@ export const useTimelineStore = create<TimelineStore>()(
       ...layerActions,
       ...maskActions,
       ...markerActions,
+      ...clipboardActions,
       ...utils,
     };
   })

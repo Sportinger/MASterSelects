@@ -128,6 +128,9 @@ export function Timeline() {
     addMarker,
     moveMarker,
     removeMarker,
+    // Clipboard
+    copyClips,
+    pasteClips,
   } = useTimelineStore();
 
   const {
@@ -530,6 +533,8 @@ export function Timeline() {
     removeKeyframe,
     splitClipAtPlayhead,
     updateClipTransform,
+    copyClips,
+    pasteClips,
     toolMode,
     toggleCutTool,
     clipMap,

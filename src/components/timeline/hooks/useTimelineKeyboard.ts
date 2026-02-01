@@ -28,6 +28,10 @@ interface UseTimelineKeyboardProps {
   splitClipAtPlayhead: () => void;
   updateClipTransform: (id: string, transform: Partial<ClipTransform>) => void;
 
+  // Copy/Paste
+  copyClips: () => void;
+  pasteClips: () => void;
+
   // Tool mode
   toolMode: 'select' | 'cut';
   toggleCutTool: () => void;
@@ -59,6 +63,8 @@ export function useTimelineKeyboard({
   removeKeyframe,
   splitClipAtPlayhead,
   updateClipTransform,
+  copyClips,
+  pasteClips,
   toolMode,
   toggleCutTool,
   clipMap,
@@ -149,8 +155,25 @@ export function useTimelineKeyboard({
         return;
       }
 
+      // Ctrl+C / Cmd+C: Copy selected clips
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C') && !e.shiftKey) {
+        e.preventDefault();
+        copyClips();
+        return;
+      }
+
+      // Ctrl+V / Cmd+V: Paste clips at playhead
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V')) {
+        e.preventDefault();
+        pasteClips();
+        return;
+      }
+
       // C: Toggle cut tool mode / Shift+C: Split clip at playhead position
       if (e.key === 'c' || e.key === 'C') {
+        // Skip if Ctrl/Cmd is pressed (handled above)
+        if (e.ctrlKey || e.metaKey) return;
+
         e.preventDefault();
         if (e.shiftKey) {
           // Shift+C: Split clip at playhead position (legacy behavior)
@@ -242,6 +265,8 @@ export function useTimelineKeyboard({
     splitClipAtPlayhead,
     clipMap,
     updateClipTransform,
+    copyClips,
+    pasteClips,
     toolMode,
     toggleCutTool,
     activeComposition,
