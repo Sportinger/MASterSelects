@@ -14,7 +14,7 @@ const log = Logger.create('ClipSlice');
 
 // Import extracted modules
 import { detectMediaType } from './helpers/mediaTypeHelpers';
-import { createVideoClipPlaceholders, loadVideoMedia } from './clip/addVideoClip';
+import { loadVideoMedia } from './clip/addVideoClip';
 import { createAudioClipPlaceholder, loadAudioMedia } from './clip/addAudioClip';
 import { createImageClipPlaceholder, loadImageMedia } from './clip/addImageClip';
 import { createVideoElement, createAudioElement, initWebCodecsPlayer } from './helpers/webCodecsHelpers';
@@ -129,121 +129,91 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
     if (mediaType === 'video') {
       // Use function form of set() to ensure we get fresh state
       // This prevents race conditions when multiple files are dropped at once
-      let videoClip: TimelineClip | null = null;
-      let audioClip: TimelineClip | null = null;
-      let audioClipId: string | undefined;
+      const { videoId: clipId, audioId } = generateLinkedClipIds();
+      let finalAudioClipId: string | undefined;
 
       set(state => {
-        // Call findAvailableAudioTrack with fresh state to avoid overlaps
-        const result = createVideoClipPlaceholders({
-          trackId, file, startTime, estimatedDuration, mediaFileId,
-          tracks: state.tracks,
-          findAvailableAudioTrack: (st: number, dur: number) => {
-            // Inline the logic with fresh state.clips
-            const audioTracks = state.tracks.filter(t => t.type === 'audio');
-            const endTime = st + dur;
+        const endTime = startTime + estimatedDuration;
 
-            for (const track of audioTracks) {
-              const trackClips = state.clips.filter(c => c.trackId === track.id);
-              const hasOverlap = trackClips.some(clip => {
-                const clipEnd = clip.startTime + clip.duration;
-                return !(endTime <= clip.startTime || st >= clipEnd);
-              });
-              if (!hasOverlap) {
-                return track.id;
-              }
-            }
+        // Find an audio track without overlap
+        const audioTracks = state.tracks.filter(t => t.type === 'audio');
+        let audioTrackId: string | null = null;
 
-            // No available track - will need to create one after
-            return null;
-          },
-        });
-
-        videoClip = result.videoClip;
-        audioClip = result.audioClip;
-        audioClipId = result.audioClipId;
-
-        // If no audio track was available, we need to create one
-        if (!audioClip && audioClipId === undefined) {
-          // Create audio clip on a new track (will be created below)
-          const { videoId, audioId } = generateLinkedClipIds();
-          // Override video clip id to match
-          videoClip = { ...result.videoClip, id: videoId, linkedClipId: audioId };
-          audioClipId = audioId;
-
-          // Find or create audio track
-          const audioTracks = state.tracks.filter(t => t.type === 'audio');
-          let newTrackId: string;
-
-          if (audioTracks.length === 0) {
-            // No audio tracks exist, will be created
-            newTrackId = `track-${Date.now()}-audio`;
-          } else {
-            // Check all tracks again for availability
-            let foundTrack: string | null = null;
-            for (const track of audioTracks) {
-              const trackClips = state.clips.filter(c => c.trackId === track.id);
-              const endTime = startTime + estimatedDuration;
-              const hasOverlap = trackClips.some(clip => {
-                const clipEnd = clip.startTime + clip.duration;
-                return !(endTime <= clip.startTime || startTime >= clipEnd);
-              });
-              if (!hasOverlap) {
-                foundTrack = track.id;
-                break;
-              }
-            }
-
-            if (foundTrack) {
-              newTrackId = foundTrack;
-            } else {
-              // Create new track
-              newTrackId = `track-${Date.now()}-audio`;
-            }
-          }
-
-          audioClip = {
-            id: audioId,
-            trackId: newTrackId,
-            name: `${file.name} (Audio)`,
-            file,
-            startTime,
-            duration: estimatedDuration,
-            inPoint: 0,
-            outPoint: estimatedDuration,
-            source: { type: 'audio', naturalDuration: estimatedDuration, mediaFileId },
-            linkedClipId: videoClip.id,
-            transform: { ...DEFAULT_TRANSFORM },
-            effects: [],
-            isLoading: true,
-          };
-
-          // Check if we need to create the track
-          const trackExists = state.tracks.some(t => t.id === newTrackId);
-          if (!trackExists) {
-            const newTrack: TimelineTrack = {
-              id: newTrackId,
-              name: `Audio ${audioTracks.length + 1}`,
-              type: 'audio',
-              height: 60,
-              muted: false,
-              visible: true,
-              solo: false,
-            };
-            return {
-              clips: [...state.clips, videoClip, audioClip],
-              tracks: [...state.tracks, newTrack],
-            };
+        for (const track of audioTracks) {
+          const trackClips = state.clips.filter(c => c.trackId === track.id);
+          const hasOverlap = trackClips.some(clip => {
+            const clipEnd = clip.startTime + clip.duration;
+            return !(endTime <= clip.startTime || startTime >= clipEnd);
+          });
+          if (!hasOverlap) {
+            audioTrackId = track.id;
+            break;
           }
         }
 
-        return { clips: [...state.clips, videoClip!, ...(audioClip ? [audioClip] : [])] };
+        // Create new track if needed
+        let newTracks = state.tracks;
+        if (!audioTrackId) {
+          const newTrackId = `track-${Date.now()}-${Math.random().toString(36).substr(2, 5)}-audio`;
+          const newTrack: TimelineTrack = {
+            id: newTrackId,
+            name: `Audio ${audioTracks.length + 1}`,
+            type: 'audio',
+            height: 60,
+            muted: false,
+            visible: true,
+            solo: false,
+          };
+          newTracks = [...state.tracks, newTrack];
+          audioTrackId = newTrackId;
+        }
+
+        // Create video clip
+        const videoClip: TimelineClip = {
+          id: clipId,
+          trackId,
+          name: file.name,
+          file,
+          startTime,
+          duration: estimatedDuration,
+          inPoint: 0,
+          outPoint: estimatedDuration,
+          source: { type: 'video', naturalDuration: estimatedDuration, mediaFileId },
+          linkedClipId: audioId,
+          transform: { ...DEFAULT_TRANSFORM },
+          effects: [],
+          isLoading: true,
+        };
+
+        // Create audio clip
+        const audioClip: TimelineClip = {
+          id: audioId,
+          trackId: audioTrackId,
+          name: `${file.name} (Audio)`,
+          file,
+          startTime,
+          duration: estimatedDuration,
+          inPoint: 0,
+          outPoint: estimatedDuration,
+          source: { type: 'audio', naturalDuration: estimatedDuration, mediaFileId },
+          linkedClipId: clipId,
+          transform: { ...DEFAULT_TRANSFORM },
+          effects: [],
+          isLoading: true,
+        };
+
+        finalAudioClipId = audioId;
+
+        return {
+          clips: [...state.clips, videoClip, audioClip],
+          tracks: newTracks,
+        };
       });
       updateDuration();
 
       await loadVideoMedia({
-        clipId: videoClip!.id,
-        audioClipId,
+        clipId,
+        audioClipId: finalAudioClipId,
         file,
         mediaFileId,
         thumbnailsEnabled,
