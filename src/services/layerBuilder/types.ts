@@ -82,6 +82,7 @@ export interface AudioSyncTarget {
   isMuted: boolean;
   canBeMaster: boolean;
   type: 'audioTrack' | 'audioProxy' | 'videoElement' | 'mixdown';
+  volume?: number; // 0-2, from audio-volume effect (default 1)
 }
 
 /**

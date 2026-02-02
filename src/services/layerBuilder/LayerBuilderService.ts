@@ -18,6 +18,15 @@ import { DEFAULT_TRANSFORM } from '../../stores/timeline/constants';
 const log = Logger.create('LayerBuilder');
 
 /**
+ * Get interpolated volume for a clip from audio-volume effect
+ */
+function getClipVolume(ctx: FrameContext, clip: TimelineClip, clipLocalTime: number): number {
+  const effects = ctx.getInterpolatedEffects(clip.id, clipLocalTime);
+  const volumeEffect = effects.find(e => e.type === 'audio-volume');
+  return (volumeEffect?.params?.volume as number) ?? 1;
+}
+
+/**
  * LayerBuilderService - Builds render layers from timeline state
  * Optimized with caching, memoization, and object reuse
  */
@@ -953,6 +962,7 @@ export class LayerBuilderService {
         isMuted,
         canBeMaster: true,
         type: 'audioTrack',
+        volume: getClipVolume(ctx, clip, timeInfo.clipLocalTime),
       }, ctx, state);
     }
   }
@@ -1004,6 +1014,7 @@ export class LayerBuilderService {
             isMuted,
             canBeMaster: !state.masterSet,
             type: 'audioProxy',
+            volume: getClipVolume(ctx, clip, timeInfo.clipLocalTime),
           }, ctx, state);
         } else {
           // Trigger preload
@@ -1041,6 +1052,7 @@ export class LayerBuilderService {
         isMuted,
         canBeMaster: !state.masterSet,
         type: 'mixdown',
+        volume: getClipVolume(ctx, clip, timeInfo.clipLocalTime),
       }, ctx, state);
     }
   }

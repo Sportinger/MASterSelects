@@ -58,6 +58,12 @@ const RAW_CHANGELOG: RawChangeEntry[] = [
   {
     date: '2026-02-02',
     type: 'fix',
+    title: 'Split Clip Audio Elements',
+    description: 'Splitting audio-only clips or nested compositions now creates independent audio elements for each part',
+  },
+  {
+    date: '2026-02-02',
+    type: 'fix',
     title: 'Texture Lifecycle Management',
     description: 'Fix "Destroyed texture used in a submit" warnings causing black preview when switching compositions',
     commit: 'f69d0c7',

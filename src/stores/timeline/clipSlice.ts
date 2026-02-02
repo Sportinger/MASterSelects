@@ -400,6 +400,13 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
           });
         }
       });
+    } else if (clip.source?.type === 'audio' && clip.source.audioElement && clip.file) {
+      // Handle audio-only clips - create new audio element for second clip
+      const newAudio = createAudioElement(clip.file);
+      secondClipSource = {
+        ...clip.source,
+        audioElement: newAudio,
+      };
     }
 
     const firstClip: TimelineClip = {
@@ -427,12 +434,31 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
       if (linkedClip) {
         // Create new audio element for linked second clip
         let linkedSecondSource = linkedClip.source;
-        if (linkedClip.source?.type === 'audio' && linkedClip.source.audioElement && linkedClip.file) {
-          const newAudio = createAudioElement(linkedClip.file);
-          linkedSecondSource = {
-            ...linkedClip.source,
-            audioElement: newAudio,
-          };
+        if (linkedClip.source?.type === 'audio' && linkedClip.source.audioElement) {
+          // For composition audio clips, use mixdownBuffer to create new audio element
+          if (linkedClip.mixdownBuffer) {
+            // Async create audio from mixdown buffer
+            import('../../services/compositionAudioMixer').then(({ compositionAudioMixer }) => {
+              const newAudio = compositionAudioMixer.createAudioElement(linkedClip.mixdownBuffer!);
+              const { clips: currentClips } = get();
+              const linkedSecondClipId = `clip-${timestamp}-${randomSuffix}-linked-b`;
+              set({
+                clips: currentClips.map(c => {
+                  if (c.id !== linkedSecondClipId || !c.source) return c;
+                  return { ...c, source: { ...c.source, audioElement: newAudio } };
+                }),
+              });
+            });
+            // Source will be updated async, use existing for now
+            linkedSecondSource = { ...linkedClip.source };
+          } else if (linkedClip.file && linkedClip.file.size > 0) {
+            // Regular audio file (not empty composition placeholder)
+            const newAudio = createAudioElement(linkedClip.file);
+            linkedSecondSource = {
+              ...linkedClip.source,
+              audioElement: newAudio,
+            };
+          }
         }
 
         const linkedFirstClip: TimelineClip = {

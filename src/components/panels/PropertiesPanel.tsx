@@ -1278,6 +1278,7 @@ export function PropertiesPanel() {
         ) : (
           <>
             <button className={`tab-btn ${activeTab === 'transform' ? 'active' : ''}`} onClick={() => setActiveTab('transform')}>Transform</button>
+            <button className={`tab-btn ${activeTab === 'volume' ? 'active' : ''}`} onClick={() => setActiveTab('volume')}>Audio</button>
             <button className={`tab-btn ${activeTab === 'effects' ? 'active' : ''}`} onClick={() => setActiveTab('effects')}>
               Effects {visualEffects.length > 0 && <span className="badge">{visualEffects.length}</span>}
             </button>
@@ -1299,7 +1300,7 @@ export function PropertiesPanel() {
           <TextTab clipId={selectedClip.id} textProperties={selectedClip.textProperties} />
         )}
         {activeTab === 'transform' && !isAudioClip && <TransformTab clipId={selectedClip.id} transform={transform} speed={interpolatedSpeed} />}
-        {activeTab === 'volume' && isAudioClip && <VolumeTab clipId={selectedClip.id} effects={selectedClip.effects || []} />}
+        {activeTab === 'volume' && <VolumeTab clipId={selectedClip.id} effects={selectedClip.effects || []} />}
         {activeTab === 'effects' && <EffectsTab clipId={selectedClip.id} effects={selectedClip.effects || []} />}
         {activeTab === 'masks' && !isAudioClip && <MasksTab clipId={selectedClip.id} masks={selectedClip.masks} />}
         {activeTab === 'transcript' && (
