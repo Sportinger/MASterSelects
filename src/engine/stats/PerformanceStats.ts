@@ -99,8 +99,11 @@ export class PerformanceStats {
       }
       this.lastFrameStart = now;
 
-      if (now - this.fpsUpdateTime >= 1000) {
-        this.fps = this.frameCount;
+      // Update FPS every 250ms (4x per second) for more responsive display
+      const elapsed = now - this.fpsUpdateTime;
+      if (elapsed >= 250) {
+        // Scale to frames per second
+        this.fps = Math.round((this.frameCount / elapsed) * 1000);
         this.frameCount = 0;
         this.fpsUpdateTime = now;
       }
