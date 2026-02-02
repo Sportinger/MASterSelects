@@ -337,11 +337,9 @@ export function useEngine() {
       }
     };
 
-    if (isPlaying) {
-      engine.start(renderFrame);
-    } else {
-      engine.stop();
-    }
+    // Always keep the engine running - it has idle detection to save power
+    // when nothing changes. Stopping the engine breaks scrubbing.
+    engine.start(renderFrame);
 
     return () => {
       engine.stop();
