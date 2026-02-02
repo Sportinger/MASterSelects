@@ -682,6 +682,18 @@ export class WebGPUEngine {
       });
       pass.end();
     }
+    // Also clear export canvas when exporting (needed for empty frames at export boundaries)
+    if (this.isExporting && this.exportCanvasContext) {
+      const pass = commandEncoder.beginRenderPass({
+        colorAttachments: [{
+          view: this.exportCanvasContext.getCurrentTexture().createView(),
+          clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          loadOp: 'clear',
+          storeOp: 'store',
+        }],
+      });
+      pass.end();
+    }
     device.queue.submit([commandEncoder.finish()]);
   }
 
