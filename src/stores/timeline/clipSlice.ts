@@ -17,6 +17,7 @@ import { detectMediaType } from './helpers/mediaTypeHelpers';
 import { createVideoClipPlaceholders, loadVideoMedia } from './clip/addVideoClip';
 import { createAudioClipPlaceholder, loadAudioMedia } from './clip/addAudioClip';
 import { createImageClipPlaceholder, loadImageMedia } from './clip/addImageClip';
+import { createVideoElement, createAudioElement, initWebCodecsPlayer } from './helpers/webCodecsHelpers';
 import {
   createCompClipPlaceholder,
   loadNestedClips,
@@ -376,6 +377,31 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
     const timestamp = Date.now();
     const randomSuffix = Math.random().toString(36).substr(2, 5);
 
+    // Create new video/audio elements for the second clip to avoid sharing HTMLMediaElements
+    // This is critical: both clips need their own elements for independent seeking/playback
+    let secondClipSource = clip.source ? { ...clip.source } : undefined;
+    if (clip.source?.type === 'video' && clip.source.videoElement && clip.file) {
+      const newVideo = createVideoElement(clip.file);
+      secondClipSource = {
+        ...clip.source,
+        videoElement: newVideo,
+        webCodecsPlayer: undefined, // Will be initialized async below
+      };
+      // Initialize WebCodecsPlayer for the new video element asynchronously
+      initWebCodecsPlayer(newVideo, clip.name).then(player => {
+        if (player) {
+          const { clips: currentClips } = get();
+          const secondClipId = `clip-${timestamp}-${randomSuffix}-b`;
+          set({
+            clips: currentClips.map(c => {
+              if (c.id !== secondClipId || !c.source) return c;
+              return { ...c, source: { ...c.source, webCodecsPlayer: player } };
+            }),
+          });
+        }
+      });
+    }
+
     const firstClip: TimelineClip = {
       ...clip,
       id: `clip-${timestamp}-${randomSuffix}-a`,
@@ -391,6 +417,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
       duration: secondPartDuration,
       inPoint: splitInSource,
       linkedClipId: undefined,
+      source: secondClipSource,
     };
 
     const newClips: TimelineClip[] = clips.filter(c => c.id !== clipId && c.id !== clip.linkedClipId);
@@ -398,6 +425,16 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
     if (clip.linkedClipId) {
       const linkedClip = clips.find(c => c.id === clip.linkedClipId);
       if (linkedClip) {
+        // Create new audio element for linked second clip
+        let linkedSecondSource = linkedClip.source ? { ...linkedClip.source } : undefined;
+        if (linkedClip.source?.type === 'audio' && linkedClip.source.audioElement && linkedClip.file) {
+          const newAudio = createAudioElement(linkedClip.file);
+          linkedSecondSource = {
+            ...linkedClip.source,
+            audioElement: newAudio,
+          };
+        }
+
         const linkedFirstClip: TimelineClip = {
           ...linkedClip,
           id: `clip-${timestamp}-${randomSuffix}-linked-a`,
@@ -412,6 +449,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
           duration: secondPartDuration,
           inPoint: linkedClip.inPoint + firstPartDuration,
           linkedClipId: secondClip.id,
+          source: linkedSecondSource,
         };
         firstClip.linkedClipId = linkedFirstClip.id;
         secondClip.linkedClipId = linkedSecondClip.id;
