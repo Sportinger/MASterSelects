@@ -17,6 +17,12 @@ export class RenderTargetManager {
   private independentPongView: GPUTextureView | null = null;
   private blackTexture: GPUTexture | null = null;
 
+  // Effect pre-processing temp textures (for applying effects to source before compositing)
+  private effectTempTexture: GPUTexture | null = null;
+  private effectTempTexture2: GPUTexture | null = null;
+  private effectTempView: GPUTextureView | null = null;
+  private effectTempView2: GPUTextureView | null = null;
+
   private outputWidth = 640;
   private outputHeight = 360;
 
@@ -30,6 +36,8 @@ export class RenderTargetManager {
     this.pongTexture?.destroy();
     this.independentPingTexture?.destroy();
     this.independentPongTexture?.destroy();
+    this.effectTempTexture?.destroy();
+    this.effectTempTexture2?.destroy();
 
     // Reset all references
     this.pingTexture = null;
@@ -40,6 +48,10 @@ export class RenderTargetManager {
     this.pongView = null;
     this.independentPingView = null;
     this.independentPongView = null;
+    this.effectTempTexture = null;
+    this.effectTempTexture2 = null;
+    this.effectTempView = null;
+    this.effectTempView2 = null;
 
     log.info(`Creating ping-pong textures at ${this.outputWidth}x${this.outputHeight}`);
 
@@ -74,6 +86,20 @@ export class RenderTargetManager {
         usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
       });
 
+      // Effect pre-processing temp textures (for applying effects to source before compositing)
+      log.debug('Creating effect temp textures...');
+      this.effectTempTexture = this.device.createTexture({
+        size: [this.outputWidth, this.outputHeight],
+        format: 'rgba8unorm',
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
+      });
+
+      this.effectTempTexture2 = this.device.createTexture({
+        size: [this.outputWidth, this.outputHeight],
+        format: 'rgba8unorm',
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
+      });
+
       // Cache views
       if (this.pingTexture && this.pongTexture) {
         this.pingView = this.pingTexture.createView();
@@ -82,6 +108,10 @@ export class RenderTargetManager {
       if (this.independentPingTexture && this.independentPongTexture) {
         this.independentPingView = this.independentPingTexture.createView();
         this.independentPongView = this.independentPongTexture.createView();
+      }
+      if (this.effectTempTexture && this.effectTempTexture2) {
+        this.effectTempView = this.effectTempTexture.createView();
+        this.effectTempView2 = this.effectTempTexture2.createView();
       }
 
       log.info('Ping-pong textures created successfully');
@@ -129,6 +159,10 @@ export class RenderTargetManager {
   getIndependentPingView(): GPUTextureView | null { return this.independentPingView; }
   getIndependentPongView(): GPUTextureView | null { return this.independentPongView; }
   getBlackTexture(): GPUTexture | null { return this.blackTexture; }
+  getEffectTempTexture(): GPUTexture | null { return this.effectTempTexture; }
+  getEffectTempTexture2(): GPUTexture | null { return this.effectTempTexture2; }
+  getEffectTempView(): GPUTextureView | null { return this.effectTempView; }
+  getEffectTempView2(): GPUTextureView | null { return this.effectTempView2; }
 
   clearAll(): void {
     this.pingTexture = null;
@@ -140,6 +174,10 @@ export class RenderTargetManager {
     this.independentPingView = null;
     this.independentPongView = null;
     this.blackTexture = null;
+    this.effectTempTexture = null;
+    this.effectTempTexture2 = null;
+    this.effectTempView = null;
+    this.effectTempView2 = null;
   }
 
   destroy(): void {
@@ -148,6 +186,8 @@ export class RenderTargetManager {
     this.independentPingTexture?.destroy();
     this.independentPongTexture?.destroy();
     this.blackTexture?.destroy();
+    this.effectTempTexture?.destroy();
+    this.effectTempTexture2?.destroy();
     this.clearAll();
   }
 }

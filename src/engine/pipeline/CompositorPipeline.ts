@@ -4,6 +4,70 @@ import compositeShader from '../../shaders/composite.wgsl?raw';
 import { BLEND_MODE_MAP } from '../core/types';
 import type { Layer } from '../core/types';
 
+// Simple copy shader for regular textures
+const copyShader = `
+struct VertexOutput {
+  @builtin(position) position: vec4f,
+  @location(0) uv: vec2f,
+};
+
+@vertex
+fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
+  var positions = array<vec2f, 6>(
+    vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
+    vec2f(-1.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0)
+  );
+  var uvs = array<vec2f, 6>(
+    vec2f(0.0, 1.0), vec2f(1.0, 1.0), vec2f(0.0, 0.0),
+    vec2f(0.0, 0.0), vec2f(1.0, 1.0), vec2f(1.0, 0.0)
+  );
+  var output: VertexOutput;
+  output.position = vec4f(positions[vertexIndex], 0.0, 1.0);
+  output.uv = uvs[vertexIndex];
+  return output;
+}
+
+@group(0) @binding(0) var texSampler: sampler;
+@group(0) @binding(1) var sourceTexture: texture_2d<f32>;
+
+@fragment
+fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
+  return textureSample(sourceTexture, texSampler, input.uv);
+}
+`;
+
+// Simple copy shader for external video textures
+const externalCopyShader = `
+struct VertexOutput {
+  @builtin(position) position: vec4f,
+  @location(0) uv: vec2f,
+};
+
+@vertex
+fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
+  var positions = array<vec2f, 6>(
+    vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0),
+    vec2f(-1.0, 1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0)
+  );
+  var uvs = array<vec2f, 6>(
+    vec2f(0.0, 1.0), vec2f(1.0, 1.0), vec2f(0.0, 0.0),
+    vec2f(0.0, 0.0), vec2f(1.0, 1.0), vec2f(1.0, 0.0)
+  );
+  var output: VertexOutput;
+  output.position = vec4f(positions[vertexIndex], 0.0, 1.0);
+  output.uv = uvs[vertexIndex];
+  return output;
+}
+
+@group(0) @binding(0) var texSampler: sampler;
+@group(0) @binding(1) var sourceTexture: texture_external;
+
+@fragment
+fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
+  return textureSampleBaseClampToEdge(sourceTexture, texSampler, input.uv);
+}
+`;
+
 // Composite shader for external video textures (true zero-copy)
 const externalCompositeShader = `
 struct VertexOutput {
@@ -376,10 +440,14 @@ export class CompositorPipeline {
   // Pipelines
   private compositePipeline: GPURenderPipeline | null = null;
   private externalCompositePipeline: GPURenderPipeline | null = null;
+  private copyPipeline: GPURenderPipeline | null = null;
+  private externalCopyPipeline: GPURenderPipeline | null = null;
 
   // Bind group layouts
   private compositeBindGroupLayout: GPUBindGroupLayout | null = null;
   private externalCompositeBindGroupLayout: GPUBindGroupLayout | null = null;
+  private copyBindGroupLayout: GPUBindGroupLayout | null = null;
+  private externalCopyBindGroupLayout: GPUBindGroupLayout | null = null;
 
   // Uniform buffer and data
   private uniformBuffer = new ArrayBuffer(80); // 20 floats for extended uniforms (including mask quality)
@@ -467,6 +535,52 @@ export class CompositorPipeline {
       },
       primitive: { topology: 'triangle-list' },
     });
+
+    // Copy pipeline for regular textures (used for effect pre-processing)
+    this.copyBindGroupLayout = this.device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+      ],
+    });
+
+    const copyModule = this.device.createShaderModule({ code: copyShader });
+
+    this.copyPipeline = this.device.createRenderPipeline({
+      layout: this.device.createPipelineLayout({
+        bindGroupLayouts: [this.copyBindGroupLayout],
+      }),
+      vertex: { module: copyModule, entryPoint: 'vertexMain' },
+      fragment: {
+        module: copyModule,
+        entryPoint: 'fragmentMain',
+        targets: [{ format: 'rgba8unorm' }],
+      },
+      primitive: { topology: 'triangle-list' },
+    });
+
+    // External copy pipeline for video textures (used for effect pre-processing)
+    this.externalCopyBindGroupLayout = this.device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, externalTexture: {} },
+      ],
+    });
+
+    const externalCopyModule = this.device.createShaderModule({ code: externalCopyShader });
+
+    this.externalCopyPipeline = this.device.createRenderPipeline({
+      layout: this.device.createPipelineLayout({
+        bindGroupLayouts: [this.externalCopyBindGroupLayout],
+      }),
+      vertex: { module: externalCopyModule, entryPoint: 'vertexMain' },
+      fragment: {
+        module: externalCopyModule,
+        entryPoint: 'fragmentMain',
+        targets: [{ format: 'rgba8unorm' }],
+      },
+      primitive: { topology: 'triangle-list' },
+    });
   }
 
   getCompositePipeline(): GPURenderPipeline | null {
@@ -483,6 +597,44 @@ export class CompositorPipeline {
 
   getExternalCompositeBindGroupLayout(): GPUBindGroupLayout | null {
     return this.externalCompositeBindGroupLayout;
+  }
+
+  getCopyPipeline(): GPURenderPipeline | null {
+    return this.copyPipeline;
+  }
+
+  getExternalCopyPipeline(): GPURenderPipeline | null {
+    return this.externalCopyPipeline;
+  }
+
+  // Create bind group for copying regular texture to temp texture
+  createCopyBindGroup(
+    sampler: GPUSampler,
+    sourceView: GPUTextureView,
+    _layerId?: string
+  ): GPUBindGroup {
+    return this.device.createBindGroup({
+      layout: this.copyBindGroupLayout!,
+      entries: [
+        { binding: 0, resource: sampler },
+        { binding: 1, resource: sourceView },
+      ],
+    });
+  }
+
+  // Create bind group for copying external video texture to temp texture
+  createExternalCopyBindGroup(
+    sampler: GPUSampler,
+    externalTexture: GPUExternalTexture,
+    _layerId?: string
+  ): GPUBindGroup {
+    return this.device.createBindGroup({
+      layout: this.externalCopyBindGroupLayout!,
+      entries: [
+        { binding: 0, resource: sampler },
+        { binding: 1, resource: externalTexture },
+      ],
+    });
   }
 
   // Get or create per-layer uniform buffer
