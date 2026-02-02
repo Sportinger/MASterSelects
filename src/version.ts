@@ -53,13 +53,13 @@ interface RawChangeEntry extends ChangeEntry {
 }
 
 const RAW_CHANGELOG: RawChangeEntry[] = [
-  // === Feb 2, 2026 PM - Effect & Scrubbing Fixes ===
+  // === After Reddit Post (Feb 2, 2026) ===
   {
     date: '2026-02-02',
     type: 'fix',
     title: 'Effects Bleeding Through Layers',
     description: 'Effects now only affect their own layer, not layers below - added effect pre-processing pipeline',
-    section: '🎨 Effect & Render Fixes',
+    section: '🚀 After Reddit Post',
   },
   {
     date: '2026-02-02',
@@ -91,13 +91,11 @@ const RAW_CHANGELOG: RawChangeEntry[] = [
     title: 'Audio Decode Spam',
     description: 'Stop spamming audio decode errors for videos without audio track',
   },
-  // === After Reddit Post (Feb 2, 2026 ~9:00 AM) ===
   {
     date: '2026-02-02',
     type: 'fix',
     title: 'Clip Split Playback',
     description: 'Fixed playback issues after cutting clips - now creates independent video/audio elements',
-    section: '🚀 After Reddit Post',
   },
   {
     date: '2026-02-02',
