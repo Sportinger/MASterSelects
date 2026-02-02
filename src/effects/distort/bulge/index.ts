@@ -53,10 +53,10 @@ export const bulge: EffectDefinition = {
 
   packUniforms: (params) => {
     return new Float32Array([
-      params.amount as number || 0.5,
-      params.radius as number || 0.5,
-      params.centerX as number || 0.5,
-      params.centerY as number || 0.5,
+      params.amount as number ?? 0.5,
+      params.radius as number ?? 0.5,
+      params.centerX as number ?? 0.5,
+      params.centerY as number ?? 0.5,
     ]);
   },
 };

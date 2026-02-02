@@ -45,9 +45,9 @@ export const motionBlur: EffectDefinition = {
 
   packUniforms: (params) => {
     return new Float32Array([
-      params.amount as number || 0.05,
-      params.angle as number || 0,
-      params.samples as number || 24,
+      params.amount as number ?? 0.05,
+      params.angle as number ?? 0,
+      params.samples as number ?? 24,
       0,
     ]);
   },

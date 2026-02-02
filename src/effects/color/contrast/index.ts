@@ -26,7 +26,7 @@ export const contrast: EffectDefinition = {
 
   packUniforms: (params) => {
     return new Float32Array([
-      params.amount as number || 1,
+      params.amount as number ?? 1,
       0, 0, 0, // padding
     ]);
   },

@@ -45,9 +45,9 @@ export const scanlines: EffectDefinition = {
   packUniforms: (params) => {
     const time = performance.now() / 1000;
     return new Float32Array([
-      params.density as number || 5,
-      params.opacity as number || 0.3,
-      params.speed as number || 0,
+      params.density as number ?? 5,
+      params.opacity as number ?? 0.3,
+      params.speed as number ?? 0,
       time,
     ]);
   },

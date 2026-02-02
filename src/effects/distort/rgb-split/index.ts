@@ -35,8 +35,8 @@ export const rgbSplit: EffectDefinition = {
 
   packUniforms: (params) => {
     return new Float32Array([
-      params.amount as number || 0.01,
-      params.angle as number || 0,
+      params.amount as number ?? 0.01,
+      params.angle as number ?? 0,
       0, 0, // padding
     ]);
   },

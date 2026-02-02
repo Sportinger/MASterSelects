@@ -31,15 +31,13 @@ export class RenderTargetManager {
   }
 
   createPingPongTextures(): void {
-    // Destroy existing textures first to free memory
-    this.pingTexture?.destroy();
-    this.pongTexture?.destroy();
-    this.independentPingTexture?.destroy();
-    this.independentPongTexture?.destroy();
-    this.effectTempTexture?.destroy();
-    this.effectTempTexture2?.destroy();
+    // Don't call .destroy() here - let garbage collector handle it
+    // Calling destroy() while GPU commands are still using textures causes
+    // "Destroyed texture used in a submit" warnings and black preview
+    // WebGPU will automatically release GPU resources when JS objects are GC'd
+    // AND the GPU is done using them
 
-    // Reset all references
+    // Reset all references (old textures will be GC'd when GPU is done)
     this.pingTexture = null;
     this.pongTexture = null;
     this.independentPingTexture = null;

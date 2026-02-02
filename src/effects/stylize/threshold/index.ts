@@ -26,7 +26,7 @@ export const threshold: EffectDefinition = {
 
   packUniforms: (params) => {
     return new Float32Array([
-      params.level as number || 0.5,
+      params.level as number ?? 0.5,
       0, 0, 0,
     ]);
   },

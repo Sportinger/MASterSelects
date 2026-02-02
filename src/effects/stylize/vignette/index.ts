@@ -53,10 +53,10 @@ export const vignette: EffectDefinition = {
 
   packUniforms: (params) => {
     return new Float32Array([
-      params.amount as number || 0.5,
-      params.size as number || 0.5,
-      params.softness as number || 0.5,
-      params.roundness as number || 1,
+      params.amount as number ?? 0.5,
+      params.size as number ?? 0.5,
+      params.softness as number ?? 0.5,
+      params.roundness as number ?? 1,
     ]);
   },
 };

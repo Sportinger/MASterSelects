@@ -26,7 +26,7 @@ export const vibrance: EffectDefinition = {
 
   packUniforms: (params) => {
     return new Float32Array([
-      params.amount as number || 0,
+      params.amount as number ?? 0,
       0, 0, 0,
     ]);
   },

@@ -73,14 +73,14 @@ export const glow: EffectDefinition = {
 
   packUniforms: (params, width, height) => {
     return new Float32Array([
-      params.amount as number || 1,
-      params.threshold as number || 0.6,
-      params.radius as number || 20,
-      params.softness as number || 0.5,
+      params.amount as number ?? 1,
+      params.threshold as number ?? 0.6,
+      params.radius as number ?? 20,
+      params.softness as number ?? 0.5,
       width,
       height,
-      params.rings as number || 4,
-      params.samplesPerRing as number || 16,
+      params.rings as number ?? 4,
+      params.samplesPerRing as number ?? 16,
     ]);
   },
 };

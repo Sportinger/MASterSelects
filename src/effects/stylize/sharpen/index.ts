@@ -35,8 +35,8 @@ export const sharpen: EffectDefinition = {
 
   packUniforms: (params, width, height) => {
     return new Float32Array([
-      params.amount as number || 1,
-      params.radius as number || 1,
+      params.amount as number ?? 1,
+      params.radius as number ?? 1,
       width,
       height,
     ]);

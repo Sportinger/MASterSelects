@@ -35,8 +35,8 @@ export const kaleidoscope: EffectDefinition = {
 
   packUniforms: (params) => {
     return new Float32Array([
-      params.segments as number || 6,
-      params.rotation as number || 0,
+      params.segments as number ?? 6,
+      params.rotation as number ?? 0,
       0, 0, // padding
     ]);
   },

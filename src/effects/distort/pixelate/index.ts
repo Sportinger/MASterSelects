@@ -26,7 +26,7 @@ export const pixelate: EffectDefinition = {
 
   packUniforms: (params, width, height) => {
     return new Float32Array([
-      params.size as number || 8,
+      params.size as number ?? 8,
       width,
       height,
       0, // padding

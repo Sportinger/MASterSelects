@@ -26,7 +26,7 @@ export const boxBlur: EffectDefinition = {
 
   packUniforms: (params, width, height) => {
     return new Float32Array([
-      params.radius as number || 5,
+      params.radius as number ?? 5,
       width,
       height,
       0,

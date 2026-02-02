@@ -35,8 +35,8 @@ export const temperature: EffectDefinition = {
 
   packUniforms: (params) => {
     return new Float32Array([
-      params.temperature as number || 0,
-      params.tint as number || 0,
+      params.temperature as number ?? 0,
+      params.tint as number ?? 0,
       0, 0,
     ]);
   },

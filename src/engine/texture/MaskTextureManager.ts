@@ -40,13 +40,9 @@ export class MaskTextureManager {
 
   // Update mask texture for a layer
   updateMaskTexture(layerId: string, imageData: ImageData | null): void {
-    // Remove existing mask texture
-    const existingTexture = this.maskTextures.get(layerId);
-    if (existingTexture) {
-      existingTexture.destroy();
-      this.maskTextures.delete(layerId);
-      this.maskTextureViews.delete(layerId);
-    }
+    // Remove existing mask texture reference (don't destroy - let GC handle to avoid GPU conflicts)
+    this.maskTextures.delete(layerId);
+    this.maskTextureViews.delete(layerId);
 
     // If no imageData, layer will use white fallback (no masking)
     if (!imageData) {
@@ -81,12 +77,9 @@ export class MaskTextureManager {
 
   // Remove mask texture for a layer
   removeMaskTexture(layerId: string): void {
-    const existingTexture = this.maskTextures.get(layerId);
-    if (existingTexture) {
-      existingTexture.destroy();
-      this.maskTextures.delete(layerId);
-      this.maskTextureViews.delete(layerId);
-    }
+    // Just remove references - don't destroy, let GC handle to avoid GPU conflicts
+    this.maskTextures.delete(layerId);
+    this.maskTextureViews.delete(layerId);
   }
 
   // Check if a layer has a mask texture
@@ -122,9 +115,7 @@ export class MaskTextureManager {
 
   // Clear all mask textures
   clearAll(): void {
-    for (const texture of this.maskTextures.values()) {
-      texture.destroy();
-    }
+    // Just clear maps - don't destroy, let GC handle to avoid GPU conflicts
     this.maskTextures.clear();
     this.maskTextureViews.clear();
   }

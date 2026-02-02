@@ -54,10 +54,10 @@ export const radialBlur: EffectDefinition = {
 
   packUniforms: (params) => {
     return new Float32Array([
-      params.amount as number || 0.5,
-      params.centerX as number || 0.5,
-      params.centerY as number || 0.5,
-      params.samples as number || 32,
+      params.amount as number ?? 0.5,
+      params.centerX as number ?? 0.5,
+      params.centerY as number ?? 0.5,
+      params.samples as number ?? 32,
     ]);
   },
 };

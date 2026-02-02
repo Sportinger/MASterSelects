@@ -53,10 +53,10 @@ export const wave: EffectDefinition = {
 
   packUniforms: (params) => {
     return new Float32Array([
-      params.amplitudeX as number || 0.02,
-      params.amplitudeY as number || 0.02,
-      params.frequencyX as number || 5,
-      params.frequencyY as number || 5,
+      params.amplitudeX as number ?? 0.02,
+      params.amplitudeY as number ?? 0.02,
+      params.frequencyX as number ?? 5,
+      params.frequencyY as number ?? 5,
     ]);
   },
 };

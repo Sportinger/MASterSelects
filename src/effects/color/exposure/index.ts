@@ -44,9 +44,9 @@ export const exposure: EffectDefinition = {
 
   packUniforms: (params) => {
     return new Float32Array([
-      params.exposure as number || 0,
-      params.offset as number || 0,
-      params.gamma as number || 1,
+      params.exposure as number ?? 0,
+      params.offset as number ?? 0,
+      params.gamma as number ?? 1,
       0,
     ]);
   },

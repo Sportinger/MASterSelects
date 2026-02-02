@@ -46,9 +46,9 @@ export const grain: EffectDefinition = {
     // Use current time for animation
     const time = performance.now() / 1000;
     return new Float32Array([
-      params.amount as number || 0.1,
-      params.size as number || 1,
-      params.speed as number || 1,
+      params.amount as number ?? 0.1,
+      params.size as number ?? 1,
+      params.speed as number ?? 1,
       time,
     ]);
   },

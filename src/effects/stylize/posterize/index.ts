@@ -26,7 +26,7 @@ export const posterize: EffectDefinition = {
 
   packUniforms: (params) => {
     return new Float32Array([
-      params.levels as number || 6,
+      params.levels as number ?? 6,
       0, 0, 0,
     ]);
   },

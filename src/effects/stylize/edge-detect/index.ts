@@ -31,7 +31,7 @@ export const edgeDetect: EffectDefinition = {
 
   packUniforms: (params, width, height) => {
     return new Float32Array([
-      params.strength as number || 1,
+      params.strength as number ?? 1,
       width,
       height,
       params.invert ? 1 : 0,

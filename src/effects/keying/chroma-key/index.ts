@@ -67,9 +67,9 @@ export const chromaKey: EffectDefinition = {
       keyR,
       keyG,
       keyB,
-      params.tolerance as number || 0.2,
-      params.softness as number || 0.1,
-      params.spillSuppression as number || 0.5,
+      params.tolerance as number ?? 0.2,
+      params.softness as number ?? 0.1,
+      params.spillSuppression as number ?? 0.5,
       0, 0, // padding
     ]);
   },

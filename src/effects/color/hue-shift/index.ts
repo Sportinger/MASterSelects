@@ -26,7 +26,7 @@ export const hueShift: EffectDefinition = {
 
   packUniforms: (params) => {
     return new Float32Array([
-      params.shift as number || 0,
+      params.shift as number ?? 0,
       0, 0, 0, // padding
     ]);
   },

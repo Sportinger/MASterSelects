@@ -36,10 +36,10 @@ export const gaussianBlur: EffectDefinition = {
 
   packUniforms: (params, width, height) => {
     return new Float32Array([
-      params.radius as number || 10,
+      params.radius as number ?? 10,
       width,
       height,
-      params.samples as number || 5,
+      params.samples as number ?? 5,
     ]);
   },
 };
