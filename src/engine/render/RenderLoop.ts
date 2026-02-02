@@ -77,7 +77,12 @@ export class RenderLoop {
 
       // Call render callback (unless exporting)
       if (!this.callbacks.isExporting()) {
-        this.callbacks.onRender();
+        try {
+          this.callbacks.onRender();
+        } catch (e) {
+          log.error('Error in render callback', e);
+          // Continue loop despite error to prevent freeze
+        }
       }
 
       // Skip stats when idle

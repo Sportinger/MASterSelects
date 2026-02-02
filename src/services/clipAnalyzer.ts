@@ -298,9 +298,11 @@ export async function analyzeClip(clipId: string): Promise<void> {
     return;
   }
 
-  // Only analyze video files
-  if (!clip.file.type.startsWith('video/')) {
-    log.warn('Not a video file', { type: clip.file.type });
+  // Only analyze video files - check MIME type or file extension as fallback
+  const isVideo = clip.file.type.startsWith('video/') ||
+    /\.(mp4|webm|mov|avi|mkv|m4v|mxf)$/i.test(clip.file.name);
+  if (!isVideo) {
+    log.warn('Not a video file', { type: clip.file.type, name: clip.file.name });
     return;
   }
 

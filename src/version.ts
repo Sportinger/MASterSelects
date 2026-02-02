@@ -1,7 +1,7 @@
 // App version - INCREMENT ON EVERY COMMIT!
 // Format: MAJOR.MINOR.PATCH
 // Increment PATCH (0.0.X) for each commit
-export const APP_VERSION = '1.1.2';
+export const APP_VERSION = '1.1.3';
 
 // Build/Platform notice shown at top of changelog
 export const BUILD_NOTICE: {
@@ -55,6 +55,19 @@ interface RawChangeEntry extends ChangeEntry {
 }
 
 const RAW_CHANGELOG: RawChangeEntry[] = [
+  // === Feb 2, 2026 - Clip Split & Cut Mode Fixes ===
+  {
+    date: '2026-02-02',
+    type: 'fix',
+    title: 'Clip Split Playback',
+    description: 'Fixed playback issues after cutting clips - now creates independent video/audio elements',
+  },
+  {
+    date: '2026-02-02',
+    type: 'improve',
+    title: 'Cut Mode Auto-Reset',
+    description: 'Cut tool automatically returns to select mode after cutting a clip',
+  },
   // === Feb 2, 2026 - Nested Comp Export Fixes ===
   {
     date: '2026-02-02',
