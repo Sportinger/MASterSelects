@@ -185,9 +185,10 @@ export class LayerCollector {
         }
       }
 
-      // If video is seeking/buffering, prefer cached frame to avoid frame jumps
-      // This prevents visual glitches when video decoder is catching up
-      if (video.seeking && !deps.isExporting) {
+      // If video is seeking during PLAYBACK (not paused), prefer cached frame to avoid frame jumps
+      // This prevents visual glitches when video decoder is catching up during playback
+      // But during scrubbing (video.paused && video.seeking), we want the new frame
+      if (video.seeking && !video.paused && !deps.isExporting) {
         const lastFrame = deps.scrubbingCache?.getLastFrame(video);
         if (lastFrame) {
           this.currentDecoder = 'HTMLVideo(seeking-cache)';
