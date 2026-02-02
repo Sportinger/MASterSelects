@@ -1,7 +1,7 @@
 // App version - INCREMENT ON EVERY COMMIT!
 // Format: MAJOR.MINOR.PATCH
 // Increment PATCH (0.0.X) for each commit
-export const APP_VERSION = '1.1.6';
+export const APP_VERSION = '1.1.7';
 
 // Build/Platform notice shown at top of changelog (set to null to hide)
 export const BUILD_NOTICE: {
@@ -54,7 +54,91 @@ interface RawChangeEntry extends ChangeEntry {
 }
 
 const RAW_CHANGELOG: RawChangeEntry[] = [
-  // === Feb 2, 2026 ===
+  // === Feb 2, 2026 - Export & Audio Fixes ===
+  {
+    date: '2026-02-02',
+    type: 'fix',
+    title: 'Export Crash with Empty Frames',
+    description: 'Fixed crash when export starts at time 0 but clips begin later - now properly clears export canvas',
+    commit: 'c3fc31b',
+  },
+  {
+    date: '2026-02-02',
+    type: 'fix',
+    title: 'Device Loss After Export',
+    description: 'Fixed WebGPU device crash after export caused by VideoFrames not being closed properly',
+    commit: '72dffc3',
+  },
+  {
+    date: '2026-02-02',
+    type: 'improve',
+    title: 'Export Fallback for Parallel Decode',
+    description: 'Export now falls back to HTMLVideoElement when parallel decode fails instead of crashing',
+    commit: '6b0c7e0',
+  },
+  {
+    date: '2026-02-02',
+    type: 'fix',
+    title: 'Proxy Stuck at 100%',
+    description: 'Proxy generation status now updates to ready immediately after frames complete',
+    commit: 'ce2b09f',
+  },
+  {
+    date: '2026-02-02',
+    type: 'fix',
+    title: 'Nested Composition Visibility',
+    description: 'Fixed nested compositions with multiple layers not displaying correctly',
+    commit: 'ce2b09f',
+  },
+  {
+    date: '2026-02-02',
+    type: 'improve',
+    title: 'Scale Keyframe UI',
+    description: 'Simplified Scale keyframe controls - single toggle for X and Y',
+    commit: '89647b1',
+  },
+  {
+    date: '2026-02-02',
+    type: 'improve',
+    title: 'EQ Keyframe UI',
+    description: 'Simplified EQ keyframe controls - single toggle for all bands',
+    commit: '15af792',
+  },
+  {
+    date: '2026-02-02',
+    type: 'new',
+    title: 'Live EQ via Web Audio',
+    description: 'Real-time audio equalization using Web Audio API - hear changes instantly',
+    commit: 'b232022',
+  },
+  {
+    date: '2026-02-02',
+    type: 'fix',
+    title: 'Audio Track Overlap',
+    description: 'Dropping multiple clips now creates new audio tracks when overlap occurs',
+    commit: '9fcf9ad',
+  },
+  {
+    date: '2026-02-02',
+    type: 'fix',
+    title: 'Audio Volume Range Error',
+    description: 'Fixed preview freeze caused by audio volume exceeding valid range',
+    commit: '4dc9790',
+  },
+  {
+    date: '2026-02-02',
+    type: 'new',
+    title: 'Audio Tab for Video Clips',
+    description: 'Video clips now have dedicated Audio tab with volume controls and keyframes',
+    commit: 'e1c1d15',
+  },
+  {
+    date: '2026-02-02',
+    type: 'fix',
+    title: 'Split Clip Audio Elements',
+    description: 'Splitting audio-only clips or nested compositions now creates independent audio elements for each part',
+    commit: '8c5ace5',
+  },
   {
     date: '2026-02-02',
     type: 'fix',

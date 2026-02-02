@@ -7,6 +7,7 @@ import type { FrameContext, AudioSyncState, AudioSyncTarget } from './types';
 import { LAYER_BUILDER_CONSTANTS } from './types';
 import { playheadState, setMasterAudio } from './PlayheadState';
 import { audioManager, audioStatusTracker } from '../audioManager';
+import { audioRoutingManager } from '../audioRoutingManager';
 
 const log = Logger.create('AudioSyncHandler');
 
@@ -27,7 +28,7 @@ export class AudioSyncHandler {
     ctx: FrameContext,
     state: AudioSyncState
   ): void {
-    const { element, clip, clipTime, absSpeed, isMuted, canBeMaster, type } = target;
+    const { element, clip, clipTime, absSpeed, isMuted, canBeMaster, type, volume = 1, eqGains } = target;
 
     // Set muted state
     element.muted = isMuted;
@@ -41,7 +42,7 @@ export class AudioSyncHandler {
     if (ctx.isDraggingPlayhead && !isMuted) {
       this.handleScrub(element, clipTime, ctx);
     } else if (shouldPlay) {
-      this.handlePlayback(element, clipTime, absSpeed, clip, canBeMaster, type, state);
+      this.handlePlayback(element, clipTime, absSpeed, clip, canBeMaster, type, state, volume, eqGains);
     } else {
       this.pauseIfPlaying(element);
     }
@@ -93,7 +94,9 @@ export class AudioSyncHandler {
     clip: TimelineClip,
     canBeMaster: boolean,
     type: AudioSyncTarget['type'],
-    state: AudioSyncState
+    state: AudioSyncState,
+    volume: number = 1,
+    eqGains?: number[]
   ): void {
     // Set playback rate
     const targetRate = absSpeed > 0.1 ? absSpeed : 1;
@@ -101,9 +104,20 @@ export class AudioSyncHandler {
       element.playbackRate = Math.max(0.25, Math.min(4, targetRate));
     }
 
-    // Reset volume after scrubbing
-    if (element.volume !== 1) {
-      element.volume = 1;
+    // Check if we have EQ to apply (any non-zero gain)
+    const hasEQ = eqGains && eqGains.some(g => Math.abs(g) > 0.01);
+
+    if (hasEQ) {
+      // Use Web Audio routing for volume + EQ
+      // This handles both volume and EQ through the audio graph
+      audioRoutingManager.applyEffects(element, volume, eqGains!);
+    } else {
+      // Simple volume-only path (no Web Audio overhead)
+      // HTMLMediaElement.volume only accepts [0, 1] range - clamp to prevent errors
+      const targetVolume = Math.max(0, Math.min(1, volume));
+      if (Math.abs(element.volume - targetVolume) > 0.01) {
+        element.volume = targetVolume;
+      }
     }
 
     // Start playback if paused

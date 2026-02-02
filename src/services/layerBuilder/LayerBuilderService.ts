@@ -18,6 +18,33 @@ import { DEFAULT_TRANSFORM } from '../../stores/timeline/constants';
 const log = Logger.create('LayerBuilder');
 
 /**
+ * Get interpolated volume for a clip from audio-volume effect
+ */
+function getClipVolume(ctx: FrameContext, clip: TimelineClip, clipLocalTime: number): number {
+  const effects = ctx.getInterpolatedEffects(clip.id, clipLocalTime);
+  const volumeEffect = effects.find(e => e.type === 'audio-volume');
+  return (volumeEffect?.params?.volume as number) ?? 1;
+}
+
+// EQ band parameter names (matching audio-eq effect)
+const EQ_BAND_PARAMS = [
+  'band31', 'band62', 'band125', 'band250', 'band500',
+  'band1k', 'band2k', 'band4k', 'band8k', 'band16k'
+];
+
+/**
+ * Get interpolated EQ gains for a clip from audio-eq effect
+ * Returns array of 10 gain values in dB, or undefined if no EQ effect
+ */
+function getClipEQGains(ctx: FrameContext, clip: TimelineClip, clipLocalTime: number): number[] | undefined {
+  const effects = ctx.getInterpolatedEffects(clip.id, clipLocalTime);
+  const eqEffect = effects.find(e => e.type === 'audio-eq');
+  if (!eqEffect) return undefined;
+
+  return EQ_BAND_PARAMS.map(param => (eqEffect.params?.[param] as number) ?? 0);
+}
+
+/**
  * LayerBuilderService - Builds render layers from timeline state
  * Optimized with caching, memoization, and object reuse
  */
@@ -406,7 +433,8 @@ export class LayerBuilderService {
   private buildNestedLayers(clip: TimelineClip, clipTime: number, ctx: FrameContext): Layer[] {
     if (!clip.nestedClips || !clip.nestedTracks) return [];
 
-    const nestedVideoTracks = clip.nestedTracks.filter(t => t.type === 'video' && t.visible);
+    // Filter for video tracks that are visible (default to visible if not explicitly set)
+    const nestedVideoTracks = clip.nestedTracks.filter(t => t.type === 'video' && t.visible !== false);
     const layers: Layer[] = [];
 
     // Debug: log nested clip info once per second
@@ -440,7 +468,22 @@ export class LayerBuilderService {
           clipTime < nc.startTime + nc.duration
       );
 
-      if (!nestedClip) continue;
+      if (!nestedClip) {
+        // Log why no clip was found for this track
+        const clipsOnTrack = clip.nestedClips.filter(nc => nc.trackId === nestedTrack.id);
+        if (clipsOnTrack.length > 0) {
+          log.debug('No active clip on track at time', {
+            trackId: nestedTrack.id,
+            clipTime,
+            clipsOnTrack: clipsOnTrack.map(nc => ({
+              name: nc.name,
+              startTime: nc.startTime,
+              endTime: nc.startTime + nc.duration,
+            })),
+          });
+        }
+        continue;
+      }
 
       // nestedLocalTime is the time within the clip (0 to duration) - used for keyframe interpolation
       const nestedLocalTime = clipTime - nestedClip.startTime;
@@ -449,6 +492,15 @@ export class LayerBuilderService {
       const nestedLayer = this.buildNestedClipLayer(nestedClip, nestedLocalTime, ctx);
       if (nestedLayer) {
         layers.push(nestedLayer);
+      } else {
+        log.debug('Failed to build nested layer', {
+          clipId: nestedClip.id,
+          name: nestedClip.name,
+          isLoading: nestedClip.isLoading,
+          hasVideoElement: !!nestedClip.source?.videoElement,
+          hasImageElement: !!nestedClip.source?.imageElement,
+          videoReadyState: nestedClip.source?.videoElement?.readyState,
+        });
       }
     }
 
@@ -953,6 +1005,8 @@ export class LayerBuilderService {
         isMuted,
         canBeMaster: true,
         type: 'audioTrack',
+        volume: getClipVolume(ctx, clip, timeInfo.clipLocalTime),
+        eqGains: getClipEQGains(ctx, clip, timeInfo.clipLocalTime),
       }, ctx, state);
     }
   }
@@ -1004,6 +1058,8 @@ export class LayerBuilderService {
             isMuted,
             canBeMaster: !state.masterSet,
             type: 'audioProxy',
+            volume: getClipVolume(ctx, clip, timeInfo.clipLocalTime),
+            eqGains: getClipEQGains(ctx, clip, timeInfo.clipLocalTime),
           }, ctx, state);
         } else {
           // Trigger preload
@@ -1041,6 +1097,8 @@ export class LayerBuilderService {
         isMuted,
         canBeMaster: !state.masterSet,
         type: 'mixdown',
+        volume: getClipVolume(ctx, clip, timeInfo.clipLocalTime),
+        eqGains: getClipEQGains(ctx, clip, timeInfo.clipLocalTime),
       }, ctx, state);
     }
   }

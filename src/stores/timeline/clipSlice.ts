@@ -2,7 +2,7 @@
 // Delegates to specialized modules in ./clip/ and ./helpers/
 // Reduced from ~2031 LOC to ~650 LOC (68% reduction)
 
-import type { TimelineClip, Effect, EffectType, TextClipProperties } from '../../types';
+import type { TimelineClip, TimelineTrack, Effect, EffectType, TextClipProperties } from '../../types';
 import type { ClipActions, SliceCreator, Composition } from './types';
 import { DEFAULT_TRANSFORM, DEFAULT_TEXT_PROPERTIES, DEFAULT_TEXT_DURATION } from './constants';
 import { generateWaveform, generateWaveformFromBuffer, getDefaultEffectParams } from './utils';
@@ -14,7 +14,7 @@ const log = Logger.create('ClipSlice');
 
 // Import extracted modules
 import { detectMediaType } from './helpers/mediaTypeHelpers';
-import { createVideoClipPlaceholders, loadVideoMedia } from './clip/addVideoClip';
+import { loadVideoMedia } from './clip/addVideoClip';
 import { createAudioClipPlaceholder, loadAudioMedia } from './clip/addAudioClip';
 import { createImageClipPlaceholder, loadImageMedia } from './clip/addImageClip';
 import { createVideoElement, createAudioElement, initWebCodecsPlayer } from './helpers/webCodecsHelpers';
@@ -32,6 +32,7 @@ import {
   generateYouTubeClipId,
   generateEffectId,
   generateLinkedGroupId,
+  generateLinkedClipIds,
 } from './helpers/idGenerator';
 import { blobUrlManager } from './helpers/blobUrlManager';
 import { updateClipById } from './helpers/clipStateHelpers';
@@ -99,7 +100,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
     log.debug('Adding clip', { mediaType, file: file.name });
 
     // Validate track exists and matches media type
-    const { tracks, clips, updateDuration, findAvailableAudioTrack, thumbnailsEnabled, waveformsEnabled, invalidateCache } = get();
+    const { tracks, clips, updateDuration, thumbnailsEnabled, waveformsEnabled, invalidateCache } = get();
     const targetTrack = tracks.find(t => t.id === trackId);
     if (!targetTrack) {
       log.warn('Track not found', { trackId });
@@ -126,16 +127,93 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
 
     // Handle video files
     if (mediaType === 'video') {
-      const { videoClip, audioClip, audioClipId } = createVideoClipPlaceholders({
-        trackId, file, startTime, estimatedDuration, mediaFileId, tracks, findAvailableAudioTrack,
-      });
+      // Use function form of set() to ensure we get fresh state
+      // This prevents race conditions when multiple files are dropped at once
+      const { videoId: clipId, audioId } = generateLinkedClipIds();
+      let finalAudioClipId: string | undefined;
 
-      set({ clips: [...clips, videoClip, ...(audioClip ? [audioClip] : [])] });
+      set(state => {
+        const endTime = startTime + estimatedDuration;
+
+        // Find an audio track without overlap
+        const audioTracks = state.tracks.filter(t => t.type === 'audio');
+        let audioTrackId: string | null = null;
+
+        for (const track of audioTracks) {
+          const trackClips = state.clips.filter(c => c.trackId === track.id);
+          const hasOverlap = trackClips.some(clip => {
+            const clipEnd = clip.startTime + clip.duration;
+            return !(endTime <= clip.startTime || startTime >= clipEnd);
+          });
+          if (!hasOverlap) {
+            audioTrackId = track.id;
+            break;
+          }
+        }
+
+        // Create new track if needed
+        let newTracks = state.tracks;
+        if (!audioTrackId) {
+          const newTrackId = `track-${Date.now()}-${Math.random().toString(36).substr(2, 5)}-audio`;
+          const newTrack: TimelineTrack = {
+            id: newTrackId,
+            name: `Audio ${audioTracks.length + 1}`,
+            type: 'audio',
+            height: 60,
+            muted: false,
+            visible: true,
+            solo: false,
+          };
+          newTracks = [...state.tracks, newTrack];
+          audioTrackId = newTrackId;
+        }
+
+        // Create video clip
+        const videoClip: TimelineClip = {
+          id: clipId,
+          trackId,
+          name: file.name,
+          file,
+          startTime,
+          duration: estimatedDuration,
+          inPoint: 0,
+          outPoint: estimatedDuration,
+          source: { type: 'video', naturalDuration: estimatedDuration, mediaFileId },
+          linkedClipId: audioId,
+          transform: { ...DEFAULT_TRANSFORM },
+          effects: [],
+          isLoading: true,
+        };
+
+        // Create audio clip
+        const audioClip: TimelineClip = {
+          id: audioId,
+          trackId: audioTrackId,
+          name: `${file.name} (Audio)`,
+          file,
+          startTime,
+          duration: estimatedDuration,
+          inPoint: 0,
+          outPoint: estimatedDuration,
+          source: { type: 'audio', naturalDuration: estimatedDuration, mediaFileId },
+          linkedClipId: clipId,
+          transform: { ...DEFAULT_TRANSFORM },
+          effects: [],
+          isLoading: true,
+        };
+
+        finalAudioClipId = audioId;
+
+        return {
+          clips: [...state.clips, videoClip, audioClip],
+          tracks: newTracks,
+        };
+      });
       updateDuration();
 
       await loadVideoMedia({
-        clipId: videoClip.id,
-        audioClipId,
+        clipId,
+        audioClipId: finalAudioClipId,
         file,
         mediaFileId,
         thumbnailsEnabled,
@@ -400,6 +478,13 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
           });
         }
       });
+    } else if (clip.source?.type === 'audio' && clip.source.audioElement && clip.file) {
+      // Handle audio-only clips - create new audio element for second clip
+      const newAudio = createAudioElement(clip.file);
+      secondClipSource = {
+        ...clip.source,
+        audioElement: newAudio,
+      };
     }
 
     const firstClip: TimelineClip = {
@@ -427,12 +512,31 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
       if (linkedClip) {
         // Create new audio element for linked second clip
         let linkedSecondSource = linkedClip.source;
-        if (linkedClip.source?.type === 'audio' && linkedClip.source.audioElement && linkedClip.file) {
-          const newAudio = createAudioElement(linkedClip.file);
-          linkedSecondSource = {
-            ...linkedClip.source,
-            audioElement: newAudio,
-          };
+        if (linkedClip.source?.type === 'audio' && linkedClip.source.audioElement) {
+          // For composition audio clips, use mixdownBuffer to create new audio element
+          if (linkedClip.mixdownBuffer) {
+            // Async create audio from mixdown buffer
+            import('../../services/compositionAudioMixer').then(({ compositionAudioMixer }) => {
+              const newAudio = compositionAudioMixer.createAudioElement(linkedClip.mixdownBuffer!);
+              const { clips: currentClips } = get();
+              const linkedSecondClipId = `clip-${timestamp}-${randomSuffix}-linked-b`;
+              set({
+                clips: currentClips.map(c => {
+                  if (c.id !== linkedSecondClipId || !c.source) return c;
+                  return { ...c, source: { ...c.source, audioElement: newAudio } };
+                }),
+              });
+            });
+            // Source will be updated async, use existing for now
+            linkedSecondSource = { ...linkedClip.source };
+          } else if (linkedClip.file && linkedClip.file.size > 0) {
+            // Regular audio file (not empty composition placeholder)
+            const newAudio = createAudioElement(linkedClip.file);
+            linkedSecondSource = {
+              ...linkedClip.source,
+              audioElement: newAudio,
+            };
+          }
         }
 
         const linkedFirstClip: TimelineClip = {

@@ -67,6 +67,44 @@ function KeyframeToggle({ clipId, property, value }: KeyframeToggleProps) {
   );
 }
 
+// Master keyframe toggle for Scale X and Y together
+function ScaleKeyframeToggle({ clipId, scaleX, scaleY }: { clipId: string; scaleX: number; scaleY: number }) {
+  const { isRecording, toggleKeyframeRecording, hasKeyframes, addKeyframe } = useTimelineStore();
+
+  const xRecording = isRecording(clipId, 'scale.x');
+  const yRecording = isRecording(clipId, 'scale.y');
+  const xHasKfs = hasKeyframes(clipId, 'scale.x');
+  const yHasKfs = hasKeyframes(clipId, 'scale.y');
+
+  const anyRecording = xRecording || yRecording;
+  const anyHasKfs = xHasKfs || yHasKfs;
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!anyRecording && !anyHasKfs) {
+      addKeyframe(clipId, 'scale.x', scaleX);
+      addKeyframe(clipId, 'scale.y', scaleY);
+    }
+    toggleKeyframeRecording(clipId, 'scale.x');
+    toggleKeyframeRecording(clipId, 'scale.y');
+  };
+
+  return (
+    <button
+      className={`keyframe-toggle ${anyRecording ? 'recording' : ''} ${anyHasKfs ? 'has-keyframes' : ''}`}
+      onClick={handleClick}
+      title={anyRecording ? 'Stop recording scale keyframes' : anyHasKfs ? 'Enable scale keyframe recording' : 'Add scale keyframes'}
+    >
+      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2">
+        <circle cx="12" cy="13" r="7" />
+        <line x1="12" y1="13" x2="12" y2="9" />
+        <line x1="12" y1="2" x2="12" y2="5" />
+        <line x1="9" y1="3" x2="15" y2="3" />
+      </svg>
+    </button>
+  );
+}
+
 // Precision slider with modifier key support
 interface PrecisionSliderProps {
   min: number;
@@ -301,7 +339,7 @@ function TransformTab({ clipId, transform, speed = 1 }: TransformTabProps) {
       <div className="properties-section">
         <h4>Scale</h4>
         <div className="control-row">
-          <span className="keyframe-toggle-placeholder" />
+          <ScaleKeyframeToggle clipId={clipId} scaleX={transform.scale.x} scaleY={transform.scale.y} />
           <label>Uniform</label>
           <PrecisionSlider min={0.1} max={3} step={0.0001} value={uniformScale}
             onChange={handleUniformScaleChange} defaultValue={1} />
@@ -309,7 +347,7 @@ function TransformTab({ clipId, transform, speed = 1 }: TransformTabProps) {
         </div>
         {(['x', 'y'] as const).map(axis => (
           <div className="control-row" key={axis}>
-            <KeyframeToggle clipId={clipId} property={`scale.${axis}`} value={transform.scale[axis]} />
+            <span className="keyframe-toggle-placeholder" />
             <label>{axis.toUpperCase()}</label>
             <PrecisionSlider min={0.1} max={3} step={0.0001} value={transform.scale[axis]}
               onChange={(v) => handlePropertyChange(`scale.${axis}`, v)} defaultValue={1} />
@@ -402,11 +440,11 @@ function VolumeTab({ clipId, effects }: VolumeTabProps) {
       <div className="properties-section">
         <div className="section-header-row">
           <h4>Volume</h4>
+        </div>
+        <div className="control-row">
           {volumeEffect && (
             <EffectKeyframeToggle clipId={clipId} effectId={volumeEffect.id} paramName="volume" value={volume} />
           )}
-        </div>
-        <div className="control-row">
           <input type="range" min="0" max="2" step="0.01" value={volume}
             onChange={(e) => handleVolumeChange(parseFloat(e.target.value))} />
           <span className="value">{Math.round(volume * 100)}%</span>
@@ -435,17 +473,15 @@ function VolumeTab({ clipId, effects }: VolumeTabProps) {
       <div className="properties-section eq-section">
         <div className="section-header-row">
           <h4>10-Band Equalizer</h4>
+          {eqEffect && (
+            <EQKeyframeToggle clipId={clipId} effectId={eqEffect.id} eqBands={eqBands} />
+          )}
           <button className="btn btn-sm" onClick={handleResetEQ}>Reset</button>
         </div>
 
         <div className="eq-bands">
           {EQ_FREQUENCIES.map((freq, index) => (
             <div key={freq} className="eq-band">
-              <div className="eq-band-kf">
-                {eqEffect && (
-                  <EffectKeyframeToggle clipId={clipId} effectId={eqEffect.id} paramName={EQ_BAND_PARAMS[index]} value={eqBands[index]} />
-                )}
-              </div>
               <div className="eq-band-value">
                 {eqBands[index] > 0 ? '+' : ''}{eqBands[index].toFixed(1)}
               </div>
@@ -488,6 +524,38 @@ function EffectKeyframeToggle({ clipId, effectId, paramName, value }: { clipId: 
   return (
     <button className={`keyframe-toggle ${recording ? 'recording' : ''} ${hasKfs ? 'has-keyframes' : ''}`}
       onClick={handleClick} title={recording ? 'Stop recording keyframes' : hasKfs ? 'Enable keyframe recording' : 'Add keyframe'}>
+      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2">
+        <circle cx="12" cy="13" r="7" /><line x1="12" y1="13" x2="12" y2="9" />
+        <line x1="12" y1="2" x2="12" y2="5" /><line x1="9" y1="3" x2="15" y2="3" />
+      </svg>
+    </button>
+  );
+}
+
+// Master keyframe toggle for all 10 EQ bands at once
+function EQKeyframeToggle({ clipId, effectId, eqBands }: { clipId: string; effectId: string; eqBands: number[] }) {
+  const { isRecording, toggleKeyframeRecording, hasKeyframes, addKeyframe } = useTimelineStore();
+
+  // Check if any band is recording or has keyframes
+  const anyRecording = EQ_BAND_PARAMS.some(param => isRecording(clipId, createEffectProperty(effectId, param)));
+  const anyHasKfs = EQ_BAND_PARAMS.some(param => hasKeyframes(clipId, createEffectProperty(effectId, param)));
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    // Toggle all 10 bands at once
+    EQ_BAND_PARAMS.forEach((param, index) => {
+      const property = createEffectProperty(effectId, param);
+      if (!anyRecording && !anyHasKfs) {
+        // Add keyframe for each band with current value
+        addKeyframe(clipId, property, eqBands[index]);
+      }
+      toggleKeyframeRecording(clipId, property);
+    });
+  };
+
+  return (
+    <button className={`keyframe-toggle ${anyRecording ? 'recording' : ''} ${anyHasKfs ? 'has-keyframes' : ''}`}
+      onClick={handleClick} title={anyRecording ? 'Stop recording EQ keyframes' : anyHasKfs ? 'Enable EQ keyframe recording' : 'Add EQ keyframes'}>
       <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2">
         <circle cx="12" cy="13" r="7" /><line x1="12" y1="13" x2="12" y2="9" />
         <line x1="12" y1="2" x2="12" y2="5" /><line x1="9" y1="3" x2="15" y2="3" />
@@ -1278,6 +1346,7 @@ export function PropertiesPanel() {
         ) : (
           <>
             <button className={`tab-btn ${activeTab === 'transform' ? 'active' : ''}`} onClick={() => setActiveTab('transform')}>Transform</button>
+            <button className={`tab-btn ${activeTab === 'volume' ? 'active' : ''}`} onClick={() => setActiveTab('volume')}>Audio</button>
             <button className={`tab-btn ${activeTab === 'effects' ? 'active' : ''}`} onClick={() => setActiveTab('effects')}>
               Effects {visualEffects.length > 0 && <span className="badge">{visualEffects.length}</span>}
             </button>
@@ -1299,7 +1368,7 @@ export function PropertiesPanel() {
           <TextTab clipId={selectedClip.id} textProperties={selectedClip.textProperties} />
         )}
         {activeTab === 'transform' && !isAudioClip && <TransformTab clipId={selectedClip.id} transform={transform} speed={interpolatedSpeed} />}
-        {activeTab === 'volume' && isAudioClip && <VolumeTab clipId={selectedClip.id} effects={selectedClip.effects || []} />}
+        {activeTab === 'volume' && <VolumeTab clipId={selectedClip.id} effects={selectedClip.effects || []} />}
         {activeTab === 'effects' && <EffectsTab clipId={selectedClip.id} effects={selectedClip.effects || []} />}
         {activeTab === 'masks' && !isAudioClip && <MasksTab clipId={selectedClip.id} masks={selectedClip.masks} />}
         {activeTab === 'transcript' && (

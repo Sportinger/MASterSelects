@@ -22,14 +22,16 @@ export const createTrackSlice: SliceCreator<TrackActions> = (set, get) => ({
 
     // Video tracks: insert at TOP (before all existing video tracks)
     // Audio tracks: insert at BOTTOM (after all existing audio tracks)
+    // Both types auto-expand for keyframe visibility
+    const newExpanded = new Set(expandedTracks);
+    newExpanded.add(newTrack.id);
+
     if (type === 'video') {
-      // Insert at index 0 (top of timeline) and auto-expand
-      const newExpanded = new Set(expandedTracks);
-      newExpanded.add(newTrack.id);
+      // Insert at index 0 (top of timeline)
       set({ tracks: [newTrack, ...tracks], expandedTracks: newExpanded });
     } else {
       // Audio: append at end (bottom of timeline)
-      set({ tracks: [...tracks, newTrack] });
+      set({ tracks: [...tracks, newTrack], expandedTracks: newExpanded });
     }
 
     return newTrack.id;
