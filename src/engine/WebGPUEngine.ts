@@ -503,6 +503,9 @@ export class WebGPUEngine {
   start(renderCallback: () => void): void {
     if (!this.performanceStats) return;
 
+    // Stop any existing loop first to prevent multiple RAF loops accumulating
+    this.renderLoop?.stop();
+
     // Create new loop with the callback
     this.renderLoop = new RenderLoop(this.performanceStats, {
       isRecovering: () => this.isRecoveringFromDeviceLoss || this.context.recovering,
