@@ -86,6 +86,8 @@ export function MediaPanel() {
     moveToFolder,
   } = useMediaStore();
 
+  const { tracks, playheadPosition, addTextClip } = useTimelineStore();
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
@@ -309,6 +311,17 @@ export function MediaPanel() {
     createFolder(`New Folder`);
     closeContextMenu();
   }, [createFolder, closeContextMenu]);
+
+  // New text clip
+  const handleNewText = useCallback(() => {
+    const videoTrack = tracks.find(t => t.type === 'video');
+    if (videoTrack) {
+      addTextClip(videoTrack.id, playheadPosition);
+    } else {
+      log.warn('No video track available for text clip');
+    }
+    closeContextMenu();
+  }, [tracks, playheadPosition, addTextClip, closeContextMenu]);
 
   // Composition settings
   const openCompositionSettings = useCallback((comp: Composition) => {
@@ -776,10 +789,9 @@ export function MediaPanel() {
                   <span>Folder</span>
                 </div>
                 <div className="add-dropdown-separator" />
-                <div className="add-dropdown-item" onClick={() => { /* TODO: Add text layer */ setAddDropdownOpen(false); }}>
+                <div className="add-dropdown-item" onClick={() => { handleNewText(); setAddDropdownOpen(false); }}>
                   <span className="add-dropdown-icon">T</span>
                   <span>Text</span>
-                  <span className="add-dropdown-hint">Coming soon</span>
                 </div>
                 <div className="add-dropdown-item" onClick={() => { /* TODO: Add solid */ setAddDropdownOpen(false); }}>
                   <span className="add-dropdown-icon">◼</span>
