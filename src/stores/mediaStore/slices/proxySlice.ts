@@ -152,13 +152,8 @@ export const createProxySlice: MediaSliceCreator<ProxyActions> = (set, get) => (
       );
 
       if (result && !controller.cancelled) {
-        // Extract audio proxy
-        await extractAudioProxy(mediaFile, storageKey);
-
-        // Check for audio proxy
-        const hasAudioProxy = await projectFileService.hasProxyAudio(storageKey);
-
-        // Update final status
+        // Update status to 'ready' IMMEDIATELY after frames complete
+        // Don't wait for audio extraction - it's optional and can happen in background
         set((s) => ({
           files: s.files.map((f) =>
             f.id === mediaFileId
@@ -168,13 +163,27 @@ export const createProxySlice: MediaSliceCreator<ProxyActions> = (set, get) => (
                   proxyProgress: 100,
                   proxyFrameCount: result.frameCount,
                   proxyFps: result.fps,
-                  hasProxyAudio: hasAudioProxy,
                 }
               : f
           ),
         }));
 
         log.info(`Complete: ${result.frameCount} frames for ${mediaFile.name}`);
+
+        // Extract audio proxy in background (non-blocking)
+        extractAudioProxy(mediaFile, storageKey).then(async () => {
+          const hasAudioProxy = await projectFileService.hasProxyAudio(storageKey);
+          if (hasAudioProxy) {
+            set((s) => ({
+              files: s.files.map((f) =>
+                f.id === mediaFileId ? { ...f, hasProxyAudio: true } : f
+              ),
+            }));
+            log.debug(`Audio proxy ready for ${mediaFile.name}`);
+          }
+        }).catch(() => {
+          // Audio extraction errors are non-fatal
+        });
       } else if (!controller.cancelled) {
         // Set error status inline
         set((state) => ({

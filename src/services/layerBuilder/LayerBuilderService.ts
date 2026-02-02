@@ -433,7 +433,8 @@ export class LayerBuilderService {
   private buildNestedLayers(clip: TimelineClip, clipTime: number, ctx: FrameContext): Layer[] {
     if (!clip.nestedClips || !clip.nestedTracks) return [];
 
-    const nestedVideoTracks = clip.nestedTracks.filter(t => t.type === 'video' && t.visible);
+    // Filter for video tracks that are visible (default to visible if not explicitly set)
+    const nestedVideoTracks = clip.nestedTracks.filter(t => t.type === 'video' && t.visible !== false);
     const layers: Layer[] = [];
 
     // Debug: log nested clip info once per second
@@ -467,7 +468,22 @@ export class LayerBuilderService {
           clipTime < nc.startTime + nc.duration
       );
 
-      if (!nestedClip) continue;
+      if (!nestedClip) {
+        // Log why no clip was found for this track
+        const clipsOnTrack = clip.nestedClips.filter(nc => nc.trackId === nestedTrack.id);
+        if (clipsOnTrack.length > 0) {
+          log.debug('No active clip on track at time', {
+            trackId: nestedTrack.id,
+            clipTime,
+            clipsOnTrack: clipsOnTrack.map(nc => ({
+              name: nc.name,
+              startTime: nc.startTime,
+              endTime: nc.startTime + nc.duration,
+            })),
+          });
+        }
+        continue;
+      }
 
       // nestedLocalTime is the time within the clip (0 to duration) - used for keyframe interpolation
       const nestedLocalTime = clipTime - nestedClip.startTime;
@@ -476,6 +492,15 @@ export class LayerBuilderService {
       const nestedLayer = this.buildNestedClipLayer(nestedClip, nestedLocalTime, ctx);
       if (nestedLayer) {
         layers.push(nestedLayer);
+      } else {
+        log.debug('Failed to build nested layer', {
+          clipId: nestedClip.id,
+          name: nestedClip.name,
+          isLoading: nestedClip.isLoading,
+          hasVideoElement: !!nestedClip.source?.videoElement,
+          hasImageElement: !!nestedClip.source?.imageElement,
+          videoReadyState: nestedClip.source?.videoElement?.readyState,
+        });
       }
     }
 

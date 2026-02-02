@@ -236,7 +236,8 @@ function buildNestedLayersForExport(
 ): Layer[] {
   if (!clip.nestedClips || !clip.nestedTracks) return [];
 
-  const nestedVideoTracks = clip.nestedTracks.filter(t => t.type === 'video' && t.visible);
+  // Filter for video tracks that are visible (default to visible if not explicitly set to false)
+  const nestedVideoTracks = clip.nestedTracks.filter(t => t.type === 'video' && t.visible !== false);
   const layers: Layer[] = [];
 
   for (let i = 0; i < nestedVideoTracks.length; i++) {
