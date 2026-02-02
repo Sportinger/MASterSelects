@@ -203,6 +203,10 @@ export function useEngine() {
   useEffect(() => {
     if (!isEngineReady) return;
 
+    // Initial mask texture generation on engine ready (handles page refresh)
+    // Without this, masks don't show after refresh because clips don't "change"
+    updateMaskTextures();
+
     // Subscribe to clips changes (mask shape updates)
     // This runs when clips array changes (including mask modifications)
     const unsubscribeClips = useTimelineStore.subscribe(
