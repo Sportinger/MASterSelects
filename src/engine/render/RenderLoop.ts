@@ -75,6 +75,23 @@ export class RenderLoop {
         return;
       }
 
+      // Skip stats when idle (but still allow occasional renders for UI updates)
+      if (this.isIdle) {
+        this.animationId = requestAnimationFrame(loop);
+        return;
+      }
+
+      // Frame rate limiting for video - check BEFORE rendering to actually limit render rate
+      // This reduces GPU load and prevents frame sync issues from excessive rendering
+      if (this.hasActiveVideo) {
+        const timeSinceLastRender = timestamp - this.lastRenderTime;
+        if (timeSinceLastRender < this.VIDEO_FRAME_TIME) {
+          this.animationId = requestAnimationFrame(loop);
+          return;
+        }
+        this.lastRenderTime = timestamp;
+      }
+
       // Call render callback (unless exporting)
       if (!this.callbacks.isExporting()) {
         try {
@@ -83,22 +100,6 @@ export class RenderLoop {
           log.error('Error in render callback', e);
           // Continue loop despite error to prevent freeze
         }
-      }
-
-      // Skip stats when idle
-      if (this.isIdle) {
-        this.animationId = requestAnimationFrame(loop);
-        return;
-      }
-
-      // Frame rate limiting for video
-      if (this.hasActiveVideo) {
-        const timeSinceLastRender = timestamp - this.lastRenderTime;
-        if (timeSinceLastRender < this.VIDEO_FRAME_TIME) {
-          this.animationId = requestAnimationFrame(loop);
-          return;
-        }
-        this.lastRenderTime = timestamp;
       }
 
       // Record RAF gap for stats

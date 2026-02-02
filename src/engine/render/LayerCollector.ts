@@ -162,7 +162,7 @@ export class LayerCollector {
   private tryHTMLVideo(layer: Layer, video: HTMLVideoElement, deps: LayerCollectorDeps): LayerRenderData | null {
     const videoKey = video.src || layer.id;
 
-    log.debug(`tryHTMLVideo: readyState=${video.readyState}, videoWidth=${video.videoWidth}, videoHeight=${video.videoHeight}`);
+    log.debug(`tryHTMLVideo: readyState=${video.readyState}, seeking=${video.seeking}, videoWidth=${video.videoWidth}, videoHeight=${video.videoHeight}`);
 
     if (video.readyState >= 2) {
       const lastTime = deps.getLastVideoTime(videoKey);
@@ -174,6 +174,23 @@ export class LayerCollector {
         const lastFrame = deps.scrubbingCache?.getLastFrame(video);
         if (lastFrame) {
           this.currentDecoder = 'HTMLVideo(paused-cache)';
+          return {
+            layer,
+            isVideo: false,
+            externalTexture: null,
+            textureView: lastFrame.view,
+            sourceWidth: lastFrame.width,
+            sourceHeight: lastFrame.height,
+          };
+        }
+      }
+
+      // If video is seeking/buffering, prefer cached frame to avoid frame jumps
+      // This prevents visual glitches when video decoder is catching up
+      if (video.seeking && !deps.isExporting) {
+        const lastFrame = deps.scrubbingCache?.getLastFrame(video);
+        if (lastFrame) {
+          this.currentDecoder = 'HTMLVideo(seeking-cache)';
           return {
             layer,
             isVideo: false,
