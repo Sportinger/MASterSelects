@@ -314,6 +314,10 @@ export class WebGPUEngine {
     this.renderLoop?.setHasActiveVideo(hasVideo);
   }
 
+  setIsPlaying(playing: boolean): void {
+    this.renderLoop?.setIsPlaying(playing);
+  }
+
   // === TEXTURE MANAGEMENT ===
 
   createImageTexture(image: HTMLImageElement): GPUTexture | null {

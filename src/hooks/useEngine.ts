@@ -256,6 +256,12 @@ export function useEngine() {
     };
   }, [isEngineReady, updateMaskTextures]);
 
+  // Update engine playing state for frame rate limiting
+  useEffect(() => {
+    if (!isEngineReady) return;
+    engine.setIsPlaying(isPlaying);
+  }, [isEngineReady, isPlaying]);
+
   // Render loop - optimized with direct layer building (bypasses React state)
   useEffect(() => {
     if (!isEngineReady) return;

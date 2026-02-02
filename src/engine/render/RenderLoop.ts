@@ -23,8 +23,9 @@ export class RenderLoop {
   private renderRequested = false;
   private lastRenderedPlayhead = -1;
 
-  // Frame rate limiting
+  // Frame rate limiting (only during playback, not scrubbing)
   private hasActiveVideo = false;
+  private isPlaying = false;
   private lastRenderTime = 0;
 
   private readonly IDLE_TIMEOUT = 1000; // 1s before idle
@@ -81,9 +82,10 @@ export class RenderLoop {
         return;
       }
 
-      // Frame rate limiting for video - check BEFORE rendering to actually limit render rate
+      // Frame rate limiting for video - ONLY during playback, not scrubbing
       // This reduces GPU load and prevents frame sync issues from excessive rendering
-      if (this.hasActiveVideo) {
+      // But we never skip renders during scrubbing (when paused)
+      if (this.hasActiveVideo && this.isPlaying) {
         const timeSinceLastRender = timestamp - this.lastRenderTime;
         if (timeSinceLastRender < this.VIDEO_FRAME_TIME) {
           this.animationId = requestAnimationFrame(loop);
@@ -150,5 +152,9 @@ export class RenderLoop {
 
   setHasActiveVideo(hasVideo: boolean): void {
     this.hasActiveVideo = hasVideo;
+  }
+
+  setIsPlaying(playing: boolean): void {
+    this.isPlaying = playing;
   }
 }
