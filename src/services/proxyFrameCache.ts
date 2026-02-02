@@ -34,6 +34,7 @@ class ProxyFrameCache {
 
   // Audio buffer cache for instant scrubbing (Web Audio API)
   private audioBufferCache: Map<string, AudioBuffer> = new Map();
+  private audioBufferFailed: Set<string> = new Set(); // Track files with no audio
   private audioContext: AudioContext | null = null;
   private scrubGain: GainNode | null = null;
 
@@ -470,6 +471,11 @@ class ProxyFrameCache {
     const cached = this.audioBufferCache.get(mediaFileId);
     if (cached) return cached;
 
+    // Skip files that have no audio (failed decoding before)
+    if (this.audioBufferFailed.has(mediaFileId)) {
+      return null;
+    }
+
     // Check if already loading
     if (this.audioBufferLoading.has(mediaFileId)) {
       return null; // Loading in progress
@@ -532,8 +538,10 @@ class ProxyFrameCache {
 
       return audioBuffer;
     } catch (e) {
-      log.warn('Failed to decode audio', e);
+      // Mark as failed so we don't keep retrying (video probably has no audio track)
+      this.audioBufferFailed.add(mediaFileId);
       this.audioBufferLoading.delete(mediaFileId);
+      log.debug(`No audio in ${mediaFileId} (or decode failed)`);
       return null;
     }
   }
