@@ -379,7 +379,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
 
     // Create new video/audio elements for the second clip to avoid sharing HTMLMediaElements
     // This is critical: both clips need their own elements for independent seeking/playback
-    let secondClipSource = clip.source ? { ...clip.source } : undefined;
+    let secondClipSource = clip.source;
     if (clip.source?.type === 'video' && clip.source.videoElement && clip.file) {
       const newVideo = createVideoElement(clip.file);
       secondClipSource = {
@@ -426,7 +426,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
       const linkedClip = clips.find(c => c.id === clip.linkedClipId);
       if (linkedClip) {
         // Create new audio element for linked second clip
-        let linkedSecondSource = linkedClip.source ? { ...linkedClip.source } : undefined;
+        let linkedSecondSource = linkedClip.source;
         if (linkedClip.source?.type === 'audio' && linkedClip.source.audioElement && linkedClip.file) {
           const newAudio = createAudioElement(linkedClip.file);
           linkedSecondSource = {

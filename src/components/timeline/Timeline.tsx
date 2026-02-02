@@ -122,6 +122,7 @@ export function Timeline() {
     getInterpolatedSpeed,
     addTextClip,
     toolMode,
+    setToolMode,
     toggleCutTool,
     splitClip,
     // Markers
@@ -162,6 +163,12 @@ export function Timeline() {
       setCutHoverInfo(null);
     }
   }, []);
+
+  // Cut at position handler - splits clip and returns to select mode
+  const handleCutAtPosition = useCallback((clipId: string, time: number) => {
+    splitClip(clipId, time);
+    setToolMode('select');
+  }, [splitClip, setToolMode]);
 
   // Performance: Create lookup maps for O(1) clip/track access (must be before hooks that use them)
   const clipMap = useMemo(() => new Map(clips.map(c => [c.id, c])), [clips]);
@@ -754,7 +761,7 @@ export function Timeline() {
           onContextMenu={(e) => handleClipContextMenu(e, clip.id)}
           onTrimStart={(e, edge) => handleTrimStart(e, clip.id, edge)}
           onFadeStart={(e, edge) => handleFadeStart(e, clip.id, edge)}
-          onCutAtPosition={splitClip}
+          onCutAtPosition={handleCutAtPosition}
           hasKeyframes={hasKeyframes}
           fadeInDuration={getFadeInDuration(clip.id)}
           fadeOutDuration={getFadeOutDuration(clip.id)}
@@ -791,7 +798,7 @@ export function Timeline() {
       handleClipContextMenu,
       handleTrimStart,
       handleFadeStart,
-      splitClip,
+      handleCutAtPosition,
       hasKeyframes,
       getFadeInDuration,
       getFadeOutDuration,
