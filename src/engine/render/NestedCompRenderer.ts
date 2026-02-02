@@ -161,20 +161,11 @@ export class NestedCompRenderer {
       })),
     });
 
-    // Handle empty composition
+    // Handle empty composition (expected during video loading)
     if (nestedLayerData.length === 0) {
-      log.warn('No nested layers collected - rendering transparent', {
+      log.debug('No nested layers collected - rendering transparent', {
         compositionId,
         inputLayers: nestedLayers.length,
-        layerDetails: nestedLayers.map(l => ({
-          id: l.id,
-          visible: l.visible,
-          sourceType: l.source?.type,
-          hasVideoElement: !!l.source?.videoElement,
-          videoReadyState: l.source?.videoElement?.readyState,
-          hasWebCodecs: !!l.source?.webCodecsPlayer,
-          hasImageElement: !!l.source?.imageElement,
-        })),
       });
       const clearPass = commandEncoder.beginRenderPass({
         colorAttachments: [{
@@ -325,14 +316,8 @@ export class NestedCompRenderer {
             log.warn('Failed to import video texture', { layerId: layer.id });
           }
         } else {
-          log.warn('Nested video not ready', {
-            layerId: layer.id,
-            readyState: video.readyState,
-            currentTime: video.currentTime,
-            src: video.src?.substring(0, 50),
-            paused: video.paused,
-            networkState: video.networkState,
-          });
+          // Expected during initial load - don't spam console
+          log.debug('Nested video not ready', { layerId: layer.id, readyState: video.readyState });
         }
       }
 
