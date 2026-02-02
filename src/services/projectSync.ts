@@ -5,6 +5,7 @@ import { Logger } from './logger';
 import { useMediaStore, type MediaFile, type Composition, type MediaFolder } from '../stores/mediaStore';
 import { getMediaInfo } from '../stores/mediaStore/helpers/mediaInfoHelpers';
 import { createThumbnail } from '../stores/mediaStore/helpers/thumbnailHelpers';
+import { updateTimelineClips } from '../stores/mediaStore/slices/fileManageSlice';
 
 const log = Logger.create('ProjectSync');
 import { useTimelineStore } from '../stores/timeline';
@@ -283,10 +284,10 @@ async function convertProjectMediaToStore(projectMedia: ProjectMediaFile[]): Pro
           handle = storedHandle as FileSystemFileHandle;
           // Cache in memory for future use
           fileSystemService.storeFileHandle(pm.id, handle);
-          log.info(' Retrieved handle from IndexedDB for:', pm.name);
+          log.info(`Retrieved handle from IndexedDB for: ${pm.name}`);
         }
       } catch (e) {
-        log.warn(' Failed to get handle from IndexedDB:', pm.name, e);
+        log.warn(`Failed to get handle from IndexedDB: ${pm.name}`, e);
       }
     }
 
@@ -667,8 +668,14 @@ async function autoRelinkFromRawFolder(): Promise<void> {
 
   log.info(`Attempting auto-relink for ${missingFiles.length} missing files...`);
 
-  // Scan the Raw folder
-  const rawFiles = await projectFileService.scanRawFolder();
+  // Scan the Raw folder - retry if empty (handle may not be ready yet)
+  let rawFiles = await projectFileService.scanRawFolder();
+  if (rawFiles.size === 0) {
+    // Wait briefly and retry - the directory handle may need time on first load
+    log.debug('Raw folder scan returned empty, retrying after delay...');
+    await new Promise(resolve => setTimeout(resolve, 200));
+    rawFiles = await projectFileService.scanRawFolder();
+  }
   if (rawFiles.size === 0) {
     log.info(' Raw folder is empty or not accessible');
     return;
@@ -688,13 +695,33 @@ async function autoRelinkFromRawFolder(): Promise<void> {
     const handle = rawFiles.get(searchName);
 
     if (handle) {
-      try {
-        const fileObj = await handle.getFile();
+      // Try with retries - file handle may need a moment to be ready
+      let fileObj: File | undefined;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          fileObj = await handle.getFile();
+          break; // Success
+        } catch (e) {
+          if (attempt < 2) {
+            // Wait before retry
+            await new Promise(resolve => setTimeout(resolve, 100 * (attempt + 1)));
+          } else {
+            log.warn(`Could not read file from Raw: ${file.name}`, e);
+          }
+        }
+      }
+
+      if (fileObj) {
         const url = URL.createObjectURL(fileObj);
 
         // Store handle for future access
         fileSystemService.storeFileHandle(file.id, handle);
-        await projectDB.storeHandle(`media_${file.id}`, handle);
+        try {
+          await projectDB.storeHandle(`media_${file.id}`, handle);
+        } catch (e) {
+          // IndexedDB may fail, but we can still use the file
+          log.debug(`Could not store handle in IndexedDB: ${file.name}`);
+        }
 
         // Update file entry
         updatedFiles[i] = {
@@ -705,9 +732,35 @@ async function autoRelinkFromRawFolder(): Promise<void> {
         };
 
         relinkedCount++;
-        log.debug(`Auto-relinked: ${file.name}`);
+        log.debug(`Auto-relinked from Raw: ${file.name}`);
+      }
+    } else {
+      // Try to get from stored file handle in IndexedDB
+      try {
+        const storedHandle = await projectDB.getStoredHandle(`media_${file.id}`);
+        if (storedHandle && storedHandle.kind === 'file') {
+          const fileHandle = storedHandle as FileSystemFileHandle;
+          const permission = await fileHandle.queryPermission({ mode: 'read' });
+
+          if (permission === 'granted') {
+            const fileObj = await fileHandle.getFile();
+            const url = URL.createObjectURL(fileObj);
+
+            fileSystemService.storeFileHandle(file.id, fileHandle);
+
+            updatedFiles[i] = {
+              ...file,
+              file: fileObj,
+              url,
+              hasFileHandle: true,
+            };
+
+            relinkedCount++;
+            log.debug(`Auto-relinked from IndexedDB handle: ${file.name}`);
+          }
+        }
       } catch (e) {
-        log.warn(`Could not read file from Raw: ${file.name}`, e);
+        // Silently ignore - will need manual reload
       }
     }
   }
@@ -717,25 +770,157 @@ async function autoRelinkFromRawFolder(): Promise<void> {
     useMediaStore.setState({ files: updatedFiles });
     log.info(`Auto-relinked ${relinkedCount}/${missingFiles.length} files from Raw folder`);
 
-    // Also update any clips that reference these files
-    const timelineStore = useTimelineStore.getState();
+    // Small delay to allow state to settle before updating timeline clips
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    // Update timeline clips with proper source elements (video/audio/image)
     for (const file of updatedFiles) {
       if (file.file) {
-        const clips = timelineStore.clips.filter(
-          c => c.source?.mediaFileId === file.id && c.needsReload
-        );
-        for (const clip of clips) {
-          timelineStore.updateClip(clip.id, {
-            file: file.file,
-            needsReload: false,
-            isLoading: true,
-          });
-        }
+        await updateTimelineClips(file.id, file.file);
       }
     }
+
+    // Reload nested composition clips that may need their content updated
+    await reloadNestedCompositionClips();
   } else {
     log.info(' No files could be auto-relinked from Raw folder');
   }
+}
+
+/**
+ * Reload nested clips for composition clips that are missing their content.
+ * This is called after auto-relinking when media files become available.
+ */
+async function reloadNestedCompositionClips(): Promise<void> {
+  const timelineStore = useTimelineStore.getState();
+  const mediaStore = useMediaStore.getState();
+
+  // Find composition clips that have no nested clips (need reload)
+  const compClips = timelineStore.clips.filter(
+    c => c.isComposition && c.compositionId && (!c.nestedClips || c.nestedClips.length === 0)
+  );
+
+  if (compClips.length === 0) return;
+
+  log.info(`Reloading ${compClips.length} nested composition clips...`);
+
+  for (const compClip of compClips) {
+    const composition = mediaStore.compositions.find(c => c.id === compClip.compositionId);
+    if (!composition?.timelineData) continue;
+
+    const nestedClips: any[] = [];
+    const nestedTracks = composition.timelineData.tracks;
+
+    for (const nestedSerializedClip of composition.timelineData.clips) {
+      const nestedMediaFile = mediaStore.files.find(f => f.id === nestedSerializedClip.mediaFileId);
+      if (!nestedMediaFile?.file) continue;
+
+      const nestedClip: any = {
+        id: `nested-${compClip.id}-${nestedSerializedClip.id}`,
+        trackId: nestedSerializedClip.trackId,
+        name: nestedSerializedClip.name,
+        file: nestedMediaFile.file,
+        startTime: nestedSerializedClip.startTime,
+        duration: nestedSerializedClip.duration,
+        inPoint: nestedSerializedClip.inPoint,
+        outPoint: nestedSerializedClip.outPoint,
+        source: null,
+        thumbnails: nestedSerializedClip.thumbnails,
+        transform: nestedSerializedClip.transform,
+        effects: nestedSerializedClip.effects || [],
+        masks: nestedSerializedClip.masks || [],
+        isLoading: true,
+      };
+
+      nestedClips.push(nestedClip);
+
+      // Load the video/audio/image element
+      const sourceType = nestedSerializedClip.sourceType;
+      const fileUrl = URL.createObjectURL(nestedMediaFile.file);
+
+      if (sourceType === 'video') {
+        const video = document.createElement('video');
+        video.src = fileUrl;
+        video.muted = true;
+        video.playsInline = true;
+        video.preload = 'auto';
+        video.crossOrigin = 'anonymous';
+
+        video.addEventListener('canplaythrough', () => {
+          nestedClip.source = {
+            type: 'video',
+            videoElement: video,
+            naturalDuration: video.duration,
+          };
+          nestedClip.isLoading = false;
+
+          // Trigger state update
+          const currentClips = timelineStore.clips;
+          useTimelineStore.setState({ clips: [...currentClips] });
+        }, { once: true });
+
+        video.load();
+      } else if (sourceType === 'audio') {
+        const audio = document.createElement('audio');
+        audio.src = fileUrl;
+        audio.preload = 'auto';
+
+        audio.addEventListener('canplaythrough', () => {
+          nestedClip.source = {
+            type: 'audio',
+            audioElement: audio,
+            naturalDuration: audio.duration,
+          };
+          nestedClip.isLoading = false;
+
+          const currentClips = timelineStore.clips;
+          useTimelineStore.setState({ clips: [...currentClips] });
+        }, { once: true });
+
+        audio.load();
+      } else if (sourceType === 'image') {
+        const img = new Image();
+        img.src = fileUrl;
+        img.crossOrigin = 'anonymous';
+
+        img.addEventListener('load', () => {
+          nestedClip.source = {
+            type: 'image',
+            imageElement: img,
+          };
+          nestedClip.isLoading = false;
+
+          const currentClips = timelineStore.clips;
+          useTimelineStore.setState({ clips: [...currentClips] });
+        }, { once: true });
+      }
+    }
+
+    // Update the composition clip with nested data
+    if (nestedClips.length > 0) {
+      timelineStore.updateClip(compClip.id, {
+        nestedClips,
+        nestedTracks,
+        isLoading: false,
+      });
+
+      // Generate thumbnails if missing
+      if (!compClip.thumbnails || compClip.thumbnails.length === 0) {
+        const { generateCompThumbnails } = await import('../stores/timeline/clip/addCompClip');
+        const compDuration = composition.timelineData?.duration ?? composition.duration;
+        generateCompThumbnails({
+          clipId: compClip.id,
+          nestedClips,
+          compDuration,
+          thumbnailsEnabled: timelineStore.thumbnailsEnabled,
+          get: useTimelineStore.getState,
+          set: useTimelineStore.setState,
+        });
+      }
+    }
+  }
+
+  log.info('Nested composition clips reloaded');
 }
 
 // ============================================

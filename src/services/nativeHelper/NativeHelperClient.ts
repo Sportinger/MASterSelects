@@ -583,7 +583,7 @@ class NativeHelperClientImpl {
 
       // Extract payload
       const payloadStart = 16;
-      let payload = new Uint8Array(data, payloadStart);
+      const payload = new Uint8Array(data, payloadStart);
 
       // Decompress if needed
       if (isCompressed(header.flags)) {

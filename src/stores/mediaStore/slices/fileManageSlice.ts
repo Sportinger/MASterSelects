@@ -120,7 +120,7 @@ export const createFileManageSlice: MediaSliceCreator<FileManageActions> = (set,
       return 0;
     }
 
-    log.info('Reloading', filesToReload.length, 'files...');
+    log.info(`Reloading ${filesToReload.length} files...`);
     let totalReloaded = 0;
 
     for (const mediaFileToReload of filesToReload) {
@@ -172,29 +172,137 @@ export const createFileManageSlice: MediaSliceCreator<FileManageActions> = (set,
       totalReloaded++;
     }
 
-    log.info('Complete:', totalReloaded, 'files reloaded');
+    log.info(`Complete: ${totalReloaded} files reloaded`);
     return totalReloaded;
   },
 });
 
 /**
  * Update timeline clips with reloaded file.
+ * Creates the actual video/audio elements for the clip sources.
+ * Exported for use by projectSync auto-relink.
  */
-async function updateTimelineClips(mediaFileId: string, file: File): Promise<void> {
+export async function updateTimelineClips(mediaFileId: string, file: File): Promise<void> {
   const timelineStore = useTimelineStore.getState();
   const clips = timelineStore.clips.filter(
     c => c.source?.mediaFileId === mediaFileId && c.needsReload
   );
 
-  for (const clip of clips) {
-    timelineStore.updateClip(clip.id, {
-      file,
-      needsReload: false,
-      isLoading: true,
-    });
+  if (clips.length === 0) {
+    // Debug: check if there are clips that need reload but with different mediaFileId
+    const allNeedReload = timelineStore.clips.filter(c => c.needsReload);
+    if (allNeedReload.length > 0) {
+      log.debug(`No clips matched for mediaFileId ${mediaFileId}, but ${allNeedReload.length} clips need reload`, {
+        mediaFileId,
+        clipMediaIds: allNeedReload.map(c => c.source?.mediaFileId).slice(0, 5),
+      });
+    }
+    return;
   }
 
-  if (clips.length > 0) {
-    log.debug('Updated', clips.length, 'timeline clips');
+  const url = URL.createObjectURL(file);
+
+  for (const clip of clips) {
+    const sourceType = clip.source?.type;
+
+    if (sourceType === 'video') {
+      // Create video element
+      const video = document.createElement('video');
+      video.src = url;
+      video.muted = true;
+      video.playsInline = true;
+      video.crossOrigin = 'anonymous';
+      video.preload = 'auto';
+
+      video.addEventListener('canplaythrough', () => {
+        const naturalDuration = video.duration || clip.duration;
+        timelineStore.updateClip(clip.id, {
+          file,
+          needsReload: false,
+          isLoading: false,
+          source: {
+            type: 'video',
+            videoElement: video,
+            naturalDuration,
+            mediaFileId,
+          },
+        });
+      }, { once: true });
+
+      video.addEventListener('error', () => {
+        log.warn('Failed to load video for clip:', clip.name);
+        timelineStore.updateClip(clip.id, {
+          needsReload: false,
+          isLoading: false,
+        });
+      }, { once: true });
+
+      video.load();
+    } else if (sourceType === 'audio') {
+      // Create audio element
+      const audio = document.createElement('audio');
+      audio.src = url;
+      audio.preload = 'auto';
+
+      audio.addEventListener('canplaythrough', () => {
+        const naturalDuration = audio.duration || clip.duration;
+        timelineStore.updateClip(clip.id, {
+          file,
+          needsReload: false,
+          isLoading: false,
+          source: {
+            type: 'audio',
+            audioElement: audio,
+            naturalDuration,
+            mediaFileId,
+          },
+        });
+      }, { once: true });
+
+      audio.addEventListener('error', () => {
+        log.warn('Failed to load audio for clip:', clip.name);
+        timelineStore.updateClip(clip.id, {
+          needsReload: false,
+          isLoading: false,
+        });
+      }, { once: true });
+
+      audio.load();
+    } else if (sourceType === 'image') {
+      // Create image element
+      const img = new Image();
+      img.src = url;
+      img.crossOrigin = 'anonymous';
+
+      img.addEventListener('load', () => {
+        timelineStore.updateClip(clip.id, {
+          file,
+          needsReload: false,
+          isLoading: false,
+          source: {
+            type: 'image',
+            imageElement: img,
+            mediaFileId,
+          },
+        });
+      }, { once: true });
+
+      img.addEventListener('error', () => {
+        log.warn('Failed to load image for clip:', clip.name);
+        timelineStore.updateClip(clip.id, {
+          needsReload: false,
+          isLoading: false,
+        });
+      }, { once: true });
+    } else {
+      // Unknown type - just update the file reference
+      timelineStore.updateClip(clip.id, {
+        file,
+        needsReload: false,
+        isLoading: false,
+      });
+    }
   }
+
+  log.debug(`Updated ${clips.length} timeline clips`);
 }

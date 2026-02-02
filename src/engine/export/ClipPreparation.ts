@@ -268,37 +268,44 @@ async function initializeParallelDecoding(
   const endPrefetch = log.time('parallelDecoder.prefetchFirstFrame');
   await parallelDecoder.prefetchFramesForTime(_startTime);
 
-  // Verify first frame is actually decoded for clips active at start time
+  // Verify first frame is decoded for clips that are active at start time
+  // NOTE: We initialize ALL clips in parallel decoder, but only verify frames for clips active at start
   const MAX_RETRIES = 5;
   for (const clipInfo of clipInfos) {
     // Check if clip is active at start time
     let clipActiveAtStart: boolean;
+    let clipTimeAtExportStart: number;
+
     if (clipInfo.isNested && clipInfo.parentStartTime !== undefined) {
       // Nested clip: check if parent comp is active and clip is active within it
       const compTime = _startTime - clipInfo.parentStartTime - (clipInfo.parentInPoint || 0);
       clipActiveAtStart = compTime >= clipInfo.startTime && compTime < clipInfo.startTime + clipInfo.duration;
+      clipTimeAtExportStart = _startTime; // Use main timeline time for getFrameForClip
     } else {
       // Regular clip
       clipActiveAtStart = _startTime >= clipInfo.startTime && _startTime < clipInfo.startTime + clipInfo.duration;
+      clipTimeAtExportStart = _startTime;
     }
 
-    console.log(`[ClipPrep] Clip "${clipInfo.clipName}": startTime=${clipInfo.startTime}, exportStart=${_startTime}, active=${clipActiveAtStart}`);
+    log.debug(`Clip "${clipInfo.clipName}": startTime=${clipInfo.startTime}, exportStart=${_startTime}, active=${clipActiveAtStart}`);
+
+    // Skip verification for clips not active at start, but they ARE initialized in parallel decoder
     if (!clipActiveAtStart) {
-      console.log(`[ClipPrep] SKIPPING "${clipInfo.clipName}" - not active at export start`);
+      log.debug(`"${clipInfo.clipName}" not active at export start, skipping first frame verification`);
       continue;
     }
-    console.log(`[ClipPrep] VERIFYING "${clipInfo.clipName}" first frame`);
 
+    log.info(`Verifying first frame for "${clipInfo.clipName}"`);
 
-    let frame = parallelDecoder.getFrameForClip(clipInfo.clipId, _startTime);
+    let frame = parallelDecoder.getFrameForClip(clipInfo.clipId, clipTimeAtExportStart);
 
     if (!frame) {
       // Retry with delays
       for (let retry = 0; retry < MAX_RETRIES && !frame; retry++) {
         log.warn(`First frame not ready for "${clipInfo.clipName}" (attempt ${retry + 1}/${MAX_RETRIES}), retrying...`);
         await new Promise(r => setTimeout(r, 200)); // Give decoder time
-        await parallelDecoder.prefetchFramesForTime(_startTime);
-        frame = parallelDecoder.getFrameForClip(clipInfo.clipId, _startTime);
+        await parallelDecoder.prefetchFramesForTime(clipTimeAtExportStart);
+        frame = parallelDecoder.getFrameForClip(clipInfo.clipId, clipTimeAtExportStart);
       }
     }
 

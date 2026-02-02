@@ -1,7 +1,18 @@
 // App version - INCREMENT ON EVERY COMMIT!
 // Format: MAJOR.MINOR.PATCH
 // Increment PATCH (0.0.X) for each commit
-export const APP_VERSION = '1.1.1';
+export const APP_VERSION = '1.1.2';
+
+// Build/Platform notice shown at top of changelog
+export const BUILD_NOTICE: {
+  type: 'info' | 'warning' | 'success';
+  title: string;
+  message: string;
+} = {
+  type: 'info',
+  title: 'Windows Build',
+  message: 'This build is currently tested on Windows. Mac/Linux support may vary.',
+};
 
 // Change entry type
 export interface ChangeEntry {
@@ -44,7 +55,245 @@ interface RawChangeEntry extends ChangeEntry {
 }
 
 const RAW_CHANGELOG: RawChangeEntry[] = [
-  // === Jan 25, 2026 ===
+  // === Feb 2, 2026 - Nested Comp Export Fixes ===
+  {
+    date: '2026-02-02',
+    type: 'fix',
+    title: 'Nested Comp Export',
+    description: 'Fixed opacity and keyframe animations not applied during export of nested compositions',
+  },
+  {
+    date: '2026-02-02',
+    type: 'fix',
+    title: 'Keyframe Interpolation',
+    description: 'Fixed nested clip keyframes not interpolating correctly - now lookups directly from store',
+  },
+  {
+    date: '2026-02-02',
+    type: 'new',
+    title: 'Windows Build Notice',
+    description: 'Changelog now shows platform compatibility notice at the top',
+  },
+
+  // === Feb 1, 2026 - Big Feature Day ===
+  {
+    date: '2026-02-01',
+    type: 'new',
+    title: 'Nested Comp Boundary Markers',
+    description: 'Visual markers show where clips start/end within nested compositions',
+  },
+  {
+    date: '2026-02-01',
+    type: 'improve',
+    title: 'ESLint Cleanup',
+    description: 'Fixed all ESLint errors for Cloudflare builds, improved type safety',
+  },
+
+  // === Jan 31, 2026 - WYSIWYG Thumbnails ===
+  {
+    date: '2026-01-31',
+    type: 'new',
+    title: 'WYSIWYG Clip Thumbnails',
+    description: 'Thumbnails now show effects applied to clips',
+  },
+  {
+    date: '2026-01-31',
+    type: 'improve',
+    title: 'Content-Aware Thumbnail Sampling',
+    description: 'Thumbnails sample at clip boundaries for better preview coverage',
+  },
+  {
+    date: '2026-01-31',
+    type: 'new',
+    title: 'Copy/Paste Clips',
+    description: 'Ctrl+C/V to copy and paste timeline clips with undo support',
+  },
+  {
+    date: '2026-01-31',
+    type: 'fix',
+    title: 'Track Header Scroll/Zoom',
+    description: 'Disabled accidental Alt+Wheel zoom and Shift+Wheel scroll over track headers',
+  },
+
+  // === Jan 30, 2026 - Nested Comp Thumbnails ===
+  {
+    date: '2026-01-30',
+    type: 'new',
+    title: 'WebGPU Thumbnail Renderer',
+    description: 'GPU-accelerated thumbnail generation for nested compositions',
+  },
+  {
+    date: '2026-01-30',
+    type: 'improve',
+    title: 'Smart Thumbnail Updates',
+    description: 'Only regenerate nested comp thumbnails when content actually changes',
+  },
+
+  // === Jan 29, 2026 - Export System V2 ===
+  {
+    date: '2026-01-29',
+    type: 'new',
+    title: 'Export System V2',
+    description: 'Shared decoder pool with intelligent frame caching for faster exports',
+  },
+  {
+    date: '2026-01-29',
+    type: 'new',
+    title: 'Export Planner',
+    description: 'Smart decode scheduling optimizes export performance',
+  },
+  {
+    date: '2026-01-29',
+    type: 'fix',
+    title: 'Export Keyframe Seeking',
+    description: 'Fixed decode seeking to wrong keyframe position',
+  },
+
+  // === Jan 28, 2026 - Nested Comp Fixes ===
+  {
+    date: '2026-01-28',
+    type: 'fix',
+    title: 'Nested Comp Layer Order',
+    description: 'Fixed layer ordering in nested compositions',
+  },
+  {
+    date: '2026-01-28',
+    type: 'fix',
+    title: 'Nested Comp Video Playback',
+    description: 'Fixed videos not rendering due to readyState timing',
+  },
+  {
+    date: '2026-01-28',
+    type: 'improve',
+    title: 'Composition Tab UX',
+    description: 'Clicking composition tabs now activates Media Panel',
+  },
+
+  // === Jan 27, 2026 - Proxy & Caching ===
+  {
+    date: '2026-01-27',
+    type: 'fix',
+    title: 'Proxy Scrubbing',
+    description: 'Use nearest cached frame as fallback for smoother scrubbing',
+  },
+  {
+    date: '2026-01-27',
+    type: 'fix',
+    title: 'Backward Seek',
+    description: 'Fixed backward seek detection in ParallelDecodeManager',
+  },
+
+  // === Jan 26, 2026 - Project Loading & Linux ===
+  {
+    date: '2026-01-26',
+    type: 'fix',
+    title: 'Project File Loading',
+    description: 'Improved reliability loading files from Raw folder',
+  },
+  {
+    date: '2026-01-26',
+    type: 'fix',
+    title: 'Linux/Vulkan Preview',
+    description: 'Fixed black preview issue on Linux with Vulkan backend',
+  },
+  {
+    date: '2026-01-26',
+    type: 'new',
+    title: 'IndexedDB Error Dialog',
+    description: 'Clear error message when browser storage is corrupted',
+  },
+  {
+    date: '2026-01-26',
+    type: 'new',
+    title: 'Clip Entrance Animation',
+    description: 'Smooth animation when switching compositions',
+  },
+  {
+    date: '2026-01-26',
+    type: 'fix',
+    title: 'Nested Clip Caching',
+    description: 'Optimized nested composition rendering with frame caching',
+  },
+  {
+    date: '2026-01-26',
+    type: 'fix',
+    title: 'NativeHelper Dialog Crash',
+    description: 'Fixed crash with lite helper configuration',
+  },
+
+  // === Jan 25, 2026 - MAJOR REFACTORING DAY ===
+  {
+    date: '2026-01-25',
+    type: 'improve',
+    title: 'WebGPUEngine Refactor',
+    description: 'Split into focused modules - 57% smaller core file',
+  },
+  {
+    date: '2026-01-25',
+    type: 'improve',
+    title: 'Timeline Component Refactor',
+    description: 'Extract hooks and utilities - 2109 → 1323 lines of code',
+  },
+  {
+    date: '2026-01-25',
+    type: 'improve',
+    title: 'ClipSlice Refactor',
+    description: 'Modular clip and helper modules - 66% code reduction',
+  },
+  {
+    date: '2026-01-25',
+    type: 'improve',
+    title: 'FrameExporter Refactor',
+    description: 'Split 1510-line file into 8 focused modules',
+  },
+  {
+    date: '2026-01-25',
+    type: 'improve',
+    title: 'ProjectFileService Refactor',
+    description: 'Modular architecture with clean separation of concerns',
+  },
+  {
+    date: '2026-01-25',
+    type: 'improve',
+    title: 'AI Tools Refactor',
+    description: 'Split monolithic aiTools.ts into modular architecture',
+  },
+  {
+    date: '2026-01-25',
+    type: 'improve',
+    title: 'Remove VJ/Mixer Mode',
+    description: 'Simplified codebase by removing unused VJ mode entirely',
+  },
+  {
+    date: '2026-01-25',
+    type: 'improve',
+    title: 'Codebase Reorganization',
+    description: 'Cleaner folder structure and better code organization',
+  },
+  {
+    date: '2026-01-25',
+    type: 'new',
+    title: 'Marker Drag-to-Create',
+    description: 'Drag from M button to create markers with ghost preview',
+  },
+  {
+    date: '2026-01-25',
+    type: 'improve',
+    title: 'Markers Extend into Ruler',
+    description: 'Markers now visually extend into time ruler like playhead',
+  },
+  {
+    date: '2026-01-25',
+    type: 'new',
+    title: 'Nested Comp Visual Indicator',
+    description: 'Orange outline on nested composition clips for easy identification',
+  },
+  {
+    date: '2026-01-25',
+    type: 'improve',
+    title: 'YouTube Download Organization',
+    description: 'Auto-place YouTube downloads in dedicated YouTube folder',
+  },
   {
     date: '2026-01-25',
     type: 'fix',
@@ -73,44 +322,18 @@ const RAW_CHANGELOG: RawChangeEntry[] = [
   // === Jan 24, 2026 ===
   {
     date: '2026-01-24',
-    type: 'new',
-    title: 'Nested Comp Visual Indicator',
-    description: 'Orange outline on nested composition clips for easy identification',
-  },
-  {
-    date: '2026-01-24',
-    type: 'improve',
-    title: 'YouTube Download Organization',
-    description: 'Auto-place YouTube downloads in dedicated YouTube folder',
-  },
-
-  // === Jan 23, 2026 ===
-  {
-    date: '2026-01-23',
-    type: 'new',
-    title: 'Marker Drag-to-Create',
-    description: 'Drag from M button to create markers with ghost preview',
-  },
-  {
-    date: '2026-01-23',
-    type: 'improve',
-    title: 'Markers Extend into Ruler',
-    description: 'Markers now visually extend into time ruler like playhead',
-  },
-  {
-    date: '2026-01-23',
     type: 'fix',
     title: 'Blend Mode Instant Update',
     description: 'Blend mode changes now apply immediately in preview',
   },
   {
-    date: '2026-01-23',
+    date: '2026-01-24',
     type: 'new',
     title: 'Numpad Blend Mode Cycling',
     description: 'Use numpad +/- to cycle through blend modes',
   },
   {
-    date: '2026-01-23',
+    date: '2026-01-24',
     type: 'fix',
     title: 'Media Thumbnails Persistence',
     description: 'Restore media panel thumbnails after project reload',

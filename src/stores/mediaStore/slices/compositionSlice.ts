@@ -167,6 +167,7 @@ function calculateSyncedPlayhead(
 
 /**
  * Internal helper to set active composition (avoids calling get().setActiveComposition).
+ * Handles exit/enter animations for smooth transitions.
  */
 function doSetActiveComposition(
   set: (partial: Partial<MediaState> | ((state: MediaState) => Partial<MediaState>)) => void,
@@ -186,6 +187,7 @@ function doSetActiveComposition(
   );
 
   // Save current timeline to current composition
+  const savedCompId = currentActiveId;
   if (currentActiveId) {
     const timelineData = timelineStore.getSerializableState();
     set((state) => ({
@@ -195,6 +197,37 @@ function doSetActiveComposition(
     }));
     compositionRenderer.invalidateCompositionAndParents(currentActiveId);
   }
+
+  // Trigger exit animation for current clips
+  const hasExistingClips = timelineStore.clips.length > 0;
+  if (hasExistingClips && newId !== currentActiveId) {
+    // Set exit animation phase
+    timelineStore.setClipAnimationPhase('exiting');
+
+    // Wait for exit animation, then load new composition
+    setTimeout(() => {
+      finishCompositionSwitch(set, get, newId, savedCompId, syncedPlayhead);
+    }, 350); // Exit animation duration
+  } else {
+    // No existing clips or same comp, load immediately
+    finishCompositionSwitch(set, get, newId, savedCompId, syncedPlayhead);
+  }
+}
+
+/**
+ * Complete the composition switch after exit animation
+ */
+function finishCompositionSwitch(
+  set: (partial: Partial<MediaState> | ((state: MediaState) => Partial<MediaState>)) => void,
+  get: () => MediaState,
+  newId: string | null,
+  savedCompId: string | null,
+  syncedPlayhead: number | null
+): void {
+  const timelineStore = useTimelineStore.getState();
+
+  // Reset animation phase before loading new composition
+  timelineStore.setClipAnimationPhase('idle');
 
   // Update active composition
   set({ activeCompositionId: newId });
@@ -208,9 +241,13 @@ function doSetActiveComposition(
     if (syncedPlayhead !== null && syncedPlayhead >= 0) {
       timelineStore.setPlayheadPosition(syncedPlayhead);
     }
+    // zoom and scrollX are restored by loadState() from composition's timelineData
 
-    timelineStore.setZoom(0.1);
-    timelineStore.setScrollX(0);
+    // Refresh nested clips in the NEW timeline that reference the OLD composition
+    // This ensures comp clips show updated content when source composition changes
+    if (savedCompId) {
+      timelineStore.refreshCompClipNestedData(savedCompId);
+    }
   } else {
     timelineStore.clearTimeline();
   }

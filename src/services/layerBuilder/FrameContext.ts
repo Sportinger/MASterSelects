@@ -1,7 +1,7 @@
 // FrameContext - Single store read with lazy cached computations
 // Eliminates duplicate store reads and repeated array filtering
 
-import type { TimelineClip, TimelineTrack, Effect } from '../../types';
+import type { TimelineClip, TimelineTrack } from '../../types';
 import type { FrameContext, ClipTimeInfo } from './types';
 import { LAYER_BUILDER_CONSTANTS } from './types';
 import { useTimelineStore } from '../../stores/timeline';

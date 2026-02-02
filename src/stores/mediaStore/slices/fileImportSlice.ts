@@ -21,7 +21,7 @@ export interface FileImportActions {
 
 export const createFileImportSlice: MediaSliceCreator<FileImportActions> = (set, _get) => ({
   importFile: async (file: File, parentId?: string | null) => {
-    log.info('Starting:', file.name, 'type:', file.type, 'size:', file.size);
+    log.info(`Starting: ${file.name} type: ${file.type} size: ${file.size}`);
 
     const result = await processImport({
       file,

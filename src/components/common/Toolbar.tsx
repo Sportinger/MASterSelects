@@ -6,7 +6,6 @@ import { Logger } from '../../services/logger';
 const log = Logger.create('Toolbar');
 import { useEngine } from '../../hooks/useEngine';
 import { useEngineStore } from '../../stores/engineStore';
-import { useTimelineStore } from '../../stores/timeline';
 import { useDockStore } from '../../stores/dockStore';
 import { PANEL_CONFIGS, type PanelType } from '../../types/dock';
 import { useSettingsStore, type PreviewQuality, type AutosaveInterval, type GPUPowerPreference } from '../../stores/settingsStore';
@@ -690,7 +689,7 @@ export function Toolbar() {
               {midiSupported ? (
                 <button
                   className={`menu-option ${midiEnabled ? 'checked' : ''}`}
-                  onClick={() => { midiEnabled ? disableMIDI() : enableMIDI(); closeMenu(); }}
+                  onClick={() => { if (midiEnabled) { disableMIDI(); } else { enableMIDI(); } closeMenu(); }}
                 >
                   <span>{midiEnabled ? '✓ ' : '   '}MIDI Control {midiEnabled && devices.length > 0 ? `(${devices.length} devices)` : ''}</span>
                 </button>

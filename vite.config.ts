@@ -1,4 +1,4 @@
-import { defineConfig, Plugin } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import { APP_VERSION } from './src/version'
 import fs from 'fs'
@@ -21,7 +21,7 @@ function browserLogBridge(): Plugin {
               fs.writeFileSync(logFile, body);
               res.statusCode = 200;
               res.end('ok');
-            } catch (err) {
+            } catch {
               res.statusCode = 500;
               res.end('write error');
             }

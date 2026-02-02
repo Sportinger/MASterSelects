@@ -24,6 +24,7 @@ import { TimelineContextMenu, useClipContextMenu } from './TimelineContextMenu';
 import { useMarqueeSelection } from './hooks/useMarqueeSelection';
 import { useClipTrim } from './hooks/useClipTrim';
 import { useClipDrag } from './hooks/useClipDrag';
+import { useClipFade } from './hooks/useClipFade';
 import { useLayerSync } from './hooks/useLayerSync';
 import { usePlaybackLoop } from './hooks/usePlaybackLoop';
 import { useVideoPreload } from './hooks/useVideoPreload';
@@ -128,6 +129,9 @@ export function Timeline() {
     addMarker,
     moveMarker,
     removeMarker,
+    // Clipboard
+    copyClips,
+    pasteClips,
   } = useTimelineStore();
 
   const {
@@ -198,6 +202,16 @@ export function Timeline() {
     selectClip,
     trimClip,
     moveClip,
+    pixelToTime,
+  });
+
+  // Clip fade (fade-in/out handles) - extracted to hook
+  const { clipFade, handleFadeStart, getFadeInDuration, getFadeOutDuration } = useClipFade({
+    clipMap,
+    addKeyframe,
+    removeKeyframe,
+    moveKeyframe,
+    getClipKeyframes,
     pixelToTime,
   });
 
@@ -334,11 +348,6 @@ export function Timeline() {
       window.removeEventListener('mouseup', handleMouseUp);
     };
   }, [timelineMarkerDrag, scrollX, snappingEnabled, duration, pixelToTime, getSnapTargetTimes, moveMarker, playheadPosition, inPoint, outPoint]);
-
-  // Handle add marker at playhead (click)
-  const handleAddMarkerAtPlayhead = useCallback(() => {
-    addMarker(playheadPosition);
-  }, [addMarker, playheadPosition]);
 
   // Handle drag-to-create marker - start dragging from button
   const handleMarkerButtonDragStart = useCallback((e: React.MouseEvent) => {
@@ -535,6 +544,8 @@ export function Timeline() {
     removeKeyframe,
     splitClipAtPlayhead,
     updateClipTransform,
+    copyClips,
+    pasteClips,
     toolMode,
     toggleCutTool,
     clipMap,
@@ -679,6 +690,7 @@ export function Timeline() {
 
       const isDragging = clipDrag?.clipId === clip.id;
       const isTrimming = clipTrim?.clipId === clip.id;
+      const isFading = clipFade?.clipId === clip.id;
 
       const draggedClip = clipDrag
         ? clipMap.get(clipDrag.clipId)
@@ -719,10 +731,12 @@ export function Timeline() {
           isInLinkedGroup={!!clip.linkedGroupId}
           isDragging={isDragging}
           isTrimming={isTrimming}
+          isFading={isFading}
           isLinkedToDragging={!!isLinkedToDragging}
           isLinkedToTrimming={!!isLinkedToTrimming}
           clipDrag={clipDrag}
           clipTrim={clipTrim}
+          clipFade={clipFade}
           zoom={zoom}
           scrollX={scrollX}
           timelineRef={timelineRef}
@@ -739,8 +753,12 @@ export function Timeline() {
           onDoubleClick={(e) => handleClipDoubleClick(e, clip.id)}
           onContextMenu={(e) => handleClipContextMenu(e, clip.id)}
           onTrimStart={(e, edge) => handleTrimStart(e, clip.id, edge)}
+          onFadeStart={(e, edge) => handleFadeStart(e, clip.id, edge)}
           onCutAtPosition={splitClip}
           hasKeyframes={hasKeyframes}
+          fadeInDuration={getFadeInDuration(clip.id)}
+          fadeOutDuration={getFadeOutDuration(clip.id)}
+          opacityKeyframes={getClipKeyframes(clip.id).filter(k => k.property === 'opacity')}
           timeToPixel={timeToPixel}
           pixelToTime={pixelToTime}
           formatTime={formatTime}
@@ -757,6 +775,7 @@ export function Timeline() {
       selectedClipIds,
       clipDrag,
       clipTrim,
+      clipFade,
       zoom,
       scrollX,
       proxyEnabled,
@@ -771,8 +790,13 @@ export function Timeline() {
       handleClipDoubleClick,
       handleClipContextMenu,
       handleTrimStart,
+      handleFadeStart,
       splitClip,
       hasKeyframes,
+      getFadeInDuration,
+      getFadeOutDuration,
+      getClipKeyframes,
+      clipKeyframes,
       timeToPixel,
       pixelToTime,
       formatTime,
@@ -930,12 +954,12 @@ export function Timeline() {
               );
             })}
             {/* New audio track preview header - appears when dragging over new track zone or linked audio needs new track */}
-            {/* Only show if the video has audio (hasAudio !== false) */}
-            {externalDrag && externalDrag.hasAudio !== false && (
+            {/* Only show if the video has audio */}
+            {externalDrag && externalDrag.hasAudio && (
               <div
                 className={`track-header-preview audio ${
                   externalDrag.newTrackType === 'audio' ||
-                  (externalDrag.newTrackType === 'video' && externalDrag.hasAudio !== false) ||
+                  (externalDrag.newTrackType === 'video' && externalDrag.hasAudio) ||
                   (externalDrag.isVideo && externalDrag.audioTrackId === '__new_audio_track__')
                     ? 'active'
                     : ''

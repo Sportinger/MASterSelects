@@ -159,7 +159,7 @@ class AudioSync {
     targetMediaFileId: string,
     maxOffsetSeconds: number = 30
   ): Promise<number> {
-    log.info('Finding offset between', masterMediaFileId, 'and', targetMediaFileId);
+    log.info(`Finding offset between ${masterMediaFileId} and ${targetMediaFileId}`);
 
     // Get fingerprints
     const [masterFp, targetFp] = await Promise.all([

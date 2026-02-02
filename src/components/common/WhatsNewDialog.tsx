@@ -2,7 +2,7 @@
 // Displays changes categorized as "Today", "Last Week", "This Month", "Earlier"
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { APP_VERSION, KNOWN_ISSUES, getGroupedChangelog, type ChangeEntry } from '../../version';
+import { APP_VERSION, BUILD_NOTICE, getGroupedChangelog, type ChangeEntry } from '../../version';
 
 interface WhatsNewDialogProps {
   onClose: () => void;
@@ -126,15 +126,8 @@ export function WhatsNewDialog({ onClose }: WhatsNewDialogProps) {
       <div className="welcome-overlay whats-new-dialog changelog-dialog">
         {/* Header */}
         <div className="changelog-header">
-          <div className="changelog-header-left">
-            <h2 className="changelog-title">Changelog</h2>
-            <span className="changelog-version">v{APP_VERSION}</span>
-          </div>
-          <button className="changelog-close" onClick={handleClose}>
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            </svg>
-          </button>
+          <h2 className="changelog-title">Changelog</h2>
+          <span className="changelog-version">v{APP_VERSION}</span>
         </div>
 
         {/* Filter tabs */}
@@ -167,6 +160,30 @@ export function WhatsNewDialog({ onClose }: WhatsNewDialogProps) {
 
         {/* Scrollable content */}
         <div className="changelog-content">
+          {/* Platform notice */}
+          {BUILD_NOTICE && (
+            <div className={`changelog-notice changelog-notice-${BUILD_NOTICE.type}`}>
+              <div className="changelog-notice-icon">
+                {BUILD_NOTICE.type === 'info' && (
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5"/>
+                    <path d="M8 7v4M8 5v.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                  </svg>
+                )}
+                {BUILD_NOTICE.type === 'warning' && (
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <path d="M8 2L1 14h14L8 2z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+                    <path d="M8 6v4M8 12v.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                  </svg>
+                )}
+              </div>
+              <div className="changelog-notice-content">
+                <span className="changelog-notice-title">{BUILD_NOTICE.title}</span>
+                <span className="changelog-notice-message">{BUILD_NOTICE.message}</span>
+              </div>
+            </div>
+          )}
+
           {filteredGroups.map((group, groupIndex) => (
             <div key={group.label} className="changelog-group">
               <div className="changelog-group-header">
@@ -182,24 +199,6 @@ export function WhatsNewDialog({ onClose }: WhatsNewDialogProps) {
             </div>
           ))}
         </div>
-
-        {/* Known issues section */}
-        {KNOWN_ISSUES.length > 0 && (
-          <div className="changelog-issues">
-            <div className="changelog-issues-header">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                <circle cx="7" cy="7" r="6" stroke="currentColor" strokeWidth="1.5" />
-                <path d="M7 4v3M7 9v.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
-              <span>Known Issues</span>
-            </div>
-            <div className="changelog-issues-list">
-              {KNOWN_ISSUES.map((issue, i) => (
-                <div key={i} className="changelog-issue-item">{issue}</div>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* Footer */}
         <div className="changelog-footer">

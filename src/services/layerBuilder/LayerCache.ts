@@ -4,7 +4,6 @@
 import { Logger } from '../logger';
 import type { Layer, TimelineClip, TimelineTrack } from '../../types';
 import type { FrameContext } from './types';
-import { LAYER_BUILDER_CONSTANTS } from './types';
 
 const log = Logger.create('LayerCache');
 

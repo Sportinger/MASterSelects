@@ -3,7 +3,6 @@
 import type {
   TimelineClip,
   TimelineTrack,
-  Layer,
   Effect,
 } from '../../types';
 

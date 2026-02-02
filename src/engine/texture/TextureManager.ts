@@ -147,14 +147,17 @@ export class TextureManager {
       // readyState >= 2 means HAVE_CURRENT_DATA (has at least one frame)
       // Also check we're not in middle of seeking which can cause blank frames
       if (source.readyState < 2 || source.videoWidth === 0 || source.videoHeight === 0) {
+        log.debug('Video not ready', { readyState: source.readyState, width: source.videoWidth, height: source.videoHeight });
         return null;
       }
       // Skip if video is seeking - frame might not be ready
       if (source.seeking) {
+        log.debug('Video is seeking, skipping frame');
         return null;
       }
     } else if (source instanceof VideoFrame) {
       if (source.codedWidth === 0 || source.codedHeight === 0) {
+        log.debug('VideoFrame has zero dimensions');
         return null;
       }
     } else {
@@ -162,9 +165,12 @@ export class TextureManager {
     }
 
     try {
-      return this.device.importExternalTexture({ source });
-    } catch {
-      // Silently fail - video may not be ready yet
+      const texture = this.device.importExternalTexture({ source });
+      log.debug('External texture imported successfully');
+      return texture;
+    } catch (e) {
+      // Log the actual error - this is critical for debugging Linux/Vulkan issues
+      log.error('Failed to import external texture', e);
       return null;
     }
   }

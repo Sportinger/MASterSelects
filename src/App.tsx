@@ -8,6 +8,7 @@ import { Toolbar } from './components';
 import { DockContainer } from './components/dock';
 import { WelcomeOverlay } from './components/common/WelcomeOverlay';
 import { WhatsNewDialog } from './components/common/WhatsNewDialog';
+import { IndexedDBErrorDialog } from './components/common/IndexedDBErrorDialog';
 import { MobileApp } from './components/mobile';
 import { useGlobalHistory } from './hooks/useGlobalHistory';
 import { useClipPanelSync } from './hooks/useClipPanelSync';
@@ -25,21 +26,13 @@ function App() {
   const urlParams = new URLSearchParams(window.location.search);
   const testMode = urlParams.get('test');
 
-  if (testMode === 'parallel-decode') {
-    return <ParallelDecodeTest />;
-  }
+  // === ALL HOOKS MUST BE CALLED BEFORE ANY EARLY RETURNS ===
+
   // Mobile detection
   const isMobile = useIsMobile();
   const forceMobile = useForceMobile();
   const forceDesktopMode = useSettingsStore((s) => s.forceDesktopMode);
 
-  // Show mobile UI unless user explicitly requested desktop mode
-  const showMobileUI = (isMobile || forceMobile) && !forceDesktopMode;
-
-  // Render mobile UI if on mobile device (and not forcing desktop)
-  if (showMobileUI) {
-    return <MobileApp />;
-  }
   // Initialize global undo/redo system
   useGlobalHistory();
 
@@ -54,6 +47,9 @@ function App() {
   // What's New dialog state - show on every refresh after welcome (if any)
   const [showWhatsNew, setShowWhatsNew] = useState(false);
 
+  // IndexedDB error dialog state
+  const [showIndexedDBError, setShowIndexedDBError] = useState(false);
+
   // Load API keys from encrypted storage on mount
   const loadApiKeys = useSettingsStore((s) => s.loadApiKeys);
   useEffect(() => {
@@ -64,10 +60,24 @@ function App() {
   // This handles the case where Toolbar's restore fails and clears handles
   useEffect(() => {
     const checkProject = async () => {
-      // Check both: IndexedDB handle exists AND project is actually open
-      const hasHandle = await projectDB.hasLastProject();
-      const isOpen = projectFileService.isProjectOpen();
-      setHasStoredProject(hasHandle || isOpen);
+      // Check if IndexedDB has failed to initialize
+      if (projectDB.hasInitFailed()) {
+        setShowIndexedDBError(true);
+        setIsChecking(false);
+        return;
+      }
+
+      try {
+        // Check both: IndexedDB handle exists AND project is actually open
+        const hasHandle = await projectDB.hasLastProject();
+        const isOpen = projectFileService.isProjectOpen();
+        setHasStoredProject(hasHandle || isOpen);
+      } catch {
+        // If hasLastProject fails, IndexedDB is corrupted
+        if (projectDB.hasInitFailed()) {
+          setShowIndexedDBError(true);
+        }
+      }
       setIsChecking(false);
     };
 
@@ -75,9 +85,21 @@ function App() {
 
     // Poll for changes (handles cleared after failed restore)
     const interval = setInterval(async () => {
-      const hasHandle = await projectDB.hasLastProject();
-      const isOpen = projectFileService.isProjectOpen();
-      setHasStoredProject(hasHandle || isOpen);
+      // Check if IndexedDB has failed (could happen after initial load)
+      if (projectDB.hasInitFailed()) {
+        setShowIndexedDBError(true);
+        return;
+      }
+
+      try {
+        const hasHandle = await projectDB.hasLastProject();
+        const isOpen = projectFileService.isProjectOpen();
+        setHasStoredProject(hasHandle || isOpen);
+      } catch {
+        if (projectDB.hasInitFailed()) {
+          setShowIndexedDBError(true);
+        }
+      }
     }, 500);
 
     return () => clearInterval(interval);
@@ -88,6 +110,7 @@ function App() {
   const showWelcome = !isChecking && !hasStoredProject && !manuallyDismissed;
 
   // Show What's New dialog after initial check (when no welcome overlay)
+  // This effect intentionally sets state based on derived conditions
   useEffect(() => {
     if (DEV_DISABLE_WHATS_NEW) return;
     if (isChecking) return;
@@ -95,7 +118,8 @@ function App() {
     // If welcome is showing, don't show What's New yet
     if (showWelcome) return;
 
-    // Show What's New dialog
+    // Show What's New dialog - this is intentional state sync, not a cascading render
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setShowWhatsNew(true);
   }, [isChecking, showWelcome]);
 
@@ -112,6 +136,23 @@ function App() {
     setShowWhatsNew(false);
   }, []);
 
+  const handleIndexedDBErrorClose = useCallback(() => {
+    setShowIndexedDBError(false);
+  }, []);
+
+  // === EARLY RETURNS AFTER ALL HOOKS ===
+
+  // Test mode
+  if (testMode === 'parallel-decode') {
+    return <ParallelDecodeTest />;
+  }
+
+  // Show mobile UI unless user explicitly requested desktop mode
+  const showMobileUI = (isMobile || forceMobile) && !forceDesktopMode;
+  if (showMobileUI) {
+    return <MobileApp />;
+  }
+
   return (
     <div className="app">
       <Toolbar />
@@ -121,6 +162,9 @@ function App() {
       )}
       {showWhatsNew && (
         <WhatsNewDialog onClose={handleWhatsNewClose} />
+      )}
+      {showIndexedDBError && (
+        <IndexedDBErrorDialog onClose={handleIndexedDBErrorClose} />
       )}
     </div>
   );

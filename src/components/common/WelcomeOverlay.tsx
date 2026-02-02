@@ -36,33 +36,6 @@ function detectBrowser(): { name: string; isChromium: boolean } {
   return { name: 'Unknown Browser', isChromium: false };
 }
 
-// Detect operating system
-function detectOS(): { name: string; isLinux: boolean } {
-  const ua = navigator.userAgent;
-  const platform = navigator.platform?.toLowerCase() || '';
-
-  if (/Linux/.test(ua) && !/Android/.test(ua)) {
-    return { name: 'Linux', isLinux: true };
-  }
-  if (/Windows/.test(ua)) {
-    return { name: 'Windows', isLinux: false };
-  }
-  if (/Mac OS|Macintosh/.test(ua)) {
-    return { name: 'macOS', isLinux: false };
-  }
-  if (/Android/.test(ua)) {
-    return { name: 'Android', isLinux: false };
-  }
-  if (/iPhone|iPad|iPod/.test(ua)) {
-    return { name: 'iOS', isLinux: false };
-  }
-  if (platform.includes('linux')) {
-    return { name: 'Linux', isLinux: true };
-  }
-
-  return { name: 'Unknown OS', isLinux: false };
-}
-
 interface WelcomeOverlayProps {
   onComplete: () => void;
   noFadeOnClose?: boolean; // Don't fade blur when another dialog follows
@@ -98,7 +71,6 @@ export function WelcomeOverlay({ onComplete, noFadeOnClose = false }: WelcomeOve
 
   const isSupported = isFileSystemAccessSupported();
   const browser = useMemo(() => detectBrowser(), []);
-  const os = useMemo(() => detectOS(), []);
 
   // Typewriter effect
   useEffect(() => {
@@ -346,23 +318,6 @@ export function WelcomeOverlay({ onComplete, noFadeOnClose = false }: WelcomeOve
               </svg>
               Download Chrome
             </a>
-          </div>
-        )}
-
-        {/* OS Warning for non-Linux systems (only show if browser is supported) */}
-        {browser.isChromium && !os.isLinux && (
-          <div className="welcome-browser-warning welcome-os-warning">
-            <svg className="welcome-browser-warning-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="10"/>
-              <line x1="12" y1="8" x2="12" y2="12"/>
-              <line x1="12" y1="16" x2="12.01" y2="16"/>
-            </svg>
-            <span className="welcome-browser-warning-label">Limited Performance</span>
-            <span className="welcome-browser-warning-name">{os.name}</span>
-            <span className="welcome-browser-warning-desc">
-              WebGPU performance on {os.name} is currently limited.
-              For best results, use Linux with Vulkan drivers enabled.
-            </span>
           </div>
         )}
 

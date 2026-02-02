@@ -95,7 +95,11 @@ export function useTimelineZoom({
     if (!el) return;
 
     const handleWheel = (e: WheelEvent) => {
-      if (e.ctrlKey || e.altKey) {
+      // Don't zoom when hovering over track headers (first column for height adjustment)
+      const target = e.target as HTMLElement;
+      const isOverTrackHeaders = target.closest('.track-headers') !== null;
+
+      if ((e.ctrlKey || e.altKey) && !isOverTrackHeaders) {
         e.preventDefault();
         // Get the track lanes container width for accurate centering
         const trackLanes = el.querySelector('.track-lanes');
@@ -121,7 +125,7 @@ export function useTimelineZoom({
 
         setZoom(newZoom);
         setScrollX(newScrollX);
-      } else if (e.shiftKey) {
+      } else if (e.shiftKey && !isOverTrackHeaders) {
         // Shift+scroll = horizontal scroll (use deltaY since mouse wheel is vertical)
         e.preventDefault();
         const trackLanes = el.querySelector('.track-lanes');

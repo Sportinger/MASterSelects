@@ -16,50 +16,17 @@ export async function seekAllClipsToTime(
   parallelDecoder: ParallelDecodeManager | null,
   useParallelDecode: boolean
 ): Promise<void> {
-  const { time, clipsAtTime, trackMap } = ctx;
+  const { time } = ctx;
 
-  // PARALLEL DECODE MODE
+  // PARALLEL DECODE MODE - no HTMLVideoElement seeking needed!
+  // ParallelDecoder provides VideoFrames directly, much faster than seeking videos
   if (useParallelDecode && parallelDecoder) {
     await parallelDecoder.prefetchFramesForTime(time);
-
-    // Handle composition clips not in parallel decode
-    const seekPromises: Promise<void>[] = [];
-
-    for (const clip of clipsAtTime) {
-      const track = trackMap.get(clip.trackId);
-      if (!track?.visible) continue;
-
-      // Handle nested composition clips
-      if (clip.isComposition && clip.nestedClips && clip.nestedTracks) {
-        const clipLocalTime = time - clip.startTime;
-        const nestedTime = clipLocalTime + (clip.inPoint || 0);
-
-        for (const nestedClip of clip.nestedClips) {
-          if (nestedTime >= nestedClip.startTime && nestedTime < nestedClip.startTime + nestedClip.duration) {
-            if (nestedClip.source?.videoElement) {
-              // Skip if parallel decoder handles this
-              if (parallelDecoder.hasClip(nestedClip.id)) continue;
-
-              const nestedLocalTime = nestedTime - nestedClip.startTime;
-              const nestedClipTime = nestedClip.reversed
-                ? nestedClip.outPoint - nestedLocalTime
-                : nestedLocalTime + nestedClip.inPoint;
-              seekPromises.push(seekVideo(nestedClip.source.videoElement, nestedClipTime));
-            }
-          }
-        }
-      }
-    }
-
-    if (seekPromises.length > 0) {
-      await Promise.all(seekPromises);
-    }
-
     parallelDecoder.advanceToTime(time);
     return;
   }
 
-  // SEQUENTIAL MODE
+  // SEQUENTIAL MODE (single clip only)
   await seekSequentialMode(ctx, clipStates);
 }
 
@@ -195,50 +162,31 @@ export function seekVideo(video: HTMLVideoElement, time: number): Promise<void> 
 export async function waitForAllVideosReady(
   ctx: FrameContext,
   clipStates: Map<string, ExportClipState>,
-  parallelDecoder: ParallelDecodeManager | null,
+  _parallelDecoder: ParallelDecodeManager | null,
   useParallelDecode: boolean
 ): Promise<void> {
+  // PARALLEL DECODE MODE - frames are already ready from prefetchFramesForTime
+  // No need to wait for HTMLVideoElement
+  if (useParallelDecode) {
+    return;
+  }
+
+  // SEQUENTIAL MODE - wait for WebCodecs player (not HTMLVideoElement)
   const { clipsAtTime, trackMap } = ctx;
 
   const videoClips = clipsAtTime.filter(clip => {
     const track = trackMap.get(clip.trackId);
-    return track?.visible && clip.source?.type === 'video' && clip.source.videoElement;
+    return track?.visible && clip.source?.type === 'video';
   });
 
   if (videoClips.length === 0) return;
 
-  // Filter out clips using WebCodecs or parallel decode
-  const htmlVideoClips = videoClips.filter(clip => {
+  // Only wait for sequential WebCodecs clips
+  for (const clip of videoClips) {
     const clipState = clipStates.get(clip.id);
-    if (clipState?.isSequential) return false;
-    if (useParallelDecode && parallelDecoder?.hasClip(clip.id)) return false;
-    return true;
-  });
-
-  if (htmlVideoClips.length === 0) return;
-
-  // Wait for HTMLVideoElement clips using setTimeout for export reliability
-  const maxWaitTime = 100;
-  const startWait = performance.now();
-
-  while (performance.now() - startWait < maxWaitTime) {
-    let allReady = true;
-
-    for (const clip of htmlVideoClips) {
-      const video = clip.source!.videoElement!;
-      if (video.readyState < 2 || video.seeking) {
-        allReady = false;
-        break;
-      }
+    if (clipState?.isSequential && clipState.webCodecsPlayer) {
+      // WebCodecs player handles its own frame readiness
+      continue;
     }
-
-    if (allReady) {
-      await new Promise(r => setTimeout(r, 16));
-      return;
-    }
-
-    await new Promise(r => setTimeout(r, 16));
   }
-
-  log.warn(`Timeout waiting for videos to be ready at time ${ctx.time}`);
 }

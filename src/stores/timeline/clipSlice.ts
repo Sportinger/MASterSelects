@@ -20,8 +20,10 @@ import { createImageClipPlaceholder, loadImageMedia } from './clip/addImageClip'
 import {
   createCompClipPlaceholder,
   loadNestedClips,
-  generateCompThumbnails,
   createCompLinkedAudioClip,
+  createNestedContentHash,
+  calculateNestedClipBoundaries,
+  buildClipSegments,
 } from './clip/addCompClip';
 import { completeDownload as completeDownloadImpl } from './clip/completeDownload';
 import {
@@ -32,6 +34,61 @@ import {
 } from './helpers/idGenerator';
 import { blobUrlManager } from './helpers/blobUrlManager';
 import { updateClipById } from './helpers/clipStateHelpers';
+import { thumbnailRenderer } from '../../services/thumbnailRenderer';
+
+// Debounce map for thumbnail regeneration per clip
+const thumbnailDebounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const THUMBNAIL_DEBOUNCE_MS = 500; // Wait 500ms after last change before regenerating
+
+/**
+ * Debounced thumbnail regeneration for a clip with effects.
+ * Only regenerates after changes stop for THUMBNAIL_DEBOUNCE_MS.
+ */
+async function regenerateClipThumbnails(
+  clipId: string,
+  getClip: () => TimelineClip | undefined,
+  setClips: (updater: (clips: TimelineClip[]) => TimelineClip[]) => void
+): Promise<void> {
+  // Clear any existing debounce timer for this clip
+  const existingTimer = thumbnailDebounceTimers.get(clipId);
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+  }
+
+  // Set new debounce timer
+  const timer = setTimeout(async () => {
+    thumbnailDebounceTimers.delete(clipId);
+
+    const clip = getClip();
+    if (!clip || !clip.source) {
+      return;
+    }
+
+    // Skip composition clips - they have their own thumbnail generation
+    if (clip.isComposition) {
+      return;
+    }
+
+    // Skip audio-only clips
+    if (clip.source.type === 'audio') {
+      return;
+    }
+
+    log.debug('Regenerating thumbnails for clip with effects', { clipId: clip.id, name: clip.name });
+
+    try {
+      const thumbnails = await thumbnailRenderer.generateClipThumbnails(clip, { count: 10 });
+      if (thumbnails.length > 0) {
+        setClips(clips => updateClipById(clips, clipId, { thumbnails }));
+        log.debug('Updated thumbnails for clip', { clipId, count: thumbnails.length });
+      }
+    } catch (e) {
+      log.warn('Failed to regenerate clip thumbnails', e);
+    }
+  }, THUMBNAIL_DEBOUNCE_MS);
+
+  thumbnailDebounceTimers.set(clipId, timer);
+}
 
 export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
   addClip: async (trackId, file, startTime, providedDuration, mediaFileId) => {
@@ -131,22 +188,41 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
     if (composition.timelineData) {
       const nestedClips = await loadNestedClips({ compClipId: compClip.id, composition, get, set });
       const nestedTracks = composition.timelineData.tracks;
+      const compDuration = composition.timelineData?.duration ?? composition.duration;
+
+      // Calculate clip boundaries for visual markers
+      const boundaries = calculateNestedClipBoundaries(composition.timelineData, compDuration);
 
       set({
         clips: get().clips.map(c =>
-          c.id === compClip.id ? { ...c, nestedClips, nestedTracks, isLoading: false } : c
+          c.id === compClip.id ? { ...c, nestedClips, nestedTracks, nestedClipBoundaries: boundaries, isLoading: false } : c
         ),
       });
 
-      // Generate thumbnails from first video
-      generateCompThumbnails({
-        clipId: compClip.id,
-        nestedClips,
-        compDuration: composition.timelineData?.duration ?? composition.duration,
-        thumbnailsEnabled,
-        get,
-        set,
-      });
+      // Build segment-based thumbnails (waits for nested clips to load)
+      if (thumbnailsEnabled) {
+        // Wait a bit for nested clip sources to load, then build segments
+        setTimeout(async () => {
+          // Get fresh nested clips (they may have updated sources now)
+          const freshCompClip = get().clips.find(c => c.id === compClip.id);
+          const freshNestedClips = freshCompClip?.nestedClips || nestedClips;
+
+          const clipSegments = await buildClipSegments(
+            composition.timelineData,
+            compDuration,
+            freshNestedClips
+          );
+
+          if (clipSegments.length > 0) {
+            set({
+              clips: get().clips.map(c =>
+                c.id === compClip.id ? { ...c, clipSegments } : c
+              ),
+            });
+            log.info('Set clip segments for nested comp', { clipId: compClip.id, segmentCount: clipSegments.length });
+          }
+        }, 500); // Wait for video elements to load
+      }
     }
 
     // Create linked audio clip (always, even if no audio)
@@ -382,7 +458,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
   },
 
   updateClipTransform: (id, transform) => {
-    const { clips, invalidateCache } = get();
+    const { clips, invalidateCache, thumbnailsEnabled } = get();
     set({
       clips: clips.map(c => {
         if (c.id !== id) return c;
@@ -399,6 +475,15 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
       }),
     });
     invalidateCache();
+
+    // Regenerate thumbnails with new transform (debounced)
+    if (thumbnailsEnabled) {
+      regenerateClipThumbnails(
+        id,
+        () => get().clips.find(c => c.id === id),
+        (updater) => set({ clips: updater(get().clips) })
+      );
+    }
   },
 
   // ========== TEXT CLIP ACTIONS ==========
@@ -484,7 +569,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
   // ========== EFFECT ACTIONS ==========
 
   addClipEffect: (clipId, effectType) => {
-    const { clips, invalidateCache } = get();
+    const { clips, invalidateCache, thumbnailsEnabled } = get();
     const effect: Effect = {
       id: generateEffectId(),
       name: effectType,
@@ -494,16 +579,34 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
     };
     set({ clips: clips.map(c => c.id === clipId ? { ...c, effects: [...(c.effects || []), effect] } : c) });
     invalidateCache();
+
+    // Regenerate thumbnails with new effect (debounced)
+    if (thumbnailsEnabled) {
+      regenerateClipThumbnails(
+        clipId,
+        () => get().clips.find(c => c.id === clipId),
+        (updater) => set({ clips: updater(get().clips) })
+      );
+    }
   },
 
   removeClipEffect: (clipId, effectId) => {
-    const { clips, invalidateCache } = get();
+    const { clips, invalidateCache, thumbnailsEnabled } = get();
     set({ clips: clips.map(c => c.id === clipId ? { ...c, effects: c.effects.filter(e => e.id !== effectId) } : c) });
     invalidateCache();
+
+    // Regenerate thumbnails without the effect (debounced)
+    if (thumbnailsEnabled) {
+      regenerateClipThumbnails(
+        clipId,
+        () => get().clips.find(c => c.id === clipId),
+        (updater) => set({ clips: updater(get().clips) })
+      );
+    }
   },
 
   updateClipEffect: (clipId, effectId, params) => {
-    const { clips, invalidateCache } = get();
+    const { clips, invalidateCache, thumbnailsEnabled } = get();
     set({
       clips: clips.map(c =>
         c.id === clipId
@@ -512,10 +615,19 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
       ),
     });
     invalidateCache();
+
+    // Regenerate thumbnails with updated effect (debounced)
+    if (thumbnailsEnabled) {
+      regenerateClipThumbnails(
+        clipId,
+        () => get().clips.find(c => c.id === clipId),
+        (updater) => set({ clips: updater(get().clips) })
+      );
+    }
   },
 
   setClipEffectEnabled: (clipId, effectId, enabled) => {
-    const { clips, invalidateCache } = get();
+    const { clips, invalidateCache, thumbnailsEnabled } = get();
     set({
       clips: clips.map(c =>
         c.id === clipId
@@ -524,6 +636,15 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
       ),
     });
     invalidateCache();
+
+    // Regenerate thumbnails with effect toggled (debounced)
+    if (thumbnailsEnabled) {
+      regenerateClipThumbnails(
+        clipId,
+        () => get().clips.find(c => c.id === clipId),
+        (updater) => set({ clips: updater(get().clips) })
+      );
+    }
   },
 
   // ========== MULTICAM / LINKED GROUP ACTIONS ==========
@@ -705,5 +826,118 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
 
   setDownloadError: (clipId, error) => {
     set({ clips: updateClipById(get().clips, clipId, { downloadError: error, isPendingDownload: false }) });
+  },
+
+  // Refresh nested clips when source composition changes
+  refreshCompClipNestedData: async (sourceCompositionId: string) => {
+    const { clips, invalidateCache } = get();
+
+    log.info('refreshCompClipNestedData called', {
+      sourceCompositionId,
+      totalClips: clips.length,
+      compClips: clips.filter(c => c.isComposition).map(c => ({
+        id: c.id,
+        name: c.name,
+        compositionId: c.compositionId,
+      })),
+    });
+
+    // Find all comp clips that reference this composition
+    const compClips = clips.filter(c => c.isComposition && c.compositionId === sourceCompositionId);
+    if (compClips.length === 0) {
+      log.info('No comp clips found referencing this composition');
+      return;
+    }
+
+    // Get the updated composition
+    const { useMediaStore } = await import('../mediaStore');
+    const composition = useMediaStore.getState().compositions.find(c => c.id === sourceCompositionId);
+    if (!composition?.timelineData) {
+      log.debug('No timelineData for composition', { sourceCompositionId });
+      return;
+    }
+
+    // Create a content hash to detect changes (clips, effects, duration)
+    const newContentHash = createNestedContentHash(composition.timelineData);
+
+    log.info('Refreshing nested clips for composition', {
+      compositionId: sourceCompositionId,
+      compositionName: composition.name,
+      affectedClips: compClips.length,
+      newClipCount: composition.timelineData.clips.length,
+      newTrackCount: composition.timelineData.tracks.length,
+    });
+
+    // Reload nested clips for each comp clip
+    for (const compClip of compClips) {
+      // Check if content actually changed (compare hashes)
+      const oldContentHash = compClip.nestedContentHash;
+      const needsThumbnailUpdate = oldContentHash !== newContentHash;
+
+      // Load updated nested clips
+      const nestedClips = await loadNestedClips({
+        compClipId: compClip.id,
+        composition,
+        get,
+        set,
+      });
+      const nestedTracks = composition.timelineData.tracks;
+      const compDuration = composition.timelineData?.duration ?? composition.duration;
+
+      // Calculate clip boundaries for visual markers
+      const nestedClipBoundaries = calculateNestedClipBoundaries(composition.timelineData, compDuration);
+
+      // Update the comp clip with new nested data, content hash, and boundaries
+      // IMPORTANT: Preserve existing clipSegments if no thumbnail update needed
+      set({
+        clips: get().clips.map(c =>
+          c.id === compClip.id
+            ? {
+                ...c,
+                nestedClips,
+                nestedTracks,
+                nestedContentHash: newContentHash,
+                nestedClipBoundaries,
+                // Keep existing clipSegments if not regenerating
+                clipSegments: needsThumbnailUpdate ? undefined : c.clipSegments,
+              }
+            : c
+        ),
+      });
+
+      // Only regenerate thumbnails if content actually changed
+      if (needsThumbnailUpdate && get().thumbnailsEnabled) {
+        // Wait a bit for nested clip sources to load, then build segments
+        setTimeout(async () => {
+          // Get fresh nested clips (they may have updated sources now)
+          const freshCompClip = get().clips.find(c => c.id === compClip.id);
+          const freshNestedClips = freshCompClip?.nestedClips || nestedClips;
+
+          const clipSegments = await buildClipSegments(
+            composition.timelineData,
+            compDuration,
+            freshNestedClips
+          );
+
+          if (clipSegments.length > 0) {
+            set({
+              clips: get().clips.map(c =>
+                c.id === compClip.id ? { ...c, clipSegments } : c
+              ),
+            });
+            log.info('Updated clip segments for nested comp', {
+              clipId: compClip.id,
+              segmentCount: clipSegments.length,
+            });
+          }
+        }, 500); // Wait for video elements to load
+      } else {
+        log.debug('Skipped segment regeneration (no content change or thumbnails disabled)', {
+          compClipId: compClip.id,
+        });
+      }
+    }
+
+    invalidateCache();
   },
 });

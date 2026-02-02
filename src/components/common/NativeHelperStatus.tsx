@@ -49,8 +49,11 @@ export function NativeHelperStatus() {
   }, [turboModeEnabled, setNativeHelperConnected]);
 
   // Check on mount and when turbo mode changes
+  // This effect syncs with external NativeHelper service state
   useEffect(() => {
-    checkConnection();
+    // Use void to explicitly mark fire-and-forget async call
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void checkConnection();
 
     // Subscribe to status changes
     const unsubscribe = NativeHelperClient.onStatusChange((newStatus) => {
@@ -59,7 +62,7 @@ export function NativeHelperStatus() {
     });
 
     // Periodic check every 30 seconds (less aggressive)
-    const interval = setInterval(checkConnection, 30000);
+    const interval = setInterval(() => void checkConnection(), 30000);
 
     return () => {
       unsubscribe();
@@ -119,10 +122,12 @@ function NativeHelperDialog({
   const isMac = platform === 'mac';
 
   // Fetch system info when connected
+  // This effect syncs UI state with external NativeHelper info
   useEffect(() => {
     if (status === 'connected') {
       NativeHelperClient.getInfo().then(setInfo).catch(() => setInfo(null));
     } else {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setInfo(null);
     }
   }, [status]);
@@ -213,24 +218,38 @@ function NativeHelperDialog({
                     <span className="info-feature-icon">v{info.version}</span>
                     <span>Helper Version</span>
                   </div>
-                  <div className="info-feature">
-                    <span className="info-feature-icon">{info.cache_used_mb}MB</span>
-                    <span>Cache Used ({info.cache_max_mb}MB max)</span>
-                  </div>
-                  {info.hw_accel.length > 0 && (
+                  {/* Full helper shows cache and hw accel info */}
+                  {info.cache_used_mb !== undefined && (
+                    <div className="info-feature">
+                      <span className="info-feature-icon">{info.cache_used_mb}MB</span>
+                      <span>Cache Used ({info.cache_max_mb}MB max)</span>
+                    </div>
+                  )}
+                  {info.hw_accel && info.hw_accel.length > 0 && (
                     <div className="info-feature">
                       <span className="info-feature-icon">HW</span>
                       <span>{info.hw_accel.join(', ')}</span>
                     </div>
                   )}
-                  <div className="info-feature">
-                    <span className="info-feature-icon">{info.open_files}</span>
-                    <span>Open Files</span>
-                  </div>
+                  {info.open_files !== undefined && (
+                    <div className="info-feature">
+                      <span className="info-feature-icon">{info.open_files}</span>
+                      <span>Open Files</span>
+                    </div>
+                  )}
+                  {/* Lite helper (Windows) shows YouTube availability */}
+                  {(info as any).lite && (
+                    <div className="info-feature">
+                      <span className="info-feature-icon">{(info as any).ytdlp_available ? '✓' : '✗'}</span>
+                      <span>YouTube Downloads</span>
+                    </div>
+                  )}
                 </div>
 
                 <p className="text-xs text-green-400 text-center pt-2">
-                  ProRes and DNxHD files will decode at native speed
+                  {(info as any).lite
+                    ? 'YouTube downloads enabled'
+                    : 'ProRes and DNxHD files will decode at native speed'}
                 </p>
               </div>
             ) : turboModeEnabled ? (

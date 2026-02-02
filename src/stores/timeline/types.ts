@@ -112,6 +112,12 @@ export interface TimelineState {
 
   // Timeline markers
   markers: TimelineMarker[];
+
+  // Clip entrance animation key (increments on composition switch to trigger animations)
+  clipEntranceAnimationKey: number;
+
+  // Clip animation phase for enter/exit transitions
+  clipAnimationPhase: 'idle' | 'exiting' | 'entering';
 }
 
 // Track actions interface
@@ -163,6 +169,8 @@ export interface ClipActions {
   updateDownloadProgress: (clipId: string, progress: number) => void;
   completeDownload: (clipId: string, file: File) => Promise<void>;
   setDownloadError: (clipId: string, error: string) => void;
+  // Refresh nested clips when source composition changes
+  refreshCompClipNestedData: (sourceCompositionId: string) => Promise<void>;
 }
 
 // Playback actions interface
@@ -186,6 +194,8 @@ export interface PlaybackActions {
   // Tool mode
   setToolMode: (mode: TimelineToolMode) => void;
   toggleCutTool: () => void;
+  // Clip animation phase for composition transitions
+  setClipAnimationPhase: (phase: 'idle' | 'exiting' | 'entering') => void;
 }
 
 // RAM Preview actions interface
@@ -267,6 +277,48 @@ export interface MarkerActions {
   clearMarkers: () => void;
 }
 
+// Clipboard data for copy/paste
+export interface ClipboardClipData {
+  // Serializable clip data (without DOM elements)
+  id: string;
+  trackId: string;
+  trackType: 'video' | 'audio';
+  name: string;
+  mediaFileId?: string;
+  startTime: number;
+  duration: number;
+  inPoint: number;
+  outPoint: number;
+  sourceType: 'video' | 'audio' | 'image' | 'text';
+  naturalDuration?: number;
+  transform: ClipTransform;
+  effects: Effect[];
+  masks?: ClipMask[];
+  keyframes?: Keyframe[];
+  linkedClipId?: string;
+  reversed?: boolean;
+  speed?: number;
+  preservesPitch?: boolean;
+  textProperties?: import('../../types').TextClipProperties;
+  // Visual data (thumbnails, waveforms)
+  thumbnails?: string[];
+  waveform?: number[];
+  // Composition clips
+  isComposition?: boolean;
+  compositionId?: string;
+}
+
+export interface ClipboardState {
+  clipboardData: ClipboardClipData[] | null;
+}
+
+// Clipboard actions interface
+export interface ClipboardActions {
+  copyClips: () => void;
+  pasteClips: () => void;
+  hasClipboardData: () => boolean;
+}
+
 // Mask actions interface
 export interface MaskActions {
   setMaskEditMode: (mode: MaskEditMode) => void;
@@ -308,6 +360,7 @@ export interface TimelineUtils {
 // Combined store interface
 export interface TimelineStore extends
   TimelineState,
+  ClipboardState,
   TrackActions,
   ClipActions,
   PlaybackActions,
@@ -318,6 +371,7 @@ export interface TimelineStore extends
   LayerActions,
   MaskActions,
   MarkerActions,
+  ClipboardActions,
   TimelineUtils {}
 
 // Slice creator type

@@ -476,7 +476,7 @@ export function MediaPanel() {
                   filesWithHandles.push({ file, handle });
                   log.debug('Got file handle from drop', { name: file.name });
                 }
-              } catch (err) {
+              } catch {
                 // Fallback to regular file
                 const file = item.getAsFile();
                 if (file) filesWithoutHandles.push(file);
@@ -738,7 +738,7 @@ export function MediaPanel() {
       onDrop={handleRootDrop}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
-      onClick={() => { contextMenu && closeContextMenu(); }}
+      onClick={() => { if (contextMenu) closeContextMenu(); }}
     >
       {/* Header */}
       <div className="media-panel-header">

@@ -131,13 +131,22 @@ export class WebGPUEngine {
     await this.effectsPipeline.createPipelines();
     await this.outputPipeline.createPipeline();
 
+    // Small delay to let Vulkan memory manager settle after pipeline creation
     await new Promise(resolve => setTimeout(resolve, 100));
 
     // Initialize extracted modules
     this.renderTargetManager = new RenderTargetManager(device);
+
+    // Create black texture first (tiny - 1x1 pixel)
     this.renderTargetManager.createBlackTexture((r, g, b, a) =>
       this.context.createSolidColorTexture(r, g, b, a)
     );
+
+    // Another small delay before large texture allocation
+    // Critical for Vulkan on Linux - memory manager needs time to settle
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    // Create ping-pong textures last (largest memory allocation)
     this.renderTargetManager.createPingPongTextures();
 
     const { width, height } = this.renderTargetManager.getResolution();
@@ -558,7 +567,7 @@ export class WebGPUEngine {
         hasNestedComps = true;
         const nc = data.layer.source.nestedComposition;
         const view = this.nestedCompRenderer!.preRender(
-          nc.compositionId, nc.layers, nc.width, nc.height, preRenderEncoder, this.sampler
+          nc.compositionId, nc.layers, nc.width, nc.height, preRenderEncoder, this.sampler, nc.currentTime
         );
         if (view) data.textureView = view;
       }
@@ -741,7 +750,9 @@ export class WebGPUEngine {
       const sourceAspect = data.sourceWidth / data.sourceHeight;
       const outputAspect = width / height;
       const maskLookupId = layer.maskClipId || layer.id;
-      const maskInfo = this.maskTextureManager?.getMaskInfo(maskLookupId) ?? { hasMask: false, view: this.maskTextureManager?.getWhiteMaskView()! };
+      // Get mask info - maskTextureManager should always exist during rendering
+      const maskManager = this.maskTextureManager!;
+      const maskInfo = maskManager.getMaskInfo(maskLookupId) ?? { hasMask: false, view: maskManager.getWhiteMaskView() };
       const hasMask = maskInfo.hasMask;
       const maskTextureView = maskInfo.view;
 

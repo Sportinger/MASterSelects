@@ -144,7 +144,8 @@ export function useLayerSync({
 
       const layers: Layer[] = [];
 
-      for (let i = nestedVideoTracks.length - 1; i >= 0; i--) {
+      // Iterate forwards to maintain correct layer order (track 0 = bottom, track N = top)
+      for (let i = 0; i < nestedVideoTracks.length; i++) {
         const nestedTrack = nestedVideoTracks[i];
         const nestedClip = clip.nestedClips.find(
           (nc) =>
@@ -638,7 +639,9 @@ export function useLayerSync({
                 });
             }
 
-            if (cached?.image) {
+            // Try nearest cached frame for smooth scrubbing, then fall back to previous frame
+            const nearestOrCachedImage = proxyFrameCache.getNearestCachedFrame(mediaFile.id, frameIndex, 30) || cached?.image;
+            if (nearestOrCachedImage) {
               const transform = getInterpolatedTransform(clip.id, keyframeLocalTime);
               newLayers[layerIndex] = {
                 id: `timeline_layer_${layerIndex}`,
@@ -648,7 +651,7 @@ export function useLayerSync({
                 blendMode: transform.blendMode,
                 source: {
                   type: 'image',
-                  imageElement: cached.image,
+                  imageElement: nearestOrCachedImage,
                 },
                 effects: interpolatedEffectsForProxy,
                 position: { x: transform.position.x, y: transform.position.y, z: transform.position.z },

@@ -90,7 +90,7 @@ export class OutputWindowManager {
       if (context) {
         context.configure({
           device,
-          format: 'bgra8unorm',
+          format: navigator.gpu.getPreferredCanvasFormat(),
           alphaMode: 'premultiplied',
         });
       }

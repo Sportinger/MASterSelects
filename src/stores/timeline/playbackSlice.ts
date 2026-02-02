@@ -575,4 +575,9 @@ export const createPlaybackSlice: SliceCreator<PlaybackAndRamPreviewActions> = (
     const { toolMode } = get();
     set({ toolMode: toolMode === 'cut' ? 'select' : 'cut' });
   },
+
+  // Clip animation phase for composition transitions
+  setClipAnimationPhase: (phase: 'idle' | 'exiting' | 'entering') => {
+    set({ clipAnimationPhase: phase });
+  },
 });

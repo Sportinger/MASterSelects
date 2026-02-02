@@ -1,7 +1,7 @@
 // LayerBuilderService - Main orchestrator for layer building
 // Uses modular components for caching, transforms, and audio sync
 
-import type { TimelineClip, TimelineTrack, Layer, Effect, NestedCompositionData } from '../../types';
+import type { TimelineClip, Layer, NestedCompositionData, BlendMode, ClipTransform } from '../../types';
 import type { FrameContext, NativeDecoderState } from './types';
 import { LAYER_BUILDER_CONSTANTS } from './types';
 import { playheadState } from './PlayheadState';
@@ -11,6 +11,9 @@ import { TransformCache } from './TransformCache';
 import { AudioSyncHandler, createAudioSyncState, finalizeAudioSync, resumeAudioContextIfNeeded } from './AudioSyncHandler';
 import { proxyFrameCache } from '../proxyFrameCache';
 import { Logger } from '../logger';
+import { getInterpolatedClipTransform } from '../../utils/keyframeInterpolation';
+import { useTimelineStore } from '../../stores/timeline';
+import { DEFAULT_TRANSFORM } from '../../stores/timeline/constants';
 
 const log = Logger.create('LayerBuilder');
 
@@ -41,10 +44,6 @@ export class LayerBuilderService {
 
   // Lookahead preloading
   private lastLookaheadTime = 0;
-  private primedNestedVideos = new Set<string>();
-
-  // Debug
-  private debugFrameCount = 0;
 
   // Active audio proxies tracking
   private activeAudioProxies = new Map<string, HTMLAudioElement>();
@@ -163,6 +162,7 @@ export class LayerBuilderService {
       layers: nestedLayers,
       width: compWidth,
       height: compHeight,
+      currentTime: ctx.playheadPosition,
     };
 
     const layer: Layer = {
@@ -170,7 +170,7 @@ export class LayerBuilderService {
       name: clip.name,
       visible: true,
       opacity: transform.opacity,
-      blendMode: transform.blendMode,
+      blendMode: transform.blendMode as BlendMode,
       source: { type: 'image', nestedComposition: nestedCompData },
       effects,
       position: transform.position,
@@ -198,7 +198,7 @@ export class LayerBuilderService {
       name: clip.name,
       visible: true,
       opacity: transform.opacity,
-      blendMode: transform.blendMode,
+      blendMode: transform.blendMode as BlendMode,
       source: { type: 'video', nativeDecoder: clip.source!.nativeDecoder },
       effects,
       position: transform.position,
@@ -235,7 +235,7 @@ export class LayerBuilderService {
       name: clip.name,
       visible: true,
       opacity: transform.opacity,
-      blendMode: transform.blendMode,
+      blendMode: transform.blendMode as BlendMode,
       source: {
         type: 'video',
         videoElement: clip.source!.videoElement,
@@ -285,12 +285,19 @@ export class LayerBuilderService {
       return this.buildImageLayerFromElement(clip, layerIndex, cachedFrame, clipTime, ctx);
     }
 
+    // Try to get nearest cached frame for smooth scrubbing
+    const nearestFrame = proxyFrameCache.getNearestCachedFrame(mediaFile.id, frameIndex, 30);
+    if (nearestFrame) {
+      return this.buildImageLayerFromElement(clip, layerIndex, nearestFrame, clipTime, ctx);
+    }
+
     // Use previous cached frame as fallback
     const cached = this.proxyFramesRef.get(cacheKey);
     if (cached?.image) {
       return this.buildImageLayerFromElement(clip, layerIndex, cached.image, clipTime, ctx);
     }
 
+    // No proxy frame available - return null to fall back to video
     return null;
   }
 
@@ -310,7 +317,7 @@ export class LayerBuilderService {
       name: clip.name,
       visible: true,
       opacity: transform.opacity,
-      blendMode: transform.blendMode,
+      blendMode: transform.blendMode as BlendMode,
       source: { type: 'image', imageElement: clip.source!.imageElement },
       effects,
       position: transform.position,
@@ -343,7 +350,7 @@ export class LayerBuilderService {
       name: clip.name,
       visible: true,
       opacity: transform.opacity,
-      blendMode: transform.blendMode,
+      blendMode: transform.blendMode as BlendMode,
       source: { type: 'image', imageElement },
       effects,
       position: transform.position,
@@ -371,7 +378,7 @@ export class LayerBuilderService {
       name: clip.name,
       visible: true,
       opacity: transform.opacity,
-      blendMode: transform.blendMode,
+      blendMode: transform.blendMode as BlendMode,
       source: { type: 'text', textCanvas: clip.source!.textCanvas },
       effects,
       position: transform.position,
@@ -404,23 +411,27 @@ export class LayerBuilderService {
 
     // Debug: log nested clip info once per second
     if (Math.floor(ctx.now / 1000) !== Math.floor((ctx.now - 16) / 1000)) {
-      log.debug('buildNestedLayers', {
+      log.info('buildNestedLayers', {
         compClipId: clip.id,
         clipTime,
+        nestedTrackCount: clip.nestedTracks.length,
+        nestedVideoTrackCount: nestedVideoTracks.length,
+        nestedTracks: clip.nestedTracks.map(t => ({ id: t.id, type: t.type, visible: t.visible })),
         nestedClipCount: clip.nestedClips.length,
         nestedClips: clip.nestedClips.map(nc => ({
           id: nc.id,
           name: nc.name,
+          trackId: nc.trackId,
+          startTime: nc.startTime,
+          duration: nc.duration,
           isLoading: nc.isLoading,
           hasVideoElement: !!nc.source?.videoElement,
-          hasWebCodecs: !!nc.source?.webCodecsPlayer,
-          hasImageElement: !!nc.source?.imageElement,
-          videoReadyState: nc.source?.videoElement?.readyState,
         })),
       });
     }
 
-    for (let i = nestedVideoTracks.length - 1; i >= 0; i--) {
+    // Iterate forwards to maintain correct layer order (track 0 = bottom, track N = top)
+    for (let i = 0; i < nestedVideoTracks.length; i++) {
       const nestedTrack = nestedVideoTracks[i];
       const nestedClip = clip.nestedClips.find(
         nc =>
@@ -431,13 +442,11 @@ export class LayerBuilderService {
 
       if (!nestedClip) continue;
 
+      // nestedLocalTime is the time within the clip (0 to duration) - used for keyframe interpolation
       const nestedLocalTime = clipTime - nestedClip.startTime;
-      const nestedClipTime = nestedClip.reversed
-        ? nestedClip.outPoint - nestedLocalTime
-        : nestedLocalTime + nestedClip.inPoint;
 
-      // Build layer based on source type
-      const nestedLayer = this.buildNestedClipLayer(nestedClip, nestedClipTime, ctx);
+      // Build layer based on source type (pass nestedLocalTime for keyframe interpolation)
+      const nestedLayer = this.buildNestedClipLayer(nestedClip, nestedLocalTime, ctx);
       if (nestedLayer) {
         layers.push(nestedLayer);
       }
@@ -449,14 +458,67 @@ export class LayerBuilderService {
   /**
    * Build layer for a nested clip
    */
-  private buildNestedClipLayer(nestedClip: TimelineClip, nestedClipTime: number, ctx: FrameContext): Layer | null {
-    const transform = nestedClip.transform || {
-      position: { x: 0, y: 0, z: 0 },
-      scale: { x: 1, y: 1 },
-      rotation: { x: 0, y: 0, z: 0 },
-      opacity: 1,
-      blendMode: 'normal' as const,
+  private buildNestedClipLayer(nestedClip: TimelineClip, nestedClipLocalTime: number, _ctx: FrameContext): Layer | null {
+    // Get keyframes directly from the store (nested clips aren't in ctx.clips, so we can't use ctx.getInterpolatedTransform)
+    const { clipKeyframes } = useTimelineStore.getState();
+    const keyframes = clipKeyframes.get(nestedClip.id) || [];
+
+    // Build base transform from the nested clip's static transform
+    const baseTransform: ClipTransform = {
+      opacity: nestedClip.transform?.opacity ?? DEFAULT_TRANSFORM.opacity,
+      blendMode: nestedClip.transform?.blendMode ?? DEFAULT_TRANSFORM.blendMode,
+      position: {
+        x: nestedClip.transform?.position?.x ?? DEFAULT_TRANSFORM.position.x,
+        y: nestedClip.transform?.position?.y ?? DEFAULT_TRANSFORM.position.y,
+        z: nestedClip.transform?.position?.z ?? DEFAULT_TRANSFORM.position.z,
+      },
+      scale: {
+        x: nestedClip.transform?.scale?.x ?? DEFAULT_TRANSFORM.scale.x,
+        y: nestedClip.transform?.scale?.y ?? DEFAULT_TRANSFORM.scale.y,
+      },
+      rotation: {
+        x: nestedClip.transform?.rotation?.x ?? DEFAULT_TRANSFORM.rotation.x,
+        y: nestedClip.transform?.rotation?.y ?? DEFAULT_TRANSFORM.rotation.y,
+        z: nestedClip.transform?.rotation?.z ?? DEFAULT_TRANSFORM.rotation.z,
+      },
     };
+
+    // Interpolate transform using keyframes (supports opacity fades, position animations, etc.)
+    const transform = keyframes.length > 0
+      ? getInterpolatedClipTransform(keyframes, nestedClipLocalTime, baseTransform)
+      : baseTransform;
+
+    // Interpolate effect parameters if there are effect keyframes
+    const effectKeyframes = keyframes.filter(k => k.property.startsWith('effect.'));
+    let effects = nestedClip.effects || [];
+    if (effectKeyframes.length > 0 && effects.length > 0) {
+      effects = effects.map(effect => {
+        const newParams = { ...effect.params };
+        Object.keys(effect.params).forEach(paramName => {
+          if (typeof effect.params[paramName] !== 'number') return;
+          const propertyKey = `effect.${effect.id}.${paramName}`;
+          const paramKeyframes = effectKeyframes.filter(k => k.property === propertyKey);
+          if (paramKeyframes.length > 0) {
+            // Simple linear interpolation for effect params
+            const sorted = [...paramKeyframes].sort((a, b) => a.time - b.time);
+            if (nestedClipLocalTime <= sorted[0].time) {
+              newParams[paramName] = sorted[0].value;
+            } else if (nestedClipLocalTime >= sorted[sorted.length - 1].time) {
+              newParams[paramName] = sorted[sorted.length - 1].value;
+            } else {
+              for (let i = 0; i < sorted.length - 1; i++) {
+                if (nestedClipLocalTime >= sorted[i].time && nestedClipLocalTime <= sorted[i + 1].time) {
+                  const t = (nestedClipLocalTime - sorted[i].time) / (sorted[i + 1].time - sorted[i].time);
+                  newParams[paramName] = sorted[i].value + t * (sorted[i + 1].value - sorted[i].value);
+                  break;
+                }
+              }
+            }
+          }
+        });
+        return { ...effect, params: newParams };
+      });
+    }
 
     const baseLayer = {
       id: `nested-layer-${nestedClip.id}`,
@@ -464,7 +526,7 @@ export class LayerBuilderService {
       visible: true,
       opacity: transform.opacity ?? 1,
       blendMode: transform.blendMode || 'normal',
-      effects: nestedClip.effects || [],
+      effects,
       position: {
         x: transform.position?.x || 0,
         y: transform.position?.y || 0,
@@ -628,6 +690,8 @@ export class LayerBuilderService {
 
   /**
    * Sync nested composition video elements
+   * Uses same logic as regular clips: play during playback, seek when paused
+   * Also ensures videos have decoded frames (readyState >= 2) for rendering
    */
   private syncNestedCompVideos(compClip: TimelineClip, ctx: FrameContext): void {
     if (!compClip.nestedClips || !compClip.nestedTracks) return;
@@ -640,7 +704,9 @@ export class LayerBuilderService {
       if (!nestedClip.source?.videoElement) continue;
 
       // Check if nested clip is active at current comp time
-      if (compTime < nestedClip.startTime || compTime >= nestedClip.startTime + nestedClip.duration) {
+      const isActive = compTime >= nestedClip.startTime && compTime < nestedClip.startTime + nestedClip.duration;
+
+      if (!isActive) {
         // Pause if not active
         if (!nestedClip.source.videoElement.paused) {
           nestedClip.source.videoElement.pause();
@@ -658,23 +724,64 @@ export class LayerBuilderService {
       const webCodecsPlayer = nestedClip.source.webCodecsPlayer;
       const timeDiff = Math.abs(video.currentTime - nestedClipTime);
 
-      // Always pause nested videos (we render frame by frame)
-      if (!video.paused) video.pause();
+      // During playback: let video play naturally (like regular clips)
+      if (ctx.isPlaying) {
+        if (video.paused) {
+          video.play().catch(() => {});
+        }
+        // Only seek if significantly out of sync (>0.5s)
+        if (timeDiff > 0.5) {
+          video.currentTime = nestedClipTime;
+        }
+      } else {
+        // When paused: pause video and seek to exact time
+        if (!video.paused) video.pause();
 
-      // Seek if needed
-      const seekThreshold = ctx.isDraggingPlayhead ? 0.1 : 0.05;
-      if (timeDiff > seekThreshold) {
-        this.throttledSeek(nestedClip.id, video, nestedClipTime, ctx);
+        const seekThreshold = ctx.isDraggingPlayhead ? 0.1 : 0.05;
+        if (timeDiff > seekThreshold) {
+          this.throttledSeek(nestedClip.id, video, nestedClipTime, ctx);
+        }
+
+        // If video readyState < 2 (no frame data), force decode via play/pause
+        // This can happen after seeking to unbuffered regions
+        if (video.readyState < 2 && !video.seeking) {
+          this.forceNestedVideoFrameDecode(nestedClip.id, video);
+        }
       }
 
-      // Seek WebCodecsPlayer for nested clips (critical for video preview)
-      if (webCodecsPlayer) {
+      // Sync WebCodecsPlayer only when not playing (it handles its own playback)
+      if (webCodecsPlayer && !ctx.isPlaying) {
         const wcTimeDiff = Math.abs(webCodecsPlayer.currentTime - nestedClipTime);
-        if (wcTimeDiff > seekThreshold) {
+        if (wcTimeDiff > 0.05) {
           webCodecsPlayer.seek(nestedClipTime);
         }
       }
     }
+  }
+
+  // Track which videos are being force-decoded to avoid duplicate calls
+  private forceDecodeInProgress = new Set<string>();
+
+  /**
+   * Force video to decode current frame by briefly playing
+   * Used when video readyState drops below 2 after seeking
+   */
+  private forceNestedVideoFrameDecode(clipId: string, video: HTMLVideoElement): void {
+    if (this.forceDecodeInProgress.has(clipId)) return;
+    this.forceDecodeInProgress.add(clipId);
+
+    const currentTime = video.currentTime;
+    video.play()
+      .then(() => {
+        video.pause();
+        video.currentTime = currentTime;
+        this.forceDecodeInProgress.delete(clipId);
+      })
+      .catch(() => {
+        // Fallback: tiny seek to trigger decode
+        video.currentTime = currentTime + 0.001;
+        this.forceDecodeInProgress.delete(clipId);
+      });
   }
 
   /**

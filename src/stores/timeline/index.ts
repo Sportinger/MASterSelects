@@ -10,11 +10,13 @@ import { useMediaStore } from '../mediaStore';
 
 import { createTrackSlice } from './trackSlice';
 import { createClipSlice } from './clipSlice';
+import { calculateNestedClipBoundaries, buildClipSegments } from './clip/addCompClip';
 import { createPlaybackSlice } from './playbackSlice';
 import { createSelectionSlice } from './selectionSlice';
 import { createKeyframeSlice } from './keyframeSlice';
 import { createMaskSlice } from './maskSlice';
 import { createMarkerSlice } from './markerSlice';
+import { createClipboardSlice } from './clipboardSlice';
 import { projectFileService } from '../../services/projectFileService';
 import type { ClipAnalysis, FrameAnalysisData } from '../../types';
 import { Logger } from '../../services/logger';
@@ -36,6 +38,7 @@ export const useTimelineStore = create<TimelineStore>()(
     const keyframeActions = createKeyframeSlice(set, get);
     const maskActions = createMaskSlice(set, get);
     const markerActions = createMarkerSlice(set, get);
+    const clipboardActions = createClipboardSlice(set, get);
 
     // Utils that need to be defined inline due to cross-dependencies
     const utils: TimelineUtils = {
@@ -377,13 +380,19 @@ export const useTimelineStore = create<TimelineStore>()(
         // Convert clips to serializable format (without DOM elements)
         const mediaStore = useMediaStore.getState();
         const serializableClips: SerializableClip[] = clips.map(clip => {
-          // Find the mediaFile ID by matching the file name in mediaStore
-          // For linked audio clips (name ends with "(Audio)"), strip the suffix to find the video file
-          let lookupName = clip.name;
-          if (clip.linkedClipId && clip.source?.type === 'audio' && lookupName.endsWith(' (Audio)')) {
-            lookupName = lookupName.replace(' (Audio)', '');
+          // Use existing mediaFileId if available, otherwise lookup by name
+          let resolvedMediaFileId = clip.source?.mediaFileId || '';
+
+          if (!resolvedMediaFileId && !clip.isComposition) {
+            // Fallback: Find the mediaFile ID by matching the file name in mediaStore
+            // For linked audio clips (name ends with "(Audio)"), strip the suffix to find the video file
+            let lookupName = clip.name;
+            if (clip.linkedClipId && clip.source?.type === 'audio' && lookupName.endsWith(' (Audio)')) {
+              lookupName = lookupName.replace(' (Audio)', '');
+            }
+            const mediaFile = mediaStore.files.find(f => f.name === lookupName);
+            resolvedMediaFileId = mediaFile?.id || '';
           }
-          const mediaFile = mediaStore.files.find(f => f.name === lookupName);
 
           // Get keyframes for this clip
           const keyframes = clipKeyframes.get(clip.id) || [];
@@ -392,7 +401,7 @@ export const useTimelineStore = create<TimelineStore>()(
             id: clip.id,
             trackId: clip.trackId,
             name: clip.name,
-            mediaFileId: clip.isComposition ? '' : (mediaFile?.id || ''), // Comp clips don't have media files
+            mediaFileId: clip.isComposition ? '' : resolvedMediaFileId, // Comp clips don't have media files
             startTime: clip.startTime,
             duration: clip.duration,
             inPoint: clip.inPoint,
@@ -469,6 +478,8 @@ export const useTimelineStore = create<TimelineStore>()(
         }
 
         // Restore tracks and basic state
+        // Increment animation key to trigger entrance animations on clips
+        const { clipEntranceAnimationKey } = get();
         set({
           tracks: data.tracks.map(t => ({ ...t })),
           clips: [], // We'll restore clips separately
@@ -490,6 +501,8 @@ export const useTimelineStore = create<TimelineStore>()(
           expandedCurveProperties: new Map<string, Set<import('../../types').AnimatableProperty>>(),
           // Restore markers
           markers: data.markers || [],
+          // Increment animation key for clip entrance animations
+          clipEntranceAnimationKey: clipEntranceAnimationKey + 1,
         });
 
         // Restore keyframes from serialized clips
@@ -625,32 +638,72 @@ export const useTimelineStore = create<TimelineStore>()(
                 const nestedClips: TimelineClip[] = [];
                 const nestedTracks = composition.timelineData.tracks;
 
+                log.info('Loading nested clips for comp', {
+                  compClipId: compClip.id,
+                  compositionId: composition.id,
+                  compositionName: composition.name,
+                  nestedClipCount: composition.timelineData.clips.length,
+                  nestedClips: composition.timelineData.clips.map((c: SerializableClip) => ({
+                    id: c.id,
+                    name: c.name,
+                    trackId: c.trackId,
+                    mediaFileId: c.mediaFileId,
+                    sourceType: c.sourceType,
+                  })),
+                  availableMediaFiles: mediaStore.files.map(f => ({ id: f.id, name: f.name, hasFile: !!f.file })),
+                });
+
                 for (const nestedSerializedClip of composition.timelineData.clips) {
                   const nestedMediaFile = mediaStore.files.find(f => f.id === nestedSerializedClip.mediaFileId);
-                  if (!nestedMediaFile || !nestedMediaFile.file) continue;
+                  const hasFile = !!(nestedMediaFile?.file);
 
+                  if (!nestedMediaFile) {
+                    log.warn('Skipping nested clip - media file entry not found', {
+                      clipName: nestedSerializedClip.name,
+                      trackId: nestedSerializedClip.trackId,
+                      mediaFileId: nestedSerializedClip.mediaFileId,
+                    });
+                    continue;
+                  }
+
+                  // Create the nested clip - even if file is missing (will need reload)
                   const nestedClip: TimelineClip = {
                     id: `nested-${compClip.id}-${nestedSerializedClip.id}`,
                     trackId: nestedSerializedClip.trackId,
                     name: nestedSerializedClip.name,
-                    file: nestedMediaFile.file,
+                    file: nestedMediaFile.file || new File([], nestedSerializedClip.name),
                     startTime: nestedSerializedClip.startTime,
                     duration: nestedSerializedClip.duration,
                     inPoint: nestedSerializedClip.inPoint,
                     outPoint: nestedSerializedClip.outPoint,
-                    source: null,
+                    source: hasFile ? null : {
+                      type: nestedSerializedClip.sourceType || 'video',
+                      naturalDuration: nestedSerializedClip.naturalDuration || nestedSerializedClip.duration,
+                      mediaFileId: nestedSerializedClip.mediaFileId,
+                    },
                     thumbnails: nestedSerializedClip.thumbnails,
                     transform: nestedSerializedClip.transform,
                     effects: nestedSerializedClip.effects || [],
-                    masks: nestedSerializedClip.masks || [],  // Copy masks from source clip
-                    isLoading: true,
+                    masks: nestedSerializedClip.masks || [],
+                    isLoading: hasFile,
+                    needsReload: !hasFile,
                   };
 
                   nestedClips.push(nestedClip);
 
+                  // Only load media element if file is available
+                  if (!hasFile) {
+                    log.warn('Nested clip needs reload - file not available', {
+                      clipName: nestedSerializedClip.name,
+                      trackId: nestedSerializedClip.trackId,
+                      mediaFileId: nestedSerializedClip.mediaFileId,
+                    });
+                    continue;
+                  }
+
                   // Load media element
                   const nestedType = nestedSerializedClip.sourceType;
-                  const nestedFileRef = nestedMediaFile.file!;  // Capture for use in callbacks
+                  const nestedFileRef = nestedMediaFile.file!;
                   const nestedFileUrl = URL.createObjectURL(nestedFileRef);
 
                   if (nestedType === 'video') {
@@ -661,13 +714,52 @@ export const useTimelineStore = create<TimelineStore>()(
                     video.preload = 'auto';
                     video.crossOrigin = 'anonymous';
 
-                    video.addEventListener('canplaythrough', async () => {
+                    // Force browser to start loading
+                    video.load();
+
+                    video.addEventListener('loadedmetadata', async () => {
+                      // Force browser to decode actual video frames by playing briefly
+                      // This ensures readyState reaches HAVE_CURRENT_DATA (2) or higher
+                      try {
+                        await video.play();
+                        video.pause();
+                        video.currentTime = 0;
+
+                        // Wait for the seek to complete and frame to be decoded
+                        await new Promise<void>((resolve) => {
+                          const checkReady = () => {
+                            if (video.readyState >= 2) {
+                              resolve();
+                            } else {
+                              requestAnimationFrame(checkReady);
+                            }
+                          };
+                          video.addEventListener('seeked', () => {
+                            checkReady();
+                          }, { once: true });
+                          checkReady();
+                        });
+                      } catch (e) {
+                        // play() might fail due to autoplay policy, try alternative approach
+                        log.debug('Play failed for nested video, trying seek approach', { nestedClipId: nestedClip.id, error: e });
+                        video.currentTime = 0.001;
+                        await new Promise<void>((resolve) => {
+                          const onSeeked = () => {
+                            video.removeEventListener('seeked', onSeeked);
+                            resolve();
+                          };
+                          video.addEventListener('seeked', onSeeked);
+                          setTimeout(resolve, 500);
+                        });
+                      }
+
                       // Set up basic video source first
-                      nestedClip.source = {
+                      const videoSource: TimelineClip['source'] = {
                         type: 'video',
                         videoElement: video,
                         naturalDuration: video.duration,
                       };
+                      nestedClip.source = videoSource;
                       nestedClip.isLoading = false;
 
                       // Initialize WebCodecsPlayer for hardware-accelerated decoding
@@ -698,9 +790,30 @@ export const useTimelineStore = create<TimelineStore>()(
                         }
                       }
 
-                      // Trigger update
-                      const currentClips = get().clips;
-                      set({ clips: [...currentClips] });
+                      log.info('Nested video loaded', {
+                        nestedClipId: nestedClip.id,
+                        nestedClipName: nestedClip.name,
+                        compClipId: compClip.id,
+                        hasSource: !!nestedClip.source,
+                        hasVideoElement: !!nestedClip.source?.videoElement,
+                        readyState: video.readyState,
+                      });
+
+                      // Properly update state with the new nested clip source
+                      // This ensures React/Zustand detects the change
+                      set(state => ({
+                        clips: state.clips.map(c => {
+                          if (c.id !== compClip.id || !c.nestedClips) return c;
+                          return {
+                            ...c,
+                            nestedClips: c.nestedClips.map(nc =>
+                              nc.id === nestedClip.id
+                                ? { ...nc, source: nestedClip.source, isLoading: false }
+                                : nc
+                            ),
+                          };
+                        }),
+                      }));
                     }, { once: true });
                   } else if (nestedType === 'image') {
                     const img = new Image();
@@ -711,20 +824,71 @@ export const useTimelineStore = create<TimelineStore>()(
                         imageElement: img,
                       };
                       nestedClip.isLoading = false;
-                      const currentClips = get().clips;
-                      set({ clips: [...currentClips] });
+
+                      log.info('Nested image loaded', {
+                        nestedClipId: nestedClip.id,
+                        nestedClipName: nestedClip.name,
+                        compClipId: compClip.id,
+                      });
+
+                      // Properly update state with the new nested clip source
+                      set(state => ({
+                        clips: state.clips.map(c => {
+                          if (c.id !== compClip.id || !c.nestedClips) return c;
+                          return {
+                            ...c,
+                            nestedClips: c.nestedClips.map(nc =>
+                              nc.id === nestedClip.id
+                                ? { ...nc, source: nestedClip.source, isLoading: false }
+                                : nc
+                            ),
+                          };
+                        }),
+                      }));
                     }, { once: true });
                   }
                 }
 
-                // Update comp clip with nested data
+                // Calculate clip boundaries for visual markers and thumbnail alignment
+                const compDuration = composition.timelineData?.duration ?? composition.duration;
+                const boundaries = calculateNestedClipBoundaries(composition.timelineData, compDuration);
+
+                // Update comp clip with nested data and boundaries
                 set(state => ({
                   clips: state.clips.map(c =>
                     c.id === compClip.id
-                      ? { ...c, nestedClips, nestedTracks, isLoading: false }
+                      ? { ...c, nestedClips, nestedTracks, nestedClipBoundaries: boundaries, isLoading: false }
                       : c
                   ),
                 }));
+
+                // Always generate clip segments on project load (new segment-based thumbnail system)
+                if (get().thumbnailsEnabled) {
+                  // Wait for nested clip sources to load, then build segments
+                  setTimeout(async () => {
+                    // Get fresh nested clips (they may have updated sources now)
+                    const freshCompClip = get().clips.find(c => c.id === compClip.id);
+                    const freshNestedClips = freshCompClip?.nestedClips || nestedClips;
+
+                    const clipSegments = await buildClipSegments(
+                      composition.timelineData,
+                      compDuration,
+                      freshNestedClips
+                    );
+
+                    if (clipSegments.length > 0) {
+                      set(state => ({
+                        clips: state.clips.map(c =>
+                          c.id === compClip.id ? { ...c, clipSegments } : c
+                        ),
+                      }));
+                      log.info('Built clip segments on project load', {
+                        clipId: compClip.id,
+                        segmentCount: clipSegments.length,
+                      });
+                    }
+                  }, 1000); // Wait longer on project load for all videos to load
+                }
               } else {
                 // No timeline data
                 set(state => ({
@@ -1091,6 +1255,15 @@ export const useTimelineStore = create<TimelineStore>()(
 
       // Timeline markers
       markers: [] as import('./types').TimelineMarker[],
+
+      // Clip entrance animation key (increments on composition switch)
+      clipEntranceAnimationKey: 0,
+
+      // Clip animation phase for enter/exit transitions
+      clipAnimationPhase: 'idle' as const,
+
+      // Clipboard state for copy/paste
+      clipboardData: null as import('./types').ClipboardClipData[] | null,
     };
 
     // Layer actions (render layers for engine, moved from mixerStore)
@@ -1133,6 +1306,7 @@ export const useTimelineStore = create<TimelineStore>()(
       ...layerActions,
       ...maskActions,
       ...markerActions,
+      ...clipboardActions,
       ...utils,
     };
   })

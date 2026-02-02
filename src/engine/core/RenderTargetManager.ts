@@ -25,7 +25,7 @@ export class RenderTargetManager {
   }
 
   createPingPongTextures(): void {
-    // Destroy existing textures
+    // Destroy existing textures first to free memory
     this.pingTexture?.destroy();
     this.pongTexture?.destroy();
     this.independentPingTexture?.destroy();
@@ -41,14 +41,18 @@ export class RenderTargetManager {
     this.independentPingView = null;
     this.independentPongView = null;
 
+    log.info(`Creating ping-pong textures at ${this.outputWidth}x${this.outputHeight}`);
+
     try {
       // Main render loop ping-pong buffers
+      log.debug('Creating ping texture...');
       this.pingTexture = this.device.createTexture({
         size: [this.outputWidth, this.outputHeight],
         format: 'rgba8unorm',
         usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
       });
 
+      log.debug('Creating pong texture...');
       this.pongTexture = this.device.createTexture({
         size: [this.outputWidth, this.outputHeight],
         format: 'rgba8unorm',
@@ -56,12 +60,14 @@ export class RenderTargetManager {
       });
 
       // Independent preview ping-pong buffers
+      log.debug('Creating independent ping texture...');
       this.independentPingTexture = this.device.createTexture({
         size: [this.outputWidth, this.outputHeight],
         format: 'rgba8unorm',
         usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
       });
 
+      log.debug('Creating independent pong texture...');
       this.independentPongTexture = this.device.createTexture({
         size: [this.outputWidth, this.outputHeight],
         format: 'rgba8unorm',
@@ -77,6 +83,8 @@ export class RenderTargetManager {
         this.independentPingView = this.independentPingTexture.createView();
         this.independentPongView = this.independentPongTexture.createView();
       }
+
+      log.info('Ping-pong textures created successfully');
     } catch (e) {
       log.error('Failed to create ping-pong textures', e);
     }

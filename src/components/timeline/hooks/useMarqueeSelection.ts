@@ -203,6 +203,7 @@ export function useMarqueeSelection({
         target.closest('.playhead') ||
         target.closest('.in-out-marker') ||
         target.closest('.trim-handle') ||
+        target.closest('.fade-handle') ||
         target.closest('.track-header') ||
         target.closest('.keyframe-diamond')
       ) {

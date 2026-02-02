@@ -32,7 +32,7 @@ export function DockTabPane({ group }: DockTabPaneProps) {
   const [holdingTabId, setHoldingTabId] = useState<string | null>(null);
   const [holdProgress, setHoldProgress] = useState<'idle' | 'holding' | 'ready' | 'fading'>('idle');
 
-  const { setActiveTab, startDrag, updateDrag, dragState, setPanelZoom, layout } = useDockStore();
+  const { setActiveTab, startDrag, updateDrag, dragState, setPanelZoom, layout, activatePanelType } = useDockStore();
   const {
     getOpenCompositions,
     activeCompositionId,
@@ -449,7 +449,10 @@ export function DockTabPane({ group }: DockTabPaneProps) {
                 className={`dock-tab ${comp.id === activeCompositionId ? 'active' : ''} ${
                   draggedCompIndex === index ? 'dragging' : ''
                 } ${dropTargetIndex === index ? 'drop-target-tab' : ''}`}
-                onClick={() => setActiveComposition(comp.id)}
+                onClick={() => {
+                  setActiveComposition(comp.id);
+                  activatePanelType('media');
+                }}
                 title={comp.name}
                 draggable
                 onDragStart={(e) => handleCompDragStart(e, index)}

@@ -116,7 +116,7 @@ async function getMP4Info(file: File): Promise<Partial<MediaInfo>> {
       }
     }, 5000);
 
-    mp4boxFile.onReady = (info) => {
+    mp4boxFile.onReady = (info: any) => {
       if (resolved) return;
       resolved = true;
       clearTimeout(timeout);
@@ -138,7 +138,7 @@ async function getMP4Info(file: File): Promise<Partial<MediaInfo>> {
       });
     };
 
-    mp4boxFile.onError = (error) => {
+    mp4boxFile.onError = (error: any) => {
       if (resolved) return;
       resolved = true;
       clearTimeout(timeout);
@@ -196,7 +196,7 @@ export async function getMediaInfo(
   // For MP4/MOV/M4V, use mp4box for accurate codec detection
   const useMP4Box = type === 'video' && ['mp4', 'mov', 'm4v', 'mp4v', '3gp'].includes(ext || '');
 
-  return new Promise(async (resolve) => {
+  return new Promise((resolve) => {
     const timeout = setTimeout(() => {
       log.warn('Timeout:', file.name);
       resolve({ container, fileSize });

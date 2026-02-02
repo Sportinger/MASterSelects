@@ -104,10 +104,29 @@ export interface StoredProject {
 class ProjectDatabase {
   private db: IDBDatabase | null = null;
   private initPromise: Promise<IDBDatabase> | null = null;
+  private initFailed = false;
+
+  // Check if IndexedDB is available
+  isAvailable(): boolean {
+    return this.db !== null && !this.initFailed;
+  }
+
+  // Reset the init failure flag to allow retry
+  resetInitFailure(): void {
+    this.initFailed = false;
+    this.initPromise = null;
+    log.info('IndexedDB init failure flag reset - will retry on next access');
+  }
+
+  // Check if init has failed (for UI to show retry option)
+  hasInitFailed(): boolean {
+    return this.initFailed;
+  }
 
   // Initialize the database
   async init(): Promise<IDBDatabase> {
     if (this.db) return this.db;
+    if (this.initFailed) throw new Error('IndexedDB previously failed to initialize');
     if (this.initPromise) return this.initPromise;
 
     this.initPromise = new Promise((resolve, reject) => {
@@ -115,11 +134,14 @@ class ProjectDatabase {
 
       request.onerror = () => {
         log.error('Failed to open IndexedDB', request.error);
+        this.initFailed = true;
+        this.initPromise = null; // Allow retry on next call
         reject(request.error);
       };
 
       request.onsuccess = () => {
         this.db = request.result;
+        this.initFailed = false;
         log.info('Database opened successfully');
         resolve(this.db);
       };

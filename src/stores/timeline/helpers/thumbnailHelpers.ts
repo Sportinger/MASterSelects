@@ -17,6 +17,7 @@ export interface ThumbnailOptions {
 /**
  * Generate thumbnails from a video element.
  * Used for video clips and composition clips.
+ * Now covers 0% to 100% of duration.
  */
 export async function generateVideoThumbnails(
   video: HTMLVideoElement,
@@ -48,16 +49,19 @@ export async function generateVideoThumbnails(
 
   // Calculate number of thumbnails (more for longer videos, up to maxCount)
   const thumbCount = Math.max(1, Math.min(maxCount, Math.ceil(duration / intervalSeconds)));
-  const interval = duration / thumbCount;
 
+  // Generate from 0% to 100% of duration
   for (let i = 0; i < thumbCount; i++) {
-    const time = i * interval;
+    // Use (thumbCount - 1) as divisor so last thumbnail is at 100%
+    const time = thumbCount > 1 ? (i / (thumbCount - 1)) * duration : 0;
+    // Clamp to slightly before end to avoid seek issues
+    const clampedTime = Math.min(time, duration - 0.01);
     try {
-      await seekVideo(video, time);
+      await seekVideo(video, clampedTime);
       ctx.drawImage(video, 0, 0, thumbWidth, thumbHeight);
       thumbnails.push(canvas.toDataURL('image/jpeg', quality));
     } catch (e) {
-      log.warn('Thumbnail failed at time', { time, error: e });
+      log.warn('Thumbnail failed at time', { time: clampedTime, error: e });
     }
   }
 
@@ -90,6 +94,7 @@ export function generateImageThumbnail(
 
 /**
  * Generate thumbnails for YouTube/downloaded video with specific sizing.
+ * Now covers 0% to 100% of duration.
  */
 export async function generateDownloadThumbnails(
   video: HTMLVideoElement,
@@ -105,8 +110,10 @@ export async function generateDownloadThumbnails(
   if (!ctx) return thumbnails;
 
   for (let i = 0; i < thumbCount; i++) {
-    const time = (i / thumbCount) * duration;
-    video.currentTime = time;
+    // Use (thumbCount - 1) as divisor so last thumbnail is at 100%
+    const time = thumbCount > 1 ? (i / (thumbCount - 1)) * duration : 0;
+    // Clamp to slightly before end to avoid seek issues
+    video.currentTime = Math.min(time, duration - 0.01);
     await new Promise<void>(resolve => {
       video.onseeked = () => {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);

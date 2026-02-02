@@ -351,19 +351,158 @@ const AnalysisOverlay = memo(function AnalysisOverlay({
   );
 });
 
+// FadeCurve - Renders SVG bezier curve showing opacity fade
+// Note: Not using memo() here to ensure re-render on keyframe changes
+function FadeCurve({
+  keyframes,
+  clipDuration,
+  width,
+  height,
+}: {
+  keyframes: Array<{
+    time: number;
+    value: number;
+    easing: string;
+    handleIn?: { x: number; y: number };
+    handleOut?: { x: number; y: number };
+  }>;
+  clipDuration: number;
+  width: number;
+  height: number;
+}) {
+  if (keyframes.length < 2 || width <= 0 || height <= 0) return null;
+
+  // Sort keyframes by time
+  const sorted = [...keyframes].sort((a, b) => a.time - b.time);
+
+  // Build SVG path
+  const timeToX = (t: number) => (t / clipDuration) * width;
+  const valueToY = (v: number) => height - v * height; // Invert Y (0 at bottom, 1 at top)
+
+  // Generate path segments between keyframes
+  const pathSegments: string[] = [];
+
+  // Start from the first keyframe
+  const firstKf = sorted[0];
+  pathSegments.push(`M ${timeToX(firstKf.time)} ${valueToY(firstKf.value)}`);
+
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const kf1 = sorted[i];
+    const kf2 = sorted[i + 1];
+
+    const x1 = timeToX(kf1.time);
+    const y1 = valueToY(kf1.value);
+    const x2 = timeToX(kf2.time);
+    const y2 = valueToY(kf2.value);
+
+    const duration = kf2.time - kf1.time;
+
+    // Determine control points based on easing type
+    let cp1x: number, cp1y: number, cp2x: number, cp2y: number;
+
+    if (kf1.easing === 'bezier' && kf1.handleOut && kf2.handleIn) {
+      // Custom bezier handles
+      cp1x = timeToX(kf1.time + kf1.handleOut.x);
+      cp1y = valueToY(kf1.value + kf1.handleOut.y);
+      cp2x = timeToX(kf2.time + kf2.handleIn.x);
+      cp2y = valueToY(kf2.value + kf2.handleIn.y);
+    } else {
+      // Standard easing curves (cubic-bezier approximations)
+      switch (kf1.easing) {
+        case 'ease-in':
+          // Slow start, fast end: (0.42, 0, 1, 1)
+          cp1x = x1 + duration * 0.42 * (width / clipDuration);
+          cp1y = y1;
+          cp2x = x2;
+          cp2y = y2;
+          break;
+        case 'ease-out':
+          // Fast start, slow end: (0, 0, 0.58, 1)
+          cp1x = x1;
+          cp1y = y1;
+          cp2x = x1 + duration * 0.58 * (width / clipDuration);
+          cp2y = y2;
+          break;
+        case 'ease-in-out':
+          // Slow start and end: (0.42, 0, 0.58, 1)
+          cp1x = x1 + duration * 0.42 * (width / clipDuration);
+          cp1y = y1;
+          cp2x = x1 + duration * 0.58 * (width / clipDuration);
+          cp2y = y2;
+          break;
+        case 'linear':
+        default:
+          // Linear: straight line (use same point for both control points)
+          cp1x = x1 + (x2 - x1) / 3;
+          cp1y = y1 + (y2 - y1) / 3;
+          cp2x = x1 + (x2 - x1) * 2 / 3;
+          cp2y = y1 + (y2 - y1) * 2 / 3;
+          break;
+      }
+    }
+
+    pathSegments.push(`C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${x2} ${y2}`);
+  }
+
+  const curvePath = pathSegments.join(' ');
+
+  // Create filled area path (curve + bottom edge)
+  const lastKf = sorted[sorted.length - 1];
+  const fillPath = `${curvePath} L ${timeToX(lastKf.time)} ${height} L ${timeToX(firstKf.time)} ${height} Z`;
+
+  return (
+    <svg
+      className="fade-curve-svg"
+      width={width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="none"
+    >
+      {/* Filled area under curve */}
+      <path
+        d={fillPath}
+        fill="rgba(0, 0, 0, 0.4)"
+        stroke="none"
+      />
+      {/* Curve line */}
+      <path
+        d={curvePath}
+        fill="none"
+        stroke="rgba(251, 191, 36, 0.9)"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      {/* Keyframe dots */}
+      {sorted.map((kf, i) => (
+        <circle
+          key={i}
+          cx={timeToX(kf.time)}
+          cy={valueToY(kf.value)}
+          r="3"
+          fill="rgba(251, 191, 36, 1)"
+        />
+      ))}
+    </svg>
+  );
+}
+
 function TimelineClipComponent({
   clip,
   trackId,
   track,
+  tracks,
   clips,
   isSelected,
   isInLinkedGroup,
   isDragging,
   isTrimming,
+  isFading,
   isLinkedToDragging,
   isLinkedToTrimming,
   clipDrag,
   clipTrim,
+  clipFade: _clipFade,
   zoom,
   scrollX,
   timelineRef,
@@ -380,8 +519,12 @@ function TimelineClipComponent({
   onDoubleClick,
   onContextMenu,
   onTrimStart,
+  onFadeStart,
   onCutAtPosition,
   hasKeyframes,
+  fadeInDuration,
+  fadeOutDuration,
+  opacityKeyframes,
   timeToPixel,
   pixelToTime,
   formatTime,
@@ -390,6 +533,27 @@ function TimelineClipComponent({
   onSetClipParent,
 }: TimelineClipProps) {
   const thumbnails = clip.thumbnails || [];
+
+  // Animation phase for enter/exit transitions
+  const clipAnimationPhase = useTimelineStore(s => s.clipAnimationPhase);
+  const clipEntranceKey = useTimelineStore(s => s.clipEntranceAnimationKey);
+  const mountKeyRef = useRef(clipEntranceKey);
+
+  // Calculate stagger delay based on track index (vertical) + startTime (horizontal)
+  const trackIndex = track ? tracks.findIndex(t => t.id === track.id) : 0;
+  // 80ms per track + 20ms per second of timeline position
+  const animationDelay = (trackIndex * 0.08) + Math.min(clip.startTime * 0.02, 0.5);
+
+  // Determine animation class:
+  // - 'exiting': apply exit animation
+  // - New clips (mounted with current key): apply entrance animation
+  // - Otherwise: no animation
+  const isNewClip = mountKeyRef.current === clipEntranceKey && clipEntranceKey > 0;
+  const animationClass = clipAnimationPhase === 'exiting'
+    ? 'exit-animate'
+    : isNewClip
+      ? 'entrance-animate'
+      : '';
 
   // Check if this clip should show cut indicator (either directly hovered or linked to hovered clip)
   const isDirectlyHovered = cutHoverInfo?.clipId === clip.id;
@@ -523,6 +687,7 @@ function TimelineClipComponent({
     isLinkedToDragging ? 'linked-dragging' : '',
     isTrimming ? 'trimming' : '',
     isLinkedToTrimming ? 'linked-trimming' : '',
+    isFading ? 'fading' : '',
     isDragging && clipDrag?.forcingOverlap ? 'forcing-overlap' : '',
     clipTypeClass,
     clip.isLoading ? 'loading' : '',
@@ -619,8 +784,13 @@ function TimelineClipComponent({
 
   return (
     <div
-      className={`${clipClass}${toolMode === 'cut' ? ' cut-mode' : ''}`}
-      style={{ left, width, cursor: toolMode === 'cut' ? 'crosshair' : undefined }}
+      className={`${clipClass}${toolMode === 'cut' ? ' cut-mode' : ''} ${animationClass}`}
+      style={{
+        left,
+        width,
+        cursor: toolMode === 'cut' ? 'crosshair' : undefined,
+        animationDelay: `${animationDelay}s`,
+      }}
       data-clip-id={clip.id}
       onMouseDown={toolMode === 'cut' ? undefined : onMouseDown}
       onDoubleClick={toolMode === 'cut' ? undefined : onDoubleClick}
@@ -733,8 +903,53 @@ function TimelineClipComponent({
           <span>Generating audio...</span>
         </div>
       )}
-      {/* Thumbnail filmstrip - only for non-audio clips */}
-      {thumbnails.length > 0 && !isAudioClip && (
+      {/* Segment-based thumbnails for nested compositions */}
+      {clip.isComposition && clip.clipSegments && clip.clipSegments.length > 0 && !isAudioClip && (
+        <div className="clip-thumbnails clip-thumbnails-segments">
+          {clip.clipSegments.map((segment, segIdx) => {
+            const segmentWidth = (segment.endNorm - segment.startNorm) * 100;
+            const segmentLeft = segment.startNorm * 100;
+            // Calculate how many thumbnails fit in this segment
+            const segmentThumbCount = Math.max(1, Math.ceil((segmentWidth / 100) * visibleThumbs));
+
+            return (
+              <div
+                key={segIdx}
+                className="clip-segment"
+                style={{
+                  position: 'absolute',
+                  left: `${segmentLeft}%`,
+                  width: `${segmentWidth}%`,
+                  height: '100%',
+                  display: 'flex',
+                  overflow: 'hidden',
+                }}
+              >
+                {segment.thumbnails.length > 0 ? (
+                  Array.from({ length: segmentThumbCount }).map((_, i) => {
+                    const thumbIndex = Math.floor((i / segmentThumbCount) * segment.thumbnails.length);
+                    const thumb = segment.thumbnails[Math.min(thumbIndex, segment.thumbnails.length - 1)];
+                    return (
+                      <img
+                        key={i}
+                        src={thumb}
+                        alt=""
+                        className="clip-thumb"
+                        draggable={false}
+                        style={{ flex: '1 0 auto', minWidth: 0, objectFit: 'cover' }}
+                      />
+                    );
+                  })
+                ) : (
+                  <div className="clip-segment-empty" style={{ width: '100%', height: '100%', background: '#1a1a1a' }} />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {/* Regular thumbnail filmstrip - for non-composition clips */}
+      {thumbnails.length > 0 && !isAudioClip && !(clip.isComposition && clip.clipSegments && clip.clipSegments.length > 0) && (
         <div className="clip-thumbnails">
           {Array.from({ length: visibleThumbs }).map((_, i) => {
             // Calculate thumbnail index based on displayInPoint/displayOutPoint (trim-aware, live during trim)
@@ -756,6 +971,18 @@ function TimelineClipComponent({
               />
             );
           })}
+        </div>
+      )}
+      {/* Nested composition clip boundary markers */}
+      {clip.isComposition && clip.nestedClipBoundaries && clip.nestedClipBoundaries.length > 0 && (
+        <div className="nested-clip-boundaries">
+          {clip.nestedClipBoundaries.map((boundary, i) => (
+            <div
+              key={i}
+              className="nested-boundary-line"
+              style={{ left: `${boundary * 100}%` }}
+            />
+          ))}
         </div>
       )}
       {/* Needs reload indicator */}
@@ -851,6 +1078,37 @@ function TimelineClipComponent({
           <div className="analyzing-progress" style={{ width: `${clip.analysisProgress || 0}%` }} />
         </div>
       )}
+      {/* Fade curve - SVG bezier curve showing opacity animation */}
+      {opacityKeyframes.length >= 2 && (
+        <div className="fade-curve-container">
+          <FadeCurve
+            key={opacityKeyframes.map(k => `${k.id}:${k.time.toFixed(3)}:${k.value}:${k.handleIn?.x ?? ''}:${k.handleIn?.y ?? ''}:${k.handleOut?.x ?? ''}:${k.handleOut?.y ?? ''}`).join('|')}
+            keyframes={opacityKeyframes}
+            clipDuration={displayDuration}
+            width={width}
+            height={track.height}
+          />
+        </div>
+      )}
+      {/* Fade handles - corner handles for adjusting fade-in/out */}
+      <div
+        className={`fade-handle left${fadeInDuration > 0 ? ' active' : ''}`}
+        style={fadeInDuration > 0 ? { left: timeToPixel(fadeInDuration) - 6 } : undefined}
+        onMouseDown={(e) => {
+          e.stopPropagation();
+          onFadeStart(e, 'left');
+        }}
+        title={fadeInDuration > 0 ? `Fade In: ${fadeInDuration.toFixed(2)}s` : 'Drag to add fade in'}
+      />
+      <div
+        className={`fade-handle right${fadeOutDuration > 0 ? ' active' : ''}`}
+        style={fadeOutDuration > 0 ? { right: timeToPixel(fadeOutDuration) - 6 } : undefined}
+        onMouseDown={(e) => {
+          e.stopPropagation();
+          onFadeStart(e, 'right');
+        }}
+        title={fadeOutDuration > 0 ? `Fade Out: ${fadeOutDuration.toFixed(2)}s` : 'Drag to add fade out'}
+      />
       {/* Trim handles */}
       <div
         className="trim-handle left"

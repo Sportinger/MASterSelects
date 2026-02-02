@@ -22,6 +22,10 @@ export class WebGPUContext {
   // Track if we're recovering from a device loss
   private isRecovering = false;
 
+  // Track recovery attempts to prevent infinite loops
+  private recoveryAttempts = 0;
+  private static readonly MAX_RECOVERY_ATTEMPTS = 3;
+
   async initialize(powerPreference?: GPUPowerPreference): Promise<boolean> {
     // Store the preference if provided
     if (powerPreference) {
@@ -61,12 +65,14 @@ export class WebGPUContext {
         return false;
       }
 
-      this.device = await this.adapter.requestDevice({
-        requiredFeatures: [],
-        requiredLimits: {
-          maxTextureDimension2D: 4096,
-        },
-      });
+      // Request device with minimal requirements to avoid Vulkan memory issues
+      // The default limits are usually sufficient for our needs
+      log.info('Requesting GPU device...');
+      this.device = await this.adapter.requestDevice();
+      log.info('GPU device created successfully');
+
+      // Small delay to let Vulkan driver fully initialize the device
+      await new Promise(resolve => setTimeout(resolve, 50));
 
       this.device.lost.then((info) => {
         log.error('Device lost', info.message);
@@ -81,15 +87,24 @@ export class WebGPUContext {
           }
         }
 
-        // Attempt auto-recovery after a short delay
+        // Attempt auto-recovery after a short delay (with retry limit)
         if (info.reason !== 'destroyed') {
-          log.info('Attempting device recovery...');
+          this.recoveryAttempts++;
+
+          if (this.recoveryAttempts > WebGPUContext.MAX_RECOVERY_ATTEMPTS) {
+            log.error(`Device recovery failed after ${WebGPUContext.MAX_RECOVERY_ATTEMPTS} attempts. Please reload the page.`);
+            this.isRecovering = false;
+            return;
+          }
+
+          log.info(`Attempting device recovery (attempt ${this.recoveryAttempts}/${WebGPUContext.MAX_RECOVERY_ATTEMPTS})...`);
           this.initPromise = null;
           this.isRecovering = true;
           setTimeout(async () => {
             const success = await this.initialize();
             if (success) {
               this.isRecovering = false;
+              this.recoveryAttempts = 0; // Reset on success
               // Notify listeners that device was restored
               for (const callback of this.deviceRestoredCallbacks) {
                 try {
@@ -124,6 +139,10 @@ export class WebGPUContext {
           log.warn('high-performance was requested but integrated GPU was selected! To fix: Open Windows Graphics Settings > Add Chrome/Edge > Options > High Performance');
         }
       }
+
+      // Log preferred canvas format - critical for Linux/Vulkan debugging
+      const preferredFormat = navigator.gpu.getPreferredCanvasFormat();
+      log.info(`Preferred canvas format: ${preferredFormat}`);
 
       log.info('Context initialized successfully');
       return true;
