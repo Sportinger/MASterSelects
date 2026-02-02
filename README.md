@@ -1,6 +1,6 @@
 <div align="center">
 
-# MASterSelects
+# MasterSelects
 
 ### Browser-based Video Compositor
 
