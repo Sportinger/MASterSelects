@@ -1,7 +1,7 @@
 // App version - INCREMENT ON EVERY COMMIT!
 // Format: MAJOR.MINOR.PATCH
 // Increment PATCH (0.0.X) for each commit
-export const APP_VERSION = '1.1.1';
+export const APP_VERSION = '1.1.2';
 
 // Build/Platform notice shown at top of changelog
 export const BUILD_NOTICE: {
@@ -55,6 +55,26 @@ interface RawChangeEntry extends ChangeEntry {
 }
 
 const RAW_CHANGELOG: RawChangeEntry[] = [
+  // === Feb 2, 2026 - Nested Comp Export Fixes ===
+  {
+    date: '2026-02-02',
+    type: 'fix',
+    title: 'Nested Comp Export',
+    description: 'Fixed opacity and keyframe animations not applied during export of nested compositions',
+  },
+  {
+    date: '2026-02-02',
+    type: 'fix',
+    title: 'Keyframe Interpolation',
+    description: 'Fixed nested clip keyframes not interpolating correctly - now lookups directly from store',
+  },
+  {
+    date: '2026-02-02',
+    type: 'new',
+    title: 'Windows Build Notice',
+    description: 'Changelog now shows platform compatibility notice at the top',
+  },
+
   // === Feb 1, 2026 - Big Feature Day ===
   {
     date: '2026-02-01',
