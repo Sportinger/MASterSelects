@@ -175,6 +175,11 @@ export class ParallelDecodeManager {
         // Create VideoDecoder immediately (don't wait for samples)
         const decoder = new VideoDecoder({
           output: (frame) => {
+            // Always close frame if cleanup has started
+            if (!this.isActive) {
+              frame.close();
+              return;
+            }
             const clipDecoder = this.clipDecoders.get(clipInfo.clipId);
             if (clipDecoder) {
               this.handleDecodedFrame(clipDecoder, frame);
@@ -184,6 +189,7 @@ export class ParallelDecodeManager {
             }
           },
           error: (e) => {
+            if (!this.isActive) return; // Ignore errors during cleanup
             log.error(`Decoder error for ${clipInfo.clipName}: ${e.message || e}`);
             // Don't throw - let decoding continue if possible
           },
@@ -267,6 +273,12 @@ export class ParallelDecodeManager {
    * Optimized: maintains sorted timestamp list for O(log n) lookups
    */
   private handleDecodedFrame(clipDecoder: ClipDecoder, frame: VideoFrame): void {
+    // If cleanup has started, immediately close the frame
+    if (!this.isActive) {
+      frame.close();
+      return;
+    }
+
     const timestamp = frame.timestamp;  // microseconds
     const sourceTime = timestamp / 1_000_000;  // convert to seconds
 
@@ -923,18 +935,36 @@ export class ParallelDecodeManager {
    * Cleanup all resources
    */
   cleanup(): void {
+    // Set inactive first - this ensures handleDecodedFrame closes any new frames
     this.isActive = false;
 
     for (const [, clipDecoder] of this.clipDecoders) {
+      // Reset decoder first to stop any pending decode operations
+      // This will cause output callback to fire for any buffered frames
+      try {
+        if (clipDecoder.decoder.state !== 'closed') {
+          clipDecoder.decoder.reset();
+        }
+      } catch (e) {
+        // Ignore reset errors
+      }
+
       // Close all buffered frames
       for (const [, decodedFrame] of clipDecoder.frameBuffer) {
-        decodedFrame.frame.close();
+        try {
+          decodedFrame.frame.close();
+        } catch (e) {
+          // Frame may already be closed
+        }
       }
       clipDecoder.frameBuffer.clear();
+      clipDecoder.sortedTimestamps = [];
 
       // Close decoder
       try {
-        clipDecoder.decoder.close();
+        if (clipDecoder.decoder.state !== 'closed') {
+          clipDecoder.decoder.close();
+        }
       } catch (e) {
         // Ignore close errors
       }
