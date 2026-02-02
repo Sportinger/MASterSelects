@@ -225,6 +225,7 @@ class ProxyGeneratorGPU {
     this.decodedFrames.clear();
     this.frameTimestamps = [];
 
+    // eslint-disable-next-line no-async-promise-executor
     return new Promise(async (resolve, reject) => {
       this.resolveGeneration = resolve;
 
@@ -328,6 +329,7 @@ class ProxyGeneratorGPU {
   }
 
   private async loadWithMP4Box(file: File): Promise<boolean> {
+    // eslint-disable-next-line no-async-promise-executor
     return new Promise(async (resolve) => {
       this.mp4File = MP4Box.createFile();
       const mp4File = this.mp4File!;
@@ -677,8 +679,8 @@ class ProxyGeneratorGPU {
 
     // Performance tracking
     const startTime = performance.now();
-    let totalGpuTime = 0;
-    let totalEncodeTime = 0;
+    let _totalGpuTime = 0;
+    let _totalEncodeTime = 0;
     let batchCount = 0;
     const dbBatch: { id: string; mediaFileId: string; frameIndex: number; blob: Blob }[] = [];
 
@@ -709,7 +711,7 @@ class ProxyGeneratorGPU {
           const gpuStart = performance.now();
           const pixelArrays = await this.resizePipeline!.processBatch(batchFrames);
           const gpuEnd = performance.now();
-          totalGpuTime += gpuEnd - gpuStart;
+          _totalGpuTime += gpuEnd - gpuStart;
 
           // CRITICAL: Close video frames immediately to release decoder buffer
           for (const frame of batchFrames) {
@@ -729,7 +731,7 @@ class ProxyGeneratorGPU {
 
           const blobs = await Promise.all(encodePromises);
           const encodeEnd = performance.now();
-          totalEncodeTime += encodeEnd - encodeStart;
+          _totalEncodeTime += encodeEnd - encodeStart;
 
           // Log batch performance
           if (batchCount % 5 === 0 || batchCount === 1) {

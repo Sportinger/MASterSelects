@@ -16,6 +16,10 @@ AI-powered workflows, and real-time GPU rendering.<br>
 
 [Features](#features) • [Quick Start](#quick-start) • [Documentation](docs/Features/README.md) • [Shortcuts](docs/Features/Keyboard-Shortcuts.md)
 
+<br>
+
+![MASterSelects Screenshot](docs/images/screenshot-main.png)
+
 </div>
 
 ---
@@ -40,6 +44,12 @@ AI-powered workflows, and real-time GPU rendering.<br>
 | **RAM Preview** | Cached playback at 60fps with auto frame caching | [Preview](docs/Features/Preview.md) |
 | **Export System V2** | Parallel decoding, shared decoder pool | [Export](docs/Features/Export.md) |
 | **Native Helper** | Hardware-accelerated ProRes/DNxHD | [Native Helper](docs/Features/Native-Helper.md) |
+
+<details>
+<summary><b>Keyframe Animation with Bezier Curves</b></summary>
+<br>
+<img src="docs/images/screenshot-curves.png" alt="Bezier Curve Editor" width="300">
+</details>
 
 ---
 
