@@ -14,14 +14,23 @@ Anweisungen für AI-Assistenten (Claude, GPT, etc.) bei der Arbeit an diesem Pro
 
 ### Commit-Regeln
 ```bash
+# VOR jedem Commit: Build prüfen!
+npm run build
+
 # Nach JEDER Änderung sofort:
 git add . && git commit -m "description" && git push origin staging
 ```
+
+**IMMER vor Commit:**
+- `npm run build` ausführen
+- Alle Errors beheben (Warnings sind OK)
+- Erst dann committen
 
 **NIEMALS:**
 - Direkt auf `master` committen
 - Selbstständig zu `master` mergen
 - Mehrere Änderungen sammeln
+- Committen ohne vorherigen Build-Check
 
 ### Merge zu Master (nur wenn User es verlangt!)
 ```bash
