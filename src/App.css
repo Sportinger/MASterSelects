@@ -8193,6 +8193,29 @@ input[type="checkbox"] {
   gap: 4px 12px;
 }
 
+/* Section divider within time group */
+.changelog-section-divider {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0 4px 0;
+  padding-top: 8px;
+}
+
+.changelog-section-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #f59f00;
+  white-space: nowrap;
+}
+
+.changelog-section-line {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(245, 159, 0, 0.3) 0%, transparent 100%);
+}
+
 /* Change item */
 .changelog-item {
   display: flex;

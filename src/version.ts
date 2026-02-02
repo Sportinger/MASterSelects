@@ -19,6 +19,7 @@ export interface ChangeEntry {
   type: 'new' | 'fix' | 'improve';
   title: string;
   description?: string;
+  section?: string; // Optional section header to create visual dividers
 }
 
 // Time-grouped changelog entry
@@ -52,15 +53,17 @@ function getTimeLabel(date: Date): { label: string; sortOrder: number } {
 // Raw changelog data with dates
 interface RawChangeEntry extends ChangeEntry {
   date: string; // ISO date string YYYY-MM-DD
+  section?: string; // Optional section header to create visual dividers
 }
 
 const RAW_CHANGELOG: RawChangeEntry[] = [
-  // === Feb 2, 2026 - Clip Split & Cut Mode Fixes ===
+  // === After Reddit Post (Feb 2, 2026 ~9:00 AM) ===
   {
     date: '2026-02-02',
     type: 'fix',
     title: 'Clip Split Playback',
     description: 'Fixed playback issues after cutting clips - now creates independent video/audio elements',
+    section: '🚀 After Reddit Post',
   },
   {
     date: '2026-02-02',
@@ -68,12 +71,13 @@ const RAW_CHANGELOG: RawChangeEntry[] = [
     title: 'Cut Mode Auto-Reset',
     description: 'Cut tool automatically returns to select mode after cutting a clip',
   },
-  // === Feb 2, 2026 - Nested Comp Export Fixes ===
+  // === Before Reddit Post (Feb 2, 2026) ===
   {
     date: '2026-02-02',
     type: 'fix',
     title: 'Nested Comp Export',
     description: 'Fixed opacity and keyframe animations not applied during export of nested compositions',
+    section: '📋 Before Reddit Post',
   },
   {
     date: '2026-02-02',
@@ -664,6 +668,7 @@ export function getGroupedChangelog(): TimeGroupedChanges[] {
       type: entry.type,
       title: entry.title,
       description: entry.description,
+      section: entry.section,
     });
 
     // Update date range if needed
