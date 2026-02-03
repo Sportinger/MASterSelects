@@ -8191,6 +8191,7 @@ input[type="checkbox"] {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 4px 12px;
+  align-items: start;
 }
 
 /* Section divider within time group */
