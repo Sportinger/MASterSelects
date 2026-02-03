@@ -813,40 +813,6 @@ function TimelineClipComponent({
           style={{ left: cutIndicatorX }}
         />
       )}
-      {/* Transition In overlay (diagonal stripes on left) */}
-      {clip.transitionIn && (
-        <div
-          className="clip-transition-overlay transition-in"
-          style={{
-            position: 'absolute',
-            left: 0,
-            top: 0,
-            width: Math.min((clip.transitionIn.duration / displayDuration) * width, width),
-            height: '100%',
-            background: 'repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(59, 130, 246, 0.3) 4px, rgba(59, 130, 246, 0.3) 8px)',
-            pointerEvents: 'none',
-            zIndex: 5,
-          }}
-          title={`Transition In: ${clip.transitionIn.duration.toFixed(2)}s`}
-        />
-      )}
-      {/* Transition Out overlay (diagonal stripes on right) */}
-      {clip.transitionOut && (
-        <div
-          className="clip-transition-overlay transition-out"
-          style={{
-            position: 'absolute',
-            right: 0,
-            top: 0,
-            width: Math.min((clip.transitionOut.duration / displayDuration) * width, width),
-            height: '100%',
-            background: 'repeating-linear-gradient(-45deg, transparent, transparent 4px, rgba(59, 130, 246, 0.3) 4px, rgba(59, 130, 246, 0.3) 8px)',
-            pointerEvents: 'none',
-            zIndex: 5,
-          }}
-          title={`Transition Out: ${clip.transitionOut.duration.toFixed(2)}s`}
-        />
-      )}
       {/* YouTube pending download preview */}
       {clip.isPendingDownload && clip.youtubeThumbnail && (
         <div

@@ -112,6 +112,7 @@ export class LayerBuilderService {
 
   /**
    * Build layers from frame context
+   * Handles transitions by rendering both clips with crossfade opacity
    */
   private buildLayers(ctx: FrameContext): Layer[] {
     const layers: Layer[] = [];
@@ -121,9 +122,52 @@ export class LayerBuilderService {
         return;
       }
 
-      const clip = getClipForTrack(ctx, track.id);
-      if (!clip) return;
+      // Get all clips on this track at the current time
+      const trackClips = ctx.clipsAtTime.filter(c => c.trackId === track.id);
 
+      if (trackClips.length === 0) return;
+
+      // Check if we're in a transition (two clips overlapping with transition data)
+      if (trackClips.length >= 2) {
+        // Sort by start time to get outgoing (earlier) and incoming (later) clips
+        trackClips.sort((a, b) => a.startTime - b.startTime);
+        const outgoingClip = trackClips[0];
+        const incomingClip = trackClips[1];
+
+        // Check if they have transition data linking them
+        if (outgoingClip.transitionOut && outgoingClip.transitionOut.linkedClipId === incomingClip.id) {
+          // We're in a transition! Build both layers with adjusted opacity
+          const transitionDuration = outgoingClip.transitionOut.duration;
+          const transitionStart = incomingClip.startTime;
+
+          // Calculate transition progress (0 = start, 1 = end)
+          const progress = Math.max(0, Math.min(1,
+            (ctx.playheadPosition - transitionStart) / transitionDuration
+          ));
+
+          // Outgoing clip: opacity fades from 1 to 0
+          const outgoingOpacity = 1 - progress;
+          // Incoming clip: opacity fades from 0 to 1
+          const incomingOpacity = progress;
+
+          // Build outgoing clip layer (rendered first, behind)
+          const outgoingLayer = this.buildLayerForClip(outgoingClip, layerIndex, ctx, outgoingOpacity);
+          if (outgoingLayer) {
+            layers.push(outgoingLayer);
+          }
+
+          // Build incoming clip layer (rendered second, on top)
+          const incomingLayer = this.buildLayerForClip(incomingClip, layerIndex, ctx, incomingOpacity);
+          if (incomingLayer) {
+            layers.push(incomingLayer);
+          }
+
+          return; // Skip normal single-clip handling
+        }
+      }
+
+      // Normal case: single clip or no transition
+      const clip = trackClips[0];
       const layer = this.buildLayerForClip(clip, layerIndex, ctx);
       if (layer) {
         layers[layerIndex] = layer;
@@ -135,31 +179,32 @@ export class LayerBuilderService {
 
   /**
    * Build a layer for a clip based on its type
+   * @param opacityOverride - Optional opacity override for transitions (0-1)
    */
-  private buildLayerForClip(clip: TimelineClip, layerIndex: number, ctx: FrameContext): Layer | null {
+  private buildLayerForClip(clip: TimelineClip, layerIndex: number, ctx: FrameContext, opacityOverride?: number): Layer | null {
     // Nested composition
     if (clip.isComposition && clip.nestedClips && clip.nestedClips.length > 0) {
-      return this.buildNestedCompLayer(clip, layerIndex, ctx);
+      return this.buildNestedCompLayer(clip, layerIndex, ctx, opacityOverride);
     }
 
     // Native decoder (ProRes/DNxHD turbo mode)
     if (clip.source?.nativeDecoder) {
-      return this.buildNativeDecoderLayer(clip, layerIndex, ctx);
+      return this.buildNativeDecoderLayer(clip, layerIndex, ctx, opacityOverride);
     }
 
     // Video clip
     if (clip.source?.videoElement) {
-      return this.buildVideoLayer(clip, layerIndex, ctx);
+      return this.buildVideoLayer(clip, layerIndex, ctx, opacityOverride);
     }
 
     // Image clip
     if (clip.source?.imageElement) {
-      return this.buildImageLayer(clip, layerIndex, ctx);
+      return this.buildImageLayer(clip, layerIndex, ctx, opacityOverride);
     }
 
     // Text clip
     if (clip.source?.textCanvas) {
-      return this.buildTextLayer(clip, layerIndex, ctx);
+      return this.buildTextLayer(clip, layerIndex, ctx, opacityOverride);
     }
 
     return null;
@@ -168,7 +213,7 @@ export class LayerBuilderService {
   /**
    * Build nested composition layer
    */
-  private buildNestedCompLayer(clip: TimelineClip, layerIndex: number, ctx: FrameContext): Layer | null {
+  private buildNestedCompLayer(clip: TimelineClip, layerIndex: number, ctx: FrameContext, opacityOverride?: number): Layer | null {
     const timeInfo = getClipTimeInfo(ctx, clip);
     const nestedLayers = this.buildNestedLayers(clip, timeInfo.clipTime, ctx);
 
@@ -192,11 +237,16 @@ export class LayerBuilderService {
       currentTime: ctx.playheadPosition,
     };
 
+    // Apply transition opacity override if provided
+    const finalOpacity = opacityOverride !== undefined
+      ? transform.opacity * opacityOverride
+      : transform.opacity;
+
     const layer: Layer = {
-      id: `${ctx.activeCompId}_layer_${layerIndex}`,
+      id: `${ctx.activeCompId}_layer_${layerIndex}_${clip.id}`,
       name: clip.name,
       visible: true,
-      opacity: transform.opacity,
+      opacity: finalOpacity,
       blendMode: transform.blendMode as BlendMode,
       source: { type: 'image', nestedComposition: nestedCompData },
       effects,
@@ -212,7 +262,7 @@ export class LayerBuilderService {
   /**
    * Build native decoder layer
    */
-  private buildNativeDecoderLayer(clip: TimelineClip, layerIndex: number, ctx: FrameContext): Layer {
+  private buildNativeDecoderLayer(clip: TimelineClip, layerIndex: number, ctx: FrameContext, opacityOverride?: number): Layer {
     const timeInfo = getClipTimeInfo(ctx, clip);
     const transform = this.transformCache.getTransform(
       `${ctx.activeCompId}_${layerIndex}`,
@@ -220,11 +270,16 @@ export class LayerBuilderService {
     );
     const effects = ctx.getInterpolatedEffects(clip.id, timeInfo.clipLocalTime);
 
+    // Apply transition opacity override if provided
+    const finalOpacity = opacityOverride !== undefined
+      ? transform.opacity * opacityOverride
+      : transform.opacity;
+
     const layer: Layer = {
-      id: `${ctx.activeCompId}_layer_${layerIndex}`,
+      id: `${ctx.activeCompId}_layer_${layerIndex}_${clip.id}`,
       name: clip.name,
       visible: true,
-      opacity: transform.opacity,
+      opacity: finalOpacity,
       blendMode: transform.blendMode as BlendMode,
       source: { type: 'video', nativeDecoder: clip.source!.nativeDecoder },
       effects,
@@ -240,13 +295,13 @@ export class LayerBuilderService {
   /**
    * Build video layer (with proxy support)
    */
-  private buildVideoLayer(clip: TimelineClip, layerIndex: number, ctx: FrameContext): Layer | null {
+  private buildVideoLayer(clip: TimelineClip, layerIndex: number, ctx: FrameContext, opacityOverride?: number): Layer | null {
     const timeInfo = getClipTimeInfo(ctx, clip);
     const mediaFile = getMediaFileForClip(ctx, clip);
 
     // Check for proxy usage
     if (ctx.proxyEnabled && mediaFile?.proxyFps) {
-      const proxyLayer = this.tryBuildProxyLayer(clip, layerIndex, timeInfo.clipTime, mediaFile, ctx);
+      const proxyLayer = this.tryBuildProxyLayer(clip, layerIndex, timeInfo.clipTime, mediaFile, ctx, opacityOverride);
       if (proxyLayer) return proxyLayer;
     }
 
@@ -257,11 +312,16 @@ export class LayerBuilderService {
     );
     const effects = ctx.getInterpolatedEffects(clip.id, timeInfo.clipLocalTime);
 
+    // Apply transition opacity override if provided
+    const finalOpacity = opacityOverride !== undefined
+      ? transform.opacity * opacityOverride
+      : transform.opacity;
+
     const layer: Layer = {
       id: `${ctx.activeCompId}_layer_${layerIndex}`,
       name: clip.name,
       visible: true,
-      opacity: transform.opacity,
+      opacity: finalOpacity,
       blendMode: transform.blendMode as BlendMode,
       source: {
         type: 'video',
@@ -286,7 +346,8 @@ export class LayerBuilderService {
     layerIndex: number,
     clipTime: number,
     mediaFile: any,
-    ctx: FrameContext
+    ctx: FrameContext,
+    opacityOverride?: number
   ): Layer | null {
     const proxyFps = mediaFile.proxyFps || 30;
     const frameIndex = Math.floor(clipTime * proxyFps);
@@ -309,19 +370,19 @@ export class LayerBuilderService {
 
     if (cachedFrame) {
       this.proxyFramesRef.set(cacheKey, { frameIndex, image: cachedFrame });
-      return this.buildImageLayerFromElement(clip, layerIndex, cachedFrame, clipTime, ctx);
+      return this.buildImageLayerFromElement(clip, layerIndex, cachedFrame, clipTime, ctx, opacityOverride);
     }
 
     // Try to get nearest cached frame for smooth scrubbing
     const nearestFrame = proxyFrameCache.getNearestCachedFrame(mediaFile.id, frameIndex, 30);
     if (nearestFrame) {
-      return this.buildImageLayerFromElement(clip, layerIndex, nearestFrame, clipTime, ctx);
+      return this.buildImageLayerFromElement(clip, layerIndex, nearestFrame, clipTime, ctx, opacityOverride);
     }
 
     // Use previous cached frame as fallback
     const cached = this.proxyFramesRef.get(cacheKey);
     if (cached?.image) {
-      return this.buildImageLayerFromElement(clip, layerIndex, cached.image, clipTime, ctx);
+      return this.buildImageLayerFromElement(clip, layerIndex, cached.image, clipTime, ctx, opacityOverride);
     }
 
     // No proxy frame available - return null to fall back to video
@@ -331,7 +392,7 @@ export class LayerBuilderService {
   /**
    * Build image layer
    */
-  private buildImageLayer(clip: TimelineClip, layerIndex: number, ctx: FrameContext): Layer {
+  private buildImageLayer(clip: TimelineClip, layerIndex: number, ctx: FrameContext, opacityOverride?: number): Layer {
     const timeInfo = getClipTimeInfo(ctx, clip);
     const transform = this.transformCache.getTransform(
       `${ctx.activeCompId}_${layerIndex}`,
@@ -339,11 +400,16 @@ export class LayerBuilderService {
     );
     const effects = ctx.getInterpolatedEffects(clip.id, timeInfo.clipLocalTime);
 
+    // Apply transition opacity override if provided
+    const finalOpacity = opacityOverride !== undefined
+      ? transform.opacity * opacityOverride
+      : transform.opacity;
+
     const layer: Layer = {
       id: `${ctx.activeCompId}_layer_${layerIndex}`,
       name: clip.name,
       visible: true,
-      opacity: transform.opacity,
+      opacity: finalOpacity,
       blendMode: transform.blendMode as BlendMode,
       source: { type: 'image', imageElement: clip.source!.imageElement },
       effects,
@@ -364,7 +430,8 @@ export class LayerBuilderService {
     layerIndex: number,
     imageElement: HTMLImageElement,
     localTime: number,
-    ctx: FrameContext
+    ctx: FrameContext,
+    opacityOverride?: number
   ): Layer {
     const transform = this.transformCache.getTransform(
       `${ctx.activeCompId}_${layerIndex}`,
@@ -372,11 +439,16 @@ export class LayerBuilderService {
     );
     const effects = ctx.getInterpolatedEffects(clip.id, localTime);
 
+    // Apply transition opacity override if provided
+    const finalOpacity = opacityOverride !== undefined
+      ? transform.opacity * opacityOverride
+      : transform.opacity;
+
     const layer: Layer = {
       id: `${ctx.activeCompId}_layer_${layerIndex}`,
       name: clip.name,
       visible: true,
-      opacity: transform.opacity,
+      opacity: finalOpacity,
       blendMode: transform.blendMode as BlendMode,
       source: { type: 'image', imageElement },
       effects,
@@ -392,7 +464,7 @@ export class LayerBuilderService {
   /**
    * Build text layer
    */
-  private buildTextLayer(clip: TimelineClip, layerIndex: number, ctx: FrameContext): Layer {
+  private buildTextLayer(clip: TimelineClip, layerIndex: number, ctx: FrameContext, opacityOverride?: number): Layer {
     const timeInfo = getClipTimeInfo(ctx, clip);
     const transform = this.transformCache.getTransform(
       `${ctx.activeCompId}_${layerIndex}`,
@@ -400,11 +472,16 @@ export class LayerBuilderService {
     );
     const effects = ctx.getInterpolatedEffects(clip.id, timeInfo.clipLocalTime);
 
+    // Apply transition opacity override if provided
+    const finalOpacity = opacityOverride !== undefined
+      ? transform.opacity * opacityOverride
+      : transform.opacity;
+
     const layer: Layer = {
       id: `${ctx.activeCompId}_layer_${layerIndex}`,
       name: clip.name,
       visible: true,
-      opacity: transform.opacity,
+      opacity: finalOpacity,
       blendMode: transform.blendMode as BlendMode,
       source: { type: 'text', textCanvas: clip.source!.textCanvas },
       effects,

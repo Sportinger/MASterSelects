@@ -1,7 +1,8 @@
 // Transition-related actions slice
+// Transitions are handled independently from keyframes - the compositor blends clips during rendering
 
-import type { TransitionActions, SliceCreator, Keyframe } from './types';
-import type { TimelineTransition, AnimatableProperty } from '../../types';
+import type { TransitionActions, SliceCreator } from './types';
+import type { TimelineTransition } from '../../types';
 import { getTransition, type TransitionType } from '../../transitions';
 import { Logger } from '../../services/logger';
 
@@ -10,16 +11,13 @@ const log = Logger.create('Transitions');
 // Generate unique transition ID
 const generateTransitionId = () => `transition-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
-// Generate unique keyframe ID
-const generateKeyframeId = () => `kf-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-
 export const createTransitionSlice: SliceCreator<TransitionActions> = (set, get) => ({
   /**
    * Apply a transition between two adjacent clips
-   * Creates overlap by moving clipB earlier and adds opacity keyframes
+   * Creates overlap by moving clipB earlier - NO keyframes, compositor handles blending
    */
   applyTransition: (clipAId: string, clipBId: string, type: string, duration: number) => {
-    const { clips, clipKeyframes, invalidateCache } = get();
+    const { clips, invalidateCache } = get();
 
     const clipA = clips.find(c => c.id === clipAId);
     const clipB = clips.find(c => c.id === clipBId);
@@ -41,7 +39,7 @@ export const createTransitionSlice: SliceCreator<TransitionActions> = (set, get)
       return;
     }
 
-    // Get transition definition
+    // Get transition definition for validation
     const transitionDef = getTransition(type as TransitionType);
     if (!transitionDef) {
       log.warn('Unknown transition type', { type });
@@ -51,11 +49,10 @@ export const createTransitionSlice: SliceCreator<TransitionActions> = (set, get)
     // Clamp duration to valid range
     const effectiveDuration = Math.min(
       Math.max(duration, transitionDef.minDuration),
-      Math.min(transitionDef.maxDuration, clipA.duration, clipB.duration)
+      Math.min(transitionDef.maxDuration, clipA.duration * 0.5, clipB.duration * 0.5)
     );
 
-    // Calculate new positions
-    // Move clipB's start earlier to create overlap
+    // Calculate new positions - move clipB's start earlier to create overlap
     const clipAEnd = clipA.startTime + clipA.duration;
     const newClipBStart = clipAEnd - effectiveDuration;
 
@@ -76,51 +73,6 @@ export const createTransitionSlice: SliceCreator<TransitionActions> = (set, get)
       linkedClipId: clipAId,
     };
 
-    // Generate keyframes for the transition
-    const outgoingKeyframes = transitionDef.getOutgoingKeyframes(effectiveDuration);
-    const incomingKeyframes = transitionDef.getIncomingKeyframes(effectiveDuration);
-
-    // Convert to store keyframes
-    // ClipA keyframes: at the END of the clip
-    const clipATransitionStart = clipA.duration - effectiveDuration;
-    const newClipAKeyframes: Keyframe[] = outgoingKeyframes.map(kf => ({
-      id: generateKeyframeId(),
-      clipId: clipAId,
-      time: clipATransitionStart + kf.time,
-      property: kf.property as AnimatableProperty,
-      value: kf.value,
-      easing: 'linear',
-    }));
-
-    // ClipB keyframes: at the START of the clip
-    const newClipBKeyframes: Keyframe[] = incomingKeyframes.map(kf => ({
-      id: generateKeyframeId(),
-      clipId: clipBId,
-      time: kf.time,
-      property: kf.property as AnimatableProperty,
-      value: kf.value,
-      easing: 'linear',
-    }));
-
-    // Merge keyframes into existing keyframes
-    const updatedKeyframes = new Map(clipKeyframes);
-
-    // Add clipA keyframes (preserve existing non-transition keyframes)
-    const existingClipAKeyframes = updatedKeyframes.get(clipAId) || [];
-    const clipAKeyframesFiltered = existingClipAKeyframes.filter(kf =>
-      // Remove any existing opacity keyframes in the transition zone
-      !(kf.property === 'opacity' && kf.time >= clipATransitionStart)
-    );
-    updatedKeyframes.set(clipAId, [...clipAKeyframesFiltered, ...newClipAKeyframes]);
-
-    // Add clipB keyframes
-    const existingClipBKeyframes = updatedKeyframes.get(clipBId) || [];
-    const clipBKeyframesFiltered = existingClipBKeyframes.filter(kf =>
-      // Remove any existing opacity keyframes in the transition zone
-      !(kf.property === 'opacity' && kf.time <= effectiveDuration)
-    );
-    updatedKeyframes.set(clipBId, [...clipBKeyframesFiltered, ...newClipBKeyframes]);
-
     // Update clips with new positions and transition data
     set({
       clips: clips.map(c => {
@@ -132,7 +84,6 @@ export const createTransitionSlice: SliceCreator<TransitionActions> = (set, get)
         }
         return c;
       }),
-      clipKeyframes: updatedKeyframes,
     });
 
     invalidateCache();
@@ -143,7 +94,7 @@ export const createTransitionSlice: SliceCreator<TransitionActions> = (set, get)
    * Remove a transition from a clip
    */
   removeTransition: (clipId: string, edge: 'in' | 'out') => {
-    const { clips, clipKeyframes, invalidateCache } = get();
+    const { clips, invalidateCache } = get();
 
     const clip = clips.find(c => c.id === clipId);
     if (!clip) return;
@@ -154,72 +105,40 @@ export const createTransitionSlice: SliceCreator<TransitionActions> = (set, get)
     const linkedClip = clips.find(c => c.id === transition.linkedClipId);
     const duration = transition.duration;
 
-    // Remove transition keyframes
-    const updatedKeyframes = new Map(clipKeyframes);
-
-    // Remove keyframes from this clip
-    const thisClipKeyframes = updatedKeyframes.get(clipId) || [];
     if (edge === 'in') {
-      // Remove keyframes at the start
-      updatedKeyframes.set(clipId, thisClipKeyframes.filter(kf =>
-        !(kf.property === 'opacity' && kf.time <= duration)
-      ));
       // Move clip back to non-overlapping position
       const linkedClipEnd = linkedClip ? linkedClip.startTime + linkedClip.duration : clip.startTime;
+      const newStartTime = linkedClipEnd; // Remove overlap
+
       set({
         clips: clips.map(c => {
           if (c.id === clipId) {
-            return { ...c, startTime: linkedClipEnd, transitionIn: undefined };
+            return { ...c, startTime: newStartTime, transitionIn: undefined };
           }
           if (c.id === transition.linkedClipId) {
             return { ...c, transitionOut: undefined };
           }
           return c;
         }),
-        clipKeyframes: updatedKeyframes,
       });
     } else {
-      // Remove keyframes at the end
-      const clipDuration = clip.duration;
-      updatedKeyframes.set(clipId, thisClipKeyframes.filter(kf =>
-        !(kf.property === 'opacity' && kf.time >= clipDuration - duration)
-      ));
+      // Move linked clip back
       set({
         clips: clips.map(c => {
           if (c.id === clipId) {
             return { ...c, transitionOut: undefined };
           }
           if (c.id === transition.linkedClipId) {
-            // Move linked clip back
             const newStart = clip.startTime + clip.duration;
             return { ...c, startTime: newStart, transitionIn: undefined };
           }
           return c;
         }),
-        clipKeyframes: updatedKeyframes,
       });
     }
 
-    // Also remove keyframes from linked clip
-    if (linkedClip) {
-      const linkedKeyframes = updatedKeyframes.get(linkedClip.id) || [];
-      if (edge === 'in') {
-        // Linked clip had transitionOut
-        const linkedDuration = linkedClip.duration;
-        updatedKeyframes.set(linkedClip.id, linkedKeyframes.filter(kf =>
-          !(kf.property === 'opacity' && kf.time >= linkedDuration - duration)
-        ));
-      } else {
-        // Linked clip had transitionIn
-        updatedKeyframes.set(linkedClip.id, linkedKeyframes.filter(kf =>
-          !(kf.property === 'opacity' && kf.time <= duration)
-        ));
-      }
-    }
-
-    set({ clipKeyframes: updatedKeyframes });
     invalidateCache();
-    log.info('Removed transition', { clipId, edge });
+    log.info('Removed transition', { clipId, edge, duration });
   },
 
   /**
@@ -236,7 +155,7 @@ export const createTransitionSlice: SliceCreator<TransitionActions> = (set, get)
 
     // Remove and re-apply with new duration
     const linkedClipId = transition.linkedClipId;
-    const type = transition.type as TransitionType;
+    const type = transition.type;
 
     // Determine which is clipA and clipB
     const isClipB = edge === 'in';
@@ -270,9 +189,12 @@ export const createTransitionSlice: SliceCreator<TransitionActions> = (set, get)
       const clipAEnd = clipA.startTime + clipA.duration;
       const gap = clipB.startTime - clipAEnd;
 
-      // Check if clips are touching (small gap)
-      if (Math.abs(gap) < 0.1) {
-        const junctionTime = clipAEnd;
+      // Check if clips are touching (small gap) or already have a transition (negative gap/overlap)
+      if (Math.abs(gap) < 0.1 || (clipA.transitionOut && clipB.transitionIn)) {
+        // For clips with transition, junction is at the transition center
+        const junctionTime = clipA.transitionOut
+          ? clipAEnd - clipA.transitionOut.duration / 2
+          : clipAEnd;
 
         // Check if the given time is near this junction
         if (Math.abs(time - junctionTime) < threshold) {

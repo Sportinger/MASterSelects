@@ -1,31 +1,44 @@
 // Transitions Panel - Drag and drop transitions for timeline clips
 
-import React, { useState, useCallback } from 'react';
-import { getAllTransitions, getCategoriesWithTransitions, type TransitionDefinition } from '../../transitions';
-
-// Default transition duration in seconds
-const DEFAULT_DURATION = 0.5;
+import { useState, useCallback } from 'react';
+import { getAllTransitions, type TransitionDefinition } from '../../transitions';
+import './TransitionsPanel.css';
 
 // MIME type for drag data
 export const TRANSITION_MIME_TYPE = 'application/x-transition-type';
 
-// Simple SVG icons for transitions
-const TransitionIcons: Record<string, React.ReactNode> = {
-  Blend: (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M12 2v20M2 12h20" opacity="0.3" />
-      <circle cx="8" cy="8" r="4" fill="currentColor" opacity="0.5" />
-      <circle cx="16" cy="16" r="4" fill="currentColor" opacity="0.5" />
+// Transition preview thumbnail component
+function TransitionPreview({ type }: { type: string }) {
+  if (type === 'crossfade') {
+    return (
+      <svg viewBox="0 0 80 40" className="transition-preview-svg">
+        {/* Left clip (fading out) */}
+        <defs>
+          <linearGradient id="fadeOutGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#4a9eff" stopOpacity="1" />
+            <stop offset="100%" stopColor="#4a9eff" stopOpacity="0" />
+          </linearGradient>
+          <linearGradient id="fadeInGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#ff6b4a" stopOpacity="0" />
+            <stop offset="100%" stopColor="#ff6b4a" stopOpacity="1" />
+          </linearGradient>
+        </defs>
+        <rect x="0" y="8" width="50" height="24" fill="url(#fadeOutGrad)" rx="2" />
+        <rect x="30" y="8" width="50" height="24" fill="url(#fadeInGrad)" rx="2" />
+        {/* Overlap indicator */}
+        <rect x="30" y="4" width="20" height="32" fill="rgba(255,255,255,0.1)" rx="2" />
+      </svg>
+    );
+  }
+  // Default preview
+  return (
+    <svg viewBox="0 0 80 40" className="transition-preview-svg">
+      <rect x="5" y="8" width="30" height="24" fill="#4a9eff" rx="2" />
+      <rect x="45" y="8" width="30" height="24" fill="#ff6b4a" rx="2" />
+      <path d="M38 20 L42 20" stroke="white" strokeWidth="2" />
     </svg>
-  ),
-  default: (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <rect x="3" y="3" width="8" height="18" rx="1" opacity="0.5" />
-      <rect x="13" y="3" width="8" height="18" rx="1" opacity="0.5" />
-      <path d="M11 12h2" strokeWidth="3" />
-    </svg>
-  ),
-};
+  );
+}
 
 interface TransitionItemProps {
   transition: TransitionDefinition;
@@ -33,34 +46,40 @@ interface TransitionItemProps {
 }
 
 function TransitionItem({ transition, duration }: TransitionItemProps) {
-  const icon = TransitionIcons[transition.icon] || TransitionIcons.default;
-
   const handleDragStart = useCallback((e: React.DragEvent) => {
     e.dataTransfer.setData(TRANSITION_MIME_TYPE, JSON.stringify({
       type: transition.id,
       duration,
     }));
     e.dataTransfer.effectAllowed = 'copy';
-  }, [transition.id, duration]);
+
+    // Create drag image
+    const dragEl = document.createElement('div');
+    dragEl.className = 'transition-drag-preview';
+    dragEl.textContent = transition.name;
+    dragEl.style.cssText = 'position:fixed;top:-100px;background:#3b82f6;color:white;padding:4px 12px;border-radius:4px;font-size:12px;font-weight:500;pointer-events:none;';
+    document.body.appendChild(dragEl);
+    e.dataTransfer.setDragImage(dragEl, 40, 15);
+    setTimeout(() => dragEl.remove(), 0);
+  }, [transition.id, transition.name, duration]);
 
   return (
     <div
       draggable
       onDragStart={handleDragStart}
-      className="flex flex-col items-center p-3 bg-zinc-800 rounded-lg cursor-grab hover:bg-zinc-700 transition-colors active:cursor-grabbing"
+      className="transition-item"
       title={transition.description}
     >
-      <div className="w-12 h-12 flex items-center justify-center bg-zinc-900 rounded-md mb-2 text-zinc-400">
-        {icon}
+      <div className="transition-item-preview">
+        <TransitionPreview type={transition.id} />
       </div>
-      <span className="text-xs text-zinc-300 text-center">{transition.name}</span>
+      <span className="transition-item-name">{transition.name}</span>
     </div>
   );
 }
 
 export function TransitionsPanel() {
-  const [duration, setDuration] = useState(DEFAULT_DURATION);
-  const categoriesWithTransitions = getCategoriesWithTransitions();
+  const [duration, setDuration] = useState(0.5);
   const allTransitions = getAllTransitions();
 
   const handleDurationChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -71,11 +90,11 @@ export function TransitionsPanel() {
   }, []);
 
   return (
-    <div className="h-full flex flex-col bg-zinc-900 text-white">
-      {/* Duration control */}
-      <div className="p-3 border-b border-zinc-700">
-        <div className="flex items-center gap-2">
-          <label className="text-xs text-zinc-400">Duration:</label>
+    <div className="transitions-panel">
+      {/* Header with duration */}
+      <div className="transitions-panel-header">
+        <span className="transitions-panel-title">Transitions</span>
+        <div className="transitions-duration-control">
           <input
             type="number"
             value={duration}
@@ -83,55 +102,36 @@ export function TransitionsPanel() {
             min={0.1}
             max={5.0}
             step={0.1}
-            className="w-16 px-2 py-1 text-xs bg-zinc-800 border border-zinc-600 rounded text-white focus:outline-none focus:border-blue-500"
+            className="transitions-duration-input"
           />
-          <span className="text-xs text-zinc-500">sec</span>
+          <span className="transitions-duration-unit">s</span>
         </div>
       </div>
 
-      {/* Transitions grid */}
-      <div className="flex-1 overflow-y-auto p-3">
-        {categoriesWithTransitions.length > 0 ? (
-          categoriesWithTransitions.map(({ category, transitions }) => (
-            <div key={category} className="mb-4">
-              <h3 className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2 capitalize">
-                {category}
-              </h3>
-              <div className="grid grid-cols-2 gap-2">
-                {transitions.map((transition) => (
-                  <TransitionItem
-                    key={transition.id}
-                    transition={transition}
-                    duration={duration}
-                  />
-                ))}
-              </div>
-            </div>
-          ))
-        ) : (
-          <div className="grid grid-cols-2 gap-2">
-            {allTransitions.map((transition) => (
-              <TransitionItem
-                key={transition.id}
-                transition={transition}
-                duration={duration}
-              />
-            ))}
-          </div>
-        )}
+      {/* Transitions list */}
+      <div className="transitions-list">
+        {allTransitions.map((transition) => (
+          <TransitionItem
+            key={transition.id}
+            transition={transition}
+            duration={duration}
+          />
+        ))}
 
         {allTransitions.length === 0 && (
-          <div className="text-center text-zinc-500 text-sm py-8">
+          <div className="transitions-empty">
             No transitions available
           </div>
         )}
       </div>
 
-      {/* Instructions */}
-      <div className="p-3 border-t border-zinc-700">
-        <p className="text-xs text-zinc-500">
-          Drag a transition and drop it on the junction between two clips.
-        </p>
+      {/* Footer hint */}
+      <div className="transitions-panel-footer">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="12" cy="12" r="10" />
+          <path d="M12 16v-4M12 8h.01" />
+        </svg>
+        <span>Drag onto clip junction</span>
       </div>
     </div>
   );

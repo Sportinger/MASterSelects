@@ -1,0 +1,137 @@
+/* Transitions Panel Styles */
+
+.transitions-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #1a1a1a;
+  color: #e5e5e5;
+}
+
+.transitions-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid #333;
+  background: #222;
+}
+
+.transitions-panel-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.transitions-duration-control {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #333;
+  border-radius: 4px;
+  padding: 2px 6px 2px 2px;
+}
+
+.transitions-duration-input {
+  width: 48px;
+  padding: 4px 6px;
+  font-size: 12px;
+  font-family: inherit;
+  background: transparent;
+  border: none;
+  color: #fff;
+  text-align: right;
+}
+
+.transitions-duration-input:focus {
+  outline: none;
+}
+
+.transitions-duration-input::-webkit-inner-spin-button,
+.transitions-duration-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.transitions-duration-unit {
+  font-size: 11px;
+  color: #666;
+}
+
+.transitions-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.transition-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  background: #2a2a2a;
+  border: 1px solid #333;
+  border-radius: 6px;
+  cursor: grab;
+  transition: all 0.15s ease;
+}
+
+.transition-item:hover {
+  background: #333;
+  border-color: #444;
+}
+
+.transition-item:active {
+  cursor: grabbing;
+  transform: scale(0.98);
+}
+
+.transition-item-preview {
+  width: 64px;
+  height: 32px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #1a1a1a;
+  flex-shrink: 0;
+}
+
+.transition-preview-svg {
+  width: 100%;
+  height: 100%;
+}
+
+.transition-item-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: #ccc;
+}
+
+.transitions-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100px;
+  color: #555;
+  font-size: 12px;
+}
+
+.transitions-panel-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  border-top: 1px solid #333;
+  background: #1f1f1f;
+  color: #555;
+  font-size: 11px;
+}
+
+.transitions-panel-footer svg {
+  flex-shrink: 0;
+  opacity: 0.6;
+}

@@ -3,6 +3,8 @@
 
 export type TransitionType = 'crossfade' | 'dip-to-black' | 'dip-to-white' | 'wipe-left' | 'wipe-right';
 
+export type TransitionCategory = 'dissolve' | 'wipe' | 'slide' | 'zoom';
+
 /**
  * Transition definition - each transition type implements this interface
  */
@@ -16,9 +18,6 @@ export interface TransitionDefinition {
   /** Category for grouping in panel */
   category: TransitionCategory;
 
-  /** Icon name (Lucide icon) */
-  icon: string;
-
   /** Default duration in seconds */
   defaultDuration: number;
 
@@ -30,34 +29,6 @@ export interface TransitionDefinition {
 
   /** Description shown in tooltip */
   description: string;
-
-  /**
-   * Generate keyframes for the outgoing clip (clip A)
-   * @param duration - Transition duration in seconds
-   * @returns Array of keyframe definitions { time, property, value }
-   */
-  getOutgoingKeyframes: (duration: number) => TransitionKeyframe[];
-
-  /**
-   * Generate keyframes for the incoming clip (clip B)
-   * @param duration - Transition duration in seconds
-   * @returns Array of keyframe definitions { time, property, value }
-   */
-  getIncomingKeyframes: (duration: number) => TransitionKeyframe[];
-}
-
-export type TransitionCategory = 'dissolve' | 'wipe' | 'slide' | 'zoom';
-
-/**
- * Keyframe definition for transition animation
- */
-export interface TransitionKeyframe {
-  /** Time relative to transition start (0 = start, duration = end) */
-  time: number;
-  /** Property to animate */
-  property: 'opacity' | 'position.x' | 'position.y' | 'scale.x' | 'scale.y';
-  /** Value at this keyframe */
-  value: number;
 }
 
 /**
