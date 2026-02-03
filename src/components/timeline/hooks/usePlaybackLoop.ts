@@ -42,6 +42,7 @@ export function usePlaybackLoop({ isPlaying }: UsePlaybackLoopProps) {
         loopPlayback: lp,
         pause: ps,
         clips,
+        playbackSpeed,
       } = state;
       const effectiveEnd = op !== null ? op : dur;
       const effectiveStart = ip !== null ? ip : 0;
@@ -49,7 +50,8 @@ export function usePlaybackLoop({ isPlaying }: UsePlaybackLoopProps) {
       let newPosition: number;
 
       // AUDIO MASTER CLOCK: If we have an active audio element, derive playhead from its time
-      if (playheadState.hasMasterAudio && playheadState.masterAudioElement) {
+      // Only use audio master for normal forward playback (speed === 1)
+      if (playheadState.hasMasterAudio && playheadState.masterAudioElement && playbackSpeed === 1) {
         const audio = playheadState.masterAudioElement;
         if (!audio.paused && audio.readyState >= 2) {
           // Calculate timeline position from audio's current time
@@ -64,18 +66,18 @@ export function usePlaybackLoop({ isPlaying }: UsePlaybackLoopProps) {
           // Audio paused or not ready, fall back to system time
           const deltaTime = (currentTime - lastTime) / 1000;
           const cappedDelta = Math.min(deltaTime, 0.1);
-          newPosition = playheadState.position + cappedDelta;
+          newPosition = playheadState.position + cappedDelta * playbackSpeed;
         }
       } else {
-        // No audio master - use system time (fallback for video-only or image clips)
+        // No audio master or non-standard speed - use system time with playback speed
         const deltaTime = (currentTime - lastTime) / 1000;
         const cappedDelta = Math.min(deltaTime, 0.1);
-        newPosition = playheadState.position + cappedDelta;
+        newPosition = playheadState.position + cappedDelta * playbackSpeed;
       }
       lastTime = currentTime;
 
-      // Handle end of timeline / looping
-      if (newPosition >= effectiveEnd) {
+      // Handle end of timeline / looping (forward playback)
+      if (newPosition >= effectiveEnd && playbackSpeed > 0) {
         if (lp) {
           newPosition = effectiveStart;
           // Reset audio master - will be re-established by syncAudioElements
@@ -95,6 +97,8 @@ export function usePlaybackLoop({ isPlaying }: UsePlaybackLoopProps) {
         } else {
           newPosition = effectiveEnd;
           ps();
+          // Reset playback speed to normal when stopping
+          useTimelineStore.setState({ playbackSpeed: 1 });
           playheadState.position = newPosition;
           playheadState.isUsingInternalPosition = false;
           playheadState.hasMasterAudio = false;
@@ -104,9 +108,44 @@ export function usePlaybackLoop({ isPlaying }: UsePlaybackLoopProps) {
         }
       }
 
-      // Clamp to start
+      // Handle start of timeline (reverse playback)
+      if (newPosition <= effectiveStart && playbackSpeed < 0) {
+        if (lp) {
+          newPosition = effectiveEnd;
+          // Reset audio master
+          playheadState.hasMasterAudio = false;
+          playheadState.masterAudioElement = null;
+          // Seek all audio/video to end
+          clips.forEach((clip) => {
+            if (clip.source?.audioElement) {
+              clip.source.audioElement.currentTime = clip.outPoint;
+            }
+            if (clip.source?.videoElement) {
+              clip.source.videoElement.currentTime = clip.reversed
+                ? clip.inPoint
+                : clip.outPoint;
+            }
+          });
+        } else {
+          newPosition = effectiveStart;
+          ps();
+          // Reset playback speed to normal when stopping
+          useTimelineStore.setState({ playbackSpeed: 1 });
+          playheadState.position = newPosition;
+          playheadState.isUsingInternalPosition = false;
+          playheadState.hasMasterAudio = false;
+          playheadState.masterAudioElement = null;
+          useTimelineStore.setState({ playheadPosition: newPosition });
+          return;
+        }
+      }
+
+      // Clamp to bounds (for edge cases)
       if (newPosition < effectiveStart) {
         newPosition = effectiveStart;
+      }
+      if (newPosition > effectiveEnd) {
+        newPosition = effectiveEnd;
       }
 
       // Update high-frequency position for render loop to read

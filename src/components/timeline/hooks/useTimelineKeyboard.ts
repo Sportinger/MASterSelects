@@ -11,6 +11,8 @@ interface UseTimelineKeyboardProps {
   isPlaying: boolean;
   play: () => void;
   pause: () => void;
+  playForward: () => void;
+  playReverse: () => void;
 
   // In/Out points
   setInPointAtPlayhead: () => void;
@@ -53,6 +55,8 @@ export function useTimelineKeyboard({
   isPlaying,
   play,
   pause,
+  playForward,
+  playReverse,
   setInPointAtPlayhead,
   setOutPointAtPlayhead,
   clearInOut,
@@ -123,10 +127,30 @@ export function useTimelineKeyboard({
         return;
       }
 
-      // L: toggle loop playback
+      // JKL playback control (industry standard)
+      // J: Play reverse (press multiple times to increase speed)
+      if ((e.key === 'j' || e.key === 'J') && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        playReverse();
+        return;
+      }
+
+      // K: Pause playback
+      if ((e.key === 'k' || e.key === 'K') && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        pause();
+        return;
+      }
+
+      // L: Play forward (press multiple times to increase speed)
+      // Shift+L: Toggle loop playback
       if (e.key === 'l' || e.key === 'L') {
         e.preventDefault();
-        toggleLoopPlayback();
+        if (e.shiftKey) {
+          toggleLoopPlayback();
+        } else {
+          playForward();
+        }
         return;
       }
 
@@ -254,6 +278,8 @@ export function useTimelineKeyboard({
     isPlaying,
     play,
     pause,
+    playForward,
+    playReverse,
     setInPointAtPlayhead,
     setOutPointAtPlayhead,
     clearInOut,

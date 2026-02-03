@@ -473,6 +473,7 @@ export const useTimelineStore = create<TimelineStore>()(
             inPoint: null,
             outPoint: null,
             loopPlayback: false,
+            playbackSpeed: 1,
             selectedClipIds: new Set(),
             markers: [],
           });
@@ -1245,6 +1246,9 @@ export const useTimelineStore = create<TimelineStore>()(
       inPoint: null as number | null,
       outPoint: null as number | null,
       loopPlayback: false,
+
+      // Playback speed (1 = normal, 2 = 2x, -1 = reverse, etc.)
+      playbackSpeed: 1,
 
       // Duration lock (when true, duration won't auto-update based on clips)
       durationLocked: false,

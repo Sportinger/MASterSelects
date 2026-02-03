@@ -170,6 +170,44 @@ export const createPlaybackSlice: SliceCreator<PlaybackAndRamPreviewActions> = (
     set({ loopPlayback: !get().loopPlayback });
   },
 
+  setPlaybackSpeed: (speed: number) => {
+    set({ playbackSpeed: speed });
+  },
+
+  // JKL playback control - L for forward play
+  playForward: () => {
+    const { isPlaying, playbackSpeed, play } = get();
+    if (!isPlaying) {
+      // Start playing forward at normal speed
+      set({ playbackSpeed: 1 });
+      play();
+    } else if (playbackSpeed < 0) {
+      // Was playing reverse, switch to forward
+      set({ playbackSpeed: 1 });
+    } else {
+      // Already playing forward, increase speed (1 -> 2 -> 4 -> 8)
+      const newSpeed = playbackSpeed >= 8 ? 8 : playbackSpeed * 2;
+      set({ playbackSpeed: newSpeed });
+    }
+  },
+
+  // JKL playback control - J for reverse play
+  playReverse: () => {
+    const { isPlaying, playbackSpeed, play } = get();
+    if (!isPlaying) {
+      // Start playing reverse at normal speed
+      set({ playbackSpeed: -1 });
+      play();
+    } else if (playbackSpeed > 0) {
+      // Was playing forward, switch to reverse
+      set({ playbackSpeed: -1 });
+    } else {
+      // Already playing reverse, increase reverse speed (-1 -> -2 -> -4 -> -8)
+      const newSpeed = playbackSpeed <= -8 ? -8 : playbackSpeed * 2;
+      set({ playbackSpeed: newSpeed });
+    }
+  },
+
   setDuration: (duration: number) => {
     // Manually set duration and lock it so it won't auto-update
     const clampedDuration = Math.max(1, duration); // Minimum 1 second

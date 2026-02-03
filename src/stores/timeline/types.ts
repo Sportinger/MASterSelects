@@ -72,6 +72,9 @@ export interface TimelineState {
   outPoint: number | null;
   loopPlayback: boolean;
 
+  // Playback speed (1 = normal, 2 = 2x, -1 = reverse, etc.)
+  playbackSpeed: number;
+
   // Duration lock (when true, duration won't auto-update based on clips)
   durationLocked: boolean;
 
@@ -190,6 +193,10 @@ export interface PlaybackActions {
   setOutPointAtPlayhead: () => void;
   setLoopPlayback: (loop: boolean) => void;
   toggleLoopPlayback: () => void;
+  setPlaybackSpeed: (speed: number) => void;
+  // JKL playback control
+  playForward: () => void;
+  playReverse: () => void;
   setDuration: (duration: number) => void;
   // Tool mode
   setToolMode: (mode: TimelineToolMode) => void;
