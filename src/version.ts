@@ -54,6 +54,78 @@ interface RawChangeEntry extends ChangeEntry {
 }
 
 const RAW_CHANGELOG: RawChangeEntry[] = [
+  // === Feb 3, 2026 - Multi-Select & FCP XML ===
+  {
+    date: '2026-02-03',
+    type: 'new',
+    title: 'Multi-Select Clip Movement',
+    description: 'Select multiple clips with Shift+Click and drag them together - clips move as a group with proper boundary collision',
+    commit: '6f3eaa3',
+  },
+  {
+    date: '2026-02-03',
+    type: 'new',
+    title: 'Multi-Select Keyframe Movement',
+    description: 'Select multiple keyframes and move them together by the same time delta',
+    commit: '6f3eaa3',
+  },
+  {
+    date: '2026-02-03',
+    type: 'new',
+    title: 'FCP XML Export',
+    description: 'Export timeline to Final Cut Pro XML format for interchange with other NLEs like Premiere and DaVinci Resolve',
+    commit: '901843e',
+  },
+  {
+    date: '2026-02-03',
+    type: 'fix',
+    title: 'Audio Detection for OBS Recordings',
+    description: 'Fixed audio tracks not detected in OBS recordings and other MP4/MOV files - now uses MP4Box for container parsing',
+    commit: '52e76b9',
+  },
+  {
+    date: '2026-02-03',
+    type: 'fix',
+    title: 'Clip Entrance Animation',
+    description: 'Fixed entrance animation showing on wrong actions - now only triggers when switching compositions',
+    commit: 'ce1e782',
+  },
+  {
+    date: '2026-02-03',
+    type: 'fix',
+    title: 'Snapping Without Alt Key',
+    description: 'Fixed snapping not working when enabled - snapping now works by default, Alt temporarily disables it',
+    commit: '9dba94e',
+  },
+  {
+    date: '2026-02-03',
+    type: 'fix',
+    title: 'Multi-Select Visual Preview',
+    description: 'All selected clips now show visual preview during drag, not just on release',
+    commit: '7c71257',
+  },
+  {
+    date: '2026-02-03',
+    type: 'fix',
+    title: 'Multi-Select Clip Trimming',
+    description: 'Fixed clips being accidentally trimmed when moving multiple selected clips together',
+    commit: '14137b8',
+  },
+  {
+    date: '2026-02-03',
+    type: 'fix',
+    title: 'Multi-Select Group Boundaries',
+    description: 'Whole group now stops when any selected clip hits an obstacle - clips cannot be pushed into each other',
+    commit: 'e938874',
+  },
+  {
+    date: '2026-02-03',
+    type: 'fix',
+    title: 'Audio/Video Sync During Multi-Drag',
+    description: 'Fixed video and audio getting out of sync when rapidly dragging multiple selected clips',
+    commit: 'f3bb637',
+  },
+
   // === Feb 2, 2026 - Export & Audio Fixes ===
   {
     date: '2026-02-02',
