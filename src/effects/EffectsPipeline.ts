@@ -168,7 +168,8 @@ export class EffectsPipeline {
     outputWidth: number,
     outputHeight: number
   ): { finalView: GPUTextureView; swapped: boolean } {
-    const enabledEffects = effects.filter(e => e.enabled);
+    // Filter out audio effects (handled by AudioRoutingManager) and disabled effects
+    const enabledEffects = effects.filter(e => e.enabled && !e.type.startsWith('audio-'));
     if (enabledEffects.length === 0) {
       return { finalView: inputView, swapped: false };
     }
