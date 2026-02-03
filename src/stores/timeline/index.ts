@@ -1260,6 +1260,10 @@ export const useTimelineStore = create<TimelineStore>()(
       isRamPreviewing: false,
       cachedFrameTimes: new Set<number>(),
 
+      // Proxy cache preloading state
+      isProxyCaching: false,
+      proxyCacheProgress: null as number | null,
+
       // Export progress state
       isExporting: false,
       exportProgress: null as number | null,

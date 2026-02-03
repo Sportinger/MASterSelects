@@ -740,6 +740,65 @@ class ProxyFrameCache {
     log.debug(`Bulk preload started: ${framesToPreload.length} frames around frame ${frameIndex}`);
   }
 
+  // Preload ALL frames for a media file (for manual cache button)
+  // Returns a promise that resolves when preloading is complete
+  // onProgress callback receives (loadedFrames, totalFrames)
+  async preloadAllFrames(
+    mediaFileId: string,
+    totalFrames: number,
+    _fps: number,
+    onProgress?: (loaded: number, total: number) => void
+  ): Promise<void> {
+    log.info(`Starting full preload for ${mediaFileId}: ${totalFrames} frames`);
+
+    let loadedCount = 0;
+    const batchSize = 32; // Load 32 frames at a time
+
+    for (let startFrame = 0; startFrame < totalFrames; startFrame += batchSize) {
+      const endFrame = Math.min(startFrame + batchSize, totalFrames);
+      const batch: Promise<void>[] = [];
+
+      for (let frame = startFrame; frame < endFrame; frame++) {
+        const key = this.getKey(mediaFileId, frame);
+
+        // Skip if already cached
+        if (this.cache.has(key)) {
+          loadedCount++;
+          continue;
+        }
+
+        // Load frame
+        batch.push(
+          this.loadFrame(mediaFileId, frame).then(image => {
+            if (image) {
+              this.addToCache(mediaFileId, frame, image);
+            }
+            loadedCount++;
+          })
+        );
+      }
+
+      // Wait for batch to complete
+      await Promise.all(batch);
+
+      // Report progress
+      if (onProgress) {
+        onProgress(loadedCount, totalFrames);
+      }
+
+      // Yield to main thread
+      await new Promise(r => setTimeout(r, 0));
+    }
+
+    log.info(`Full preload complete for ${mediaFileId}: ${loadedCount}/${totalFrames} frames cached`);
+  }
+
+  // Cancel ongoing preload (for when user clicks stop or navigates away)
+  cancelPreload(): void {
+    this.preloadQueue = [];
+    log.debug('Preload cancelled');
+  }
+
   // Get cache stats with more detail
   getStats() {
     return {

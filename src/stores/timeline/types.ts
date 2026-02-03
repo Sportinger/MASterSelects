@@ -85,6 +85,10 @@ export interface TimelineState {
   isRamPreviewing: boolean;
   cachedFrameTimes: Set<number>;
 
+  // Proxy cache preloading state
+  isProxyCaching: boolean;
+  proxyCacheProgress: number | null;  // 0-100 percentage
+
   // Export progress state
   isExporting: boolean;
   exportProgress: number | null;  // 0-100 percentage
@@ -215,6 +219,9 @@ export interface RamPreviewActions {
   getCachedRanges: () => Array<{ start: number; end: number }>;
   getProxyCachedRanges: () => Array<{ start: number; end: number }>;
   invalidateCache: () => void;
+  // Proxy cache preloading
+  startProxyCachePreload: () => Promise<void>;
+  cancelProxyCachePreload: () => void;
   // Performance toggles
   toggleThumbnailsEnabled: () => void;
   toggleWaveformsEnabled: () => void;

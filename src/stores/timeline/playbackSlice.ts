@@ -597,13 +597,21 @@ export const createPlaybackSlice: SliceCreator<PlaybackAndRamPreviewActions> = (
 
     // Process all video clips with proxy enabled
     for (const clip of clips) {
-      if (clip.source?.type !== 'video' || !clip.mediaFileId) continue;
+      // Check if clip has video source and mediaFileId
+      if (clip.source?.type !== 'video') continue;
 
-      const mediaFile = mediaFiles.find(f => f.id === clip.mediaFileId);
+      // Try to get mediaFileId from clip or from source
+      const mediaFileId = clip.mediaFileId || clip.source?.mediaFileId;
+      if (!mediaFileId) continue;
+
+      const mediaFile = mediaFiles.find(f => f.id === mediaFileId);
       if (!mediaFile?.proxyFps || mediaFile.proxyStatus !== 'ready') continue;
 
       // Get cached ranges for this media file (in media time)
-      const mediaCachedRanges = proxyFrameCache.getCachedRanges(mediaFile.id, mediaFile.proxyFps);
+      const mediaCachedRanges = proxyFrameCache.getCachedRanges(mediaFileId, mediaFile.proxyFps);
+
+      if (mediaCachedRanges.length > 0) {
+      }
 
       // Convert media time ranges to timeline time ranges
       const playbackRate = clip.speed || 1;
@@ -702,6 +710,74 @@ export const createPlaybackSlice: SliceCreator<PlaybackAndRamPreviewActions> = (
     engine.setGeneratingRamPreview(false);
     engine.clearCompositeCache();
     engine.requestRender(); // Wake up render loop to show changes immediately
+  },
+
+  // Proxy cache preloading - preload all proxy frames for clips with ready proxies
+  startProxyCachePreload: async () => {
+    const { clips, isProxyCaching } = get();
+    if (isProxyCaching) return; // Already caching
+
+    const mediaFiles = useMediaStore.getState().files;
+
+    // Find all clips with ready proxies
+    const clipsWithProxy: Array<{ mediaFileId: string; totalFrames: number; fps: number }> = [];
+
+    for (const clip of clips) {
+      const mediaFileId = clip.mediaFileId || clip.source?.mediaFileId;
+      if (!mediaFileId) continue;
+
+      const mediaFile = mediaFiles.find(f => f.id === mediaFileId);
+      if (!mediaFile?.proxyFps || mediaFile.proxyStatus !== 'ready') continue;
+
+      const totalFrames = Math.ceil((mediaFile.duration || 10) * mediaFile.proxyFps);
+      clipsWithProxy.push({ mediaFileId, totalFrames, fps: mediaFile.proxyFps });
+    }
+
+    if (clipsWithProxy.length === 0) {
+      log.info('No clips with ready proxies to cache');
+      return;
+    }
+
+    set({ isProxyCaching: true, proxyCacheProgress: 0 });
+    log.info(`Starting proxy cache preload for ${clipsWithProxy.length} clips`);
+
+    try {
+      let totalFrames = 0;
+      let loadedFrames = 0;
+
+      // Calculate total frames
+      for (const clip of clipsWithProxy) {
+        totalFrames += clip.totalFrames;
+      }
+
+      // Preload each clip
+      for (const clip of clipsWithProxy) {
+        const clipStartFrames = loadedFrames;
+
+        await proxyFrameCache.preloadAllFrames(
+          clip.mediaFileId,
+          clip.totalFrames,
+          clip.fps,
+          (loaded) => {
+            loadedFrames = clipStartFrames + loaded;
+            const progress = Math.round((loadedFrames / totalFrames) * 100);
+            set({ proxyCacheProgress: progress });
+          }
+        );
+      }
+
+      log.info('Proxy cache preload complete');
+    } catch (e) {
+      log.error('Proxy cache preload failed', e);
+    } finally {
+      set({ isProxyCaching: false, proxyCacheProgress: null });
+    }
+  },
+
+  cancelProxyCachePreload: () => {
+    proxyFrameCache.cancelPreload();
+    set({ isProxyCaching: false, proxyCacheProgress: null });
+    log.info('Proxy cache preload cancelled');
   },
 
   // Performance toggles

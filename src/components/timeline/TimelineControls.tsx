@@ -31,6 +31,10 @@ function TimelineControlsComponent({
   onClearInOut,
   onToggleRamPreview,
   onToggleProxy,
+  onStartProxyCachePreload,
+  onCancelProxyCachePreload,
+  isProxyCaching,
+  proxyCacheProgress,
   onToggleTranscriptMarkers,
   onToggleThumbnails,
   onToggleWaveforms,
@@ -206,6 +210,18 @@ function TimelineControlsComponent({
           }
         >
           RAM {ramPreviewEnabled ? 'ON' : 'OFF'}
+        </button>
+        <button
+          className={`btn btn-sm ${isProxyCaching ? 'btn-active' : ''}`}
+          onClick={isProxyCaching ? onCancelProxyCachePreload : onStartProxyCachePreload}
+          title={
+            isProxyCaching
+              ? `Caching proxy frames... ${proxyCacheProgress ?? 0}% - Click to cancel`
+              : 'Cache all proxy frames for instant scrubbing'
+          }
+          disabled={!proxyEnabled || mediaFilesWithProxy === 0}
+        >
+          {isProxyCaching ? `Cache ${proxyCacheProgress ?? 0}%` : 'Cache'}
         </button>
         <div className="view-dropdown" ref={viewDropdownRef}>
           <button

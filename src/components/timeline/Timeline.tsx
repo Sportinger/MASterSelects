@@ -90,6 +90,10 @@ export function Timeline() {
     setDraggingPlayhead,
     ramPreviewEnabled,
     toggleRamPreviewEnabled,
+    isProxyCaching,
+    proxyCacheProgress,
+    startProxyCachePreload,
+    cancelProxyCachePreload,
     splitClipAtPlayhead,
     toggleClipReverse,
     updateClipTransform,
@@ -864,6 +868,10 @@ export function Timeline() {
         onClearInOut={clearInOut}
         onToggleRamPreview={toggleRamPreviewEnabled}
         onToggleProxy={() => setProxyEnabled(!proxyEnabled)}
+        isProxyCaching={isProxyCaching}
+        proxyCacheProgress={proxyCacheProgress}
+        onStartProxyCachePreload={startProxyCachePreload}
+        onCancelProxyCachePreload={cancelProxyCachePreload}
         onToggleTranscriptMarkers={() => setShowTranscriptMarkers(!showTranscriptMarkers)}
         onToggleThumbnails={toggleThumbnailsEnabled}
         onToggleWaveforms={toggleWaveformsEnabled}
