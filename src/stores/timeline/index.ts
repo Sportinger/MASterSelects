@@ -88,12 +88,12 @@ export const useTimelineStore = create<TimelineStore>()(
       },
 
       getSnappedPosition: (clipId: string, desiredStartTime: number, trackId: string) => {
-        const { clips, snappingEnabled } = get();
+        const { clips } = get();
         const movingClip = clips.find(c => c.id === clipId);
         if (!movingClip) return { startTime: desiredStartTime, snapped: false };
 
-        // If snapping is disabled, return the desired position without snapping
-        if (!snappingEnabled) return { startTime: Math.max(0, desiredStartTime), snapped: false };
+        // Note: Caller decides whether to call this based on snappingEnabled + Alt key
+        // This function always attempts to snap when called
 
         const clipDuration = movingClip.duration;
         const desiredEndTime = desiredStartTime + clipDuration;
