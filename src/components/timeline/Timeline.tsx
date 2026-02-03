@@ -81,6 +81,7 @@ import { useTransitionDrop } from './hooks/useTransitionDrop';
 import { usePickWhipDrag } from './hooks/usePickWhipDrag';
 import { useTimelineHelpers } from './hooks/useTimelineHelpers';
 import { usePlayheadSnap } from './hooks/usePlayheadSnap';
+import { useMarkerDrag } from './hooks/useMarkerDrag';
 import { MIN_ZOOM, MAX_ZOOM } from '../../stores/timeline/constants';
 import type { ContextMenuState } from './types';
 
@@ -360,183 +361,30 @@ export function Timeline() {
   // Transcript markers visibility toggle
   const [showTranscriptMarkers, setShowTranscriptMarkers] = useState(true);
 
-  // Timeline marker drag state
-  const [timelineMarkerDrag, setTimelineMarkerDrag] = useState<{
-    markerId: string;
-    startX: number;
-    originalTime: number;
-  } | null>(null);
-
-  // Drag-to-create marker state
-  const [markerCreateDrag, setMarkerCreateDrag] = useState<{
-    isDragging: boolean;
-    currentTime: number;
-    isOverTimeline: boolean;
-    dropAnimating: boolean;
-  } | null>(null);
-
   // Multicam dialog state
   const [multicamDialogOpen, setMulticamDialogOpen] = useState(false);
 
-  // Handle timeline marker drag start
-  const handleTimelineMarkerMouseDown = useCallback((e: React.MouseEvent, markerId: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const marker = markers.find(m => m.id === markerId);
-    if (!marker) return;
-
-    setTimelineMarkerDrag({
-      markerId,
-      startX: e.clientX,
-      originalTime: marker.time,
-    });
-  }, [markers]);
-
-  // Handle timeline marker drag - effect for mouse move/up
-  useEffect(() => {
-    if (!timelineMarkerDrag) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!timelineRef.current) return;
-
-      const rect = timelineRef.current.getBoundingClientRect();
-      const x = e.clientX - rect.left + scrollX;
-      let time = pixelToTime(x);
-
-      // Apply snapping if enabled (and not holding Alt)
-      const shouldSnap = snappingEnabled !== e.altKey;
-      if (shouldSnap) {
-        const snapTimes = getSnapTargetTimes();
-        // Also snap to playhead
-        snapTimes.push(playheadPosition);
-        // Snap to in/out points if set
-        if (inPoint !== null) snapTimes.push(inPoint);
-        if (outPoint !== null) snapTimes.push(outPoint);
-
-        const snapThresholdTime = pixelToTime(10); // 10 pixels threshold
-        let closestSnap = time;
-        let minDist = Infinity;
-
-        for (const snapTime of snapTimes) {
-          const dist = Math.abs(time - snapTime);
-          if (dist < minDist && dist < snapThresholdTime) {
-            minDist = dist;
-            closestSnap = snapTime;
-          }
-        }
-        time = closestSnap;
-      }
-
-      // Clamp to valid range
-      time = Math.max(0, Math.min(time, duration));
-      moveMarker(timelineMarkerDrag.markerId, time);
-    };
-
-    const handleMouseUp = () => {
-      setTimelineMarkerDrag(null);
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [timelineMarkerDrag, scrollX, snappingEnabled, duration, pixelToTime, getSnapTargetTimes, moveMarker, playheadPosition, inPoint, outPoint]);
-
-  // Handle drag-to-create marker - start dragging from button
-  const handleMarkerButtonDragStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    setMarkerCreateDrag({
-      isDragging: true,
-      currentTime: playheadPosition,
-      isOverTimeline: false,
-      dropAnimating: false,
-    });
-  }, [playheadPosition]);
-
-  // Handle drag-to-create marker - mouse move/up effect
-  useEffect(() => {
-    if (!markerCreateDrag || !markerCreateDrag.isDragging) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      // Use timelineBodyRef for wider detection (includes ruler area)
-      const bodyRef = timelineBodyRef.current;
-      const trackRef = timelineRef.current;
-      if (!bodyRef || !trackRef) return;
-
-      const bodyRect = bodyRef.getBoundingClientRect();
-      const trackRect = trackRef.getBoundingClientRect();
-
-      // Calculate time from X position (using track area for proper offset)
-      const x = e.clientX - trackRect.left + scrollX;
-      let time = pixelToTime(x);
-
-      // Apply snapping if enabled (and not holding Alt)
-      const shouldSnap = snappingEnabled !== e.altKey;
-      if (shouldSnap) {
-        const snapTimes = getSnapTargetTimes();
-        snapTimes.push(playheadPosition);
-        if (inPoint !== null) snapTimes.push(inPoint);
-        if (outPoint !== null) snapTimes.push(outPoint);
-
-        const snapThresholdTime = pixelToTime(10);
-        let closestSnap = time;
-        let minDist = Infinity;
-
-        for (const snapTime of snapTimes) {
-          const dist = Math.abs(time - snapTime);
-          if (dist < minDist && dist < snapThresholdTime) {
-            minDist = dist;
-            closestSnap = snapTime;
-          }
-        }
-        time = closestSnap;
-      }
-
-      time = Math.max(0, Math.min(time, duration));
-
-      // Check if mouse is over the timeline body (more generous area)
-      const isOverTimeline = e.clientX >= bodyRect.left && e.clientX <= bodyRect.right &&
-                             e.clientY >= bodyRect.top && e.clientY <= bodyRect.bottom;
-
-      setMarkerCreateDrag(prev => prev ? { ...prev, currentTime: time, isOverTimeline } : null);
-    };
-
-    const handleMouseUp = (e: MouseEvent) => {
-      const bodyRef = timelineBodyRef.current;
-      if (!bodyRef || !markerCreateDrag) {
-        setMarkerCreateDrag(null);
-        return;
-      }
-
-      const bodyRect = bodyRef.getBoundingClientRect();
-      const isOverTimeline = e.clientX >= bodyRect.left && e.clientX <= bodyRect.right &&
-                             e.clientY >= bodyRect.top && e.clientY <= bodyRect.bottom;
-
-      if (isOverTimeline) {
-        // Add the marker and trigger drop animation
-        addMarker(markerCreateDrag.currentTime);
-        setMarkerCreateDrag(prev => prev ? { ...prev, isDragging: false, dropAnimating: true } : null);
-
-        // Clear animation after it completes
-        setTimeout(() => {
-          setMarkerCreateDrag(null);
-        }, 300);
-      } else {
-        setMarkerCreateDrag(null);
-      }
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [markerCreateDrag, scrollX, snappingEnabled, duration, pixelToTime, getSnapTargetTimes, addMarker, playheadPosition, inPoint, outPoint]);
+  // Marker drag operations - extracted to hook
+  const {
+    timelineMarkerDrag,
+    markerCreateDrag,
+    handleTimelineMarkerMouseDown,
+    handleMarkerButtonDragStart,
+  } = useMarkerDrag({
+    timelineRef,
+    timelineBodyRef,
+    markers,
+    scrollX,
+    snappingEnabled,
+    duration,
+    playheadPosition,
+    inPoint,
+    outPoint,
+    pixelToTime,
+    getSnapTargetTimes,
+    moveMarker,
+    addMarker,
+  });
 
   // Marquee selection - extracted to hook
   const { marquee, handleMarqueeMouseDown } = useMarqueeSelection({
