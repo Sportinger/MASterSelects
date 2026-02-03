@@ -12,6 +12,7 @@ type SettingsCategory =
   | 'general'
   | 'previews'
   | 'import'
+  | 'transcription'
   | 'output'
   | 'performance'
   | 'apiKeys';
@@ -26,6 +27,7 @@ const categories: CategoryConfig[] = [
   { id: 'general', label: 'General', icon: '⚙' },
   { id: 'previews', label: 'Previews', icon: '▶' },
   { id: 'import', label: 'Import', icon: '📥' },
+  { id: 'transcription', label: 'Transcription', icon: '🎤' },
   { id: 'output', label: 'Output', icon: '📤' },
   { id: 'performance', label: 'Performance', icon: '⚡' },
   { id: 'apiKeys', label: 'API Keys', icon: '🔑' },
@@ -215,9 +217,16 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
                 When importing clips, copy them to the project's Raw folder for easier relinking.
               </p>
             </div>
+          </div>
+        );
+
+      case 'transcription':
+        return (
+          <div className="settings-category-content">
+            <h2>Transcription</h2>
 
             <div className="settings-group">
-              <div className="settings-group-title">Transcription Provider</div>
+              <div className="settings-group-title">Provider</div>
               <p className="settings-description">
                 Select the provider for automatic speech-to-text transcription.
               </p>
@@ -244,6 +253,79 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
                     )}
                   </label>
                 ))}
+              </div>
+            </div>
+
+            <div className="settings-group">
+              <div className="settings-group-title">API Keys</div>
+              <p className="settings-hint">
+                Configure API keys for cloud transcription providers.
+              </p>
+
+              {/* OpenAI */}
+              <div className="api-key-row">
+                <label>OpenAI API Key</label>
+                <div className="api-key-input">
+                  <input
+                    type={showKeys.openai ? 'text' : 'password'}
+                    value={localKeys.openai}
+                    onChange={(e) => handleKeyChange('openai', e.target.value)}
+                    placeholder="sk-..."
+                  />
+                  <button
+                    className="toggle-visibility"
+                    onClick={() => toggleShowKey('openai')}
+                  >
+                    {showKeys.openai ? '👁' : '○'}
+                  </button>
+                </div>
+                <a className="api-key-link" href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">
+                  Get API Key
+                </a>
+              </div>
+
+              {/* AssemblyAI */}
+              <div className="api-key-row">
+                <label>AssemblyAI API Key</label>
+                <div className="api-key-input">
+                  <input
+                    type={showKeys.assemblyai ? 'text' : 'password'}
+                    value={localKeys.assemblyai}
+                    onChange={(e) => handleKeyChange('assemblyai', e.target.value)}
+                    placeholder="Enter API key..."
+                  />
+                  <button
+                    className="toggle-visibility"
+                    onClick={() => toggleShowKey('assemblyai')}
+                  >
+                    {showKeys.assemblyai ? '👁' : '○'}
+                  </button>
+                </div>
+                <a className="api-key-link" href="https://www.assemblyai.com/dashboard/signup" target="_blank" rel="noopener noreferrer">
+                  Get API Key
+                </a>
+              </div>
+
+              {/* Deepgram */}
+              <div className="api-key-row">
+                <label>Deepgram API Key</label>
+                <div className="api-key-input">
+                  <input
+                    type={showKeys.deepgram ? 'text' : 'password'}
+                    value={localKeys.deepgram}
+                    onChange={(e) => handleKeyChange('deepgram', e.target.value)}
+                    placeholder="Enter API key..."
+                  />
+                  <button
+                    className="toggle-visibility"
+                    onClick={() => toggleShowKey('deepgram')}
+                  >
+                    {showKeys.deepgram ? '👁' : '○'}
+                  </button>
+                </div>
+                <a className="api-key-link" href="https://console.deepgram.com/signup" target="_blank" rel="noopener noreferrer">
+                  Get API Key
+                </a>
               </div>
             </div>
           </div>
@@ -368,77 +450,6 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
             <p className="settings-description">
               Keys are stored locally in your browser and never sent to our servers.
             </p>
-
-            <div className="settings-group">
-              <div className="settings-group-title">Transcription</div>
-
-              {/* OpenAI */}
-              <div className="api-key-row">
-                <label>OpenAI API Key</label>
-                <div className="api-key-input">
-                  <input
-                    type={showKeys.openai ? 'text' : 'password'}
-                    value={localKeys.openai}
-                    onChange={(e) => handleKeyChange('openai', e.target.value)}
-                    placeholder="sk-..."
-                  />
-                  <button
-                    className="toggle-visibility"
-                    onClick={() => toggleShowKey('openai')}
-                    title={showKeys.openai ? 'Hide' : 'Show'}
-                  >
-                    {showKeys.openai ? '👁' : '○'}
-                  </button>
-                </div>
-                <a className="api-key-link" href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">
-                  Get API Key
-                </a>
-              </div>
-
-              {/* AssemblyAI */}
-              <div className="api-key-row">
-                <label>AssemblyAI API Key</label>
-                <div className="api-key-input">
-                  <input
-                    type={showKeys.assemblyai ? 'text' : 'password'}
-                    value={localKeys.assemblyai}
-                    onChange={(e) => handleKeyChange('assemblyai', e.target.value)}
-                    placeholder="Enter API key..."
-                  />
-                  <button
-                    className="toggle-visibility"
-                    onClick={() => toggleShowKey('assemblyai')}
-                  >
-                    {showKeys.assemblyai ? '👁' : '○'}
-                  </button>
-                </div>
-                <a className="api-key-link" href="https://www.assemblyai.com/dashboard/signup" target="_blank" rel="noopener noreferrer">
-                  Get API Key
-                </a>
-              </div>
-
-              {/* Deepgram */}
-              <div className="api-key-row">
-                <label>Deepgram API Key</label>
-                <div className="api-key-input">
-                  <input
-                    type={showKeys.deepgram ? 'text' : 'password'}
-                    value={localKeys.deepgram}
-                    onChange={(e) => handleKeyChange('deepgram', e.target.value)}
-                    placeholder="Enter API key..."
-                  />
-                  <button
-                    className="toggle-visibility"
-                    onClick={() => toggleShowKey('deepgram')}
-                  >
-                    {showKeys.deepgram ? '👁' : '○'}
-                  </button>
-                </div>
-                <a className="api-key-link" href="https://console.deepgram.com/signup" target="_blank" rel="noopener noreferrer">
-                  Get API Key
-                </a>
-              </div>
-            </div>
 
             <div className="settings-group">
               <div className="settings-group-title">AI Video Generation</div>
