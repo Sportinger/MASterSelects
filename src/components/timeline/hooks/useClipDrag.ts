@@ -59,6 +59,12 @@ export function useClipDrag({
   const clipDragRef = useRef<ClipDragState | null>(clipDrag);
   clipDragRef.current = clipDrag;
 
+  // Keep refs to current values for use in event handlers (avoid stale closures)
+  const selectedClipIdsRef = useRef<Set<string>>(selectedClipIds);
+  selectedClipIdsRef.current = selectedClipIds;
+  const clipMapRef = useRef<Map<string, TimelineClip>>(clipMap);
+  clipMapRef.current = clipMap;
+
   // Premiere-style clip drag
   const handleClipMouseDown = useCallback(
     (e: React.MouseEvent, clipId: string) => {
@@ -192,19 +198,23 @@ export function useClipDrag({
           const x = upEvent.clientX - rect.left + scrollX - drag.grabOffsetX;
           const newStartTime = Math.max(0, pixelToTime(x));
 
+          // Use refs to get current values (avoid stale closures)
+          const currentSelectedIds = selectedClipIdsRef.current;
+          const currentClipMap = clipMapRef.current;
+
           // Calculate the time delta for multi-select movement
-          const draggedClip = clipMap.get(drag.clipId);
+          const draggedClip = currentClipMap.get(drag.clipId);
           const timeDelta = newStartTime - (draggedClip?.startTime ?? drag.originalStartTime);
 
           // If multiple clips are selected, move them all by the same delta
-          if (selectedClipIds.size > 1 && selectedClipIds.has(drag.clipId)) {
+          if (currentSelectedIds.size > 1 && currentSelectedIds.has(drag.clipId)) {
             // Move the dragged clip first (this handles snapping)
             moveClip(drag.clipId, newStartTime, drag.currentTrackId, false, drag.altKeyPressed);
 
             // Move other selected clips by the same delta (skip linked to avoid double-moving)
-            for (const selectedId of selectedClipIds) {
+            for (const selectedId of currentSelectedIds) {
               if (selectedId === drag.clipId) continue;
-              const selectedClip = clipMap.get(selectedId);
+              const selectedClip = currentClipMap.get(selectedId);
               if (selectedClip) {
                 const newTime = Math.max(0, selectedClip.startTime + timeDelta);
                 moveClip(selectedId, newTime, selectedClip.trackId, true, true); // skipLinked, skipGroup
