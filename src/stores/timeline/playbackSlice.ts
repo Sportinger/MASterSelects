@@ -1,7 +1,7 @@
 // Playback-related actions slice
 
 import type { PlaybackActions, RamPreviewActions, SliceCreator } from './types';
-import type { Layer } from '../../types';
+import type { Layer, NestedCompositionData } from '../../types';
 import { RAM_PREVIEW_FPS, FRAME_TOLERANCE, MIN_ZOOM, MAX_ZOOM } from './constants';
 import { quantizeTime } from './utils';
 import { Logger } from '../../services/logger';
@@ -278,12 +278,12 @@ export const createPlaybackSlice: SliceCreator<PlaybackAndRamPreviewActions> = (
     const fps = RAM_PREVIEW_FPS;
     const frameInterval = 1 / fps;
 
-    // Helper: check if there's a video clip at a given time
+    // Helper: check if there's a video/image/composition clip at a given time
     const hasVideoAt = (time: number) => {
       return clips.some(c =>
         time >= c.startTime &&
         time < c.startTime + c.duration &&
-        (c.source?.type === 'video' || c.source?.type === 'image')
+        (c.source?.type === 'video' || c.source?.type === 'image' || c.isComposition)
       );
     };
 
@@ -455,6 +455,130 @@ export const createPlaybackSlice: SliceCreator<PlaybackAndRamPreviewActions> = (
               scale: { x: imgScl.x, y: imgScl.y },
               rotation: { x: imgRot.x * (Math.PI / 180), y: imgRot.y * (Math.PI / 180), z: imgRot.z * (Math.PI / 180) },
             });
+          } else if (clip.isComposition && clip.nestedClips && clip.nestedClips.length > 0) {
+            // Handle nested compositions
+            const clipLocalTime = time - clip.startTime;
+            const clipTime = clipLocalTime + clip.inPoint;
+
+            // Get nested video tracks
+            const nestedVideoTracks = clip.nestedTracks?.filter(t => t.type === 'video' && t.visible) || [];
+            const nestedLayers: Layer[] = [];
+
+            // Seek all nested videos and build nested layers
+            for (const nestedTrack of nestedVideoTracks) {
+              const nestedClip = clip.nestedClips.find(nc =>
+                nc.trackId === nestedTrack.id &&
+                clipTime >= nc.startTime &&
+                clipTime < nc.startTime + nc.duration
+              );
+
+              if (!nestedClip) continue;
+
+              const nestedLocalTime = clipTime - nestedClip.startTime;
+              const nestedClipTime = nestedClip.reversed
+                ? nestedClip.outPoint - nestedLocalTime
+                : nestedLocalTime + nestedClip.inPoint;
+
+              if (nestedClip.source?.videoElement) {
+                const nestedVideo = nestedClip.source.videoElement;
+
+                // Seek nested video with verification
+                await new Promise<void>((resolve) => {
+                  const timeout = setTimeout(() => {
+                    nestedVideo.removeEventListener('seeked', onSeeked);
+                    resolve();
+                  }, 300);
+
+                  const onSeeked = () => {
+                    clearTimeout(timeout);
+                    nestedVideo.removeEventListener('seeked', onSeeked);
+                    resolve();
+                  };
+
+                  nestedVideo.addEventListener('seeked', onSeeked);
+                  nestedVideo.currentTime = nestedClipTime;
+                });
+
+                // Wait for video to be ready
+                await new Promise<void>((resolve) => {
+                  const checkReady = () => {
+                    if (!nestedVideo.seeking && nestedVideo.readyState >= 2) {
+                      resolve();
+                    } else {
+                      requestAnimationFrame(checkReady);
+                    }
+                  };
+                  checkReady();
+                  setTimeout(resolve, 100);
+                });
+
+                const nestedPos = nestedClip.transform?.position ?? { x: 0, y: 0, z: 0 };
+                const nestedScl = nestedClip.transform?.scale ?? { x: 1, y: 1 };
+                const nestedRot = nestedClip.transform?.rotation ?? { x: 0, y: 0, z: 0 };
+
+                nestedLayers.push({
+                  id: `nested-${nestedClip.id}`,
+                  name: nestedClip.name,
+                  visible: true,
+                  opacity: nestedClip.transform?.opacity ?? 1,
+                  blendMode: nestedClip.transform?.blendMode ?? 'normal',
+                  source: { type: 'video', videoElement: nestedVideo },
+                  effects: nestedClip.effects || [],
+                  position: { x: nestedPos.x, y: nestedPos.y, z: nestedPos.z },
+                  scale: { x: nestedScl.x, y: nestedScl.y },
+                  rotation: { x: nestedRot.x * (Math.PI / 180), y: nestedRot.y * (Math.PI / 180), z: nestedRot.z * (Math.PI / 180) },
+                });
+              } else if (nestedClip.source?.imageElement) {
+                const nestedPos = nestedClip.transform?.position ?? { x: 0, y: 0, z: 0 };
+                const nestedScl = nestedClip.transform?.scale ?? { x: 1, y: 1 };
+                const nestedRot = nestedClip.transform?.rotation ?? { x: 0, y: 0, z: 0 };
+
+                nestedLayers.push({
+                  id: `nested-${nestedClip.id}`,
+                  name: nestedClip.name,
+                  visible: true,
+                  opacity: nestedClip.transform?.opacity ?? 1,
+                  blendMode: nestedClip.transform?.blendMode ?? 'normal',
+                  source: { type: 'image', imageElement: nestedClip.source.imageElement },
+                  effects: nestedClip.effects || [],
+                  position: { x: nestedPos.x, y: nestedPos.y, z: nestedPos.z },
+                  scale: { x: nestedScl.x, y: nestedScl.y },
+                  rotation: { x: nestedRot.x * (Math.PI / 180), y: nestedRot.y * (Math.PI / 180), z: nestedRot.z * (Math.PI / 180) },
+                });
+              }
+            }
+
+            if (nestedLayers.length > 0) {
+              // Get composition dimensions
+              const mediaStore = useMediaStore.getState();
+              const composition = mediaStore.compositions.find(c => c.id === clip.compositionId);
+              const compWidth = composition?.width || 1920;
+              const compHeight = composition?.height || 1080;
+
+              const nestedCompData: NestedCompositionData = {
+                compositionId: clip.compositionId || clip.id,
+                layers: nestedLayers,
+                width: compWidth,
+                height: compHeight,
+              };
+
+              const compPos = clip.transform?.position ?? { x: 0, y: 0, z: 0 };
+              const compScl = clip.transform?.scale ?? { x: 1, y: 1 };
+              const compRot = clip.transform?.rotation ?? { x: 0, y: 0, z: 0 };
+
+              layers.push({
+                id: clip.id,
+                name: clip.name,
+                visible: true,
+                opacity: clip.transform?.opacity ?? 1,
+                blendMode: clip.transform?.blendMode ?? 'normal',
+                source: { type: 'image', nestedComposition: nestedCompData },
+                effects: clip.effects || [],
+                position: { x: compPos.x, y: compPos.y, z: compPos.z },
+                scale: { x: compScl.x, y: compScl.y },
+                rotation: { x: compRot.x * (Math.PI / 180), y: compRot.y * (Math.PI / 180), z: compRot.z * (Math.PI / 180) },
+              });
+            }
           }
         }
 
