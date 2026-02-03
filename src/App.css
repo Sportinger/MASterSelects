@@ -4856,6 +4856,17 @@ input[type="checkbox"] {
   z-index: 89;
 }
 
+/* Proxy frame cache indicator (yellow line for proxy frames loaded in memory) */
+.proxy-cache-indicator {
+  position: absolute;
+  top: 3px;
+  height: 3px;
+  background: #facc15;
+  opacity: 0.7;
+  pointer-events: none;
+  z-index: 88;
+}
+
 /* Timeline export progress overlay */
 .timeline-export-overlay {
   position: absolute;
@@ -8188,15 +8199,13 @@ input[type="checkbox"] {
 }
 
 .changelog-group-items {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 4px 12px;
-  align-items: start;
+  column-count: 2;
+  column-gap: 12px;
 }
 
 /* Section divider within time group */
 .changelog-section-divider {
-  grid-column: 1 / -1;
+  column-span: all;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -8225,6 +8234,8 @@ input[type="checkbox"] {
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.02);
   transition: background 0.15s;
+  break-inside: avoid;
+  margin-bottom: 4px;
 }
 
 .changelog-item.has-description {
@@ -8284,8 +8295,18 @@ input[type="checkbox"] {
   opacity: 0.5;
 }
 
+.changelog-description-wrapper {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.2s ease-out;
+}
+
+.changelog-item.expanded .changelog-description-wrapper {
+  grid-template-rows: 1fr;
+}
+
 .changelog-description {
-  margin-top: 6px;
+  overflow: hidden;
   margin-left: 32px;
   font-size: 12px;
   color: var(--text-secondary);
@@ -8293,6 +8314,10 @@ input[type="checkbox"] {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.changelog-item.expanded .changelog-description {
+  padding-top: 6px;
 }
 
 .changelog-commit-link {

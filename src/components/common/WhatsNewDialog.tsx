@@ -70,21 +70,23 @@ function ChangeItem({ change }: { change: ChangeEntry }) {
           </span>
         )}
       </div>
-      {expanded && (hasDescription || change.commit) && (
-        <div className="changelog-description">
-          {change.description && <span>{change.description}</span>}
-          {change.commit && (
-            <a
-              href={`https://github.com/Sportinger/MASterSelects/commit/${change.commit}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="changelog-commit-link"
-              onClick={handleCommitClick}
-            >
-              <GitHubIcon />
-              <span>{change.commit.substring(0, 7)}</span>
-            </a>
-          )}
+      {hasExpandableContent && (
+        <div className="changelog-description-wrapper">
+          <div className="changelog-description">
+            {change.description && <span>{change.description}</span>}
+            {change.commit && (
+              <a
+                href={`https://github.com/Sportinger/MASterSelects/commit/${change.commit}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="changelog-commit-link"
+                onClick={handleCommitClick}
+              >
+                <GitHubIcon />
+                <span>{change.commit.substring(0, 7)}</span>
+              </a>
+            )}
+          </div>
         </div>
       )}
     </div>

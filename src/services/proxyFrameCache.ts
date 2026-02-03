@@ -769,6 +769,58 @@ class ProxyFrameCache {
     this.cacheHits = 0;
     this.cacheMisses = 0;
   }
+
+  // Get cached frame ranges for a specific media file (for timeline display)
+  // Returns ranges in seconds relative to media file start
+  getCachedRanges(mediaFileId: string, fps: number = 30): Array<{ start: number; end: number }> {
+    // Collect all cached frame indices for this media file
+    const cachedFrames: number[] = [];
+    for (const [, entry] of this.cache) {
+      if (entry.mediaFileId === mediaFileId) {
+        cachedFrames.push(entry.frameIndex);
+      }
+    }
+
+    if (cachedFrames.length === 0) return [];
+
+    // Sort frames
+    cachedFrames.sort((a, b) => a - b);
+
+    // Convert to time ranges, merging adjacent frames
+    const ranges: Array<{ start: number; end: number }> = [];
+    const frameInterval = 1 / fps;
+    const maxGap = frameInterval * 3; // Allow gap of 3 frames before starting new range
+
+    let rangeStart = cachedFrames[0] / fps;
+    let rangeEnd = rangeStart + frameInterval;
+
+    for (let i = 1; i < cachedFrames.length; i++) {
+      const frameTime = cachedFrames[i] / fps;
+      if (frameTime - rangeEnd <= maxGap) {
+        // Extend current range
+        rangeEnd = frameTime + frameInterval;
+      } else {
+        // Save current range and start new one
+        ranges.push({ start: rangeStart, end: rangeEnd });
+        rangeStart = frameTime;
+        rangeEnd = frameTime + frameInterval;
+      }
+    }
+
+    // Add final range
+    ranges.push({ start: rangeStart, end: rangeEnd });
+
+    return ranges;
+  }
+
+  // Get all cached media file IDs
+  getCachedMediaIds(): string[] {
+    const ids = new Set<string>();
+    for (const entry of this.cache.values()) {
+      ids.add(entry.mediaFileId);
+    }
+    return Array.from(ids);
+  }
 }
 
 // Singleton instance
