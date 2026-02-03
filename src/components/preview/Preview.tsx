@@ -219,7 +219,7 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
   const { isEngineReady, registerPreviewCanvas, unregisterPreviewCanvas, registerIndependentPreviewCanvas, unregisterIndependentPreviewCanvas } = useEngine();
   const { engineStats } = useEngineStore();
   const { outputResolution } = useSettingsStore();
-  const { clips, selectedClipIds, selectClip, updateClipTransform, maskEditMode, layers, selectedLayerId, selectLayer } = useTimelineStore();
+  const { clips, selectedClipIds, selectClip, updateClipTransform, maskEditMode, layers, selectedLayerId, selectLayer, updateLayer } = useTimelineStore();
   const { compositions, activeCompositionId } = useMediaStore();
   const { addPreviewPanel, updatePanelData, closePanelById } = useDockStore();
   const { previewQuality, setPreviewQuality } = useSettingsStore();
@@ -229,10 +229,12 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
 
   // Get first selected clip for preview
   const selectedClipId = selectedClipIds.size > 0 ? [...selectedClipIds][0] : null;
+
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 1920, height: 1080 });
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [, setCompReady] = useState(false);
 
   // Determine which composition this preview is showing
@@ -384,11 +386,28 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
   const [isPanning, setIsPanning] = useState(false);
   const panStart = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
 
-  // Drag state for moving layers
+  // Drag state for moving/scaling layers
   const [isDragging, setIsDragging] = useState(false);
   const [dragLayerId, setDragLayerId] = useState<string | null>(null);
-  const dragStart = useRef({ x: 0, y: 0, layerPosX: 0, layerPosY: 0 });
+  const [dragMode, setDragMode] = useState<'move' | 'scale'>('move');
+  const [dragHandle, setDragHandle] = useState<string | null>(null); // 'tl', 'tr', 'bl', 'br', 't', 'b', 'l', 'r'
+  const [hoverHandle, setHoverHandle] = useState<string | null>(null); // For cursor feedback
+  const dragStart = useRef({ x: 0, y: 0, layerPosX: 0, layerPosY: 0, layerScaleX: 1, layerScaleY: 1 });
   const currentDragPos = useRef({ x: 0, y: 0 }); // Current drag position for immediate visual feedback
+
+  // Sync layer selection when clip is selected in timeline (for edit mode)
+  useEffect(() => {
+    if (!selectedClipId || !editMode) return;
+
+    const clip = clips.find(c => c.id === selectedClipId);
+    if (clip) {
+      // Find matching layer by name
+      const layer = layers.find(l => l?.name === clip.name);
+      if (layer && layer.id !== selectedLayerId) {
+        selectLayer(layer.id);
+      }
+    }
+  }, [selectedClipId, editMode, clips, layers, selectedLayerId, selectLayer]);
 
   // Helper function to calculate layer bounding box in canvas coordinates
   // This matches the shader's transform calculation exactly
@@ -437,12 +456,11 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
     const layerPos = forcePos || layer.position;
 
     // Position mapping: match the shader's visual output
-    // Shader does: uv = uv + 0.5 - pos
-    // When pos.x > 0: uv = ... - pos.x → samples from LEFT → image moves LEFT → box.x decreases
-    // When pos.y > 0: uv = ... - pos.y → samples from TOP → image moves UP → box.y decreases
-    // Both use SUBTRACT
-    const posX = centerX - (layerPos.x * canvasW / 2);
-    const posY = centerY - (layerPos.y * canvasH / 2);
+    // Shader does: uv = uv + 0.5 - pos (samples from offset UV)
+    // pos is in normalized space where 1.0 = full canvas width/height
+    // Box position uses the same scale as shader (no / 2)
+    const posX = centerX + (layerPos.x * canvasW);
+    const posY = centerY + (layerPos.y * canvasH);
 
     // Extract rotation value - if it's an object, use z rotation
     const rotationValue = typeof layer.rotation === 'number' ? layer.rotation : layer.rotation.z;
@@ -466,6 +484,9 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
       const containerHeight = container.clientHeight;
 
       if (containerWidth === 0 || containerHeight === 0) return;
+
+      // Track container size for overlay
+      setContainerSize({ width: containerWidth, height: containerHeight });
 
       const videoAspect = outputResolution.width / outputResolution.height;
       const containerAspect = containerWidth / containerHeight;
@@ -497,23 +518,46 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
     return () => resizeObserver.disconnect();
   }, [outputResolution.width, outputResolution.height]);
 
-  // Handle zoom with Shift+Scroll
+  // Handle zoom with scroll wheel in edit mode
   const handleWheel = useCallback((e: React.WheelEvent) => {
-    if (!editMode) return;
+    if (!editMode || !containerRef.current) return;
 
-    if (e.shiftKey) {
-      e.preventDefault();
-      const delta = e.deltaY > 0 ? 0.9 : 1.1;
-      setViewZoom(prev => Math.max(0.1, Math.min(5, prev * delta)));
-    } else if (e.altKey) {
+    e.preventDefault();
+
+    if (e.altKey) {
       // Alt+scroll for horizontal pan
-      e.preventDefault();
       setViewPan(prev => ({
         x: prev.x - e.deltaY,
         y: prev.y
       }));
+    } else {
+      // Zoom towards mouse position (like After Effects)
+      const rect = containerRef.current.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+      const newZoom = Math.max(0.1, Math.min(150, viewZoom * zoomFactor));
+
+      // Calculate the point under the mouse in "world" coordinates (before zoom)
+      // The canvas center is at (containerWidth/2 + panX, containerHeight/2 + panY)
+      // World point = (mousePos - canvasCenter) / zoom
+      const containerCenterX = containerSize.width / 2;
+      const containerCenterY = containerSize.height / 2;
+
+      const worldX = (mouseX - containerCenterX - viewPan.x) / viewZoom;
+      const worldY = (mouseY - containerCenterY - viewPan.y) / viewZoom;
+
+      // After zoom, adjust pan so the same world point stays under the mouse
+      // mousePos = worldPoint * newZoom + canvasCenter + newPan
+      // newPan = mousePos - worldPoint * newZoom - canvasCenter
+      const newPanX = mouseX - worldX * newZoom - containerCenterX;
+      const newPanY = mouseY - worldY * newZoom - containerCenterY;
+
+      setViewZoom(newZoom);
+      setViewPan({ x: newPanX, y: newPanY });
     }
-  }, [editMode]);
+  }, [editMode, viewZoom, viewPan, containerSize]);
 
   // Tab key to toggle edit mode
   useEffect(() => {
@@ -572,7 +616,27 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
     setViewPan({ x: 0, y: 0 });
   }, []);
 
-  // Draw overlay with bounding boxes
+  // Calculate canvas position within container (for full-container overlay)
+  // This accounts for zoom and pan to determine where the composition canvas appears
+  const canvasInContainer = useMemo(() => {
+    // Canvas is centered in container, then zoom and pan are applied
+    const scaledWidth = canvasSize.width * viewZoom;
+    const scaledHeight = canvasSize.height * viewZoom;
+
+    // Center position before pan
+    const centerX = (containerSize.width - scaledWidth) / 2;
+    const centerY = (containerSize.height - scaledHeight) / 2;
+
+    // Apply pan (pan is in screen pixels)
+    return {
+      x: centerX + viewPan.x,
+      y: centerY + viewPan.y,
+      width: scaledWidth,
+      height: scaledHeight,
+    };
+  }, [containerSize, canvasSize, viewZoom, viewPan]);
+
+  // Draw overlay with bounding boxes (full-container overlay for pasteboard support)
   useEffect(() => {
     if (!editMode || !overlayRef.current) return;
 
@@ -583,6 +647,18 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
       const overlayWidth = overlayRef.current!.width;
       const overlayHeight = overlayRef.current!.height;
       ctx.clearRect(0, 0, overlayWidth, overlayHeight);
+
+      // Fill grey pasteboard area (outside composition bounds)
+      ctx.fillStyle = '#2a2a2a';
+      ctx.fillRect(0, 0, overlayWidth, overlayHeight);
+
+      // Clear the composition area (make it transparent so video shows through)
+      ctx.clearRect(
+        canvasInContainer.x,
+        canvasInContainer.y,
+        canvasInContainer.width,
+        canvasInContainer.height
+      );
 
       // Get visible layers (from timeline clips)
       const visibleLayers = layers.filter(l => l?.visible && l?.source);
@@ -596,22 +672,28 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
         // Use current drag position if this layer is being dragged (for immediate feedback)
         const forcePos = (isDragging && layer.id === dragLayerId) ? currentDragPos.current : undefined;
 
-        // Calculate bounding box using the helper function
+        // Calculate bounding box in canvas coordinates
         const bounds = calculateLayerBounds(layer, canvasSize.width, canvasSize.height, forcePos);
+
+        // Convert to container coordinates (apply zoom and canvas offset)
+        const containerX = canvasInContainer.x + bounds.x * viewZoom;
+        const containerY = canvasInContainer.y + bounds.y * viewZoom;
+        const containerWidth = bounds.width * viewZoom;
+        const containerHeight = bounds.height * viewZoom;
 
         // Save context for rotation
         ctx.save();
-        ctx.translate(bounds.x, bounds.y);
+        ctx.translate(containerX, containerY);
         ctx.rotate(bounds.rotation);
 
         // Draw bounding box
-        const halfW = bounds.width / 2;
-        const halfH = bounds.height / 2;
+        const halfW = containerWidth / 2;
+        const halfH = containerHeight / 2;
 
         ctx.strokeStyle = isSelected ? '#00d4ff' : 'rgba(255, 255, 255, 0.5)';
         ctx.lineWidth = isSelected ? 2 : 1;
         ctx.setLineDash(isSelected ? [] : [5, 5]);
-        ctx.strokeRect(-halfW, -halfH, bounds.width, bounds.height);
+        ctx.strokeRect(-halfW, -halfH, containerWidth, containerHeight);
 
         // Draw corner handles for selected layer
         if (isSelected) {
@@ -649,12 +731,6 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
 
         ctx.restore();
       });
-
-      // Draw canvas bounds indicator (the dashed line showing video bounds)
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([10, 10]);
-      ctx.strokeRect(0, 0, canvasSize.width, canvasSize.height);
     };
 
     draw();
@@ -673,28 +749,96 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
     return () => {
       if (animId !== null) cancelAnimationFrame(animId);
     };
-  }, [editMode, layers, selectedLayerId, selectedClipIds, clips, canvasSize, calculateLayerBounds, isDragging, dragLayerId]);
+  }, [editMode, layers, selectedLayerId, selectedClipIds, clips, canvasSize, containerSize, canvasInContainer, viewZoom, calculateLayerBounds, isDragging, dragLayerId]);
 
-  // Find layer at mouse position
-  const findLayerAtPosition = useCallback((x: number, y: number): Layer | null => {
+  // Find layer at mouse position (input is in container coordinates)
+  const findLayerAtPosition = useCallback((containerX: number, containerY: number): Layer | null => {
     const visibleLayers = layers.filter(l => l?.visible && l?.source).reverse();
 
     for (const layer of visibleLayers) {
       if (!layer) continue;
 
+      // Get bounds in canvas coordinates
       const bounds = calculateLayerBounds(layer, canvasSize.width, canvasSize.height);
 
-      // Simple bounding box hit test (ignoring rotation for simplicity)
-      const halfW = bounds.width / 2;
-      const halfH = bounds.height / 2;
+      // Convert bounds to container coordinates
+      const layerContainerX = canvasInContainer.x + bounds.x * viewZoom;
+      const layerContainerY = canvasInContainer.y + bounds.y * viewZoom;
+      const halfW = (bounds.width * viewZoom) / 2;
+      const halfH = (bounds.height * viewZoom) / 2;
 
-      if (x >= bounds.x - halfW && x <= bounds.x + halfW &&
-          y >= bounds.y - halfH && y <= bounds.y + halfH) {
+      // Simple bounding box hit test (ignoring rotation for simplicity)
+      if (containerX >= layerContainerX - halfW && containerX <= layerContainerX + halfW &&
+          containerY >= layerContainerY - halfH && containerY <= layerContainerY + halfH) {
         return layer;
       }
     }
     return null;
-  }, [layers, canvasSize, calculateLayerBounds]);
+  }, [layers, canvasSize, canvasInContainer, viewZoom, calculateLayerBounds]);
+
+  // Find which handle (if any) was clicked on the selected layer
+  const findHandleAtPosition = useCallback((containerX: number, containerY: number, layer: Layer): string | null => {
+    const bounds = calculateLayerBounds(layer, canvasSize.width, canvasSize.height);
+
+    // Convert bounds to container coordinates
+    const cx = canvasInContainer.x + bounds.x * viewZoom;
+    const cy = canvasInContainer.y + bounds.y * viewZoom;
+    const halfW = (bounds.width * viewZoom) / 2;
+    const halfH = (bounds.height * viewZoom) / 2;
+
+    const handleSize = 12; // Slightly larger hit area than visual size
+
+    // Check corners first (they take priority)
+    const corners = [
+      { id: 'tl', x: cx - halfW, y: cy - halfH },
+      { id: 'tr', x: cx + halfW, y: cy - halfH },
+      { id: 'bl', x: cx - halfW, y: cy + halfH },
+      { id: 'br', x: cx + halfW, y: cy + halfH },
+    ];
+
+    for (const corner of corners) {
+      if (Math.abs(containerX - corner.x) <= handleSize && Math.abs(containerY - corner.y) <= handleSize) {
+        return corner.id;
+      }
+    }
+
+    // Check edge midpoints
+    const edges = [
+      { id: 't', x: cx, y: cy - halfH },
+      { id: 'b', x: cx, y: cy + halfH },
+      { id: 'l', x: cx - halfW, y: cy },
+      { id: 'r', x: cx + halfW, y: cy },
+    ];
+
+    for (const edge of edges) {
+      if (Math.abs(containerX - edge.x) <= handleSize && Math.abs(containerY - edge.y) <= handleSize) {
+        return edge.id;
+      }
+    }
+
+    return null;
+  }, [canvasSize, canvasInContainer, viewZoom, calculateLayerBounds]);
+
+  // Get cursor style for handle
+  const getCursorForHandle = useCallback((handle: string | null): string => {
+    if (!handle) return 'crosshair';
+    switch (handle) {
+      case 'tl':
+      case 'br':
+        return 'nwse-resize';
+      case 'tr':
+      case 'bl':
+        return 'nesw-resize';
+      case 't':
+      case 'b':
+        return 'ns-resize';
+      case 'l':
+      case 'r':
+        return 'ew-resize';
+      default:
+        return 'crosshair';
+    }
+  }, []);
 
   // Handle mouse down on overlay - select or start dragging
   const handleOverlayMouseDown = useCallback((e: React.MouseEvent) => {
@@ -702,8 +846,31 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
     if (e.button !== 0) return; // Only left click
 
     const rect = overlayRef.current.getBoundingClientRect();
+    // Use container coordinates directly (findLayerAtPosition handles zoom)
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
+
+    // First check if clicking on a handle of the currently selected layer
+    const selectedLayer = selectedLayerId ? layers.find(l => l?.id === selectedLayerId) : null;
+    if (selectedLayer) {
+      const handle = findHandleAtPosition(x, y, selectedLayer);
+      if (handle) {
+        // Start scaling
+        setIsDragging(true);
+        setDragLayerId(selectedLayer.id);
+        setDragMode('scale');
+        setDragHandle(handle);
+        dragStart.current = {
+          x: e.clientX,
+          y: e.clientY,
+          layerPosX: selectedLayer.position.x,
+          layerPosY: selectedLayer.position.y,
+          layerScaleX: selectedLayer.scale.x,
+          layerScaleY: selectedLayer.scale.y,
+        };
+        return;
+      }
+    }
 
     const layer = findLayerAtPosition(x, y);
 
@@ -715,59 +882,44 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
       }
       selectLayer(layer.id);
 
-      // Start dragging
+      // Start moving
       setIsDragging(true);
       setDragLayerId(layer.id);
+      setDragMode('move');
+      setDragHandle(null);
       dragStart.current = {
         x: e.clientX,
         y: e.clientY,
         layerPosX: layer.position.x,
         layerPosY: layer.position.y,
+        layerScaleX: layer.scale.x,
+        layerScaleY: layer.scale.y,
       };
     } else {
       // Click on empty space - deselect
       selectClip(null);
       selectLayer(null);
     }
-  }, [editMode, findLayerAtPosition, clips, selectClip, selectLayer]);
+  }, [editMode, findLayerAtPosition, findHandleAtPosition, clips, layers, selectedLayerId, selectClip, selectLayer]);
 
-  // Handle mouse move - drag layer
+  // Handle mouse move on overlay - detect handle hover for cursor feedback
+  // Actual dragging is handled by document-level listeners for reliability
   const handleOverlayMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!isDragging || !dragLayerId) return;
+    if (isDragging || !overlayRef.current) return;
 
-    const dx = e.clientX - dragStart.current.x;
-    const dy = e.clientY - dragStart.current.y;
+    const rect = overlayRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
 
-    // Convert pixel movement to normalized position change
-    // Use canvas dimensions directly for proper aspect ratio handling
-    const normalizedDx = (dx / viewZoom) / canvasSize.width;
-    const normalizedDy = (dy / viewZoom) / canvasSize.height;
-
-    // Box uses negated values (box formula: posX = center - layer.position.x * canvasW/2)
-    // Box formula has /2 built in, so we multiply by 2
-    const boxPosX = dragStart.current.layerPosX - (normalizedDx * 2);
-    const boxPosY = dragStart.current.layerPosY - (normalizedDy * 2);
-
-    // Image uses direct values without scaling (shader works in 0-1 UV space)
-    const imagePosX = dragStart.current.layerPosX + normalizedDx;
-    const imagePosY = dragStart.current.layerPosY + normalizedDy;
-
-    // Update current drag position for box visual feedback
-    currentDragPos.current = { x: boxPosX, y: boxPosY };
-
-    log.debug(`Drag: mouse dx=${dx.toFixed(0)}, box=${boxPosX.toFixed(4)}, image=${imagePosX.toFixed(4)}`);
-
-    // Find the corresponding clip and update its transform
-    const layer = layers.find(l => l?.id === dragLayerId);
-    if (layer) {
-      const clip = clips.find(c => c.name === layer.name);
-      if (clip) {
-        updateClipTransform(clip.id, {
-          position: { x: imagePosX, y: imagePosY, z: 0 },
-        });
-      }
+    // Check if hovering over a handle of the selected layer
+    const selectedLayer = selectedLayerId ? layers.find(l => l?.id === selectedLayerId) : null;
+    if (selectedLayer) {
+      const handle = findHandleAtPosition(x, y, selectedLayer);
+      setHoverHandle(handle);
+    } else {
+      setHoverHandle(null);
     }
-  }, [isDragging, dragLayerId, viewZoom, canvasSize, layers, clips, updateClipTransform]);
+  }, [isDragging, selectedLayerId, layers, findHandleAtPosition]);
 
   // Handle mouse up - stop dragging
   const handleOverlayMouseUp = useCallback(() => {
@@ -775,6 +927,135 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
     setDragLayerId(null);
     currentDragPos.current = { x: 0, y: 0 };
   }, []);
+
+  // Use document-level listeners during drag to allow dragging beyond canvas bounds
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const handleDocumentMouseMove = (e: MouseEvent) => {
+      if (!dragLayerId) return;
+
+      const layer = layers.find(l => l?.id === dragLayerId);
+      if (!layer) return;
+
+      const dx = e.clientX - dragStart.current.x;
+      const dy = e.clientY - dragStart.current.y;
+
+      if (dragMode === 'scale' && dragHandle) {
+        // Scaling mode
+        // Calculate scale change based on handle being dragged
+        // The scale is relative to the center of the layer
+
+        // Get the original bounds to calculate scale factor
+        const originalScaleX = dragStart.current.layerScaleX;
+        const originalScaleY = dragStart.current.layerScaleY;
+
+        // Convert pixel movement to scale factor
+        // Positive dx/dy when dragging outward should increase scale
+        const scaleSensitivity = 0.005 / viewZoom; // Adjust sensitivity based on zoom
+
+        let newScaleX = originalScaleX;
+        let newScaleY = originalScaleY;
+
+        // Determine scale change based on which handle is being dragged
+        switch (dragHandle) {
+          case 'tl': // Top-left: decrease both when moving toward center
+            newScaleX = originalScaleX - dx * scaleSensitivity;
+            newScaleY = originalScaleY - dy * scaleSensitivity;
+            break;
+          case 'tr': // Top-right: increase X, decrease Y when moving outward
+            newScaleX = originalScaleX + dx * scaleSensitivity;
+            newScaleY = originalScaleY - dy * scaleSensitivity;
+            break;
+          case 'bl': // Bottom-left: decrease X, increase Y when moving outward
+            newScaleX = originalScaleX - dx * scaleSensitivity;
+            newScaleY = originalScaleY + dy * scaleSensitivity;
+            break;
+          case 'br': // Bottom-right: increase both when moving outward
+            newScaleX = originalScaleX + dx * scaleSensitivity;
+            newScaleY = originalScaleY + dy * scaleSensitivity;
+            break;
+          case 't': // Top edge: only Y scale
+            newScaleY = originalScaleY - dy * scaleSensitivity;
+            break;
+          case 'b': // Bottom edge: only Y scale
+            newScaleY = originalScaleY + dy * scaleSensitivity;
+            break;
+          case 'l': // Left edge: only X scale
+            newScaleX = originalScaleX - dx * scaleSensitivity;
+            break;
+          case 'r': // Right edge: only X scale
+            newScaleX = originalScaleX + dx * scaleSensitivity;
+            break;
+        }
+
+        // Shift key for aspect ratio lock (uniform scaling)
+        if (e.shiftKey && (dragHandle === 'tl' || dragHandle === 'tr' || dragHandle === 'bl' || dragHandle === 'br')) {
+          // For corner handles, use the larger scale change for both axes
+          const avgScale = (newScaleX / originalScaleX + newScaleY / originalScaleY) / 2;
+          newScaleX = originalScaleX * avgScale;
+          newScaleY = originalScaleY * avgScale;
+        }
+
+        // Clamp scale to reasonable values
+        newScaleX = Math.max(0.01, Math.min(10, newScaleX));
+        newScaleY = Math.max(0.01, Math.min(10, newScaleY));
+
+        // Update layer directly for immediate visual feedback
+        updateLayer(dragLayerId, {
+          scale: { x: newScaleX, y: newScaleY },
+        });
+
+        // Also update clip transform for persistence
+        const clip = clips.find(c => c.name === layer.name);
+        if (clip) {
+          updateClipTransform(clip.id, {
+            scale: { x: newScaleX, y: newScaleY },
+          });
+        }
+      } else {
+        // Move mode
+        // Convert pixel movement to normalized position change
+        // Position is in normalized space where 1.0 = full canvas width/height
+        const normalizedDx = (dx / viewZoom) / canvasSize.width;
+        const normalizedDy = (dy / viewZoom) / canvasSize.height;
+
+        const newPosX = dragStart.current.layerPosX + normalizedDx;
+        const newPosY = dragStart.current.layerPosY + normalizedDy;
+
+        currentDragPos.current = { x: newPosX, y: newPosY };
+
+        // Update layer directly for immediate visual feedback (both box and video)
+        updateLayer(dragLayerId, {
+          position: { x: newPosX, y: newPosY, z: layer.position.z },
+        });
+
+        // Also update clip transform for persistence
+        const clip = clips.find(c => c.name === layer.name);
+        if (clip) {
+          updateClipTransform(clip.id, {
+            position: { x: newPosX, y: newPosY, z: 0 },
+          });
+        }
+      }
+    };
+
+    const handleDocumentMouseUp = () => {
+      setIsDragging(false);
+      setDragLayerId(null);
+      setDragMode('move');
+      setDragHandle(null);
+      currentDragPos.current = { x: 0, y: 0 };
+    };
+
+    document.addEventListener('mousemove', handleDocumentMouseMove);
+    document.addEventListener('mouseup', handleDocumentMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleDocumentMouseMove);
+      document.removeEventListener('mouseup', handleDocumentMouseUp);
+    };
+  }, [isDragging, dragLayerId, dragMode, dragHandle, viewZoom, canvasSize, layers, clips, updateClipTransform, updateLayer]);
 
   // Calculate transform for zoomed/panned view
   const viewTransform = editMode ? {
@@ -892,23 +1173,6 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
                 height: canvasSize.height,
               }}
             />
-            {editMode && (
-              <canvas
-                ref={overlayRef}
-                width={canvasSize.width}
-                height={canvasSize.height}
-                className="preview-overlay"
-                onMouseDown={handleOverlayMouseDown}
-                onMouseMove={handleOverlayMouseMove}
-                onMouseUp={handleOverlayMouseUp}
-                onMouseLeave={handleOverlayMouseUp}
-                style={{
-                  width: canvasSize.width,
-                  height: canvasSize.height,
-                  cursor: isDragging ? 'grabbing' : 'crosshair',
-                }}
-              />
-            )}
             {maskEditMode !== 'none' && (
               <MaskOverlay
                 canvasWidth={outputResolution.width}
@@ -919,9 +1183,34 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
         )}
       </div>
 
+      {/* Edit mode overlay - covers full container for pasteboard support */}
+      {editMode && isEngineReady && (
+        <canvas
+          ref={overlayRef}
+          width={containerSize.width || 100}
+          height={containerSize.height || 100}
+          className="preview-overlay-fullscreen"
+          onMouseDown={handleOverlayMouseDown}
+          onMouseMove={handleOverlayMouseMove}
+          onMouseUp={handleOverlayMouseUp}
+          onMouseLeave={handleOverlayMouseUp}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: containerSize.width || '100%',
+            height: containerSize.height || '100%',
+            cursor: isDragging
+              ? (dragMode === 'scale' ? getCursorForHandle(dragHandle) : 'grabbing')
+              : getCursorForHandle(hoverHandle),
+            pointerEvents: 'auto',
+          }}
+        />
+      )}
+
       {editMode && (
         <div className="preview-edit-hint">
-          Drag: Move Layer | Shift+Scroll: Zoom | Alt+Drag: Pan
+          Drag: Move | Handles: Scale (Shift: Lock Ratio) | Scroll: Zoom | Alt+Drag: Pan
         </div>
       )}
 
