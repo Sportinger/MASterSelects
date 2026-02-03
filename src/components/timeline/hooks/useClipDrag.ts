@@ -253,17 +253,29 @@ export function useClipDrag({
       const handleMouseUp = (upEvent: MouseEvent) => {
         const drag = clipDragRef.current;
         if (drag && timelineRef.current) {
-          const rect = timelineRef.current.getBoundingClientRect();
-          const x = upEvent.clientX - rect.left + scrollX - drag.grabOffsetX;
-          const newStartTime = Math.max(0, pixelToTime(x));
-
           // Use refs to get current values (avoid stale closures)
           const currentSelectedIds = selectedClipIdsRef.current;
           const currentClipMap = clipMapRef.current;
 
-          // Calculate the time delta for multi-select movement
-          const draggedClip = currentClipMap.get(drag.clipId);
-          const timeDelta = newStartTime - (draggedClip?.startTime ?? drag.originalStartTime);
+          // For multi-select: use the already-calculated snappedTime and timeDelta from drag state
+          // This ensures we use the same constrained position shown in the preview
+          const isMultiSelect = currentSelectedIds.size > 1 && currentSelectedIds.has(drag.clipId);
+
+          let finalStartTime: number;
+          let timeDelta: number;
+
+          if (isMultiSelect && drag.snappedTime !== null && drag.multiSelectTimeDelta !== undefined) {
+            // Use the pre-calculated constrained position from the drag preview
+            finalStartTime = drag.snappedTime;
+            timeDelta = drag.multiSelectTimeDelta;
+          } else {
+            // Single clip or no snapped position - calculate from mouse
+            const rect = timelineRef.current.getBoundingClientRect();
+            const x = upEvent.clientX - rect.left + scrollX - drag.grabOffsetX;
+            finalStartTime = Math.max(0, pixelToTime(x));
+            const draggedClip = currentClipMap.get(drag.clipId);
+            timeDelta = finalStartTime - (draggedClip?.startTime ?? drag.originalStartTime);
+          }
 
           log.debug('Multi-select drag check', {
             selectedCount: currentSelectedIds.size,
@@ -271,14 +283,16 @@ export function useClipDrag({
             dragClipId: drag.clipId,
             hasDragClip: currentSelectedIds.has(drag.clipId),
             timeDelta,
+            finalStartTime,
+            usedSnappedTime: isMultiSelect && drag.snappedTime !== null,
           });
 
           // If multiple clips are selected, move them all by the same delta
-          if (currentSelectedIds.size > 1 && currentSelectedIds.has(drag.clipId)) {
+          if (isMultiSelect) {
             log.debug('Moving multiple clips', { count: currentSelectedIds.size });
             // Move the dragged clip first (this handles snapping)
             // skipTrim=true to avoid trimming other selected clips
-            moveClip(drag.clipId, newStartTime, drag.currentTrackId, false, drag.altKeyPressed, true);
+            moveClip(drag.clipId, finalStartTime, drag.currentTrackId, false, drag.altKeyPressed, true);
 
             // Move other selected clips by the same delta (skip linked, group, and trim to avoid double-moving and trimming each other)
             for (const selectedId of currentSelectedIds) {
@@ -291,7 +305,7 @@ export function useClipDrag({
             }
           } else {
             // Single clip drag - normal behavior
-            moveClip(drag.clipId, newStartTime, drag.currentTrackId, false, drag.altKeyPressed);
+            moveClip(drag.clipId, finalStartTime, drag.currentTrackId, false, drag.altKeyPressed);
           }
         }
         setClipDrag(null);
