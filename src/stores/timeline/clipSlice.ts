@@ -368,7 +368,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
     invalidateCache();
   },
 
-  moveClip: (id, newStartTime, newTrackId, skipLinked = false, skipGroup = false, skipTrim = false) => {
+  moveClip: (id, newStartTime, newTrackId, skipLinked = false, skipGroup = false, skipTrim = false, excludeClipIds?: string[]) => {
     const { clips, tracks, updateDuration, getSnappedPosition, getPositionWithResistance, trimOverlappingClips, invalidateCache } = get();
     const movingClip = clips.find(c => c.id === id);
     if (!movingClip) return;
@@ -386,14 +386,14 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
     }
 
     const { startTime: snappedTime } = getSnappedPosition(id, newStartTime, targetTrackId);
-    const { startTime: finalStartTime, forcingOverlap } = getPositionWithResistance(id, snappedTime, targetTrackId, movingClip.duration);
+    const { startTime: finalStartTime, forcingOverlap } = getPositionWithResistance(id, snappedTime, targetTrackId, movingClip.duration, undefined, excludeClipIds);
     const timeDelta = finalStartTime - movingClip.startTime;
 
     const linkedClip = clips.find(c => c.id === movingClip.linkedClipId || c.linkedClipId === id);
     let linkedFinalTime = linkedClip ? linkedClip.startTime + timeDelta : 0;
     let linkedForcingOverlap = false;
     if (linkedClip && !skipLinked) {
-      const linkedResult = getPositionWithResistance(linkedClip.id, linkedClip.startTime + timeDelta, linkedClip.trackId, linkedClip.duration);
+      const linkedResult = getPositionWithResistance(linkedClip.id, linkedClip.startTime + timeDelta, linkedClip.trackId, linkedClip.duration, undefined, excludeClipIds);
       linkedFinalTime = linkedResult.startTime;
       linkedForcingOverlap = linkedResult.forcingOverlap;
     }

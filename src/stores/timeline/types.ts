@@ -141,7 +141,7 @@ export interface ClipActions {
   addCompClip: (trackId: string, composition: Composition, startTime: number) => void;
   updateClip: (id: string, updates: Partial<TimelineClip>) => void;
   removeClip: (id: string) => void;
-  moveClip: (id: string, newStartTime: number, newTrackId?: string, skipLinked?: boolean, skipGroup?: boolean, skipTrim?: boolean) => void;
+  moveClip: (id: string, newStartTime: number, newTrackId?: string, skipLinked?: boolean, skipGroup?: boolean, skipTrim?: boolean, excludeClipIds?: string[]) => void;
   trimClip: (id: string, inPoint: number, outPoint: number) => void;
   splitClip: (clipId: string, splitTime: number) => void;
   splitClipAtPlayhead: () => void;
