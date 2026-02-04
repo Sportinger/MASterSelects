@@ -294,7 +294,8 @@ export function useEngine() {
 
         // ALWAYS try cached frame first - even when idle!
         // This enables instant scrubbing over cached RAM Preview frames
-        if (engine.renderCachedFrame(currentPlayhead)) {
+        const cacheResult = engine.renderCachedFrame(currentPlayhead);
+        if (cacheResult) {
           return;
         }
 
@@ -320,8 +321,9 @@ export function useEngine() {
 
         // Cache rendered frame for instant scrubbing (like Premiere's playback caching)
         // Only cache if RAM preview is enabled and we're playing (not generating RAM preview)
-        const { ramPreviewEnabled, addCachedFrame } = useTimelineStore.getState();
-        if (ramPreviewEnabled && isPlaying) {
+        // NOTE: Read isPlaying from store to avoid stale closure
+        const { ramPreviewEnabled, addCachedFrame, isPlaying: currentlyPlaying } = useTimelineStore.getState();
+        if (ramPreviewEnabled && currentlyPlaying) {
           engine.cacheCompositeFrame(currentPlayhead).then(() => {
             addCachedFrame(currentPlayhead);
           });
@@ -340,12 +342,15 @@ export function useEngine() {
 
     // Always keep the engine running - it has idle detection to save power
     // when nothing changes. Stopping the engine breaks scrubbing.
+    // NOTE: Do NOT include isPlaying in dependencies - that would create a new
+    // RenderLoop on every play/pause, causing memory accumulation and lag.
+    // The render callback reads isPlaying from store when needed.
     engine.start(renderFrame);
 
     return () => {
       engine.stop();
     };
-  }, [isEngineReady, isPlaying]);
+  }, [isEngineReady]);
 
   // Subscribe to state changes that require re-render (wake from idle)
   useEffect(() => {
