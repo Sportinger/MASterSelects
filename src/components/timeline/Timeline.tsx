@@ -137,6 +137,7 @@ export function Timeline() {
     addClip, addCompClip, addTextClip, moveClip, trimClip,
     removeClip, selectClip, unlinkGroup, splitClip, splitClipAtPlayhead,
     toggleClipReverse, updateClipTransform, setClipParent, generateWaveformForClip,
+    addClipEffect,
   } = store;
 
   // Transform getters
@@ -273,10 +274,12 @@ export function Timeline() {
   // Clip fade (fade-in/out handles) - extracted to hook
   const { clipFade, handleFadeStart, getFadeInDuration, getFadeOutDuration } = useClipFade({
     clipMap,
+    tracks,
     addKeyframe,
     removeKeyframe,
     moveKeyframe,
     getClipKeyframes,
+    addClipEffect,
     pixelToTime,
   });
 
