@@ -292,8 +292,12 @@ export function useEngine() {
           engine.requestRender();
         }
 
-        // ALWAYS try cached frame first - even when idle!
-        // This enables instant scrubbing over cached RAM Preview frames
+        // ALWAYS sync video and audio elements - even when using cached frames!
+        // Audio must keep playing, and videos need to stay in sync for when cache misses
+        layerBuilder.syncVideoElements();
+        layerBuilder.syncAudioElements();
+
+        // Try cached frame first for instant scrubbing
         const cacheResult = engine.renderCachedFrame(currentPlayhead);
         if (cacheResult) {
           return;
@@ -311,10 +315,6 @@ export function useEngine() {
 
         // Build layers directly from stores (single source of truth)
         const layers = layerBuilder.buildLayersFromStore();
-
-        // Sync video and audio elements
-        layerBuilder.syncVideoElements();
-        layerBuilder.syncAudioElements();
 
         // Render layers (layerBuilder already handles mask properties)
         engine.render(layers);
