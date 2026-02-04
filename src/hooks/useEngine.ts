@@ -399,6 +399,12 @@ export function useEngine() {
       () => engine.requestRender()
     );
 
+    // Playing state changes - wake render loop when play/pause is toggled
+    const unsubPlaying = useTimelineStore.subscribe(
+      (state) => state.isPlaying,
+      () => engine.requestRender()
+    );
+
     return () => {
       unsubPlayhead();
       unsubClips();
@@ -407,6 +413,7 @@ export function useEngine() {
       unsubResolution();
       unsubSettings();
       unsubActiveComp();
+      unsubPlaying();
     };
   }, [isEngineReady]);
 
