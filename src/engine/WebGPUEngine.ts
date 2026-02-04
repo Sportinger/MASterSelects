@@ -513,9 +513,11 @@ export class WebGPUEngine {
     // Store the callback ref - this allows updating the callback without recreating the loop
     this.renderCallbackRef = renderCallback;
 
-    // If loop already exists and is running, just update the callback reference
+    // If loop already exists, just ensure it's running (don't recreate)
     // This prevents memory leaks from recreating loops on every play/pause
     if (this.renderLoop) {
+      // Restart the existing loop (start() is idempotent - returns early if already running)
+      this.renderLoop.start();
       return;
     }
 
