@@ -504,28 +504,17 @@ export class WebGPUEngine {
     return this.renderLoop?.updatePlayheadTracking(playhead) ?? false;
   }
 
-  // Store callback ref so we can update it without recreating the loop
-  private renderCallbackRef: (() => void) | null = null;
-
   start(renderCallback: () => void): void {
     if (!this.performanceStats) return;
 
-    // Store the callback ref - this allows updating the callback without recreating the loop
-    this.renderCallbackRef = renderCallback;
+    // Stop any existing loop first to prevent multiple RAF loops accumulating
+    this.renderLoop?.stop();
 
-    // If loop already exists, just ensure it's running (don't recreate)
-    // This prevents memory leaks from recreating loops on every play/pause
-    if (this.renderLoop) {
-      // Restart the existing loop (start() is idempotent - returns early if already running)
-      this.renderLoop.start();
-      return;
-    }
-
-    // Create loop only once - it will call the current renderCallbackRef
+    // Create new loop with the callback
     this.renderLoop = new RenderLoop(this.performanceStats, {
       isRecovering: () => this.isRecoveringFromDeviceLoss || this.context.recovering,
       isExporting: () => this.isExporting,
-      onRender: () => this.renderCallbackRef?.(),
+      onRender: renderCallback,
     });
     this.renderLoop.start();
   }
@@ -830,34 +819,13 @@ export class WebGPUEngine {
 
   renderCachedFrame(time: number): boolean {
     const device = this.context.getDevice();
-    // Check if we have the basic requirements for cache lookup
-    if (!device || !this.scrubbingCache) {
+    if (!this.previewContext || !device || !this.scrubbingCache || !this.outputPipeline || !this.sampler) {
       return false;
     }
 
-    // Check cache even if we can't render yet
     const gpuCached = this.scrubbingCache.getGpuCachedFrame(time);
-    const imageDataCached = !gpuCached ? this.scrubbingCache.getCachedCompositeFrame(time) : null;
-    const hasCachedFrame = gpuCached || imageDataCached;
-
-    // If no cached frame, return false to trigger normal rendering
-    if (!hasCachedFrame) {
-      return false;
-    }
-
-    // We have a cached frame! Check if we can render it
-    // Try to configure canvas on-the-fly if it exists but context is missing
-    if (!this.previewContext && this.mainPreviewCanvas) {
-      this.previewContext = this.context.configureCanvas(this.mainPreviewCanvas);
-    }
-
-    if (!this.previewContext || !this.outputPipeline || !this.sampler) {
-      // Can't render but we have the frame cached - return true to skip video seeking
-      return true;
-    }
-
-    // Use the cached values from above
     if (gpuCached) {
+      log.debug('RAM Preview cache hit (GPU)', { time: time.toFixed(3) });
       const commandEncoder = device.createCommandEncoder();
       this.outputPipeline.renderToCanvas(commandEncoder, this.previewContext, gpuCached.bindGroup);
       for (const previewCtx of this.previewCanvases.values()) {
@@ -870,12 +838,15 @@ export class WebGPUEngine {
       return true;
     }
 
-    // Use imageDataCached from above
-    const imageData = imageDataCached;
+    const imageData = this.scrubbingCache.getCachedCompositeFrame(time);
     if (!imageData) {
-      // This shouldn't happen since we checked hasCachedFrame above
+      // Only log occasionally to avoid spam
+      if (Math.random() < 0.05) {
+        log.debug('RAM Preview cache miss', { time: time.toFixed(3), cacheSize: this.scrubbingCache.getCompositeCacheStats(1920, 1080).count });
+      }
       return false;
     }
+    log.debug('RAM Preview cache hit (ImageData→GPU)', { time: time.toFixed(3) });
 
     try {
       const { width, height } = { width: imageData.width, height: imageData.height };

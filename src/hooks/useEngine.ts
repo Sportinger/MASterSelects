@@ -292,14 +292,9 @@ export function useEngine() {
           engine.requestRender();
         }
 
-        // ALWAYS sync video and audio elements - even when using cached frames!
-        // Audio must keep playing, and videos need to stay in sync for when cache misses
-        layerBuilder.syncVideoElements();
-        layerBuilder.syncAudioElements();
-
-        // Try cached frame first for instant scrubbing
-        const cacheResult = engine.renderCachedFrame(currentPlayhead);
-        if (cacheResult) {
+        // ALWAYS try cached frame first - even when idle!
+        // This enables instant scrubbing over cached RAM Preview frames
+        if (engine.renderCachedFrame(currentPlayhead)) {
           return;
         }
 
@@ -316,14 +311,17 @@ export function useEngine() {
         // Build layers directly from stores (single source of truth)
         const layers = layerBuilder.buildLayersFromStore();
 
+        // Sync video and audio elements
+        layerBuilder.syncVideoElements();
+        layerBuilder.syncAudioElements();
+
         // Render layers (layerBuilder already handles mask properties)
         engine.render(layers);
 
         // Cache rendered frame for instant scrubbing (like Premiere's playback caching)
         // Only cache if RAM preview is enabled and we're playing (not generating RAM preview)
-        // NOTE: Read isPlaying from store to avoid stale closure
-        const { ramPreviewEnabled, addCachedFrame, isPlaying: currentlyPlaying } = useTimelineStore.getState();
-        if (ramPreviewEnabled && currentlyPlaying) {
+        const { ramPreviewEnabled, addCachedFrame } = useTimelineStore.getState();
+        if (ramPreviewEnabled && isPlaying) {
           engine.cacheCompositeFrame(currentPlayhead).then(() => {
             addCachedFrame(currentPlayhead);
           });
@@ -340,9 +338,8 @@ export function useEngine() {
       }
     };
 
-    // Start render loop - engine.start() now reuses existing loop if running,
-    // only updating the callback ref. This prevents memory leaks while allowing
-    // the callback to stay fresh with current closure values.
+    // Always keep the engine running - it has idle detection to save power
+    // when nothing changes. Stopping the engine breaks scrubbing.
     engine.start(renderFrame);
 
     return () => {
@@ -397,12 +394,6 @@ export function useEngine() {
       () => engine.requestRender()
     );
 
-    // Playing state changes - wake render loop when play/pause is toggled
-    const unsubPlaying = useTimelineStore.subscribe(
-      (state) => state.isPlaying,
-      () => engine.requestRender()
-    );
-
     return () => {
       unsubPlayhead();
       unsubClips();
@@ -411,7 +402,6 @@ export function useEngine() {
       unsubResolution();
       unsubSettings();
       unsubActiveComp();
-      unsubPlaying();
     };
   }, [isEngineReady]);
 
