@@ -1883,21 +1883,21 @@ input, textarea {
 .labeled-value-label {
   font-size: 9px;
   color: var(--text-secondary);
-  padding: 0 5px;
+  padding: 0 0 0 6px;
   flex-shrink: 0;
   user-select: none;
   opacity: 0.6;
-  text-align: left;
 }
 
 /* Override draggable-number style when inside labeled-value */
 .labeled-value .draggable-number {
+  display: block;
   flex: 1;
   min-width: 0;
   border: none;
   background: transparent;
   border-radius: 0;
-  padding: 3px 5px 3px 0;
+  padding: 3px 6px 3px 0;
   text-align: right;
   color: #5b8abf;
 }
