@@ -690,7 +690,7 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
         const halfW = containerWidth / 2;
         const halfH = containerHeight / 2;
 
-        ctx.strokeStyle = isSelected ? '#00d4ff' : 'rgba(255, 255, 255, 0.5)';
+        ctx.strokeStyle = isSelected ? '#2997E5' : 'rgba(255, 255, 255, 0.5)';
         ctx.lineWidth = isSelected ? 2 : 1;
         ctx.setLineDash(isSelected ? [] : [5, 5]);
         ctx.strokeRect(-halfW, -halfH, containerWidth, containerHeight);
@@ -698,7 +698,7 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
         // Draw corner handles for selected layer
         if (isSelected) {
           const handleSize = 8;
-          ctx.fillStyle = '#00d4ff';
+          ctx.fillStyle = '#2997E5';
 
           // Corners
           ctx.fillRect(-halfW - handleSize/2, -halfH - handleSize/2, handleSize, handleSize);
@@ -713,7 +713,7 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
           ctx.fillRect(halfW - handleSize/2, -handleSize/2, handleSize, handleSize);
 
           // Center crosshair
-          ctx.strokeStyle = '#00d4ff';
+          ctx.strokeStyle = '#2997E5';
           ctx.lineWidth = 1;
           ctx.setLineDash([]);
           ctx.beginPath();
@@ -725,7 +725,7 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
         }
 
         // Draw layer name label
-        ctx.fillStyle = isSelected ? '#00d4ff' : 'rgba(255, 255, 255, 0.7)';
+        ctx.fillStyle = isSelected ? '#2997E5' : 'rgba(255, 255, 255, 0.7)';
         ctx.font = '11px sans-serif';
         ctx.fillText(layer.name, -halfW + 4, -halfH - 6);
 

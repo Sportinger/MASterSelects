@@ -1381,7 +1381,7 @@ export function Timeline() {
               className={`timeline-marker ghost ${markerCreateDrag.dropAnimating ? 'drop-animation' : ''}`}
               style={{
                 left: timeToPixel(markerCreateDrag.currentTime) - scrollX + 150,
-                '--marker-color': '#00d4ff',
+                '--marker-color': '#2997E5',
               } as React.CSSProperties}
             >
               <div className="timeline-marker-head">M</div>

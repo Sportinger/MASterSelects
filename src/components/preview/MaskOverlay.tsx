@@ -745,8 +745,8 @@ export function MaskOverlay({ canvasWidth, canvasHeight }: MaskOverlayProps) {
               y={Math.min(shapeDrawState.startY, shapeDrawState.currentY) * canvasHeight}
               width={Math.abs(shapeDrawState.currentX - shapeDrawState.startX) * canvasWidth}
               height={Math.abs(shapeDrawState.currentY - shapeDrawState.startY) * canvasHeight}
-              fill="rgba(0, 212, 255, 0.15)"
-              stroke="#00d4ff"
+              fill="rgba(45, 140, 235, 0.15)"
+              stroke="#2997E5"
               strokeWidth="2"
               strokeDasharray="5,5"
               pointerEvents="none"
@@ -758,8 +758,8 @@ export function MaskOverlay({ canvasWidth, canvasHeight }: MaskOverlayProps) {
               cy={(shapeDrawState.startY + shapeDrawState.currentY) / 2 * canvasHeight}
               rx={Math.abs(shapeDrawState.currentX - shapeDrawState.startX) / 2 * canvasWidth}
               ry={Math.abs(shapeDrawState.currentY - shapeDrawState.startY) / 2 * canvasHeight}
-              fill="rgba(0, 212, 255, 0.15)"
-              stroke="#00d4ff"
+              fill="rgba(45, 140, 235, 0.15)"
+              stroke="#2997E5"
               strokeWidth="2"
               strokeDasharray="5,5"
               pointerEvents="none"
@@ -772,7 +772,7 @@ export function MaskOverlay({ canvasWidth, canvasHeight }: MaskOverlayProps) {
       {activeMask?.closed && activeMask.visible && pathData && (
         <path
           d={pathData}
-          fill={activeMask.inverted ? 'rgba(0, 212, 255, 0.1)' : 'rgba(0, 212, 255, 0.15)'}
+          fill={activeMask.inverted ? 'rgba(45, 140, 235, 0.1)' : 'rgba(45, 140, 235, 0.15)'}
           stroke="none"
           pointerEvents="all"
           cursor="move"
@@ -785,7 +785,7 @@ export function MaskOverlay({ canvasWidth, canvasHeight }: MaskOverlayProps) {
         <path
           d={pathData}
           fill="none"
-          stroke="#00d4ff"
+          stroke="#2997E5"
           strokeWidth="2"
           strokeDasharray={activeMask.closed ? 'none' : '5,5'}
           pointerEvents="none"
@@ -856,8 +856,8 @@ export function MaskOverlay({ canvasWidth, canvasHeight }: MaskOverlayProps) {
             y={vertex.y - vertexSize / 2}
             width={vertexSize}
             height={vertexSize}
-            fill={isSelected ? '#00d4ff' : '#fff'}
-            stroke={isFirst && maskEditMode === 'drawing' ? '#ff0000' : '#00d4ff'}
+            fill={isSelected ? '#2997E5' : '#fff'}
+            stroke={isFirst && maskEditMode === 'drawing' ? '#ff0000' : '#2997E5'}
             strokeWidth={isFirst && maskEditMode === 'drawing' ? '2' : '1'}
             cursor="move"
             onClick={isFirst && maskEditMode === 'drawing' ? handleFirstVertexClick : undefined}

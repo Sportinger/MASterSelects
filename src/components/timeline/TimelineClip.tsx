@@ -68,7 +68,7 @@ const Waveform = memo(function Waveform({
     const numBars = Math.ceil(visibleWaveform.length / samplesPerBar);
     const barWidth = canvasWidth / numBars;
 
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    ctx.fillStyle = 'rgba(200, 200, 200, 0.5)';
 
     // Draw bars, using peak value for each segment
     for (let i = 0; i < numBars; i++) {
@@ -314,7 +314,7 @@ const AnalysisOverlay = memo(function AnalysisOverlay({
         const x = (frameInClip / clipDuration) * width;
         ctx.beginPath();
         ctx.arc(x, 4, 3, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(234, 179, 8, 0.9)';
+        ctx.fillStyle = 'rgba(180, 180, 120, 0.7)';
         ctx.fill();
       }
     }
@@ -468,7 +468,7 @@ function FadeCurve({
       <path
         d={curvePath}
         fill="none"
-        stroke="rgba(251, 191, 36, 0.9)"
+        stroke="rgba(140, 180, 220, 0.8)"
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -480,7 +480,7 @@ function FadeCurve({
           cx={timeToX(kf.time)}
           cy={valueToY(kf.value)}
           r="3"
-          fill="rgba(251, 191, 36, 1)"
+          fill="rgba(140, 180, 220, 1)"
         />
       ))}
     </svg>

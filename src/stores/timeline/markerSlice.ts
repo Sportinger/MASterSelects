@@ -3,7 +3,7 @@
 import type { MarkerActions, SliceCreator, TimelineMarker } from './types';
 
 // Default marker color
-const DEFAULT_MARKER_COLOR = '#00d4ff';
+const DEFAULT_MARKER_COLOR = '#2997E5';
 
 // Generate unique marker ID
 const generateMarkerId = () => `marker-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
