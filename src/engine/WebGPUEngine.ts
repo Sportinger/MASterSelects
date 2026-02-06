@@ -666,29 +666,46 @@ export class WebGPUEngine {
 
   private renderEmptyFrame(device: GPUDevice): void {
     const commandEncoder = device.createCommandEncoder();
-    // Preview canvases clear with alpha=0 so CSS background shows through
-    // (black by default, checkerboard when transparency grid is toggled on)
-    if (this.previewContext) {
-      const pass = commandEncoder.beginRenderPass({
+    const pingView = this.renderTargetManager?.getPingView();
+
+    // Use output pipeline to render empty frame (allows shader to generate checkerboard)
+    if (pingView && this.outputPipeline && this.sampler) {
+      // Clear ping texture to transparent
+      const clearPass = commandEncoder.beginRenderPass({
         colorAttachments: [{
-          view: this.previewContext.getCurrentTexture().createView(),
+          view: pingView,
           clearValue: { r: 0, g: 0, b: 0, a: 0 },
           loadOp: 'clear',
           storeOp: 'store',
         }],
       });
-      pass.end();
-    }
-    for (const ctx of this.previewCanvases.values()) {
-      const pass = commandEncoder.beginRenderPass({
-        colorAttachments: [{
-          view: ctx.getCurrentTexture().createView(),
-          clearValue: { r: 0, g: 0, b: 0, a: 0 },
-          loadOp: 'clear',
-          storeOp: 'store',
-        }],
-      });
-      pass.end();
+      clearPass.end();
+
+      // Update uniforms (showTransparencyGrid flag tells shader to render checkerboard)
+      const { width, height } = this.renderTargetManager!.getResolution();
+      this.outputPipeline.updateUniforms(this.showTransparencyGrid, width, height);
+      const bindGroup = this.outputPipeline.createOutputBindGroup(this.sampler, pingView);
+
+      // Render through output pipeline to all preview canvases
+      if (this.previewContext) {
+        this.outputPipeline.renderToCanvas(commandEncoder, this.previewContext, bindGroup);
+      }
+      for (const ctx of this.previewCanvases.values()) {
+        this.outputPipeline.renderToCanvas(commandEncoder, ctx, bindGroup);
+      }
+    } else {
+      // Fallback: direct clear
+      if (this.previewContext) {
+        const pass = commandEncoder.beginRenderPass({
+          colorAttachments: [{
+            view: this.previewContext.getCurrentTexture().createView(),
+            clearValue: { r: 0, g: 0, b: 0, a: 1 },
+            loadOp: 'clear',
+            storeOp: 'store',
+          }],
+        });
+        pass.end();
+      }
     }
     // Also clear export canvas when exporting (needed for empty frames at export boundaries)
     if (this.isExporting && this.exportCanvasContext) {
