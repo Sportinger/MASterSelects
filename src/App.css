@@ -5853,13 +5853,19 @@ input[type="checkbox"] {
   border: 1px solid var(--border-color);
   border-radius: 3px;
   color: var(--accent);
-  font-family: monospace;
+  font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
   font-size: 11px;
   cursor: ew-resize;
   user-select: none;
   min-width: 50px;
   text-align: right;
   transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+/* When used as primary input in control-row (replacing slider + value) */
+.control-row .draggable-number {
+  flex: 1;
+  text-align: right;
 }
 
 .draggable-number:hover {
