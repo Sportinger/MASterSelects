@@ -49,8 +49,10 @@ export function Toolbar() {
   const [pendingProjectName, setPendingProjectName] = useState<string | null>(null);
   const [showSavedToast, setShowSavedToast] = useState(false);
   const [showInfoDialog, setShowInfoDialog] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
   const menuBarRef = useRef<HTMLDivElement>(null);
   const autosaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isRenamingRef = useRef(false);
 
   // Update project name from service - check periodically for changes
   useEffect(() => {
@@ -265,22 +267,31 @@ export function Toolbar() {
   }, []);
 
   const handleNameSubmit = useCallback(async () => {
+    // Prevent double-call from Enter + blur
+    if (isRenamingRef.current) return;
+
+    setRenameError(null);
+
     if (editName.trim()) {
       const newName = editName.trim();
       const data = projectFileService.getProjectData();
 
       // Only rename if name actually changed
       if (data && newName !== data.name) {
+        isRenamingRef.current = true;
         setIsLoading(true);
         const success = await projectFileService.renameProject(newName);
         if (success) {
           setProjectName(newName);
           setShowSavedToast(true);
         } else {
-          // Revert to old name on failure
+          // Revert to old name on failure and show error
           setEditName(data.name);
+          setRenameError(`Could not rename to "${newName}" — a folder with that name may already exist.`);
+          setTimeout(() => setRenameError(null), 4000);
         }
         setIsLoading(false);
+        isRenamingRef.current = false;
       }
     }
     setIsEditingName(false);
@@ -692,6 +703,25 @@ export function Toolbar() {
 
       {/* Saved Toast */}
       <SavedToast visible={showSavedToast} onHide={() => setShowSavedToast(false)} />
+
+      {/* Rename Error Toast */}
+      {renameError && (
+        <div style={{
+          position: 'fixed',
+          top: 40,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: '#dc3545',
+          color: '#fff',
+          padding: '8px 16px',
+          borderRadius: 6,
+          fontSize: 12,
+          zIndex: 9999,
+          boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+        }}>
+          {renameError}
+        </div>
+      )}
 
       {/* Info Dialog */}
       {showInfoDialog && <InfoDialog onClose={() => setShowInfoDialog(false)} />}

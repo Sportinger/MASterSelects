@@ -343,14 +343,29 @@ export class ProjectCoreService {
     try {
       const parentHandle = await projectDB.getStoredHandle('projectsFolder');
       if (!parentHandle || parentHandle.kind !== 'directory') {
-        // No parent folder stored - just update the display name
+        // No parent folder stored - just update the display name in project.json
+        log.info(`No parent folder handle, updating display name only to "${trimmedName}"`);
         this.projectData.name = trimmedName;
-        this.markDirty();
-        await this.saveProject();
+        this.projectData.updatedAt = new Date().toISOString();
+        await this.writeProjectJson(this.projectHandle, this.projectData);
+        this.isDirty = false;
         return true;
       }
 
       const parentDir = parentHandle as FileSystemDirectoryHandle;
+
+      // Verify we have write permission on the parent
+      const permission = await parentDir.queryPermission({ mode: 'readwrite' });
+      if (permission !== 'granted') {
+        // No permission on parent - just update display name in project.json
+        log.info(`No write permission on parent folder, updating display name only to "${trimmedName}"`);
+        this.projectData.name = trimmedName;
+        this.projectData.updatedAt = new Date().toISOString();
+        await this.writeProjectJson(this.projectHandle, this.projectData);
+        this.isDirty = false;
+        return true;
+      }
+
       const oldName = this.projectHandle.name;
 
       // If the folder name already matches the new name, just update project data
@@ -372,18 +387,22 @@ export class ProjectCoreService {
       }
 
       if (existingFolder) {
-        // Check if the existing folder is empty or a leftover from a failed rename
-        let isEmpty = true;
-        for await (const _ of (existingFolder as any).values()) {
-          isEmpty = false;
-          break;
+        // Check if the existing folder is a leftover (no project.json = not a real project)
+        let hasProjectJson = false;
+        try {
+          await existingFolder.getFileHandle('project.json', { create: false });
+          hasProjectJson = true;
+        } catch {
+          // No project.json
         }
-        if (!isEmpty) {
-          log.error('Folder with that name already exists');
+
+        if (hasProjectJson) {
+          log.error(`Folder "${trimmedName}" already contains a project`);
           return false;
         }
-        // Empty leftover folder - remove it first
-        log.debug(`Removing empty leftover folder: ${trimmedName}`);
+
+        // Leftover folder without project.json - remove it
+        log.debug(`Removing leftover folder: ${trimmedName}`);
         try {
           await parentDir.removeEntry(trimmedName, { recursive: true });
         } catch (e) {
