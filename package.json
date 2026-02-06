@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:changelog": "vite --mode changelog",
     "build": "tsc -b && vite build",
     "build:deploy": "vite build",
     "lint": "eslint .",

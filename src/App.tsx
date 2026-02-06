@@ -1,7 +1,11 @@
 // WebVJ Mixer - Main Application
 
-// DEV: Disable changelog dialog for development
-const DEV_DISABLE_WHATS_NEW = false;
+// Changelog visibility controlled by Vite define:
+// npm run dev          → hidden (default)
+// npm run dev:changelog → shown
+// npm run build        → always shown
+declare const __SHOW_CHANGELOG__: boolean;
+const SHOW_CHANGELOG = typeof __SHOW_CHANGELOG__ !== 'undefined' ? __SHOW_CHANGELOG__ : true;
 
 import { useState, useCallback, useEffect, lazy, Suspense } from 'react';
 import { Toolbar } from './components';
@@ -117,7 +121,7 @@ function App() {
   // Show What's New dialog after initial check (when no welcome overlay)
   // This effect intentionally sets state based on derived conditions
   useEffect(() => {
-    if (DEV_DISABLE_WHATS_NEW) return;
+    if (!SHOW_CHANGELOG) return;
     if (isChecking) return;
 
     // If welcome is showing, don't show What's New yet
@@ -132,7 +136,7 @@ function App() {
     setManuallyDismissed(true);
     setHasStoredProject(true); // Project was just created
     // After welcome, show What's New with small delay for animation
-    if (!DEV_DISABLE_WHATS_NEW) {
+    if (!!SHOW_CHANGELOG) {
       setTimeout(() => setShowWhatsNew(true), 300);
     }
   }, []);

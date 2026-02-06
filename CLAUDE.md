@@ -58,10 +58,16 @@ Bei Feature-Änderungen: `docs/Features/` aktualisieren
 ## 2. Quick Reference
 
 ```bash
-npm install && npm run dev   # http://localhost:5173
-npm run build                # Production build
+npm install && npm run dev   # http://localhost:5173 (ohne Changelog)
+npm run dev:changelog        # Dev-Server MIT Changelog-Dialog
+npm run build                # Production build (Changelog immer aktiv)
 npm run lint                 # ESLint check
 ```
+
+### Dev-Server Regeln
+- **IMMER `npm run dev` verwenden** (ohne Changelog)
+- `npm run dev:changelog` nur wenn User Changelog sehen will
+- Production builds zeigen Changelog automatisch
 
 ### Native Helper (optional)
 ```bash
@@ -234,3 +240,180 @@ useEngine hook
 ---
 
 *Ausführliche Dokumentation: `docs/Features/README.md`*
+
+---
+
+## 9. React/Next.js Best Practices (Vercel Engineering)
+
+> Vollständige Dokumentation: [REACT-BEST-PRACTICES.md](./REACT-BEST-PRACTICES.md) | [GitHub Source](https://github.com/vercel-labs/agent-skills/tree/main/skills/react-best-practices)
+
+### Prioritäten nach Impact
+1. **CRITICAL:** Eliminating Waterfalls, Bundle Size
+2. **HIGH:** Server-Side Performance
+3. **MEDIUM:** Client-Side Data, Re-renders, Rendering
+4. **LOW:** JavaScript Micro-Optimizations, Advanced Patterns
+
+---
+
+### CRITICAL: Eliminating Waterfalls
+
+**Waterfalls sind der #1 Performance-Killer!**
+
+#### Promise.all() für unabhängige Operations
+```typescript
+// ❌ FALSCH: 3 sequentielle Round-Trips
+const user = await fetchUser()
+const posts = await fetchPosts()
+const comments = await fetchComments()
+
+// ✅ RICHTIG: 1 paralleler Round-Trip
+const [user, posts, comments] = await Promise.all([
+  fetchUser(),
+  fetchPosts(),
+  fetchComments()
+])
+```
+
+#### Defer Await Until Needed
+```typescript
+// ❌ FALSCH: blockiert beide Branches
+async function handleRequest(userId: string, skipProcessing: boolean) {
+  const userData = await fetchUserData(userId)
+  if (skipProcessing) return { skipped: true }
+  return processUserData(userData)
+}
+
+// ✅ RICHTIG: fetch nur wenn nötig
+async function handleRequest(userId: string, skipProcessing: boolean) {
+  if (skipProcessing) return { skipped: true }
+  const userData = await fetchUserData(userId)
+  return processUserData(userData)
+}
+```
+
+#### Strategic Suspense Boundaries
+```tsx
+// ❌ FALSCH: Ganzes Layout wartet auf Daten
+async function Page() {
+  const data = await fetchData() // Blockiert alles
+  return <div><Sidebar /><DataDisplay data={data} /><Footer /></div>
+}
+
+// ✅ RICHTIG: Layout sofort, Daten streamen
+function Page() {
+  return (
+    <div>
+      <Sidebar />
+      <Suspense fallback={<Skeleton />}>
+        <DataDisplay />
+      </Suspense>
+      <Footer />
+    </div>
+  )
+}
+```
+
+---
+
+### CRITICAL: Bundle Size Optimization
+
+#### Avoid Barrel File Imports (200-800ms Import-Cost!)
+```tsx
+// ❌ FALSCH: Lädt 1,583 Module
+import { Check, X, Menu } from 'lucide-react'
+
+// ✅ RICHTIG: Lädt nur 3 Module
+import Check from 'lucide-react/dist/esm/icons/check'
+import X from 'lucide-react/dist/esm/icons/x'
+import Menu from 'lucide-react/dist/esm/icons/menu'
+
+// ✅ ALTERNATIVE (Next.js 13.5+):
+// next.config.js
+module.exports = {
+  experimental: {
+    optimizePackageImports: ['lucide-react', '@mui/material']
+  }
+}
+```
+
+#### Dynamic Imports für Heavy Components
+```tsx
+// ❌ FALSCH: Monaco im Main Bundle (~300KB)
+import { MonacoEditor } from './monaco-editor'
+
+// ✅ RICHTIG: Monaco on-demand
+import dynamic from 'next/dynamic'
+const MonacoEditor = dynamic(
+  () => import('./monaco-editor').then(m => m.MonacoEditor),
+  { ssr: false }
+)
+```
+
+---
+
+### HIGH: Server-Side Performance
+
+#### React.cache() für Request-Deduplication
+```typescript
+import { cache } from 'react'
+
+export const getCurrentUser = cache(async () => {
+  const session = await auth()
+  if (!session?.user?.id) return null
+  return await db.user.findUnique({ where: { id: session.user.id } })
+})
+// Mehrere Calls → nur 1 Query pro Request
+```
+
+#### Minimize Serialization at RSC Boundaries
+```tsx
+// ❌ FALSCH: Serialisiert alle 50 Felder
+<Profile user={user} />
+
+// ✅ RICHTIG: Nur 1 Feld
+<Profile name={user.name} />
+```
+
+---
+
+### MEDIUM: Re-render Optimization
+
+#### Functional setState (verhindert Stale Closures!)
+```typescript
+// ❌ FALSCH: Braucht items als Dependency
+const addItems = useCallback((newItems) => {
+  setItems([...items, ...newItems])
+}, [items])  // Wird bei jeder Änderung neu erstellt
+
+// ✅ RICHTIG: Stable Callback, kein Stale Closure
+const addItems = useCallback((newItems) => {
+  setItems(curr => [...curr, ...newItems])
+}, [])  // Keine Dependencies nötig
+```
+
+#### Lazy State Initialization
+```typescript
+// ❌ FALSCH: Läuft bei JEDEM Render
+const [index, setIndex] = useState(buildSearchIndex(items))
+
+// ✅ RICHTIG: Läuft nur einmal
+const [index, setIndex] = useState(() => buildSearchIndex(items))
+```
+
+#### toSorted() statt sort() (verhindert State-Mutation!)
+```typescript
+// ❌ FALSCH: Mutiert das Original-Array
+const sorted = users.sort((a, b) => a.name.localeCompare(b.name))
+
+// ✅ RICHTIG: Erstellt neues Array
+const sorted = users.toSorted((a, b) => a.name.localeCompare(b.name))
+```
+
+---
+
+### Projekt-spezifische Ergänzungen
+
+Diese Best Practices ergänzen unsere bestehenden Critical Patterns:
+- **Stale Closure Fix** (§4) → Functional setState nutzen
+- **Zustand Slices** → `get()` in Callbacks statt State-Capture
+- **WebGPU Engine** → Heavy Components mit Dynamic Import laden
