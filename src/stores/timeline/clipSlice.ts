@@ -31,6 +31,7 @@ import {
 import { completeDownload as completeDownloadImpl } from './clip/completeDownload';
 import {
   generateTextClipId,
+  generateSolidClipId,
   generateYouTubeClipId,
   generateEffectId,
   generateLinkedGroupId,
@@ -747,6 +748,55 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
         }
       });
     }
+  },
+
+  // ========== SOLID CLIP ACTIONS ==========
+
+  addSolidClip: (trackId, startTime, color = '#ffffff', duration = 5, skipMediaItem = false) => {
+    const { clips, tracks, updateDuration, invalidateCache } = get();
+    const track = tracks.find(t => t.id === trackId);
+
+    if (!track || track.type !== 'video') {
+      log.warn('Solid clips can only be added to video tracks');
+      return null;
+    }
+
+    const clipId = generateSolidClipId();
+    const canvas = document.createElement('canvas');
+    canvas.width = 1920;
+    canvas.height = 1080;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, 1920, 1080);
+
+    const solidClip: TimelineClip = {
+      id: clipId,
+      trackId,
+      name: `Solid ${color}`,
+      file: new File([], 'solid-clip.dat', { type: 'application/octet-stream' }),
+      startTime,
+      duration,
+      inPoint: 0,
+      outPoint: duration,
+      source: { type: 'solid', textCanvas: canvas, naturalDuration: duration },
+      transform: { ...DEFAULT_TRANSFORM },
+      effects: [],
+      isLoading: false,
+    };
+
+    set({ clips: [...clips, solidClip] });
+    updateDuration();
+    invalidateCache();
+
+    // Also create a media item in the Solids folder (unless dragged from media panel)
+    if (!skipMediaItem) {
+      const mediaStore = useMediaStore.getState();
+      const solidFolderId = mediaStore.getOrCreateSolidFolder();
+      mediaStore.createSolidItem(`Solid ${color}`, color, solidFolderId);
+    }
+
+    log.debug('Created solid clip', { clipId, color });
+    return clipId;
   },
 
   toggleClipReverse: (id) => {

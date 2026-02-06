@@ -25,6 +25,9 @@ export const createSelectionSlice: MediaSliceCreator<SelectionActions> = (set) =
       textItems: state.textItems.map((t) =>
         itemIds.includes(t.id) ? { ...t, parentId: folderId } : t
       ),
+      solidItems: state.solidItems.map((s) =>
+        itemIds.includes(s.id) ? { ...s, parentId: folderId } : s
+      ),
     }));
   },
 

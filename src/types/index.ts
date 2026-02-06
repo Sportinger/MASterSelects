@@ -65,7 +65,7 @@ export type BlendMode =
   | 'alpha-add';
 
 export interface LayerSource {
-  type: 'video' | 'image' | 'camera' | 'color' | 'text';
+  type: 'video' | 'image' | 'camera' | 'color' | 'text' | 'solid';
   file?: File;
   videoElement?: HTMLVideoElement;
   imageElement?: HTMLImageElement;
@@ -289,7 +289,7 @@ export interface TimelineClip {
   inPoint: number;        // Trim in point within source (seconds)
   outPoint: number;       // Trim out point within source (seconds)
   source: {
-    type: 'video' | 'audio' | 'image' | 'text';
+    type: 'video' | 'audio' | 'image' | 'text' | 'solid';
     videoElement?: HTMLVideoElement;
     audioElement?: HTMLAudioElement;
     imageElement?: HTMLImageElement;
@@ -297,7 +297,7 @@ export interface TimelineClip {
     nativeDecoder?: import('../services/nativeHelper/NativeDecoder').NativeDecoder;
     naturalDuration?: number;
     mediaFileId?: string;  // Reference to MediaFile for proxy lookup
-    textCanvas?: HTMLCanvasElement;  // Pre-rendered text canvas for text clips
+    textCanvas?: HTMLCanvasElement;  // Pre-rendered text/solid canvas for text and solid clips
     filePath?: string;  // Path to original file (for native helper to access directly)
   } | null;
   thumbnails?: string[];  // Array of data URLs for filmstrip preview
@@ -385,7 +385,7 @@ export interface SerializableClip {
   duration: number;
   inPoint: number;
   outPoint: number;
-  sourceType: 'video' | 'audio' | 'image' | 'text';
+  sourceType: 'video' | 'audio' | 'image' | 'text' | 'solid';
   naturalDuration?: number;
   thumbnails?: string[];
   linkedClipId?: string;
@@ -411,6 +411,8 @@ export interface SerializableClip {
   preservesPitch?: boolean;  // Keep pitch when speed changes (default true)
   // Text clip support
   textProperties?: TextClipProperties;
+  // Solid clip support
+  solidColor?: string;
   // Transition support
   transitionIn?: TimelineTransition;
   transitionOut?: TimelineTransition;

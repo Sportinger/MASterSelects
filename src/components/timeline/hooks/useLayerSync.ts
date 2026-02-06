@@ -885,7 +885,7 @@ export function useLayerSync({
           layersChanged = true;
         }
       } else if (clip?.source?.textCanvas) {
-        // Text clip handling
+        // Text/Solid clip handling (both use canvas)
         const textCanvas = clip.source.textCanvas;
         const textClipLocalTime = playheadPosition - clip.startTime;
         const transform = getInterpolatedTransform(clip.id, textClipLocalTime);
@@ -921,7 +921,7 @@ export function useLayerSync({
             opacity: transform.opacity,
             blendMode: transform.blendMode,
             source: {
-              type: 'text',
+              type: clip.source!.type === 'solid' ? 'solid' : 'text',
               textCanvas: textCanvas,
             },
             effects: textInterpolatedEffects,

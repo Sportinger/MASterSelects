@@ -71,6 +71,8 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
         reversed: clip.reversed || undefined,
         // Text clip support
         textProperties: clip.textProperties,
+        // Solid clip support - extract color from name (format: "Solid #xxxxxx")
+        solidColor: clip.source?.type === 'solid' ? clip.name.replace('Solid ', '') : undefined,
       };
     });
 
@@ -615,6 +617,44 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
         }));
 
         log.debug('Restored text clip', { clip: serializedClip.name });
+        continue;
+      }
+
+      // Solid clips - restore from solidColor
+      if (serializedClip.sourceType === 'solid' && serializedClip.solidColor) {
+        const color = serializedClip.solidColor;
+        const canvas = document.createElement('canvas');
+        canvas.width = 1920;
+        canvas.height = 1080;
+        const ctx = canvas.getContext('2d')!;
+        ctx.fillStyle = color;
+        ctx.fillRect(0, 0, 1920, 1080);
+
+        const solidClip: TimelineClip = {
+          id: serializedClip.id,
+          trackId: serializedClip.trackId,
+          name: serializedClip.name,
+          file: new File([], 'solid-clip.dat', { type: 'application/octet-stream' }),
+          startTime: serializedClip.startTime,
+          duration: serializedClip.duration,
+          inPoint: serializedClip.inPoint,
+          outPoint: serializedClip.outPoint,
+          source: {
+            type: 'solid',
+            textCanvas: canvas,
+            naturalDuration: serializedClip.duration,
+          },
+          transform: serializedClip.transform,
+          effects: serializedClip.effects || [],
+          masks: serializedClip.masks,
+          isLoading: false,
+        };
+
+        set(state => ({
+          clips: [...state.clips, solidClip],
+        }));
+
+        log.debug('Restored solid clip', { clip: serializedClip.name, color });
         continue;
       }
 

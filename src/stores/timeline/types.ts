@@ -171,6 +171,8 @@ export interface ClipActions {
   // Text clip actions
   addTextClip: (trackId: string, startTime: number, duration?: number, skipMediaItem?: boolean) => Promise<string | null>;
   updateTextProperties: (clipId: string, props: Partial<TextClipProperties>) => void;
+  // Solid clip actions
+  addSolidClip: (trackId: string, startTime: number, color?: string, duration?: number, skipMediaItem?: boolean) => string | null;
   // YouTube pending download clips
   addPendingDownloadClip: (trackId: string, startTime: number, videoId: string, title: string, thumbnail: string, estimatedDuration?: number) => string;
   updateDownloadProgress: (clipId: string, progress: number) => void;
@@ -312,7 +314,7 @@ export interface ClipboardClipData {
   duration: number;
   inPoint: number;
   outPoint: number;
-  sourceType: 'video' | 'audio' | 'image' | 'text';
+  sourceType: 'video' | 'audio' | 'image' | 'text' | 'solid';
   naturalDuration?: number;
   transform: ClipTransform;
   effects: Effect[];
@@ -323,6 +325,7 @@ export interface ClipboardClipData {
   speed?: number;
   preservesPitch?: boolean;
   textProperties?: import('../../types').TextClipProperties;
+  solidColor?: string;
   // Visual data (thumbnails, waveforms)
   thumbnails?: string[];
   waveform?: number[];

@@ -3,7 +3,7 @@
 import type { CompositionTimelineData } from '../../types';
 
 // Media item types
-export type MediaType = 'video' | 'audio' | 'image' | 'composition' | 'text';
+export type MediaType = 'video' | 'audio' | 'image' | 'composition' | 'text' | 'solid';
 
 // Proxy status for video files
 export type ProxyStatus = 'none' | 'generating' | 'ready' | 'error';
@@ -57,6 +57,15 @@ export interface TextItem extends MediaItem {
   duration: number; // Default duration when added to timeline
 }
 
+// Solid color item (for Media Panel - can be dragged to timeline)
+export interface SolidItem extends MediaItem {
+  type: 'solid';
+  color: string;
+  width: number;
+  height: number;
+  duration: number; // Default duration when added to timeline
+}
+
 // Composition
 export interface Composition extends MediaItem {
   type: 'composition';
@@ -78,7 +87,7 @@ export interface MediaFolder {
 }
 
 // Union type for all items
-export type ProjectItem = MediaFile | Composition | MediaFolder | TextItem;
+export type ProjectItem = MediaFile | Composition | MediaFolder | TextItem | SolidItem;
 
 // Slice creator type for mediaStore
 export type MediaSliceCreator<T> = (
@@ -93,6 +102,7 @@ export interface MediaState {
   compositions: Composition[];
   folders: MediaFolder[];
   textItems: TextItem[];
+  solidItems: SolidItem[];
 
   // Active composition
   activeCompositionId: string | null;
