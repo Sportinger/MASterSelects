@@ -1,6 +1,6 @@
-// Proxy frame generator using WebCodecs VideoDecoder + OffscreenCanvas → WebP
-// Decodes source video with hardware VideoDecoder, resizes on OffscreenCanvas,
-// then saves individual WebP frames via convertToBlob for instant scrubbing.
+// Proxy frame generator using WebCodecs VideoDecoder + parallel OffscreenCanvas → JPEG
+// Decodes source video with hardware VideoDecoder, resizes on a pool of OffscreenCanvases,
+// then saves individual JPEG frames via convertToBlob for instant scrubbing.
 
 import { Logger } from './logger';
 import * as MP4BoxModule from 'mp4box';
@@ -12,7 +12,9 @@ const MP4Box = (MP4BoxModule as any).default || MP4BoxModule;
 // Configuration
 const PROXY_FPS = 30;
 const PROXY_MAX_WIDTH = 1280;
-const WEBP_QUALITY = 0.8;
+const JPEG_QUALITY = 0.82;
+const CANVAS_POOL_SIZE = 8;       // Parallel encoding canvases
+const DECODE_BATCH_SIZE = 30;     // Feed 30 samples at a time before yielding
 
 // MP4Box types
 interface MP4ArrayBuffer extends ArrayBuffer {
@@ -51,6 +53,11 @@ interface MP4File {
   getTrackById: (id: number) => any;
 }
 
+interface CanvasSlot {
+  canvas: OffscreenCanvas;
+  ctx: OffscreenCanvasRenderingContext2D;
+}
+
 class ProxyGeneratorWebCodecs {
   private mp4File: MP4File | null = null;
   private decoder: VideoDecoder | null = null;
@@ -67,8 +74,8 @@ class ProxyGeneratorWebCodecs {
   private savedFrameIndices = new Set<number>();
   private decodedFrames: Map<number, VideoFrame> = new Map();
 
-  private resizeCanvas: OffscreenCanvas | null = null;
-  private resizeCtx: OffscreenCanvasRenderingContext2D | null = null;
+  // Pool of canvases for parallel encoding
+  private canvasPool: CanvasSlot[] = [];
 
   private onProgress: ((progress: number) => void) | null = null;
   private checkCancelled: (() => boolean) | null = null;
@@ -90,6 +97,7 @@ class ProxyGeneratorWebCodecs {
     this.savedFrameIndices.clear();
     this.samples = [];
     this.decodedFrames.clear();
+    this.canvasPool = [];
 
     try {
       if (!('VideoDecoder' in window)) {
@@ -104,9 +112,12 @@ class ProxyGeneratorWebCodecs {
 
       log.info(`Source: ${this.videoTrack!.video.width}x${this.videoTrack!.video.height} → Proxy: ${this.outputWidth}x${this.outputHeight} @ ${PROXY_FPS}fps`);
 
-      // Initialize resize canvas
-      this.resizeCanvas = new OffscreenCanvas(this.outputWidth, this.outputHeight);
-      this.resizeCtx = this.resizeCanvas.getContext('2d')!;
+      // Initialize canvas pool for parallel encoding
+      for (let i = 0; i < CANVAS_POOL_SIZE; i++) {
+        const canvas = new OffscreenCanvas(this.outputWidth, this.outputHeight);
+        const ctx = canvas.getContext('2d')!;
+        this.canvasPool.push({ canvas, ctx });
+      }
 
       // Initialize decoder
       this.initDecoder();
@@ -116,7 +127,7 @@ class ProxyGeneratorWebCodecs {
         await this.processSamples();
       } catch (firstError) {
         log.warn('First decode attempt failed, trying without description...');
-        this.decodedFrames.clear();
+        this.closeDecodedFrames();
         this.processedFrames = 0;
         this.savedFrameIndices.clear();
 
@@ -152,7 +163,7 @@ class ProxyGeneratorWebCodecs {
         return null;
       }
 
-      log.info(`Proxy complete: ${this.processedFrames} frames saved as WebP`);
+      log.info(`Proxy complete: ${this.processedFrames} frames saved as JPEG`);
       this.cleanup();
 
       return {
@@ -402,39 +413,44 @@ class ProxyGeneratorWebCodecs {
     }
   }
 
-  private async saveDecodedFrame(frame: VideoFrame, frameIndex: number): Promise<void> {
-    if (!this.resizeCanvas || !this.resizeCtx || !this.saveFrame) return;
-
-    // Resize onto canvas
-    this.resizeCtx.drawImage(frame, 0, 0, this.outputWidth, this.outputHeight);
-    frame.close();
-
-    // Convert to WebP blob
-    const blob = await this.resizeCanvas.convertToBlob({
-      type: 'image/webp',
-      quality: WEBP_QUALITY,
-    });
-
-    // Save via callback
-    await this.saveFrame({ frameIndex, blob });
-
-    this.savedFrameIndices.add(frameIndex);
-    this.processedFrames++;
-    this.onProgress?.(Math.min(100, Math.round((this.processedFrames / this.totalFrames) * 100)));
-  }
-
+  /**
+   * Encode + save a batch of decoded frames in parallel using the canvas pool.
+   * Each canvas independently does drawImage → convertToBlob → saveFrame.
+   */
   private async processAccumulatedFrames(): Promise<void> {
     if (this.decodedFrames.size === 0) return;
 
     const sortedIndices = Array.from(this.decodedFrames.keys()).sort((a, b) => a - b);
-    const batch = sortedIndices.slice(0, Math.min(8, sortedIndices.length));
 
-    for (const idx of batch) {
-      const frame = this.decodedFrames.get(idx);
-      if (frame) {
-        this.decodedFrames.delete(idx);
-        await this.saveDecodedFrame(frame, idx);
-      }
+    // Process in chunks of CANVAS_POOL_SIZE
+    for (let offset = 0; offset < sortedIndices.length; offset += CANVAS_POOL_SIZE) {
+      const batch = sortedIndices.slice(offset, offset + CANVAS_POOL_SIZE);
+
+      await Promise.all(batch.map(async (frameIdx, slotIdx) => {
+        const frame = this.decodedFrames.get(frameIdx);
+        if (!frame) return;
+        this.decodedFrames.delete(frameIdx);
+
+        const slot = this.canvasPool[slotIdx];
+
+        // Resize onto this slot's canvas
+        slot.ctx.drawImage(frame, 0, 0, this.outputWidth, this.outputHeight);
+        frame.close();
+
+        // Encode to JPEG (3-5x faster than WebP)
+        const blob = await slot.canvas.convertToBlob({
+          type: 'image/jpeg',
+          quality: JPEG_QUALITY,
+        });
+
+        // Save via callback
+        await this.saveFrame!({ frameIndex: frameIdx, blob });
+
+        this.savedFrameIndices.add(frameIdx);
+        this.processedFrames++;
+      }));
+
+      this.onProgress?.(Math.min(100, Math.round((this.processedFrames / this.totalFrames) * 100)));
     }
   }
 
@@ -452,10 +468,8 @@ class ProxyGeneratorWebCodecs {
     const startTime = performance.now();
     let decodeErrors = 0;
 
-    // Decode loop
-    for (let i = firstKeyframeIdx; i < sortedSamples.length; i++) {
-      const sample = sortedSamples[i];
-
+    // Feed decoder in batches, then yield + process accumulated frames
+    for (let batchStart = firstKeyframeIdx; batchStart < sortedSamples.length; batchStart += DECODE_BATCH_SIZE) {
       if (this.checkCancelled?.()) {
         this.isCancelled = true;
         break;
@@ -466,30 +480,35 @@ class ProxyGeneratorWebCodecs {
         break;
       }
 
-      const chunk = new EncodedVideoChunk({
-        type: sample.is_sync ? 'key' : 'delta',
-        timestamp: (sample.cts / sample.timescale) * 1_000_000,
-        duration: (sample.duration / sample.timescale) * 1_000_000,
-        data: sample.data,
-      });
+      const batchEnd = Math.min(batchStart + DECODE_BATCH_SIZE, sortedSamples.length);
 
-      try {
-        this.decoder.decode(chunk);
-      } catch {
-        decodeErrors++;
-        if (decodeErrors > 50) {
-          log.error('Too many decode errors, stopping');
-          break;
+      // Feed a batch of samples to the decoder
+      for (let i = batchStart; i < batchEnd; i++) {
+        const sample = sortedSamples[i];
+
+        const chunk = new EncodedVideoChunk({
+          type: sample.is_sync ? 'key' : 'delta',
+          timestamp: (sample.cts / sample.timescale) * 1_000_000,
+          duration: (sample.duration / sample.timescale) * 1_000_000,
+          data: sample.data,
+        });
+
+        try {
+          this.decoder.decode(chunk);
+        } catch {
+          decodeErrors++;
+          if (decodeErrors > 50) {
+            log.error('Too many decode errors, stopping');
+            return;
+          }
         }
       }
 
-      // Yield to let decoder output callback fire
-      if (i % 5 === 0) {
-        await new Promise(resolve => setTimeout(resolve, 0));
-      }
+      // Yield to let decoder output callbacks fire
+      await new Promise(resolve => setTimeout(resolve, 0));
 
-      // Process decoded frames to free DPB (prevents NVIDIA overflow)
-      if (this.decodedFrames.size >= 4) {
+      // Process accumulated decoded frames in parallel
+      if (this.decodedFrames.size >= CANVAS_POOL_SIZE) {
         await this.processAccumulatedFrames();
       }
     }
@@ -508,22 +527,28 @@ class ProxyGeneratorWebCodecs {
       if (this.decoder.state !== 'closed') this.decoder.close();
     } catch { /* ignore */ }
 
+    // Yield to collect last decoded frames
+    await new Promise(resolve => setTimeout(resolve, 10));
+
     // Process all remaining decoded frames
-    while (this.decodedFrames.size > 0) {
+    if (this.decodedFrames.size > 0) {
       await this.processAccumulatedFrames();
     }
 
     const totalTime = performance.now() - startTime;
     const fps = this.processedFrames / (totalTime / 1000);
-    log.info(`Complete: ${this.processedFrames}/${this.totalFrames} frames in ${(totalTime / 1000).toFixed(1)}s (${fps.toFixed(1)} fps)`);
+    log.info(`Complete: ${this.processedFrames}/${this.totalFrames} frames in ${(totalTime / 1000).toFixed(1)}s (${fps.toFixed(1)} fps encode)`);
+  }
+
+  private closeDecodedFrames() {
+    for (const frame of this.decodedFrames.values()) frame.close();
+    this.decodedFrames.clear();
   }
 
   private cleanup() {
     try { this.decoder?.close(); } catch { /* ignore */ }
-    for (const frame of this.decodedFrames.values()) frame.close();
-    this.decodedFrames.clear();
-    this.resizeCanvas = null;
-    this.resizeCtx = null;
+    this.closeDecodedFrames();
+    this.canvasPool = [];
     this.decoder = null;
   }
 }
