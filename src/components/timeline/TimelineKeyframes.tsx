@@ -112,26 +112,32 @@ function TimelineKeyframesComponent({
     e.preventDefault();
     e.stopPropagation();
 
-    // Select the keyframe (if not already selected and not shift-clicking)
-    if (!selectedKeyframeIds.has(kf.id)) {
+    // Determine the effective selection for this drag
+    const wasAlreadySelected = selectedKeyframeIds.has(kf.id);
+
+    // Select the keyframe (if not already selected)
+    if (!wasAlreadySelected) {
       onSelectKeyframe(kf.id, e.shiftKey);
     }
 
-    // Capture original times for all selected keyframes (for multi-select drag)
+    // Capture original times for all keyframes that should move
     const originalTimes = new Map<string, { time: number; clipId: string }>();
 
-    // Include the dragged keyframe
+    // Always include the dragged keyframe
     originalTimes.set(kf.id, { time: kf.time, clipId: clip.id });
 
-    // Include other selected keyframes
-    for (const selectedId of selectedKeyframeIds) {
-      if (selectedId === kf.id) continue;
-      // Find this keyframe in clipKeyframes
-      for (const [clipId, keyframes] of clipKeyframes.entries()) {
-        const selectedKf = keyframes.find(k => k.id === selectedId);
-        if (selectedKf) {
-          originalTimes.set(selectedId, { time: selectedKf.time, clipId });
-          break;
+    // Only include other selected keyframes if the clicked keyframe was
+    // already selected (multi-drag) — NOT when clicking a new keyframe,
+    // because the store selection updated but our closure still has stale IDs
+    if (wasAlreadySelected || e.shiftKey) {
+      for (const selectedId of selectedKeyframeIds) {
+        if (selectedId === kf.id) continue;
+        for (const [clipId, keyframes] of clipKeyframes.entries()) {
+          const selectedKf = keyframes.find(k => k.id === selectedId);
+          if (selectedKf) {
+            originalTimes.set(selectedId, { time: selectedKf.time, clipId });
+            break;
+          }
         }
       }
     }
