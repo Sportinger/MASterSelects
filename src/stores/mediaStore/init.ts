@@ -94,6 +94,36 @@ async function initializeStore(): Promise<void> {
 }
 
 /**
+ * Persist textItems and solidItems to localStorage on change.
+ */
+function setupItemPersistence(): void {
+  const useMediaStore = getMediaStore();
+  if (!useMediaStore) return;
+
+  // Subscribe to textItems changes
+  useMediaStore.subscribe(
+    (state: MediaState) => state.textItems,
+    (textItems: MediaState['textItems']) => {
+      try {
+        localStorage.setItem('ms-textItems', JSON.stringify(textItems));
+      } catch { /* quota exceeded or unavailable */ }
+    }
+  );
+
+  // Subscribe to solidItems changes
+  useMediaStore.subscribe(
+    (state: MediaState) => state.solidItems,
+    (solidItems: MediaState['solidItems']) => {
+      try {
+        localStorage.setItem('ms-solidItems', JSON.stringify(solidItems));
+      } catch { /* quota exceeded or unavailable */ }
+    }
+  );
+
+  log.info('Item persistence setup complete');
+}
+
+/**
  * Set up auto-save interval.
  */
 function setupAutoSave(): void {
@@ -119,5 +149,6 @@ if (typeof window !== 'undefined') {
     initializeStore();
     setupAutoSave();
     setupBeforeUnload();
+    setupItemPersistence();
   }, 100);
 }

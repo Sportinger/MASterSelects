@@ -254,6 +254,10 @@ export async function syncStoresToProject(): Promise<void> {
       mediaPanelNameWidth: mediaPanelNameWidth ? parseInt(mediaPanelNameWidth, 10) : undefined,
       transcriptLanguage: transcriptLanguage || undefined,
     };
+
+    // Save text and solid items
+    (projectData as any).textItems = freshState.textItems;
+    (projectData as any).solidItems = freshState.solidItems;
   }
 
   log.info(' Synced stores to project');
@@ -462,6 +466,10 @@ export async function loadProjectToStores(): Promise<void> {
   const timelineStore = useTimelineStore.getState();
   timelineStore.clearTimeline();
 
+  // Restore text and solid items
+  const textItems = (projectData as any).textItems || [];
+  const solidItems = (projectData as any).solidItems || [];
+
   // Update media store
   useMediaStore.setState({
     files,
@@ -478,6 +486,8 @@ export async function loadProjectToStores(): Promise<void> {
       backgroundColor: '#000000',
     }],
     folders,
+    textItems,
+    solidItems,
     activeCompositionId: projectData.activeCompositionId,
     openCompositionIds: projectData.openCompositionIds || [],
     expandedFolderIds: projectData.expandedFolderIds || [],

@@ -124,7 +124,24 @@ export const createProjectSlice: MediaSliceCreator<ProjectActions> = (set, get) 
         })
       );
 
-      set({ files: updatedFiles, isLoading: false });
+      // Restore textItems and solidItems from localStorage
+      let restoredTextItems: TextItem[] = [];
+      let restoredSolidItems: SolidItem[] = [];
+      try {
+        const storedText = localStorage.getItem('ms-textItems');
+        if (storedText) restoredTextItems = JSON.parse(storedText);
+      } catch { /* ignore parse errors */ }
+      try {
+        const storedSolid = localStorage.getItem('ms-solidItems');
+        if (storedSolid) restoredSolidItems = JSON.parse(storedSolid);
+      } catch { /* ignore parse errors */ }
+
+      set({
+        files: updatedFiles,
+        isLoading: false,
+        ...(restoredTextItems.length > 0 && { textItems: restoredTextItems }),
+        ...(restoredSolidItems.length > 0 && { solidItems: restoredSolidItems }),
+      });
       log.info(`Restored ${storedFiles.length} files from IndexedDB`);
     } catch (e) {
       log.error('Failed to init from IndexedDB:', e);
@@ -280,6 +297,8 @@ export const createProjectSlice: MediaSliceCreator<ProjectActions> = (set, get) 
       files: [],
       compositions: [newComposition],
       folders: [],
+      textItems: [],
+      solidItems: [],
       activeCompositionId: newCompId,
       openCompositionIds: [newCompId],
       selectedIds: [],
@@ -290,6 +309,10 @@ export const createProjectSlice: MediaSliceCreator<ProjectActions> = (set, get) 
       proxyGenerationQueue: [],
       currentlyGeneratingProxyId: null,
     });
+
+    // Clear persisted items
+    localStorage.removeItem('ms-textItems');
+    localStorage.removeItem('ms-solidItems');
 
     // Load empty timeline
     timelineStore.loadState(undefined);
