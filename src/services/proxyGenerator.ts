@@ -204,7 +204,26 @@ class ProxyGeneratorGPU {
 
   private encodeFrameAsync(frameIndex: number, pixels: Uint8Array): Promise<Blob> {
     return new Promise((resolve, reject) => {
-      this.pendingFrames.set(frameIndex, { resolve, reject });
+      // Timeout to prevent worker hangs from blocking completion forever
+      const timeout = setTimeout(() => {
+        const pending = this.pendingFrames.get(frameIndex);
+        if (pending) {
+          log.warn(`Encode timeout for frame ${frameIndex}, skipping`);
+          this.pendingFrames.delete(frameIndex);
+          resolve(new Blob([], { type: 'image/webp' }));
+        }
+      }, 10000);
+
+      this.pendingFrames.set(frameIndex, {
+        resolve: (blob: Blob) => {
+          clearTimeout(timeout);
+          resolve(blob);
+        },
+        reject: (err: Error) => {
+          clearTimeout(timeout);
+          reject(err);
+        },
+      });
       this.frameQueue.push({ frameIndex, pixels });
       this.processFrameQueue();
     });
@@ -421,14 +440,6 @@ class ProxyGeneratorGPU {
         mp4File.flush();
 
         log.debug('Extraction started, waiting for samples...');
-
-        // If no samples after a short delay, something is wrong
-        setTimeout(() => {
-          if (this.samples.length === 0) {
-            log.warn(`No samples received after start(). Track has ${expectedSamples} samples.`);
-          }
-        }, 500);
-
         checkComplete();
       };
 
@@ -456,17 +467,21 @@ class ProxyGeneratorGPU {
         mp4File.appendBuffer(buffer1);
         mp4File.flush();
 
-        // Wait for onReady and codec check to complete
-        await new Promise(r => setTimeout(r, 500));
-
-        if (!codecReady) {
-          log.warn('Codec not ready after first pass');
-          // Wait longer
-          await new Promise(r => setTimeout(r, 1000));
+        // Poll for codec readiness instead of fixed timeouts
+        const maxCodecWait = 3000;
+        const pollStart = performance.now();
+        while (!codecReady && performance.now() - pollStart < maxCodecWait) {
+          await new Promise(r => setTimeout(r, 20));
         }
 
-        if (codecReady && this.samples.length === 0) {
-          // Second pass: re-append to extract samples now that extraction options are set
+        if (!codecReady) {
+          log.warn('Codec not ready after polling');
+          resolve(false);
+          return;
+        }
+
+        if (this.samples.length === 0) {
+          // Re-append to extract samples now that extraction options are set
           log.debug('Re-appending data to extract samples...');
           const buffer2 = fileData.slice(0) as MP4ArrayBuffer;
           buffer2.fileStart = 0;
@@ -474,20 +489,32 @@ class ProxyGeneratorGPU {
           mp4File.flush();
         }
 
-        // Give time for samples to be extracted
-        setTimeout(() => {
-          if (!samplesReady && this.samples.length > 0) {
-            log.debug(`Timeout: proceeding with ${this.samples.length} samples`);
+        // Poll for samples instead of fixed 2000ms timeout
+        const maxSampleWait = 3000;
+        const samplePollStart = performance.now();
+        while (!samplesReady && performance.now() - samplePollStart < maxSampleWait) {
+          if (this.samples.length > 0 && this.samples.length >= expectedSamples) {
             samplesReady = true;
-            checkComplete();
-          } else if (!this.videoTrack) {
-            log.warn('Timeout: no video track found');
-            resolve(false);
-          } else if (this.samples.length === 0) {
-            log.error('No samples extracted after re-append');
-            resolve(false);
+            break;
           }
-        }, 2000);
+          await new Promise(r => setTimeout(r, 20));
+        }
+
+        // If we have some samples but not all, proceed with what we have
+        if (!samplesReady && this.samples.length > 0) {
+          log.debug(`Proceeding with ${this.samples.length}/${expectedSamples} samples`);
+          samplesReady = true;
+        }
+
+        if (samplesReady) {
+          checkComplete();
+        } else if (!this.videoTrack) {
+          log.warn('No video track found');
+          resolve(false);
+        } else {
+          log.error('No samples extracted');
+          resolve(false);
+        }
       } catch (e) {
         log.error('File read error', e);
         resolve(false);
@@ -906,6 +933,19 @@ class ProxyGeneratorGPU {
       // Ignore flush timeout at this point
     }
 
+    // Close decoder to stop any further output callbacks
+    try {
+      if (this.decoder.state !== 'closed') {
+        this.decoder.close();
+      }
+    } catch (e) {
+      // Ignore close errors
+    }
+
+    // Disable streaming callback before processing remaining frames
+    // to prevent race conditions with decoder output callbacks
+    this.pendingBatchProcess = null;
+
     // Process any remaining frames
     log.debug(`Processing ${this.decodedFrames.size} remaining frames...`);
     while (this.decodedFrames.size > 0) {
@@ -974,7 +1014,6 @@ class ProxyGeneratorGPU {
     }
 
     // Clean up (with error handling to ensure completion)
-    this.pendingBatchProcess = null;
     try {
       this.resizePipeline?.destroy();
     } catch (e) {
