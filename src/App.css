@@ -5554,6 +5554,33 @@ input[type="checkbox"] {
   color: var(--text-secondary);
 }
 
+.media-folder-arrow {
+  font-size: 8px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  width: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.15s;
+  user-select: none;
+}
+
+.media-folder-arrow.expanded {
+  transform: rotate(90deg);
+}
+
+.media-folder-arrow:hover {
+  color: var(--text-primary);
+}
+
+.media-folder-icon {
+  font-size: 12px;
+  filter: grayscale(1) brightness(0.7);
+  line-height: 1;
+}
+
 .media-item-icon {
   flex-shrink: 0;
   width: 14px;

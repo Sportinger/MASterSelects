@@ -4,22 +4,9 @@ import React, { useCallback, useRef, useState, useEffect, memo } from 'react';
 import { Logger } from '../../services/logger';
 
 // Small file-type icons (AE style) - inline SVGs, 14px
-const FileTypeIcon = memo(({ type, isFolder, isExpanded }: { type?: string; isFolder?: boolean; isExpanded?: boolean }) => {
+const FileTypeIcon = memo(({ type }: { type?: string }) => {
   const size = 14;
   const style: React.CSSProperties = { width: size, height: size, flexShrink: 0, display: 'block' };
-
-  if (isFolder) {
-    return isExpanded ? (
-      <svg style={style} viewBox="0 0 16 16" fill="none">
-        <path d="M1.5 3.5h4.5l1.5 1.5h7v8h-13z" fill="#9e8a6a" stroke="#bfa76a" strokeWidth="0.8"/>
-        <path d="M1.5 6h13l-2 7h-11z" fill="#c4a94d" opacity="0.9"/>
-      </svg>
-    ) : (
-      <svg style={style} viewBox="0 0 16 16" fill="none">
-        <path d="M1.5 3.5h4.5l1.5 1.5h7v8h-13z" fill="#9e8a6a" stroke="#bfa76a" strokeWidth="0.8"/>
-      </svg>
-    );
-  }
 
   switch (type) {
     case 'video':
@@ -774,12 +761,22 @@ export function MediaPanel() {
             className="media-col media-col-name"
             style={{ paddingLeft: `${4 + depth * 16}px`, width: nameColumnWidth, minWidth: nameColumnWidth, maxWidth: nameColumnWidth }}
           >
+            {isFolder && (
+              <span
+                className={`media-folder-arrow ${isExpanded ? 'expanded' : ''}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleFolderExpanded(item.id);
+                }}
+              >
+                ▶
+              </span>
+            )}
             <span className="media-item-icon">
-              <FileTypeIcon
-                type={'type' in item ? item.type : undefined}
-                isFolder={isFolder}
-                isExpanded={isExpanded}
-              />
+              {isFolder
+                ? <span className="media-folder-icon">&#128193;</span>
+                : <FileTypeIcon type={'type' in item ? item.type : undefined} />
+              }
             </span>
             {isRenaming ? (
               <input
@@ -948,7 +945,7 @@ export function MediaPanel() {
                   <span>Composition</span>
                 </div>
                 <div className="add-dropdown-item" onClick={() => { handleNewFolder(); setAddDropdownOpen(false); }}>
-                  <span className="add-dropdown-icon"><FileTypeIcon isFolder /></span>
+                  <span className="add-dropdown-icon"><span className="media-folder-icon">&#128193;</span></span>
                   <span>Folder</span>
                 </div>
                 <div className="add-dropdown-separator" />
