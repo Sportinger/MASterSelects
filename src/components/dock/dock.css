@@ -60,6 +60,13 @@
   flex-shrink: 0;
   background: var(--border-color);
   transition: background 0.15s;
+  position: relative;
+}
+
+/* Invisible wider hit area */
+.dock-resize-handle::after {
+  content: '';
+  position: absolute;
 }
 
 .dock-resize-handle.horizontal {
@@ -67,9 +74,23 @@
   cursor: col-resize;
 }
 
+.dock-resize-handle.horizontal::after {
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  right: -4px;
+}
+
 .dock-resize-handle.vertical {
   height: 2px;
   cursor: row-resize;
+}
+
+.dock-resize-handle.vertical::after {
+  left: 0;
+  right: 0;
+  top: -4px;
+  bottom: -4px;
 }
 
 .dock-resize-handle:hover,
