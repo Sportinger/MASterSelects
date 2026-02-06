@@ -1,7 +1,7 @@
 // App version - INCREMENT ON EVERY COMMIT!
 // Format: MAJOR.MINOR.PATCH
 // Increment PATCH (0.0.X) for each commit
-export const APP_VERSION = '1.1.9';
+export const APP_VERSION = '1.2.0';
 
 // Build/Platform notice shown at top of changelog (set to null to hide)
 export const BUILD_NOTICE: {
@@ -54,7 +54,179 @@ interface RawChangeEntry extends ChangeEntry {
 }
 
 const RAW_CHANGELOG: RawChangeEntry[] = [
-  // === Feb 4, 2026 - Transitions & React Optimization ===
+  // === Feb 7, 2026 - Linked Clips, Proxy Rewrite, Transparency Grid ===
+  {
+    date: '2026-02-07',
+    type: 'new',
+    title: 'Linked Clip Selection',
+    description: 'Click a linked video or audio clip to select both - Shift+click for independent selection. Properties panel shows the clicked clip.',
+    commit: 'e51ce42',
+  },
+  {
+    date: '2026-02-07',
+    type: 'improve',
+    title: 'Proxy System Rewrite',
+    description: 'New proxy pipeline: WebCodecs decode with parallel JPEG encoding for faster proxy generation',
+    commit: '6224538',
+  },
+  {
+    date: '2026-02-07',
+    type: 'fix',
+    title: 'Transparency Grid in GPU Shader',
+    description: 'Checkerboard transparency grid now renders directly in the GPU shader for correct compositing',
+    commit: '9c6012a',
+  },
+  {
+    date: '2026-02-07',
+    type: 'fix',
+    title: 'Undo/Redo Reliability',
+    description: 'Flush pending captures before undo/redo, shallow equality checks, improved batch safety',
+    commit: '9e8c220',
+  },
+  {
+    date: '2026-02-07',
+    type: 'fix',
+    title: 'Keyframe Drag Fix',
+    description: 'Clicking a new keyframe no longer drags the previously selected one',
+    commit: 'e87fd67',
+  },
+  {
+    date: '2026-02-07',
+    type: 'fix',
+    title: 'Blend Mode German Keyboard',
+    description: 'Blend mode cycling now works with direct + key on German keyboard layout',
+    commit: '173fc8d',
+  },
+
+  // === Feb 6, 2026 - Visual Redesign, Solid Clips, Properties Panel ===
+  {
+    date: '2026-02-06',
+    type: 'new',
+    title: 'Solid Color Clips',
+    description: 'Create solid color clips from the Media Panel - with color picker, comp dimensions, and colored timeline bars',
+    commit: '248996f',
+  },
+  {
+    date: '2026-02-06',
+    type: 'improve',
+    title: 'After Effects Visual Redesign',
+    description: 'Complete UI overhaul - darker color palette (#0f0f0f base), refined typography and proportions',
+    commit: '290d15e',
+  },
+  {
+    date: '2026-02-06',
+    type: 'improve',
+    title: 'AE-Style Media Panel',
+    description: 'File type icons instead of thumbnails, color label column, folder disclosure triangles',
+    commit: 'd6c72a2',
+  },
+  {
+    date: '2026-02-06',
+    type: 'improve',
+    title: 'AE-Style Properties Panel',
+    description: 'Unnormalized values (0-100 instead of 0-1), compact inline X/Y/Z, label-value alignment',
+    commit: '5902d6a',
+  },
+  {
+    date: '2026-02-06',
+    type: 'fix',
+    title: 'Live Text Preview in Canvas',
+    description: 'Text changes now update live in the composition canvas + dynamic font weight dropdown',
+    commit: '79020a7',
+  },
+  {
+    date: '2026-02-06',
+    type: 'improve',
+    title: 'Inline GPU Effects',
+    description: 'Brightness, contrast, saturation and invert run inside composite shader - no extra render passes',
+    commit: '58178e8',
+  },
+  {
+    date: '2026-02-06',
+    type: 'fix',
+    title: 'Undo/Redo History System',
+    description: 'Fixed race conditions, missing state captures, and batch grouping in the history system',
+    commit: '804ce7f',
+  },
+  {
+    date: '2026-02-06',
+    type: 'fix',
+    title: 'Audio Detection for Camera MOV',
+    description: 'Fixed audio tracks not detected in Canon DK7A and other camera MOV files',
+    commit: '540a3e6',
+  },
+  {
+    date: '2026-02-06',
+    type: 'fix',
+    title: 'Persist Text & Solid Items',
+    description: 'Text items and solid items in the media panel now survive page reloads',
+    commit: '345a6fe',
+  },
+  {
+    date: '2026-02-06',
+    type: 'fix',
+    title: 'Proxy System Stability',
+    description: 'Fixed DPB deadlock on NVIDIA GPUs, slow start, and stuck at 100% issues',
+    commit: '345c3f3',
+  },
+  {
+    date: '2026-02-06',
+    type: 'fix',
+    title: 'Panel Resize Handles',
+    description: 'Wider grab area, centered on visual edge, only the dragged handle highlights',
+    commit: '22858cd',
+  },
+  {
+    date: '2026-02-06',
+    type: 'fix',
+    title: 'Clip Loading UX',
+    description: 'Instant placeholder on drop, hidden loading audio clips, overflow containment',
+    commit: 'cf465aa',
+  },
+  {
+    date: '2026-02-06',
+    type: 'refactor',
+    title: 'Timeline Store Split',
+    description: 'Extracted positioning and serialization utils for cleaner architecture',
+    commit: '07f5ffb',
+  },
+  {
+    date: '2026-02-06',
+    type: 'improve',
+    title: 'Timeline Selector Bundling',
+    description: 'Reduced 29 individual store subscriptions to 6 with useShallow',
+    commit: '96ff2aa',
+  },
+  {
+    date: '2026-02-06',
+    type: 'improve',
+    title: 'Lazy-Load Panels',
+    description: 'Split heavy panel dependencies for 19% smaller main chunk',
+    commit: 'eb8b569',
+  },
+  {
+    date: '2026-02-06',
+    type: 'improve',
+    title: 'RAF-Debounce Layer Sync',
+    description: 'Smoother scrubbing by debouncing layer synchronization to animation frames',
+    commit: 'e352aa5',
+  },
+  {
+    date: '2026-02-06',
+    type: 'fix',
+    title: 'Memory Leak Prevention',
+    description: 'Fixed RenderLoop recreating on every play/pause + added RAM preview cache limit',
+    commit: 'dc62e03',
+  },
+  {
+    date: '2026-02-06',
+    type: 'fix',
+    title: 'Project Rename',
+    description: 'Fixed rename failing with "Folder already exists" error',
+    commit: '2a351e4',
+  },
+
+  // === Feb 4, 2026 - React Optimization & RenderLoop Fixes ===
   {
     date: '2026-02-04',
     type: 'refactor',
@@ -68,76 +240,6 @@ const RAW_CHANGELOG: RawChangeEntry[] = [
     title: 'Store Subscription Optimization',
     description: 'Fixed 12+ components subscribing to entire store - now use getState() for actions',
     commit: 'a739556',
-  },
-  {
-    date: '2026-02-04',
-    type: 'new',
-    title: 'Transitions System',
-    description: 'Crossfade transitions between clips with GPU-accelerated rendering',
-    commit: '455a99d',
-  },
-  {
-    date: '2026-02-04',
-    type: 'new',
-    title: 'Transitions Panel',
-    description: 'Modular panel with drag-drop support for applying transitions',
-    commit: 'a98c2ad',
-  },
-  {
-    date: '2026-02-04',
-    type: 'new',
-    title: 'JKL Playback Shortcuts',
-    description: 'Industry-standard J/K/L keyboard shortcuts for playback control',
-    commit: 'c0f882f',
-  },
-  {
-    date: '2026-02-04',
-    type: 'new',
-    title: 'Transform Handles in Edit Mode',
-    description: 'Corner and edge handles for scaling with Shift for aspect ratio lock',
-    commit: '633b842',
-  },
-  {
-    date: '2026-02-04',
-    type: 'new',
-    title: 'Proxy Cache Indicator',
-    description: 'Yellow indicator on timeline ruler shows cached proxy frames',
-    commit: 'fb19843',
-  },
-  {
-    date: '2026-02-04',
-    type: 'new',
-    title: 'Manual Video Warmup',
-    description: 'Cache button for preloading proxy frames before playback',
-    commit: '0f1a902',
-  },
-  {
-    date: '2026-02-04',
-    type: 'improve',
-    title: 'Settings Dialog Redesign',
-    description: 'After Effects-style sidebar navigation with categorized settings',
-    commit: '1c8cbeb',
-  },
-  {
-    date: '2026-02-04',
-    type: 'improve',
-    title: 'Faster RAM Preview',
-    description: 'Use WebCodecsPlayer for faster RAM Preview frame generation',
-    commit: '5e618fc',
-  },
-  {
-    date: '2026-02-04',
-    type: 'improve',
-    title: 'Reverse Playback',
-    description: 'Improved reverse playback support for H.264 videos',
-    commit: 'b19a5cb',
-  },
-  {
-    date: '2026-02-04',
-    type: 'improve',
-    title: 'Draggable Settings Dialog',
-    description: 'Settings dialog can now be dragged without dark overlay',
-    commit: '977aefc',
   },
   {
     date: '2026-02-04',
@@ -162,6 +264,13 @@ const RAW_CHANGELOG: RawChangeEntry[] = [
   },
   {
     date: '2026-02-04',
+    type: 'improve',
+    title: 'Draggable Settings Dialog',
+    description: 'Settings dialog can now be dragged without dark overlay',
+    commit: '977aefc',
+  },
+  {
+    date: '2026-02-04',
     type: 'fix',
     title: 'Infinite Loop in Actions',
     description: 'Use getState() for store actions instead of selectors to prevent loops',
@@ -170,19 +279,112 @@ const RAW_CHANGELOG: RawChangeEntry[] = [
   {
     date: '2026-02-04',
     type: 'fix',
+    title: 'Proxy Generation at 103%',
+    description: 'Clamped proxy progress and ensured completion callback fires',
+    commit: '25cfbf4',
+  },
+  {
+    date: '2026-02-04',
+    type: 'fix',
+    title: 'Audio Clip Fades',
+    description: 'Audio fade handles now control Volume instead of Opacity',
+    commit: '63d2214',
+  },
+  {
+    date: '2026-02-04',
+    type: 'fix',
+    title: 'RAM Preview Playback',
+    description: 'Fixed video/audio not playing when RAM Preview cache is used',
+    commit: 'b9cba69',
+  },
+  {
+    date: '2026-02-04',
+    type: 'fix',
+    title: 'RenderLoop Memory Leak',
+    description: 'Fixed RenderLoop being recreated on every play/pause causing memory leaks',
+    commit: 'dab0e6d',
+  },
+
+  // === Feb 3, 2026 - Transitions, Multi-Select, FCP XML & More ===
+  {
+    date: '2026-02-03',
+    type: 'new',
+    title: 'Transitions System',
+    description: 'Crossfade transitions between clips with GPU-accelerated rendering',
+    commit: '455a99d',
+  },
+  {
+    date: '2026-02-03',
+    type: 'new',
+    title: 'Transitions Panel',
+    description: 'Modular panel with drag-drop support for applying transitions',
+    commit: 'a98c2ad',
+  },
+  {
+    date: '2026-02-03',
+    type: 'new',
+    title: 'JKL Playback Shortcuts',
+    description: 'Industry-standard J/K/L keyboard shortcuts for playback control',
+    commit: 'c0f882f',
+  },
+  {
+    date: '2026-02-03',
+    type: 'new',
+    title: 'Transform Handles in Edit Mode',
+    description: 'Corner and edge handles for scaling with Shift for aspect ratio lock',
+    commit: '633b842',
+  },
+  {
+    date: '2026-02-03',
+    type: 'new',
+    title: 'Proxy Cache Indicator',
+    description: 'Yellow indicator on timeline ruler shows cached proxy frames',
+    commit: 'fb19843',
+  },
+  {
+    date: '2026-02-03',
+    type: 'new',
+    title: 'Manual Video Warmup',
+    description: 'Cache button for preloading proxy frames before playback',
+    commit: '0f1a902',
+  },
+  {
+    date: '2026-02-03',
+    type: 'improve',
+    title: 'Settings Dialog Redesign',
+    description: 'After Effects-style sidebar navigation with categorized settings',
+    commit: '1c8cbeb',
+  },
+  {
+    date: '2026-02-03',
+    type: 'improve',
+    title: 'Faster RAM Preview',
+    description: 'Use WebCodecsPlayer for faster RAM Preview frame generation',
+    commit: '5e618fc',
+  },
+  {
+    date: '2026-02-03',
+    type: 'improve',
+    title: 'Reverse Playback',
+    description: 'Improved reverse playback support for H.264 videos',
+    commit: 'b19a5cb',
+  },
+  {
+    date: '2026-02-03',
+    type: 'fix',
     title: 'RAM Preview Nested Compositions',
     description: 'RAM Preview now correctly caches nested composition frames',
     commit: '52d922d',
   },
   {
-    date: '2026-02-04',
+    date: '2026-02-03',
     type: 'fix',
     title: 'Reset Playback Speed on Pause',
     description: 'Playback speed resets to 1x when pausing instead of staying at JKL speed',
     commit: 'cb33627',
   },
   {
-    date: '2026-02-04',
+    date: '2026-02-03',
     type: 'fix',
     title: 'Audio Effect GPU Warnings',
     description: 'Fixed audio effect warnings in GPU rendering pipeline',
@@ -455,6 +657,13 @@ const RAW_CHANGELOG: RawChangeEntry[] = [
     title: 'Windows Build Notice',
     description: 'Changelog now shows platform compatibility notice at the top',
   },
+  {
+    date: '2026-02-02',
+    type: 'new',
+    title: 'MIT License',
+    description: 'Project released under MIT open-source license',
+    commit: '7f62c8d',
+  },
 
   // === Feb 1, 2026 - Big Feature Day ===
   {
@@ -462,6 +671,13 @@ const RAW_CHANGELOG: RawChangeEntry[] = [
     type: 'new',
     title: 'Nested Comp Boundary Markers',
     description: 'Visual markers show where clips start/end within nested compositions',
+  },
+  {
+    date: '2026-02-01',
+    type: 'new',
+    title: 'Fade Curve Bezier Display',
+    description: 'Real-time bezier curve visualization for opacity fades directly on timeline clips',
+    commit: 'db70328',
   },
   {
     date: '2026-02-01',
@@ -699,6 +915,41 @@ const RAW_CHANGELOG: RawChangeEntry[] = [
     title: 'Parallel Decode Error Handling',
     description: 'Strict error reporting instead of silent fallback to HTMLVideoElement',
   },
+  {
+    date: '2026-01-25',
+    type: 'new',
+    title: 'Auto-Copy Media to Raw Folder',
+    description: 'Imported media files automatically copied to project Raw folder for portability',
+    commit: 'd42f45c',
+  },
+  {
+    date: '2026-01-25',
+    type: 'new',
+    title: 'Auto-Relink from Raw Folder',
+    description: 'Missing media files automatically relinked from Raw folder on project load',
+    commit: '0e3d7ed',
+  },
+  {
+    date: '2026-01-25',
+    type: 'new',
+    title: 'Cut Tool Snapping',
+    description: 'Cut tool snaps to playhead, clip edges and markers - hold Alt to disable',
+    commit: '1b04016',
+  },
+  {
+    date: '2026-01-25',
+    type: 'improve',
+    title: 'Cut Indicator Across Linked Clips',
+    description: 'Cut line extends across linked video+audio clips for visual clarity',
+    commit: '4e19381',
+  },
+  {
+    date: '2026-01-25',
+    type: 'improve',
+    title: 'Zero-Copy Export Path',
+    description: 'Export uses OffscreenCanvas → VideoFrame for faster GPU-to-encoder transfer',
+    commit: '2f0c5aa',
+  },
 
   // === Jan 24, 2026 ===
   {
@@ -835,6 +1086,78 @@ const RAW_CHANGELOG: RawChangeEntry[] = [
     type: 'improve',
     title: 'WebCodecs Export Optimization',
     description: 'Parallel clip loading and sequential decoding for faster exports',
+  },
+  {
+    date: '2026-01-20',
+    type: 'new',
+    title: 'Parallel Video Decoding',
+    description: 'Multi-clip parallel decode for dramatically faster exports with nested compositions',
+    commit: '083591b',
+  },
+  {
+    date: '2026-01-20',
+    type: 'new',
+    title: 'YouTube Quality Selection',
+    description: 'Choose video quality and codec (H.264/VP9/AV1) when downloading YouTube videos',
+    commit: '978308e',
+  },
+  {
+    date: '2026-01-20',
+    type: 'new',
+    title: 'macOS Menubar Helper',
+    description: 'Native macOS menubar app with tray icon for helper management',
+    commit: 'aac6c45',
+  },
+  {
+    date: '2026-01-20',
+    type: 'improve',
+    title: 'Mask Editing Performance',
+    description: 'Throttled mask texture updates to 10fps during drag for smooth vertex editing',
+    commit: '4766f3a',
+  },
+
+  // === Jan 23, 2026 - YouTube & Native Helper ===
+  {
+    date: '2026-01-23',
+    type: 'new',
+    title: 'GPU Vendor Display',
+    description: 'Show GPU vendor (Nvidia, AMD, Intel) in app header for quick hardware identification',
+    commit: '1675636',
+  },
+  {
+    date: '2026-01-23',
+    type: 'new',
+    title: 'YouTube Search Persistence',
+    description: 'YouTube searches saved per project with downloads stored in project YT folder',
+    commit: '7a6be26',
+  },
+  {
+    date: '2026-01-23',
+    type: 'new',
+    title: 'YouTube Format Selection',
+    description: 'Choose video quality and format before downloading YouTube videos',
+    commit: '1af642a',
+  },
+  {
+    date: '2026-01-23',
+    type: 'new',
+    title: 'Lite Helper for Windows',
+    description: 'Lightweight YouTube-only helper without FFmpeg dependency',
+    commit: '374a147',
+  },
+  {
+    date: '2026-01-23',
+    type: 'fix',
+    title: 'WebGPU Device Loss Recovery',
+    description: 'Graceful handling and automatic recovery from GPU device loss',
+    commit: '13cba3d',
+  },
+  {
+    date: '2026-01-23',
+    type: 'fix',
+    title: 'GPU Memory Exhaustion',
+    description: 'Guard against Vulkan OOM with smaller initial textures and delayed allocation',
+    commit: '5d68416',
   },
 
   // === Jan 16, 2026 ===
