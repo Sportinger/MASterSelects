@@ -1874,6 +1874,7 @@ input, textarea {
   border-radius: 3px;
   overflow: hidden;
   transition: border-color 0.15s;
+  cursor: ew-resize;
 }
 
 .labeled-value:hover {
@@ -1883,7 +1884,7 @@ input, textarea {
 .labeled-value-label {
   font-size: 9px;
   color: var(--text-secondary);
-  padding: 0 0 0 6px;
+  padding: 3px 0 3px 6px;
   flex-shrink: 0;
   user-select: none;
   opacity: 0.6;
@@ -1892,7 +1893,7 @@ input, textarea {
 /* Override draggable-number style when inside labeled-value */
 .labeled-value .draggable-number {
   display: block;
-  flex: 1;
+  flex-shrink: 0;
   min-width: 0;
   border: none;
   background: transparent;
