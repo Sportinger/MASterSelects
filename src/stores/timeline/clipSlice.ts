@@ -762,12 +762,18 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
     }
 
     const clipId = generateSolidClipId();
+
+    // Use active composition dimensions, fallback to 1920x1080
+    const activeComp = useMediaStore.getState().getActiveComposition();
+    const compWidth = activeComp?.width || 1920;
+    const compHeight = activeComp?.height || 1080;
+
     const canvas = document.createElement('canvas');
-    canvas.width = 1920;
-    canvas.height = 1080;
+    canvas.width = compWidth;
+    canvas.height = compHeight;
     const ctx = canvas.getContext('2d')!;
     ctx.fillStyle = color;
-    ctx.fillRect(0, 0, 1920, 1080);
+    ctx.fillRect(0, 0, compWidth, compHeight);
 
     const solidClip: TimelineClip = {
       id: clipId,
@@ -781,6 +787,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
       source: { type: 'solid', textCanvas: canvas, naturalDuration: duration },
       transform: { ...DEFAULT_TRANSFORM },
       effects: [],
+      solidColor: color,
       isLoading: false,
     };
 
@@ -797,6 +804,48 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
 
     log.debug('Created solid clip', { clipId, color });
     return clipId;
+  },
+
+  updateSolidColor: (clipId, color) => {
+    const { clips, invalidateCache } = get();
+    const clip = clips.find(c => c.id === clipId);
+    if (!clip || clip.source?.type !== 'solid') return;
+
+    // Re-fill the existing canvas with new color
+    const canvas = clip.source.textCanvas;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = color;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+
+      // Re-upload canvas pixels to existing GPU texture
+      const texMgr = engine.getTextureManager();
+      if (texMgr) {
+        texMgr.updateCanvasTexture(canvas);
+      }
+    }
+
+    // Update clip in store
+    set({
+      clips: clips.map(c => c.id !== clipId ? c : {
+        ...c,
+        solidColor: color,
+        name: `Solid ${color}`,
+        source: { ...c.source!, textCanvas: canvas },
+      }),
+    });
+    invalidateCache();
+
+    // Force immediate render for live preview
+    try {
+      layerBuilder.invalidateCache();
+      const layers = layerBuilder.buildLayersFromStore();
+      engine.render(layers);
+    } catch (e) {
+      log.debug('Direct render after solid color update failed', e);
+    }
   },
 
   toggleClipReverse: (id) => {

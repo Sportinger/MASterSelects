@@ -37,6 +37,7 @@ type MediaStoreState = MediaState &
     getOrCreateSolidFolder: () => string;
     createSolidItem: (name?: string, color?: string, parentId?: string | null) => string;
     removeSolidItem: (id: string) => void;
+    updateSolidItem: (id: string, updates: Partial<{ color: string; width: number; height: number }>) => void;
   };
 
 export const useMediaStore = create<MediaStoreState>()(
@@ -137,6 +138,10 @@ export const useMediaStore = create<MediaStoreState>()(
     createSolidItem: (name?: string, color?: string, parentId?: string | null) => {
       const { solidItems } = get();
       const id = `solid-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      // Use active composition dimensions, fallback to 1920x1080
+      const activeComp = get().getActiveComposition();
+      const compWidth = activeComp?.width || 1920;
+      const compHeight = activeComp?.height || 1080;
       const newSolid = {
         id,
         name: name || `Solid ${solidItems.length + 1}`,
@@ -144,8 +149,8 @@ export const useMediaStore = create<MediaStoreState>()(
         parentId: parentId !== undefined ? parentId : null,
         createdAt: Date.now(),
         color: color || '#ffffff',
-        width: 1920,
-        height: 1080,
+        width: compWidth,
+        height: compHeight,
         duration: 5, // 5 seconds default
       };
       set({ solidItems: [...solidItems, newSolid] });
@@ -154,6 +159,21 @@ export const useMediaStore = create<MediaStoreState>()(
 
     removeSolidItem: (id: string) => {
       set({ solidItems: get().solidItems.filter(s => s.id !== id) });
+    },
+
+    updateSolidItem: (id: string, updates: Partial<{ color: string; width: number; height: number }>) => {
+      set({
+        solidItems: get().solidItems.map(s =>
+          s.id === id
+            ? {
+                ...s,
+                ...(updates.color !== undefined && { color: updates.color, name: `Solid ${updates.color}` }),
+                ...(updates.width !== undefined && { width: updates.width }),
+                ...(updates.height !== undefined && { height: updates.height }),
+              }
+            : s
+        ),
+      });
     },
 
     // Merge all slices

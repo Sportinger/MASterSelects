@@ -70,7 +70,7 @@ const FileTypeIcon = memo(({ type }: { type?: string }) => {
 
 const log = Logger.create('MediaPanel');
 import { useMediaStore } from '../../stores/mediaStore';
-import type { MediaFile, Composition, ProjectItem } from '../../stores/mediaStore';
+import type { MediaFile, Composition, ProjectItem, SolidItem } from '../../stores/mediaStore';
 import type { LabelColor } from '../../stores/mediaStore/types';
 import { useTimelineStore } from '../../stores/timeline';
 import { useContextMenuPosition } from '../../hooks/useContextMenuPosition';
@@ -157,6 +157,7 @@ export function MediaPanel() {
   const files = useMediaStore(state => state.files);
   const compositions = useMediaStore(state => state.compositions);
   const folders = useMediaStore(state => state.folders);
+  const solidItems = useMediaStore(state => state.solidItems);
   const selectedIds = useMediaStore(state => state.selectedIds);
   const expandedFolderIds = useMediaStore(state => state.expandedFolderIds);
   const fileSystemSupported = useMediaStore(state => state.fileSystemSupported);
@@ -190,6 +191,7 @@ export function MediaPanel() {
     getOrCreateTextFolder,
     createSolidItem,
     getOrCreateSolidFolder,
+    updateSolidItem,
     setLabelColor,
   } = useMediaStore.getState();
 
@@ -199,6 +201,7 @@ export function MediaPanel() {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; itemId?: string } | null>(null);
   const { menuRef: contextMenuRef, adjustedPosition: contextMenuPosition } = useContextMenuPosition(contextMenu);
   const [settingsDialog, setSettingsDialog] = useState<{ compositionId: string; width: number; height: number; frameRate: number; duration: number } | null>(null);
+  const [solidSettingsDialog, setSolidSettingsDialog] = useState<{ solidItemId: string; width: number; height: number; color: string } | null>(null);
   const [addDropdownOpen, setAddDropdownOpen] = useState(false);
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
   const [internalDragId, setInternalDragId] = useState<string | null>(null);
@@ -1046,12 +1049,15 @@ export function MediaPanel() {
         const selectedItem = contextMenu.itemId
           ? files.find(f => f.id === contextMenu.itemId) ||
             compositions.find(c => c.id === contextMenu.itemId) ||
-            folders.find(f => f.id === contextMenu.itemId)
+            folders.find(f => f.id === contextMenu.itemId) ||
+            solidItems.find(s => s.id === contextMenu.itemId)
           : null;
         const isVideoFile = selectedItem && 'type' in selectedItem && selectedItem.type === 'video';
         const isComposition = selectedItem && 'type' in selectedItem && selectedItem.type === 'composition';
+        const isSolidItem = selectedItem && 'type' in selectedItem && selectedItem.type === 'solid';
         const mediaFile = isVideoFile ? (selectedItem as MediaFile) : null;
         const composition = isComposition ? (selectedItem as Composition) : null;
+        const solidItem = isSolidItem ? (selectedItem as SolidItem) : null;
         const isGenerating = mediaFile?.proxyStatus === 'generating';
         const hasProxy = mediaFile?.proxyStatus === 'ready';
 
@@ -1089,6 +1095,21 @@ export function MediaPanel() {
                 {isComposition && composition && (
                   <div className="context-menu-item" onClick={() => openCompositionSettings(composition)}>
                     Composition Settings...
+                  </div>
+                )}
+
+                {/* Solid Settings - only for solid items */}
+                {isSolidItem && solidItem && (
+                  <div className="context-menu-item" onClick={() => {
+                    setSolidSettingsDialog({
+                      solidItemId: solidItem.id,
+                      width: solidItem.width,
+                      height: solidItem.height,
+                      color: solidItem.color,
+                    });
+                    closeContextMenu();
+                  }}>
+                    Solid Settings...
                   </div>
                 )}
 
@@ -1338,6 +1359,146 @@ export function MediaPanel() {
               </button>
               <button
                 onClick={saveCompositionSettings}
+                style={{ padding: '6px 16px', background: '#4a90e2', border: 'none', borderRadius: '4px', color: '#fff', cursor: 'pointer', fontSize: '12px' }}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Solid Settings Dialog */}
+      {solidSettingsDialog && (
+        <div
+          className="comp-settings-overlay"
+          onClick={() => setSolidSettingsDialog(null)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'transparent',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10001,
+          }}
+        >
+          <div
+            className="comp-settings-dialog"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#1e1e1e',
+              border: '1px solid #3a3a3a',
+              borderRadius: '6px',
+              padding: '20px',
+              minWidth: '340px',
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
+            }}
+          >
+            <h3 style={{ margin: '0 0 16px 0', fontSize: '14px', fontWeight: 500, color: '#e0e0e0' }}>Solid Settings</h3>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              {/* Width */}
+              <div>
+                <label style={{ display: 'block', marginBottom: '4px', fontSize: '11px', color: '#888' }}>Width</label>
+                <input
+                  type="number"
+                  value={solidSettingsDialog.width}
+                  onChange={(e) => setSolidSettingsDialog({
+                    ...solidSettingsDialog,
+                    width: Math.max(1, parseInt(e.target.value) || 1920),
+                  })}
+                  min="1"
+                  max="7680"
+                  style={{ width: '100%', padding: '6px 8px', background: '#2a2a2a', border: '1px solid #3a3a3a', borderRadius: '4px', color: '#fff', fontSize: '13px' }}
+                />
+              </div>
+
+              {/* Height */}
+              <div>
+                <label style={{ display: 'block', marginBottom: '4px', fontSize: '11px', color: '#888' }}>Height</label>
+                <input
+                  type="number"
+                  value={solidSettingsDialog.height}
+                  onChange={(e) => setSolidSettingsDialog({
+                    ...solidSettingsDialog,
+                    height: Math.max(1, parseInt(e.target.value) || 1080),
+                  })}
+                  min="1"
+                  max="4320"
+                  style={{ width: '100%', padding: '6px 8px', background: '#2a2a2a', border: '1px solid #3a3a3a', borderRadius: '4px', color: '#fff', fontSize: '13px' }}
+                />
+              </div>
+
+              {/* Color */}
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={{ display: 'block', marginBottom: '4px', fontSize: '11px', color: '#888' }}>Color</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input
+                    type="color"
+                    value={solidSettingsDialog.color}
+                    onChange={(e) => setSolidSettingsDialog({ ...solidSettingsDialog, color: e.target.value })}
+                    style={{ width: '36px', height: '28px', padding: '0', border: '1px solid #3a3a3a', borderRadius: '4px', cursor: 'pointer', background: 'transparent' }}
+                  />
+                  <span style={{ fontSize: '12px', color: '#ccc', fontFamily: 'monospace' }}>
+                    {solidSettingsDialog.color}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Resolution Presets */}
+            <div style={{ marginTop: '12px' }}>
+              <label style={{ display: 'block', marginBottom: '4px', fontSize: '11px', color: '#888' }}>Presets</label>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                {[
+                  { label: '1080p', w: 1920, h: 1080 },
+                  { label: '4K', w: 3840, h: 2160 },
+                  { label: '720p', w: 1280, h: 720 },
+                  { label: '9:16', w: 1080, h: 1920 },
+                  { label: '1:1', w: 1080, h: 1080 },
+                ].map((preset) => (
+                  <button
+                    key={preset.label}
+                    onClick={() => setSolidSettingsDialog({ ...solidSettingsDialog, width: preset.w, height: preset.h })}
+                    style={{
+                      padding: '4px 8px',
+                      fontSize: '11px',
+                      background: solidSettingsDialog.width === preset.w && solidSettingsDialog.height === preset.h ? '#4a90e2' : '#2a2a2a',
+                      border: '1px solid #3a3a3a',
+                      borderRadius: '3px',
+                      color: '#fff',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Buttons */}
+            <div style={{ display: 'flex', gap: '8px', marginTop: '16px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setSolidSettingsDialog(null)}
+                style={{ padding: '6px 16px', background: '#2a2a2a', border: '1px solid #3a3a3a', borderRadius: '4px', color: '#fff', cursor: 'pointer', fontSize: '12px' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (solidSettingsDialog) {
+                    updateSolidItem(solidSettingsDialog.solidItemId, {
+                      color: solidSettingsDialog.color,
+                      width: solidSettingsDialog.width,
+                      height: solidSettingsDialog.height,
+                    });
+                    setSolidSettingsDialog(null);
+                  }
+                }}
                 style={{ padding: '6px 16px', background: '#4a90e2', border: 'none', borderRadius: '4px', color: '#fff', cursor: 'pointer', fontSize: '12px' }}
               >
                 Save

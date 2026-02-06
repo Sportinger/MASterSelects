@@ -3423,6 +3423,30 @@ input[type="checkbox"] {
   flex-shrink: 0;
 }
 
+.timeline-clip.solid {
+  background: #3d5a5a;
+  border: 1px solid #4e6b6b;
+}
+
+.timeline-clip.solid .clip-content {
+  background: rgba(61, 90, 90, 0.9);
+}
+
+.clip-solid-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+
+.timeline-clip.loading.solid {
+  background: rgba(61, 90, 90, 0.3) !important;
+  border-color: rgba(78, 107, 107, 0.8) !important;
+}
+
 .timeline-clip.loading.text {
   background: rgba(147, 51, 234, 0.3) !important;
   border-color: rgba(168, 85, 247, 0.8) !important;

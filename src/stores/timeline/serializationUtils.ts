@@ -71,8 +71,8 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
         reversed: clip.reversed || undefined,
         // Text clip support
         textProperties: clip.textProperties,
-        // Solid clip support - extract color from name (format: "Solid #xxxxxx")
-        solidColor: clip.source?.type === 'solid' ? clip.name.replace('Solid ', '') : undefined,
+        // Solid clip support
+        solidColor: clip.source?.type === 'solid' ? (clip.solidColor || clip.name.replace('Solid ', '')) : undefined,
       };
     });
 
@@ -623,12 +623,16 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
       // Solid clips - restore from solidColor
       if (serializedClip.sourceType === 'solid' && serializedClip.solidColor) {
         const color = serializedClip.solidColor;
+        // Use active composition dimensions, fallback to 1920x1080
+        const activeComp = mediaStore.getActiveComposition?.();
+        const compWidth = activeComp?.width || 1920;
+        const compHeight = activeComp?.height || 1080;
         const canvas = document.createElement('canvas');
-        canvas.width = 1920;
-        canvas.height = 1080;
+        canvas.width = compWidth;
+        canvas.height = compHeight;
         const ctx = canvas.getContext('2d')!;
         ctx.fillStyle = color;
-        ctx.fillRect(0, 0, 1920, 1080);
+        ctx.fillRect(0, 0, compWidth, compHeight);
 
         const solidClip: TimelineClip = {
           id: serializedClip.id,
@@ -647,6 +651,7 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
           transform: serializedClip.transform,
           effects: serializedClip.effects || [],
           masks: serializedClip.masks,
+          solidColor: color,
           isLoading: false,
         };
 

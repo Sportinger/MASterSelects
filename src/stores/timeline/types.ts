@@ -173,6 +173,7 @@ export interface ClipActions {
   updateTextProperties: (clipId: string, props: Partial<TextClipProperties>) => void;
   // Solid clip actions
   addSolidClip: (trackId: string, startTime: number, color?: string, duration?: number, skipMediaItem?: boolean) => string | null;
+  updateSolidColor: (clipId: string, color: string) => void;
   // YouTube pending download clips
   addPendingDownloadClip: (trackId: string, startTime: number, videoId: string, title: string, thumbnail: string, estimatedDuration?: number) => string;
   updateDownloadProgress: (clipId: string, progress: number) => void;

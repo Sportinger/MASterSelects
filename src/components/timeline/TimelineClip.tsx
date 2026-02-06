@@ -574,6 +574,9 @@ function TimelineClipComponent({
   // Determine if this is a text clip
   const isTextClip = clip.source?.type === 'text';
 
+  // Determine if this is a solid clip
+  const isSolidClip = clip.source?.type === 'solid';
+
   const isGeneratingProxy = proxyStatus === 'generating';
   const hasProxy = proxyStatus === 'ready';
 
@@ -680,7 +683,7 @@ function TimelineClipComponent({
   }
 
   // Determine clip type class (audio, video, text, or image)
-  const clipTypeClass = isTextClip ? 'text' : isAudioClip ? 'audio' : (clip.source?.type || 'video');
+  const clipTypeClass = isSolidClip ? 'solid' : isTextClip ? 'text' : isAudioClip ? 'audio' : (clip.source?.type || 'video');
 
   // Check if this clip is part of a multi-select drag
   const isInMultiSelectDrag = clipDrag?.multiSelectClipIds?.includes(clip.id) && clipDrag.multiSelectTimeDelta !== undefined;
@@ -1001,6 +1004,9 @@ function TimelineClipComponent({
       <div className="clip-content">
         {clip.isLoading && <div className="clip-loading-spinner" />}
         <div className="clip-name-row">
+          {isSolidClip && (
+            <span className="clip-solid-swatch" title="Solid Clip" style={{ background: clip.solidColor || '#fff' }} />
+          )}
           {isTextClip && (
             <span className="clip-text-icon" title="Text Clip">T</span>
           )}

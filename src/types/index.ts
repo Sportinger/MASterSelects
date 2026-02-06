@@ -342,6 +342,8 @@ export interface TimelineClip {
   analysisProgress?: number;  // 0-100 progress
   // Text clip support
   textProperties?: TextClipProperties;
+  // Solid clip support
+  solidColor?: string;
   // YouTube download support
   isPendingDownload?: boolean;  // True if clip is being downloaded
   downloadProgress?: number;    // 0-100 download progress
