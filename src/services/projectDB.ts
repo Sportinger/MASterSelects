@@ -98,6 +98,9 @@ export interface StoredProject {
     expandedFolderIds: string[];
     // Media file IDs (actual blobs stored separately)
     mediaFileIds: string[];
+    // Text and solid items
+    textItems?: unknown[];
+    solidItems?: unknown[];
   };
 }
 
