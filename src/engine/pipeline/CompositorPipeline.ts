@@ -94,8 +94,12 @@ struct LayerUniforms {
   maskFeather: f32,
   maskFeatherQuality: u32,
   posZ: f32,
-  _pad2: f32,
-  _pad3: f32,
+  inlineBrightness: f32,
+  inlineContrast: f32,
+  inlineSaturation: f32,
+  inlineInvert: u32,
+  _pad4: f32,
+  _pad5: f32,
 };
 
 @vertex
@@ -354,7 +358,14 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
 
   let clampedUV = clamp(uv, vec2f(0.0), vec2f(1.0));
   let baseColor = textureSample(baseTexture, texSampler, input.uv);
-  let layerColor = textureSampleBaseClampToEdge(videoTexture, texSampler, clampedUV);
+  var layerColor = textureSampleBaseClampToEdge(videoTexture, texSampler, clampedUV);
+
+  // Apply inline color effects (invert → brightness+contrast → saturation)
+  var ec = layerColor.rgb;
+  ec = select(ec, 1.0 - ec, layer.inlineInvert == 1u);
+  ec = clamp((ec + layer.inlineBrightness - 0.5) * layer.inlineContrast + 0.5, vec3f(0.0), vec3f(1.0));
+  ec = mix(vec3f(getLuminosity(ec)), ec, layer.inlineSaturation);
+  layerColor = vec4f(clamp(ec, vec3f(0.0), vec3f(1.0)), layerColor.a);
 
   let outOfBounds = uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0;
   let maskAlpha = select(layerColor.a, 0.0, outOfBounds);
@@ -434,6 +445,13 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
 }
 `;
 
+export interface InlineEffectParams {
+  brightness: number;  // Offset: 0 = no change, -1..1 range
+  contrast: number;    // Multiplier: 1 = no change, 0..3 range
+  saturation: number;  // Multiplier: 1 = no change, 0..3 range
+  invert: boolean;     // Toggle: false = no invert
+}
+
 export class CompositorPipeline {
   private device: GPUDevice;
 
@@ -450,12 +468,12 @@ export class CompositorPipeline {
   private externalCopyBindGroupLayout: GPUBindGroupLayout | null = null;
 
   // Uniform buffer and data
-  private uniformBuffer = new ArrayBuffer(80); // 20 floats for extended uniforms (including mask quality)
+  private uniformBuffer = new ArrayBuffer(96); // 24 floats for extended uniforms (mask quality + inline effects)
   private uniformData = new Float32Array(this.uniformBuffer);
   private uniformDataU32 = new Uint32Array(this.uniformBuffer);
 
   // Indices that use u32 values (for proper change detection)
-  private static readonly U32_INDICES = [1, 10, 11, 16]; // blendMode, hasMask, maskInvert, maskFeatherQuality
+  private static readonly U32_INDICES = [1, 10, 11, 16, 21]; // blendMode, hasMask, maskInvert, maskFeatherQuality, inlineInvert
 
   // Per-layer uniform buffers
   private layerUniformBuffers: Map<string, GPUBuffer> = new Map();
@@ -642,7 +660,7 @@ export class CompositorPipeline {
     let uniformBuffer = this.layerUniformBuffers.get(layerId);
     if (!uniformBuffer) {
       uniformBuffer = this.device.createBuffer({
-        size: 80, // 20 floats for extended uniforms (incl. mask quality)
+        size: 96, // 24 floats for extended uniforms (mask quality + inline effects)
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
       });
       this.layerUniformBuffers.set(layerId, uniformBuffer);
@@ -656,7 +674,8 @@ export class CompositorPipeline {
     sourceAspect: number,
     outputAspect: number,
     hasMask: boolean,
-    uniformBuffer: GPUBuffer
+    uniformBuffer: GPUBuffer,
+    inlineEffects?: InlineEffectParams
   ): void {
     // Get rotation values (layer.rotation can be number or {x,y,z} object)
     let rotX = 0, rotY = 0, rotZ = 0;
@@ -687,8 +706,12 @@ export class CompositorPipeline {
     this.uniformData[15] = layer.maskFeather || 0;      // maskFeather (blur radius in pixels)
     this.uniformDataU32[16] = layer.maskFeatherQuality || 0; // maskFeatherQuality (0=low, 1=med, 2=high)
     this.uniformData[17] = layer.position.z ?? 0;       // posZ (depth position)
-    this.uniformData[18] = 0;           // _pad2
-    this.uniformData[19] = 0;           // _pad3
+    this.uniformData[18] = inlineEffects?.brightness ?? 0;   // inlineBrightness (0 = no change)
+    this.uniformData[19] = inlineEffects?.contrast ?? 1;     // inlineContrast (1 = no change)
+    this.uniformData[20] = inlineEffects?.saturation ?? 1;   // inlineSaturation (1 = no change)
+    this.uniformDataU32[21] = inlineEffects?.invert ? 1 : 0; // inlineInvert (0 or 1)
+    this.uniformData[22] = 0;           // _pad4
+    this.uniformData[23] = 0;           // _pad5
 
     // Change detection - only write to GPU if values changed
     const lastValuesEntry = this.lastUniformValues.get(layer.id);
@@ -700,7 +723,7 @@ export class CompositorPipeline {
       const lastU32 = lastValuesEntry.u32;
 
       // Check float values
-      for (let i = 0; i < 20; i++) {
+      for (let i = 0; i < 24; i++) {
         // Skip indices that are u32 - compare them separately
         if (CompositorPipeline.U32_INDICES.includes(i)) continue;
         if (Math.abs(this.uniformData[i] - lastFloat[i]) > 0.00001) {
@@ -709,7 +732,7 @@ export class CompositorPipeline {
         }
       }
 
-      // Check u32 values (blendMode, hasMask, maskInvert, maskFeatherQuality)
+      // Check u32 values (blendMode, hasMask, maskInvert, maskFeatherQuality, inlineInvert)
       if (!needsUpdate) {
         for (const i of CompositorPipeline.U32_INDICES) {
           if (this.uniformDataU32[i] !== lastU32[i]) {

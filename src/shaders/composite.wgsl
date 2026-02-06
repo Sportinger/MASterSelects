@@ -51,8 +51,12 @@ struct LayerUniforms {
   maskFeather: f32,   // Mask blur radius in pixels (0-50)
   maskFeatherQuality: u32, // 0=low (9 samples), 1=medium (17), 2=high (25)
   posZ: f32,          // Z position (depth) - affects scale based on perspective
-  _pad2: f32,
-  _pad3: f32,
+  inlineBrightness: f32,  // Inline effect: brightness offset (0 = no change)
+  inlineContrast: f32,    // Inline effect: contrast multiplier (1 = no change)
+  inlineSaturation: f32,  // Inline effect: saturation multiplier (1 = no change)
+  inlineInvert: u32,      // Inline effect: invert (0 or 1)
+  _pad4: f32,
+  _pad5: f32,
 };
 
 @group(0) @binding(0) var texSampler: sampler;
@@ -501,7 +505,15 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
 
   // Sample both textures in uniform control flow
   let baseColor = textureSample(baseTexture, texSampler, input.uv);
-  let layerColor = textureSample(layerTexture, texSampler, clampedUV);
+  var layerColor = textureSample(layerTexture, texSampler, clampedUV);
+
+  // Apply inline color effects (invert → brightness+contrast → saturation)
+  // Zero-cost at defaults (brightness=0, contrast=1, saturation=1, invert=0)
+  var ec = layerColor.rgb;
+  ec = select(ec, 1.0 - ec, layer.inlineInvert == 1u);
+  ec = clamp((ec + layer.inlineBrightness - 0.5) * layer.inlineContrast + 0.5, vec3f(0.0), vec3f(1.0));
+  ec = mix(vec3f(getLuminosity(ec)), ec, layer.inlineSaturation);
+  layerColor = vec4f(clamp(ec, vec3f(0.0), vec3f(1.0)), layerColor.a);
 
   // Check if UV is out of bounds - use this to mask the layer
   let outOfBounds = uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0;

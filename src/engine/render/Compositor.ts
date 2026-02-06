@@ -1,7 +1,7 @@
 // Ping-pong compositing with effects
 
 import type { LayerRenderData, CompositeResult } from '../core/types';
-import type { CompositorPipeline } from '../pipeline/CompositorPipeline';
+import type { CompositorPipeline, InlineEffectParams } from '../pipeline/CompositorPipeline';
 import type { EffectsPipeline } from '../../effects/EffectsPipeline';
 import type { MaskTextureManager } from '../texture/MaskTextureManager';
 
@@ -75,8 +75,41 @@ export class Compositor {
 
       this.maskTextureManager.logMaskState(maskLookupId, hasMask);
 
-      // Update uniforms
-      this.compositorPipeline.updateLayerUniforms(layer, sourceAspect, outputAspect, hasMask, uniformBuffer);
+      // Classify effects: inlineable effects (brightness, contrast, saturation, invert)
+      // are handled directly in the composite shader via uniforms - no extra render passes.
+      // Complex effects (blur, pixelate, etc.) still need separate render passes.
+      const inlineEffects: InlineEffectParams = { brightness: 0, contrast: 1, saturation: 1, invert: false };
+      let complexEffects: typeof layer.effects | undefined;
+
+      if (layer.effects && layer.effects.length > 0) {
+        const complex: typeof layer.effects = [];
+        for (const effect of layer.effects) {
+          if (!effect.enabled || effect.type.startsWith('audio-')) continue;
+          switch (effect.type) {
+            case 'brightness':
+              inlineEffects.brightness = (effect.params.amount as number) ?? 0;
+              break;
+            case 'contrast':
+              inlineEffects.contrast = (effect.params.amount as number) ?? 1;
+              break;
+            case 'saturation':
+              inlineEffects.saturation = (effect.params.amount as number) ?? 1;
+              break;
+            case 'invert':
+              inlineEffects.invert = true;
+              break;
+            default:
+              complex.push(effect);
+              break;
+          }
+        }
+        if (complex.length > 0) {
+          complexEffects = complex;
+        }
+      }
+
+      // Update uniforms (includes inline effect params)
+      this.compositorPipeline.updateLayerUniforms(layer, sourceAspect, outputAspect, hasMask, uniformBuffer, inlineEffects);
 
       // Track which ping-pong buffer we're reading from for cache key
       const isPingBase = readView === state.pingView;
@@ -86,9 +119,9 @@ export class Compositor {
       let sourceExternalTexture = data.externalTexture;
       let useExternalTexture = data.isVideo && !!data.externalTexture;
 
-      // IMPORTANT: Apply effects to the SOURCE layer BEFORE compositing
-      // This ensures effects only affect this layer, not the accumulated background
-      if (layer.effects && layer.effects.length > 0 && state.effectTempView && state.effectTempView2) {
+      // Apply complex effects to the SOURCE layer BEFORE compositing (skip if only inline effects)
+      // Inline effects (brightness, contrast, saturation, invert) are handled in the composite shader
+      if (complexEffects && complexEffects.length > 0 && state.effectTempView && state.effectTempView2) {
         // First, we need to copy/render the source into a temp texture so we can apply effects to it
         // For video (external texture), render it to temp texture first
         if (useExternalTexture && sourceExternalTexture) {
@@ -113,10 +146,10 @@ export class Compositor {
               copyPass.draw(6);
               copyPass.end();
 
-              // Now apply effects to the copied texture
+              // Now apply complex effects to the copied texture
               const effectResult = this.effectsPipeline.applyEffects(
                 commandEncoder,
-                layer.effects,
+                complexEffects,
                 state.sampler,
                 state.effectTempView,
                 state.effectTempView2,
@@ -157,10 +190,10 @@ export class Compositor {
           }
           copyPass.end();
 
-          // Apply effects
+          // Apply complex effects
           const effectResult = this.effectsPipeline.applyEffects(
             commandEncoder,
-            layer.effects,
+            complexEffects,
             state.sampler,
             state.effectTempView,
             state.effectTempView2,
