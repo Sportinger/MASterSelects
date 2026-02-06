@@ -5332,7 +5332,7 @@ input[type="checkbox"] {
 .media-col-name {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   overflow: hidden;
   position: relative;
   flex-shrink: 0;
@@ -5441,10 +5441,11 @@ input[type="checkbox"] {
 .media-item {
   display: flex;
   align-items: center;
-  padding: 4px 0;
+  padding: 1px 0;
   cursor: pointer;
   transition: background 0.1s;
   border-left: 2px solid transparent;
+  height: 20px;
 }
 
 .media-item:hover {
@@ -5468,18 +5469,13 @@ input[type="checkbox"] {
 }
 
 .media-item-icon {
-  font-size: 16px;
   flex-shrink: 0;
-  width: 20px;
-  text-align: center;
-}
-
-.media-item-thumbnail {
-  width: 32px;
-  height: 18px;
-  object-fit: cover;
-  border-radius: 2px;
-  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
 .media-item-name {
