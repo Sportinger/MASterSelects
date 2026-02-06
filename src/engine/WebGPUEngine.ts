@@ -666,11 +666,13 @@ export class WebGPUEngine {
 
   private renderEmptyFrame(device: GPUDevice): void {
     const commandEncoder = device.createCommandEncoder();
+    // Preview canvases clear with alpha=0 so CSS background shows through
+    // (black by default, checkerboard when transparency grid is toggled on)
     if (this.previewContext) {
       const pass = commandEncoder.beginRenderPass({
         colorAttachments: [{
           view: this.previewContext.getCurrentTexture().createView(),
-          clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          clearValue: { r: 0, g: 0, b: 0, a: 0 },
           loadOp: 'clear',
           storeOp: 'store',
         }],
@@ -681,7 +683,7 @@ export class WebGPUEngine {
       const pass = commandEncoder.beginRenderPass({
         colorAttachments: [{
           view: ctx.getCurrentTexture().createView(),
-          clearValue: { r: 0, g: 0, b: 0, a: 1 },
+          clearValue: { r: 0, g: 0, b: 0, a: 0 },
           loadOp: 'clear',
           storeOp: 'store',
         }],
