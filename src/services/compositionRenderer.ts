@@ -9,7 +9,7 @@ import { useMediaStore } from '../stores/mediaStore';
 import { useTimelineStore } from '../stores/timeline';
 import { calculateSourceTime } from '../utils/speedIntegration';
 import { textRenderer } from './textRenderer';
-import { proxyFrameCache } from './proxyFrameCache';
+import { getProxyPlayer } from './proxyPlayer';
 
 // Source cache entry for a composition
 interface CompositionSources {
@@ -497,19 +497,19 @@ class CompositionRendererService {
           (nestedMediaFile.proxyStatus === 'ready' || nestedMediaFile.proxyStatus === 'generating');
 
         if (shouldUseProxy && nestedMediaFile) {
-          const proxyFps = nestedMediaFile.proxyFps || 30;
-          const frameIndex = Math.floor(nestedClipTime * proxyFps);
-          const cachedFrame = proxyFrameCache.getCachedFrame(nestedMediaFile.id, frameIndex, proxyFps);
-
-          if (cachedFrame) {
-            nestedLayers.push({
-              ...baseLayer,
-              source: {
-                type: 'image',
-                imageElement: cachedFrame,
-              },
-            } as Layer);
-            continue;
+          const player = getProxyPlayer(nestedMediaFile.id);
+          if (player?.ready) {
+            const frame = player.seekToTime(nestedClipTime);
+            if (frame) {
+              nestedLayers.push({
+                ...baseLayer,
+                source: {
+                  type: 'video',
+                  videoFrame: frame,
+                },
+              } as Layer);
+              continue;
+            }
           }
         }
 

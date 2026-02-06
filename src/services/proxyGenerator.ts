@@ -1,24 +1,20 @@
-// GPU-accelerated proxy frame generator using WebCodecs + WebGPU
-// Uses VideoDecoder for hardware decoding and GPU for batch resize
-// Workers handle parallel WebP encoding
+// Proxy video generator using WebCodecs VideoEncoder + Mp4Muxer
+// Decodes source → resizes on OffscreenCanvas → encodes all-keyframe H.264 → single MP4
+// All keyframes = every frame independently decodable = instant random access for scrubbing
 
 import { Logger } from './logger';
 import * as MP4BoxModule from 'mp4box';
+import { Muxer as Mp4Muxer, ArrayBufferTarget as Mp4Target } from 'mp4-muxer';
 
 const log = Logger.create('ProxyGenerator');
-import { engine } from '../engine/WebGPUEngine';
-import { ProxyResizePipeline } from '../engine/proxy/ProxyResizePipeline';
 
 const MP4Box = (MP4BoxModule as any).default || MP4BoxModule;
 
 // Configuration
 const PROXY_FPS = 30;
-const PROXY_QUALITY = 0.92;
-const PROXY_MAX_WIDTH = 1280; // Changed from 1920 for faster generation
-const WORKER_POOL_SIZE = navigator.hardwareConcurrency || 4;
-const BATCH_SIZE = ProxyResizePipeline.getBatchSize(); // 16 frames max per GPU batch
-const MIN_BATCH_SIZE = 4; // Process partial batches to prevent DPB deadlock on NVIDIA
-const DB_BATCH_SIZE = 10; // IndexedDB write batch size
+const PROXY_MAX_WIDTH = 1280;
+const PROXY_BITRATE = 5_000_000; // 5 Mbps
+const ENCODER_CODEC = 'avc1.4d0028'; // Main Profile L4.0
 
 // MP4Box types
 interface MP4ArrayBuffer extends ArrayBuffer {
@@ -57,76 +53,19 @@ interface MP4File {
   getTrackById: (id: number) => any;
 }
 
-interface GeneratorResult {
+export interface GeneratorResult {
+  blob: Blob;
   frameCount: number;
   fps: number;
 }
 
-// Worker code that accepts raw RGBA pixels
-const workerCode = `
-  self.onmessage = async function(e) {
-    const { frameIndex, pixels, width, height, quality } = e.data;
-
-    try {
-      // Validate input
-      if (!pixels || pixels.byteLength === 0) {
-        throw new Error('Empty pixel data');
-      }
-
-      const expectedSize = width * height * 4;
-      if (pixels.byteLength !== expectedSize) {
-        throw new Error('Pixel data size mismatch: got ' + pixels.byteLength + ', expected ' + expectedSize);
-      }
-
-      if (width <= 0 || height <= 0) {
-        throw new Error('Invalid dimensions: ' + width + 'x' + height);
-      }
-
-      // Create ImageData from raw pixels
-      const imageData = new ImageData(new Uint8ClampedArray(pixels), width, height);
-
-      // Create OffscreenCanvas and draw ImageData
-      const canvas = new OffscreenCanvas(width, height);
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        throw new Error('Failed to get 2d context');
-      }
-      ctx.putImageData(imageData, 0, 0);
-
-      // Encode to WebP with fallback to PNG
-      let blob;
-      try {
-        blob = await canvas.convertToBlob({ type: 'image/webp', quality });
-      } catch (webpErr) {
-        // Fallback to PNG if WebP fails
-        console.warn('[Worker] WebP encoding failed, trying PNG for frame ' + frameIndex);
-        blob = await canvas.convertToBlob({ type: 'image/png' });
-      }
-
-      // Send back the result
-      self.postMessage({ frameIndex, blob });
-    } catch (err) {
-      console.error('[Worker] Frame ' + frameIndex + ' encoding error:', err.message);
-      // Send error back to main thread
-      self.postMessage({ frameIndex, error: err.message });
-    }
-  };
-`;
-
-class ProxyGeneratorGPU {
+class ProxyGeneratorMP4 {
   private mp4File: MP4File | null = null;
   private decoder: VideoDecoder | null = null;
-  private workers: Worker[] = [];
-  private workerBusy: boolean[] = [];
-  private pendingFrames: Map<number, { resolve: (blob: Blob) => void; reject: (err: Error) => void }> = new Map();
-  private frameQueue: { frameIndex: number; pixels: Uint8Array }[] = [];
 
   private videoTrack: MP4VideoTrack | null = null;
   private samples: Sample[] = [];
   private codecConfig: VideoDecoderConfig | null = null;
-
-  // GPU resize pipeline
-  private resizePipeline: ProxyResizePipeline | null = null;
 
   private outputWidth = 0;
   private outputHeight = 0;
@@ -134,108 +73,21 @@ class ProxyGeneratorGPU {
   private totalFrames = 0;
   private processedFrames = 0;
   private decodedFrames: Map<number, VideoFrame> = new Map();
-  private frameTimestamps: number[] = [];
+
+  private resizeCanvas: OffscreenCanvas | null = null;
+  private resizeCtx: OffscreenCanvasRenderingContext2D | null = null;
+
+  private encoder: VideoEncoder | null = null;
+  private muxer: Mp4Muxer<Mp4Target> | null = null;
 
   private onProgress: ((progress: number) => void) | null = null;
   private checkCancelled: (() => boolean) | null = null;
   private isCancelled = false;
 
-  private resolveGeneration: ((result: GeneratorResult | null) => void) | null = null;
-
-  constructor() {
-    this.initWorkers();
-  }
-
-  private initWorkers() {
-    const blob = new Blob([workerCode], { type: 'application/javascript' });
-    const workerUrl = URL.createObjectURL(blob);
-
-    for (let i = 0; i < WORKER_POOL_SIZE; i++) {
-      const worker = new Worker(workerUrl);
-      worker.onmessage = (e) => this.handleWorkerMessage(i, e.data);
-      worker.onerror = (e) => log.error('Worker error', e);
-      this.workers.push(worker);
-      this.workerBusy.push(false);
-    }
-
-    log.info(`Initialized ${WORKER_POOL_SIZE} encoding workers`);
-  }
-
-  private handleWorkerMessage(workerIndex: number, data: { frameIndex: number; blob?: Blob; error?: string }) {
-    this.workerBusy[workerIndex] = false;
-
-    const pending = this.pendingFrames.get(data.frameIndex);
-    if (pending) {
-      if (data.error) {
-        // Log error but don't reject - just skip this frame
-        log.warn(`Worker failed to encode frame ${data.frameIndex}: ${data.error}`);
-        // Create a tiny placeholder blob
-        pending.resolve(new Blob([], { type: 'image/webp' }));
-      } else if (data.blob) {
-        pending.resolve(data.blob);
-      } else {
-        log.warn(`Worker returned no data for frame ${data.frameIndex}`);
-        pending.resolve(new Blob([], { type: 'image/webp' }));
-      }
-      this.pendingFrames.delete(data.frameIndex);
-    }
-
-    // Process next frame in queue
-    this.processFrameQueue();
-  }
-
-  private processFrameQueue() {
-    if (this.frameQueue.length === 0) return;
-
-    // Find an available worker
-    const workerIndex = this.workerBusy.findIndex(busy => !busy);
-    if (workerIndex === -1) return;
-
-    const frame = this.frameQueue.shift()!;
-    this.workerBusy[workerIndex] = true;
-
-    this.workers[workerIndex].postMessage({
-      frameIndex: frame.frameIndex,
-      pixels: frame.pixels,
-      width: this.outputWidth,
-      height: this.outputHeight,
-      quality: PROXY_QUALITY,
-    }, [frame.pixels.buffer]); // Transfer buffer for performance
-  }
-
-  private encodeFrameAsync(frameIndex: number, pixels: Uint8Array): Promise<Blob> {
-    return new Promise((resolve, reject) => {
-      // Timeout to prevent worker hangs from blocking completion forever
-      const timeout = setTimeout(() => {
-        const pending = this.pendingFrames.get(frameIndex);
-        if (pending) {
-          log.warn(`Encode timeout for frame ${frameIndex}, skipping`);
-          this.pendingFrames.delete(frameIndex);
-          resolve(new Blob([], { type: 'image/webp' }));
-        }
-      }, 10000);
-
-      this.pendingFrames.set(frameIndex, {
-        resolve: (blob: Blob) => {
-          clearTimeout(timeout);
-          resolve(blob);
-        },
-        reject: (err: Error) => {
-          clearTimeout(timeout);
-          reject(err);
-        },
-      });
-      this.frameQueue.push({ frameIndex, pixels });
-      this.processFrameQueue();
-    });
-  }
-
   async generate(
     file: File,
-    mediaFileId: string,
     onProgress: (progress: number) => void,
     checkCancelled: () => boolean,
-    saveFrame: (frame: { id: string; mediaFileId: string; frameIndex: number; blob: Blob }) => Promise<void>
   ): Promise<GeneratorResult | null> {
     this.onProgress = onProgress;
     this.checkCancelled = checkCancelled;
@@ -243,109 +95,141 @@ class ProxyGeneratorGPU {
     this.processedFrames = 0;
     this.samples = [];
     this.decodedFrames.clear();
-    this.frameTimestamps = [];
 
-    // eslint-disable-next-line no-async-promise-executor
-    return new Promise(async (resolve, reject) => {
-      this.resolveGeneration = resolve;
+    try {
+      if (!('VideoDecoder' in window) || !('VideoEncoder' in window)) {
+        throw new Error('WebCodecs not available');
+      }
 
+      // Load file with MP4Box
+      const loaded = await this.loadWithMP4Box(file);
+      if (!loaded) {
+        throw new Error('Failed to parse video file or no supported codec found');
+      }
+
+      log.info(`Source: ${this.videoTrack!.video.width}x${this.videoTrack!.video.height} → Proxy: ${this.outputWidth}x${this.outputHeight} @ ${PROXY_FPS}fps`);
+
+      // Check encoder support
+      const encoderSupport = await VideoEncoder.isConfigSupported({
+        codec: ENCODER_CODEC,
+        width: this.outputWidth,
+        height: this.outputHeight,
+        bitrate: PROXY_BITRATE,
+        framerate: PROXY_FPS,
+      });
+      if (!encoderSupport.supported) {
+        throw new Error(`Encoder codec ${ENCODER_CODEC} not supported`);
+      }
+
+      // Initialize resize canvas
+      this.resizeCanvas = new OffscreenCanvas(this.outputWidth, this.outputHeight);
+      this.resizeCtx = this.resizeCanvas.getContext('2d')!;
+
+      // Initialize encoder + muxer
+      this.initEncoderAndMuxer();
+
+      // Initialize decoder
+      this.initDecoder();
+
+      // Process all samples
       try {
-        // Check for WebCodecs support
-        if (!('VideoDecoder' in window)) {
-          reject(new Error('WebCodecs VideoDecoder not available in this browser'));
-          return;
-        }
+        await this.processSamples();
+      } catch (firstError) {
+        log.warn('First decode attempt failed, trying without description...');
+        this.decodedFrames.clear();
+        this.processedFrames = 0;
 
-        // Check for WebGPU support
-        const device = engine.getDevice();
-        if (!device) {
-          reject(new Error('WebGPU device not available'));
-          return;
-        }
-
-        // Log GPU info for verification
-        const adapterInfo = (device as any).adapterInfo;
-        log.info('GPU ACCELERATION ACTIVE');
-        log.debug('GPU Device', {
-          vendor: adapterInfo?.vendor || 'unknown',
-          architecture: adapterInfo?.architecture || 'unknown',
-          device: adapterInfo?.device || 'unknown',
-          description: adapterInfo?.description || 'WebGPU Device',
-        });
-
-        // Load file with MP4Box
-        const loaded = await this.loadWithMP4Box(file);
-        if (!loaded) {
-          reject(new Error('Failed to parse video file or no supported codec found'));
-          return;
-        }
-
-        log.info(`Video loaded: ${this.videoTrack!.video.width}x${this.videoTrack!.video.height}, targeting ${this.outputWidth}x${this.outputHeight} at ${PROXY_FPS}fps`);
-
-        // Initialize GPU resize pipeline
-        this.resizePipeline = new ProxyResizePipeline(device);
-        this.resizePipeline.initializeAtlas(
-          this.videoTrack!.video.width,
-          this.videoTrack!.video.height,
-          PROXY_MAX_WIDTH
-        );
-
-        // Update output dimensions from pipeline
-        const dims = this.resizePipeline.getFrameDimensions();
-        this.outputWidth = dims.width;
-        this.outputHeight = dims.height;
-
-        // Calculate target frame timestamps (at PROXY_FPS)
-        for (let i = 0; i < this.totalFrames; i++) {
-          this.frameTimestamps.push(i / PROXY_FPS);
-        }
-
-        // Initialize decoder
-        this.initDecoder();
-
-        // Process samples in batches
-        try {
-          await this.processSamplesGPU(mediaFileId, saveFrame);
-        } catch (firstError) {
-          log.warn('First decode attempt failed, trying without description...');
-
-          // Reset state
-          this.decodedFrames.clear();
-          this.processedFrames = 0;
-
-          // Try without description (some browsers handle this differently)
-          if (this.codecConfig?.description) {
-            const configWithoutDesc: VideoDecoderConfig = {
-              codec: this.codecConfig.codec,
-              codedWidth: this.codecConfig.codedWidth,
-              codedHeight: this.codecConfig.codedHeight,
-            };
-
-            try {
-              const support = await VideoDecoder.isConfigSupported(configWithoutDesc);
-              if (support.supported) {
-                log.info('Retrying with config without description...');
-                this.codecConfig = configWithoutDesc;
-                this.decoder?.close();
-                this.initDecoder();
-                await this.processSamplesGPU(mediaFileId, saveFrame);
-              } else {
-                throw firstError;
-              }
-            } catch (retryError) {
-              log.error('Retry also failed', retryError);
-              throw firstError;
-            }
+        if (this.codecConfig?.description) {
+          const configWithoutDesc: VideoDecoderConfig = {
+            codec: this.codecConfig.codec,
+            codedWidth: this.codecConfig.codedWidth,
+            codedHeight: this.codecConfig.codedHeight,
+          };
+          const support = await VideoDecoder.isConfigSupported(configWithoutDesc);
+          if (support.supported) {
+            log.info('Retrying without description...');
+            this.codecConfig = configWithoutDesc;
+            this.decoder?.close();
+            // Re-init encoder/muxer for clean state
+            this.encoder?.close();
+            this.initEncoderAndMuxer();
+            this.initDecoder();
+            await this.processSamples();
           } else {
             throw firstError;
           }
+        } else {
+          throw firstError;
         }
-
-      } catch (error) {
-        log.error('Generation failed', error);
-        reject(error);
       }
+
+      // Finalize
+      if (this.isCancelled || this.processedFrames === 0) {
+        this.cleanup();
+        if (this.isCancelled) {
+          log.info('Generation cancelled');
+          return null;
+        }
+        log.error('No frames were processed!');
+        return null;
+      }
+
+      // Flush encoder and finalize muxer
+      await this.encoder!.flush();
+      this.encoder!.close();
+      this.muxer!.finalize();
+
+      const { buffer } = this.muxer!.target;
+      const blob = new Blob([buffer], { type: 'video/mp4' });
+
+      log.info(`Proxy complete: ${this.processedFrames} frames, ${(blob.size / 1024 / 1024).toFixed(2)}MB`);
+
+      this.cleanup();
+
+      return {
+        blob,
+        frameCount: this.processedFrames,
+        fps: PROXY_FPS,
+      };
+    } catch (error) {
+      log.error('Generation failed', error);
+      this.cleanup();
+      throw error;
+    }
+  }
+
+  private initEncoderAndMuxer() {
+    // Create muxer
+    this.muxer = new Mp4Muxer({
+      target: new Mp4Target(),
+      video: {
+        codec: 'avc',
+        width: this.outputWidth,
+        height: this.outputHeight,
+      },
+      fastStart: 'in-memory',
     });
+
+    // Create encoder
+    this.encoder = new VideoEncoder({
+      output: (chunk, meta) => {
+        this.muxer!.addVideoChunk(chunk, meta);
+      },
+      error: (e) => {
+        log.error('Encoder error:', e);
+      },
+    });
+
+    this.encoder.configure({
+      codec: ENCODER_CODEC,
+      width: this.outputWidth,
+      height: this.outputHeight,
+      bitrate: PROXY_BITRATE,
+      framerate: PROXY_FPS,
+      latencyMode: 'quality',
+    });
+
+    log.debug(`Encoder configured: ${this.outputWidth}x${this.outputHeight} @ ${PROXY_BITRATE / 1_000_000}Mbps (all keyframes)`);
   }
 
   private async loadWithMP4Box(file: File): Promise<boolean> {
@@ -374,57 +258,44 @@ class ProxyGeneratorGPU {
         const track = this.videoTrack;
         expectedSamples = track.nb_samples;
 
-        // Calculate output dimensions (will be refined by GPU pipeline)
+        // Calculate output dimensions
         let width = track.video.width;
         let height = track.video.height;
         if (width > PROXY_MAX_WIDTH) {
           height = Math.round((PROXY_MAX_WIDTH / width) * height);
           width = PROXY_MAX_WIDTH;
         }
-        this.outputWidth = width;
-        this.outputHeight = height;
+        // Ensure even dimensions for H.264
+        this.outputWidth = width & ~1;
+        this.outputHeight = height & ~1;
 
         this.duration = track.duration / track.timescale;
         this.totalFrames = Math.ceil(this.duration * PROXY_FPS);
 
         log.info(`Duration: ${this.duration.toFixed(3)}s, totalFrames: ${this.totalFrames}, samples: ${expectedSamples}`);
 
-        // Get codec config with fallback support
+        // Get codec config
         const trak = this.mp4File!.getTrackById(track.id);
         const codecString = this.getCodecString(track.codec, trak);
+        log.debug(`Detected codec: ${codecString}`);
 
-        log.debug(`Detected codec: ${codecString}, expecting ${expectedSamples} samples...`);
-
-        // Get AVC description (SPS/PPS) for H.264
+        // Get AVC description
         let description: Uint8Array | undefined;
         if (codecString.startsWith('avc1')) {
           const avcC = trak?.mdia?.minf?.stbl?.stsd?.entries?.[0]?.avcC;
           if (avcC) {
-            // Create avcC box as Uint8Array for VideoDecoder description
-            // The description should be the raw avcC content (without box header)
             const stream = new (MP4Box as any).DataStream(undefined, 0, (MP4Box as any).DataStream.BIG_ENDIAN);
             avcC.write(stream);
-            // stream.position tells us how many bytes were actually written
-            // Skip 8 bytes for box header (4 bytes size + 4 bytes 'avcC' type)
             const totalWritten = stream.position || stream.buffer.byteLength;
             if (totalWritten > 8) {
               description = new Uint8Array(stream.buffer.slice(8, totalWritten));
-              log.debug(`Got AVC description: ${description.length} bytes (from ${totalWritten} total)`);
-              // Log first few bytes for debugging
-              const hex = Array.from(description.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' ');
-              log.debug(`AVC description starts with: ${hex}`);
-            } else {
-              log.warn(`avcC box too small: ${totalWritten} bytes`);
+              log.debug(`Got AVC description: ${description.length} bytes`);
             }
-          } else {
-            log.warn('No avcC box found in track');
           }
         }
 
-        // Try to find a supported codec configuration
         const config = await this.findSupportedCodec(codecString, track.video.width, track.video.height, description);
         if (!config) {
-          log.warn('No supported codec configuration found');
           resolve(false);
           return;
         }
@@ -432,21 +303,14 @@ class ProxyGeneratorGPU {
         this.codecConfig = config;
         codecReady = true;
 
-        // Extract all samples
-        log.debug(`Setting extraction options for track ${track.id}...`);
         mp4File.setExtractionOptions(track.id, null, { nbSamples: Infinity });
         mp4File.start();
-
-        // Force re-process already buffered data
         mp4File.flush();
-
-        log.debug('Extraction started, waiting for samples...');
         checkComplete();
       };
 
       mp4File.onSamples = (_trackId: number, _ref: any, samples: Sample[]) => {
         this.samples.push(...samples);
-        log.debug(`Received ${samples.length} samples (total: ${this.samples.length}/${expectedSamples})`);
         if (this.samples.length >= expectedSamples) {
           samplesReady = true;
           checkComplete();
@@ -458,17 +322,15 @@ class ProxyGeneratorGPU {
         resolve(false);
       };
 
-      // Read entire file
       const fileData = await file.arrayBuffer();
 
       try {
-        // First pass: parse file structure (triggers onReady)
         const buffer1 = fileData.slice(0) as MP4ArrayBuffer;
         buffer1.fileStart = 0;
         mp4File.appendBuffer(buffer1);
         mp4File.flush();
 
-        // Poll for codec readiness instead of fixed timeouts
+        // Poll for codec readiness
         const maxCodecWait = 3000;
         const pollStart = performance.now();
         while (!codecReady && performance.now() - pollStart < maxCodecWait) {
@@ -482,15 +344,13 @@ class ProxyGeneratorGPU {
         }
 
         if (this.samples.length === 0) {
-          // Re-append to extract samples now that extraction options are set
-          log.debug('Re-appending data to extract samples...');
           const buffer2 = fileData.slice(0) as MP4ArrayBuffer;
           buffer2.fileStart = 0;
           mp4File.appendBuffer(buffer2);
           mp4File.flush();
         }
 
-        // Poll for samples instead of fixed 2000ms timeout
+        // Poll for samples
         const maxSampleWait = 3000;
         const samplePollStart = performance.now();
         while (!samplesReady && performance.now() - samplePollStart < maxSampleWait) {
@@ -501,17 +361,12 @@ class ProxyGeneratorGPU {
           await new Promise(r => setTimeout(r, 20));
         }
 
-        // If we have some samples but not all, proceed with what we have
         if (!samplesReady && this.samples.length > 0) {
-          log.debug(`Proceeding with ${this.samples.length}/${expectedSamples} samples`);
           samplesReady = true;
         }
 
         if (samplesReady) {
           checkComplete();
-        } else if (!this.videoTrack) {
-          log.warn('No video track found');
-          resolve(false);
         } else {
           log.error('No samples extracted');
           resolve(false);
@@ -524,9 +379,7 @@ class ProxyGeneratorGPU {
   }
 
   private getCodecString(codec: string, trak: any): string {
-    // Handle different codec types
     if (codec.startsWith('avc1')) {
-      // H.264/AVC
       const avcC = trak?.mdia?.minf?.stbl?.stsd?.entries?.[0]?.avcC;
       if (avcC) {
         const profile = avcC.AVCProfileIndication.toString(16).padStart(2, '0');
@@ -534,273 +387,143 @@ class ProxyGeneratorGPU {
         const level = avcC.AVCLevelIndication.toString(16).padStart(2, '0');
         return `avc1.${profile}${compat}${level}`;
       }
-      return 'avc1.640028'; // Fallback to high profile
+      return 'avc1.640028';
     }
-
-    if (codec.startsWith('hvc1') || codec.startsWith('hev1')) {
-      // H.265/HEVC
-      return codec;
-    }
-
-    if (codec.startsWith('vp09')) {
-      return codec;
-    }
-
-    if (codec.startsWith('av01')) {
-      return codec;
-    }
-
     return codec;
   }
 
-  /**
-   * Try multiple codec configurations until one is supported
-   */
   private async findSupportedCodec(
     baseCodec: string,
     width: number,
     height: number,
     description?: Uint8Array
   ): Promise<VideoDecoderConfig | null> {
-    // Common H.264 codec strings to try
     const h264Fallbacks = [
       baseCodec,
-      'avc1.42001e', // Baseline L3.0
-      'avc1.4d001e', // Main L3.0
-      'avc1.64001e', // High L3.0
-      'avc1.640028', // High L4.0
-      'avc1.4d0028', // Main L4.0
-      'avc1.42E01E', // Constrained Baseline
-      'avc1.4D401E', // Main
-      'avc1.640029', // High L4.1
+      'avc1.42001e', 'avc1.4d001e', 'avc1.64001e',
+      'avc1.640028', 'avc1.4d0028', 'avc1.42E01E',
+      'avc1.4D401E', 'avc1.640029',
     ];
 
     const codecsToTry = baseCodec.startsWith('avc1') ? h264Fallbacks : [baseCodec];
 
-    log.debug(`Testing ${codecsToTry.length} codec configurations for ${width}x${height}...`);
-    if (description) {
-      log.debug(`Using AVC description (${description.length} bytes) for H.264 decoding`);
-    }
-
-    // Try with hardware acceleration preferred
     for (const codec of codecsToTry) {
       const config: VideoDecoderConfig = {
         codec,
         codedWidth: width,
         codedHeight: height,
         hardwareAcceleration: 'prefer-hardware',
-        // Include description for AVC/H.264 (required for proper decoding)
         ...(description && { description }),
       };
 
       try {
         const support = await VideoDecoder.isConfigSupported(config);
-        log.debug(`Codec ${codec}: ${support.supported ? 'supported' : 'not supported'}`);
         if (support.supported) {
+          log.debug(`Decoder codec ${codec}: supported`);
           return config;
         }
-      } catch (e) {
-        log.debug(`Codec ${codec}: error - ${e}`);
+      } catch {
+        // Try next
       }
     }
 
-    log.warn(`No supported codec found for ${baseCodec}`);
+    log.warn(`No supported decoder codec found for ${baseCodec}`);
     return null;
   }
 
   private initDecoder() {
     if (!this.codecConfig) return;
 
-    let decodedCount = 0;
     let errorCount = 0;
-    let lastError: any = null;
 
     this.decoder = new VideoDecoder({
       output: (frame) => {
-        decodedCount++;
         this.handleDecodedFrame(frame);
       },
       error: (error) => {
         errorCount++;
-        lastError = error;
-        // Only log first few errors to avoid spam
         if (errorCount <= 5) {
           log.error('Decoder error', error.message || error);
         }
-        if (errorCount === 5) {
-          log.warn('Suppressing further decoder errors...');
-        }
       },
     });
-
-    log.debug(`VideoDecoder created, state: ${this.decoder.state}`);
 
     this.decoder.configure(this.codecConfig);
     log.debug('Decoder configured', {
       codec: this.codecConfig.codec,
       size: `${this.codecConfig.codedWidth}x${this.codecConfig.codedHeight}`,
-      hasDescription: !!this.codecConfig.description,
-      descriptionSize: this.codecConfig.description ?
-        (this.codecConfig.description as Uint8Array).byteLength : 0,
     });
-
-    // Store counters for later logging
-    (this.decoder as any)._decodedCount = () => decodedCount;
-    (this.decoder as any)._errorCount = () => errorCount;
-    (this.decoder as any)._lastError = () => lastError;
   }
 
   private handleDecodedFrame(frame: VideoFrame) {
-    // Find the closest target frame index for this timestamp
-    const timestamp = frame.timestamp / 1_000_000; // Convert to seconds
+    const timestamp = frame.timestamp / 1_000_000;
     const frameIndex = Math.round(timestamp * PROXY_FPS);
 
-    // Log first few frames and every 50th frame
-    const frameCount = this.decodedFrames.size + 1;
-    if (frameCount <= 3 || frameCount % 50 === 0) {
-      log.debug(`Frame decoded: index=${frameIndex}, timestamp=${timestamp.toFixed(2)}s, size=${frame.codedWidth}x${frame.codedHeight}, total=${frameCount}`);
-    }
-
     if (frameIndex >= 0 && frameIndex < this.totalFrames) {
-      // Check if we already have this frame (avoid duplicates)
       const existing = this.decodedFrames.get(frameIndex);
-      if (existing) {
-        existing.close(); // Close old frame
-      }
-      // Store frame for batch processing
+      if (existing) existing.close();
       this.decodedFrames.set(frameIndex, frame);
     } else {
       frame.close();
     }
-
   }
 
-  private async processSamplesGPU(
-    mediaFileId: string,
-    saveFrame: (frame: { id: string; mediaFileId: string; frameIndex: number; blob: Blob }) => Promise<void>
-  ): Promise<void> {
-    if (!this.decoder || !this.resizePipeline) return;
+  private encodeFrame(frame: VideoFrame, frameIndex: number) {
+    if (!this.encoder || !this.resizeCanvas || !this.resizeCtx) return;
 
-    // Sort samples by DTS (decode order) to ensure proper decoding
+    // Draw source frame onto resize canvas (bilinear filtering)
+    this.resizeCtx.drawImage(frame, 0, 0, this.outputWidth, this.outputHeight);
+    frame.close();
+
+    // Create new VideoFrame from resized canvas
+    const timestampMicros = Math.round(frameIndex * (1_000_000 / PROXY_FPS));
+    const durationMicros = Math.round(1_000_000 / PROXY_FPS);
+
+    const resizedFrame = new VideoFrame(this.resizeCanvas, {
+      timestamp: timestampMicros,
+      duration: durationMicros,
+    });
+
+    // Encode as keyframe (every frame is a keyframe for instant random access)
+    this.encoder.encode(resizedFrame, { keyFrame: true });
+    resizedFrame.close();
+
+    this.processedFrames++;
+    this.onProgress?.(Math.min(100, Math.round((this.processedFrames / this.totalFrames) * 100)));
+  }
+
+  private async processSamples(): Promise<void> {
+    if (!this.decoder) return;
+
     const sortedSamples = [...this.samples].sort((a, b) => a.dts - b.dts);
 
-    // Count keyframes for diagnostics
     const keyframeCount = sortedSamples.filter(s => s.is_sync).length;
-    const deltaCount = sortedSamples.length - keyframeCount;
-    log.info(`Decoding ${sortedSamples.length} samples (${keyframeCount} keyframes, ${deltaCount} delta frames)...`);
+    log.info(`Decoding ${sortedSamples.length} samples (${keyframeCount} keyframes)...`);
 
-    // Find first keyframe to start decoding from
     const firstKeyframeIdx = sortedSamples.findIndex(s => s.is_sync);
-    if (firstKeyframeIdx === -1) {
-      log.error('No keyframes found in video!');
-      throw new Error('No keyframes found');
-    }
-    if (firstKeyframeIdx > 0) {
-      log.debug(`Skipping ${firstKeyframeIdx} samples before first keyframe`);
-    }
+    if (firstKeyframeIdx === -1) throw new Error('No keyframes found');
 
-    // Performance tracking
     const startTime = performance.now();
-    let _totalGpuTime = 0;
-    let _totalEncodeTime = 0;
-    let batchCount = 0;
-    const dbBatch: { id: string; mediaFileId: string; frameIndex: number; blob: Blob }[] = [];
+    let decodeErrors = 0;
+    let samplesDecoded = 0;
 
-    // Helper function to process accumulated frames
-    // Uses MIN_BATCH_SIZE threshold to prevent DPB deadlock on NVIDIA GPUs
-    const processAccumulatedFrames = async () => {
-      if (this.decodedFrames.size < MIN_BATCH_SIZE) return;
+    // Process frames inline as they're decoded (prevents DPB overflow)
+    const processAccumulatedFrames = () => {
+      if (this.decodedFrames.size < 4) return;
 
-      // Sort and get frames to process (up to BATCH_SIZE for GPU efficiency)
       const sortedIndices = Array.from(this.decodedFrames.keys()).sort((a, b) => a - b);
-      const batchIndices = sortedIndices.slice(0, Math.min(BATCH_SIZE, sortedIndices.length));
-      const batchFrames: VideoFrame[] = [];
-      const batchFrameIndices: number[] = [];
+      const batch = sortedIndices.slice(0, Math.min(16, sortedIndices.length));
 
-      for (const frameIndex of batchIndices) {
-        const frame = this.decodedFrames.get(frameIndex);
+      for (const idx of batch) {
+        const frame = this.decodedFrames.get(idx);
         if (frame) {
-          batchFrames.push(frame);
-          batchFrameIndices.push(frameIndex);
-          this.decodedFrames.delete(frameIndex);
-        }
-      }
-
-      if (batchFrames.length > 0) {
-        try {
-          batchCount++;
-
-          // GPU batch resize
-          const gpuStart = performance.now();
-          const pixelArrays = await this.resizePipeline!.processBatch(batchFrames);
-          const gpuEnd = performance.now();
-          _totalGpuTime += gpuEnd - gpuStart;
-
-          // CRITICAL: Close video frames immediately to release decoder buffer
-          for (const frame of batchFrames) {
-            frame.close();
-          }
-
-          // Encode frames in parallel
-          const encodeStart = performance.now();
-          const expectedPixelSize = this.outputWidth * this.outputHeight * 4;
-
-          const encodePromises = pixelArrays.map((pixels, i) => {
-            if (!pixels || pixels.byteLength !== expectedPixelSize) {
-              return Promise.resolve(new Blob([], { type: 'image/webp' }));
-            }
-            return this.encodeFrameAsync(batchFrameIndices[i], pixels);
-          });
-
-          const blobs = await Promise.all(encodePromises);
-          const encodeEnd = performance.now();
-          _totalEncodeTime += encodeEnd - encodeStart;
-
-          // Log batch performance
-          if (batchCount % 5 === 0 || batchCount === 1) {
-            log.debug(`Batch ${batchCount}: GPU=${(gpuEnd - gpuStart).toFixed(1)}ms, Frames=${batchFrames.length}, Decoded=${this.decodedFrames.size} pending`);
-          }
-
-          // Save frames
-          for (let i = 0; i < blobs.length; i++) {
-            const blob = blobs[i];
-            if (blob && blob.size > 0) {
-              const frameIndex = batchFrameIndices[i];
-              const frameId = `${mediaFileId}_${frameIndex.toString().padStart(6, '0')}`;
-              dbBatch.push({ id: frameId, mediaFileId, frameIndex, blob });
-              this.processedFrames++;
-            }
-          }
-
-          // Clamp progress to 100% max to prevent >100% display issues
-          this.onProgress?.(Math.min(100, Math.round((this.processedFrames / this.totalFrames) * 100)));
-
-          // Save DB batch periodically
-          if (dbBatch.length >= DB_BATCH_SIZE) {
-            for (const f of dbBatch) {
-              await saveFrame(f);
-            }
-            dbBatch.length = 0;
-          }
-
-        } catch (e) {
-          log.error('GPU batch processing error', e);
-          for (const frame of batchFrames) {
-            frame.close();
-          }
+          this.decodedFrames.delete(idx);
+          this.encodeFrame(frame, idx);
         }
       }
     };
 
-    // Decode samples with inline processing
-    // No callback mechanism - process frames directly in the decode loop
-    // to avoid concurrency issues and ensure DPB is freed regularly
-    let decodeErrors = 0;
-    let samplesDecoded = 0;
-
-    log.debug(`Starting decode (DPB-safe, process every ${MIN_BATCH_SIZE} frames)...`);
-    const decodeStartTime = performance.now();
-
+    // Decode loop
     for (let i = firstKeyframeIdx; i < sortedSamples.length; i++) {
       const sample = sortedSamples[i];
 
@@ -810,7 +533,7 @@ class ProxyGeneratorGPU {
       }
 
       if (this.decoder.state === 'closed') {
-        log.error('Decoder was closed unexpectedly');
+        log.error('Decoder closed unexpectedly');
         break;
       }
 
@@ -824,226 +547,102 @@ class ProxyGeneratorGPU {
       try {
         this.decoder.decode(chunk);
         samplesDecoded++;
-        if (samplesDecoded % 100 === 0) {
-          log.debug(`Submitted ${samplesDecoded}/${sortedSamples.length} samples, ${this.decodedFrames.size} frames pending, ${this.processedFrames} processed`);
-        }
-      } catch (e) {
+      } catch {
         decodeErrors++;
-        if (decodeErrors <= 5) {
-          log.error(`Decode error on sample ${sample.number}`, e);
-        }
         if (decodeErrors > 50) {
           log.error('Too many decode errors, stopping');
           break;
         }
       }
 
-      // Yield every 5 samples to let decoder output callback fire
+      // Yield to let decoder output callback fire
       if (i % 5 === 0) {
         await new Promise(resolve => setTimeout(resolve, 0));
       }
 
-      // Process decoded frames inline to free DPB before it fills up
-      // NVIDIA hardware decoders have ~10 frame DPB limit
-      if (this.decodedFrames.size >= MIN_BATCH_SIZE) {
-        await processAccumulatedFrames();
+      // Process decoded frames to free DPB
+      if (this.decodedFrames.size >= 4) {
+        processAccumulatedFrames();
       }
     }
 
-    const decodeLoopTime = performance.now() - decodeStartTime;
-    log.debug(`Decode loop complete: ${samplesDecoded} samples in ${decodeLoopTime.toFixed(0)}ms`);
-
-    // Wait for decoder to output remaining frames
-    // Windows NVIDIA decoders can be very slow, so we actively wait
-    log.debug(`Waiting for decoder to output frames (currently ${this.decodedFrames.size} pending)...`);
-
-    const expectedFrames = Math.min(sortedSamples.length - firstKeyframeIdx, this.totalFrames);
-    const maxWaitTime = 120000; // 2 minutes max wait
+    // Wait for decoder to finish
+    const maxWaitTime = 120000;
     const waitStart = performance.now();
-    let lastFrameCount = this.decodedFrames.size + this.processedFrames;
+    let lastCount = this.decodedFrames.size + this.processedFrames;
     let stallCount = 0;
 
-    // Keep processing while decoder outputs frames
     while (performance.now() - waitStart < maxWaitTime) {
-      const currentFrameCount = this.decodedFrames.size + this.processedFrames;
-
-      // Process any accumulated frames (use MIN_BATCH_SIZE to free DPB)
-      if (this.decodedFrames.size >= MIN_BATCH_SIZE) {
-        await processAccumulatedFrames();
+      if (this.decodedFrames.size >= 4) {
+        processAccumulatedFrames();
       }
 
-      // Check if we got all expected frames
-      if (this.processedFrames >= expectedFrames * 0.95) {
-        log.debug(`Got ${this.processedFrames}/${expectedFrames} frames (95%+), continuing...`);
-        break;
-      }
+      if (this.processedFrames >= this.totalFrames * 0.95) break;
 
-      // Check for stall (no new frames for 5 seconds)
-      if (currentFrameCount === lastFrameCount) {
+      const currentCount = this.decodedFrames.size + this.processedFrames;
+      if (currentCount === lastCount) {
         stallCount++;
-        if (stallCount > 100) { // 5 seconds (100 * 50ms)
-          log.warn(`Decoder stalled for 5s at ${currentFrameCount} frames`);
-          break;
-        }
+        if (stallCount > 100) break; // 5s stall
       } else {
         stallCount = 0;
-        lastFrameCount = currentFrameCount;
-      }
-
-      // Log progress periodically
-      if (stallCount === 0 && currentFrameCount % 50 === 0) {
-        const elapsed = ((performance.now() - waitStart) / 1000).toFixed(1);
-        log.debug(`Decoder progress: ${this.processedFrames} processed, ${this.decodedFrames.size} pending (${elapsed}s elapsed)`);
+        lastCount = currentCount;
       }
 
       await new Promise(resolve => setTimeout(resolve, 50));
     }
 
-    // Try to flush any remaining frames
+    // Flush decoder
     try {
       if (this.decoder.state !== 'closed') {
-        log.debug('Final decoder flush...');
         await Promise.race([
           this.decoder.flush(),
           new Promise<void>((_, reject) => setTimeout(() => reject(new Error('Flush timeout')), 5000))
         ]);
       }
-    } catch (e) {
-      // Ignore flush timeout at this point
-    }
+    } catch { /* ignore */ }
 
-    // Close decoder to stop any further output callbacks
     try {
-      if (this.decoder.state !== 'closed') {
-        this.decoder.close();
-      }
-    } catch (e) {
-      // Ignore close errors
-    }
+      if (this.decoder.state !== 'closed') this.decoder.close();
+    } catch { /* ignore */ }
 
-    // Process any remaining frames
-    log.debug(`Processing ${this.decodedFrames.size} remaining frames...`);
+    // Process remaining decoded frames
     while (this.decodedFrames.size > 0) {
-      // Process whatever we have, even if less than BATCH_SIZE
       const sortedIndices = Array.from(this.decodedFrames.keys()).sort((a, b) => a - b);
-      const batchIndices = sortedIndices.slice(0, Math.min(BATCH_SIZE, sortedIndices.length));
-      const batchFrames: VideoFrame[] = [];
-      const batchFrameIndices: number[] = [];
-
-      for (const frameIndex of batchIndices) {
-        const frame = this.decodedFrames.get(frameIndex);
+      for (const idx of sortedIndices) {
+        const frame = this.decodedFrames.get(idx);
         if (frame) {
-          batchFrames.push(frame);
-          batchFrameIndices.push(frameIndex);
-          this.decodedFrames.delete(frameIndex);
-        }
-      }
-
-      if (batchFrames.length === 0) break;
-
-      try {
-        batchCount++;
-        const pixelArrays = await this.resizePipeline!.processBatch(batchFrames);
-
-        for (const frame of batchFrames) {
-          frame.close();
-        }
-
-        const expectedPixelSize = this.outputWidth * this.outputHeight * 4;
-        const encodePromises = pixelArrays.map((pixels, i) => {
-          if (!pixels || pixels.byteLength !== expectedPixelSize) {
-            return Promise.resolve(new Blob([], { type: 'image/webp' }));
-          }
-          return this.encodeFrameAsync(batchFrameIndices[i], pixels);
-        });
-
-        const blobs = await Promise.all(encodePromises);
-
-        for (let i = 0; i < blobs.length; i++) {
-          const blob = blobs[i];
-          if (blob && blob.size > 0) {
-            const frameIndex = batchFrameIndices[i];
-            const frameId = `${mediaFileId}_${frameIndex.toString().padStart(6, '0')}`;
-            dbBatch.push({ id: frameId, mediaFileId, frameIndex, blob });
-            this.processedFrames++;
-          }
-        }
-
-        // Clamp progress to 100% max
-        this.onProgress?.(Math.min(100, Math.round((this.processedFrames / this.totalFrames) * 100)));
-      } catch (e) {
-        log.error('Final batch error', e);
-        for (const frame of batchFrames) {
-          frame.close();
+          this.decodedFrames.delete(idx);
+          this.encodeFrame(frame, idx);
         }
       }
     }
 
-    // Save remaining DB batch (with error handling to ensure completion)
-    try {
-      for (const f of dbBatch) {
-        await saveFrame(f);
-      }
-    } catch (e) {
-      log.error('Failed to save remaining DB batch', e);
-    }
-
-    // Clean up (with error handling to ensure completion)
-    try {
-      this.resizePipeline?.destroy();
-    } catch (e) {
-      log.error('Failed to destroy resize pipeline', e);
-    }
-    this.resizePipeline = null;
-
-    // CRITICAL: Always call resolveGeneration to prevent Promise from hanging
     const totalTime = performance.now() - startTime;
-
-    if (this.isCancelled) {
-      log.info('Generation cancelled');
-      this.resolveGeneration?.(null);
-    } else if (this.processedFrames === 0) {
-      // No frames processed - this is an error state
-      log.error('No frames were processed!');
-      this.resolveGeneration?.(null);
-    } else {
-      const fps = this.processedFrames / (totalTime / 1000);
-
-      log.info('GPU Processing Complete');
-      log.info('Performance Summary', {
-        totalFrames: this.processedFrames,
-        expectedFrames: this.totalFrames,
-        totalBatches: batchCount,
-        totalTime: `${(totalTime / 1000).toFixed(1)}s`,
-        framesPerSecond: fps.toFixed(1),
-      });
-
-      this.resolveGeneration?.({
-        frameCount: this.processedFrames,
-        fps: PROXY_FPS,
-      });
-    }
+    const fps = this.processedFrames / (totalTime / 1000);
+    log.info(`Encode complete: ${this.processedFrames}/${this.totalFrames} frames in ${(totalTime / 1000).toFixed(1)}s (${fps.toFixed(1)} fps)`);
   }
 
-  destroy() {
-    this.decoder?.close();
-    this.workers.forEach(w => w.terminate());
-    for (const frame of this.decodedFrames.values()) {
-      frame.close();
-    }
+  private cleanup() {
+    try { this.decoder?.close(); } catch { /* ignore */ }
+    try { this.encoder?.close(); } catch { /* ignore */ }
+    for (const frame of this.decodedFrames.values()) frame.close();
     this.decodedFrames.clear();
-    this.resizePipeline?.destroy();
+    this.resizeCanvas = null;
+    this.resizeCtx = null;
+    this.decoder = null;
+    this.encoder = null;
+    this.muxer = null;
   }
 }
 
 // Singleton instance
-let generatorInstance: ProxyGeneratorGPU | null = null;
+let generatorInstance: ProxyGeneratorMP4 | null = null;
 
-export function getProxyGenerator(): ProxyGeneratorGPU {
+export function getProxyGenerator(): ProxyGeneratorMP4 {
   if (!generatorInstance) {
-    generatorInstance = new ProxyGeneratorGPU();
+    generatorInstance = new ProxyGeneratorMP4();
   }
   return generatorInstance;
 }
 
-export { ProxyGeneratorGPU, PROXY_FPS, PROXY_QUALITY, PROXY_MAX_WIDTH };
+export { ProxyGeneratorMP4, PROXY_FPS, PROXY_MAX_WIDTH };

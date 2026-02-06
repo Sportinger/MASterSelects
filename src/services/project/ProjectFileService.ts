@@ -302,6 +302,27 @@ class ProjectFileService {
     return this.proxyStorageService.getProxyFrameCount(handle, mediaId);
   }
 
+  async saveProxyVideo(mediaId: string, blob: Blob): Promise<boolean> {
+    const handle = this.coreService.getProjectHandle();
+    if (!handle) {
+      log.error('No project handle for proxy video save!');
+      return false;
+    }
+    return this.proxyStorageService.saveProxyVideo(handle, mediaId, blob);
+  }
+
+  async getProxyVideo(mediaId: string): Promise<File | null> {
+    const handle = this.coreService.getProjectHandle();
+    if (!handle) return null;
+    return this.proxyStorageService.getProxyVideo(handle, mediaId);
+  }
+
+  async hasProxyVideo(mediaId: string): Promise<boolean> {
+    const handle = this.coreService.getProjectHandle();
+    if (!handle) return false;
+    return this.proxyStorageService.hasProxyVideo(handle, mediaId);
+  }
+
   async saveProxyAudio(mediaId: string, blob: Blob): Promise<boolean> {
     const handle = this.coreService.getProjectHandle();
     if (!handle) {

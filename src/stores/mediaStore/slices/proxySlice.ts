@@ -25,6 +25,7 @@ export const createProxySlice: MediaSliceCreator<ProxyActions> = (set, get) => (
   proxyEnabled: false,
 
   setProxyEnabled: async (enabled: boolean) => {
+    log.info(`setProxyEnabled called: ${enabled}`);
     set({ proxyEnabled: enabled });
 
     if (enabled) {
@@ -106,26 +107,50 @@ export const createProxySlice: MediaSliceCreator<ProxyActions> = (set, get) => (
 
     log.info(`Starting generation for ${mediaFile.name}...`);
 
-    // Check if already exists
+    // Check if proxy video already exists
     const storageKey = mediaFile.fileHash || mediaFileId;
-    const existingCount = await projectFileService.getProxyFrameCount(storageKey);
-    if (existingCount > 0) {
-      log.debug('Already exists:', mediaFile.name);
-      set((s) => ({
-        files: s.files.map((f) =>
-          f.id === mediaFileId
-            ? { ...f, proxyStatus: 'ready' as ProxyStatus, proxyProgress: 100, proxyFrameCount: existingCount }
-            : f
-        ),
-      }));
-      return;
+    const hasVideo = await projectFileService.hasProxyVideo(storageKey);
+    if (hasVideo) {
+      log.debug('Proxy video already exists:', mediaFile.name);
+
+      // Load it and create blob URL
+      const proxyFile = await projectFileService.getProxyVideo(storageKey);
+      if (proxyFile) {
+        const proxyVideoUrl = URL.createObjectURL(proxyFile);
+
+        // Load proxy player
+        const { loadProxyPlayer } = await import('../../../services/proxyPlayer');
+        await loadProxyPlayer(mediaFileId, new Blob([await proxyFile.arrayBuffer()], { type: 'video/mp4' }));
+
+        set((s) => ({
+          files: s.files.map((f) =>
+            f.id === mediaFileId
+              ? { ...f, proxyStatus: 'ready' as ProxyStatus, proxyProgress: 100, proxyFps: PROXY_FPS, proxyVideoUrl }
+              : f
+          ),
+        }));
+        return;
+      }
+
+      // Fallback: check for legacy WebP frames
+      const existingCount = await projectFileService.getProxyFrameCount(storageKey);
+      if (existingCount > 0) {
+        log.debug('Legacy WebP proxy found:', mediaFile.name);
+        set((s) => ({
+          files: s.files.map((f) =>
+            f.id === mediaFileId
+              ? { ...f, proxyStatus: 'ready' as ProxyStatus, proxyProgress: 100, proxyFrameCount: existingCount }
+              : f
+          ),
+        }));
+        return;
+      }
     }
 
     // Set up cancellation
     const controller = { cancelled: false };
     activeProxyGenerations.set(mediaFileId, controller);
 
-    // Inline setProxyStatus and updateProxyProgress
     set({ currentlyGeneratingProxyId: mediaFileId });
     set((state) => ({
       files: state.files.map((f) =>
@@ -133,7 +158,6 @@ export const createProxySlice: MediaSliceCreator<ProxyActions> = (set, get) => (
       ),
     }));
 
-    // Progress updater function
     const updateProgress = (progress: number) => {
       set((state) => ({
         files: state.files.map((f) =>
@@ -143,7 +167,6 @@ export const createProxySlice: MediaSliceCreator<ProxyActions> = (set, get) => (
     };
 
     try {
-      // Generate video proxy
       const result = await generateVideoProxy(
         mediaFile,
         storageKey,
@@ -152,8 +175,14 @@ export const createProxySlice: MediaSliceCreator<ProxyActions> = (set, get) => (
       );
 
       if (result && !controller.cancelled) {
-        // Update status to 'ready' IMMEDIATELY after frames complete
-        // Don't wait for audio extraction - it's optional and can happen in background
+        // Save proxy MP4 to project storage
+        await projectFileService.saveProxyVideo(storageKey, result.blob);
+
+        // Create blob URL and load proxy player
+        const proxyVideoUrl = URL.createObjectURL(result.blob);
+        const { loadProxyPlayer } = await import('../../../services/proxyPlayer');
+        await loadProxyPlayer(mediaFileId, result.blob);
+
         set((s) => ({
           files: s.files.map((f) =>
             f.id === mediaFileId
@@ -163,6 +192,7 @@ export const createProxySlice: MediaSliceCreator<ProxyActions> = (set, get) => (
                   proxyProgress: 100,
                   proxyFrameCount: result.frameCount,
                   proxyFps: result.fps,
+                  proxyVideoUrl,
                 }
               : f
           ),
@@ -185,7 +215,6 @@ export const createProxySlice: MediaSliceCreator<ProxyActions> = (set, get) => (
           // Audio extraction errors are non-fatal
         });
       } else if (!controller.cancelled) {
-        // Set error status inline
         set((state) => ({
           files: state.files.map((f) =>
             f.id === mediaFileId ? { ...f, proxyStatus: 'error' as ProxyStatus } : f
@@ -228,23 +257,17 @@ export const createProxySlice: MediaSliceCreator<ProxyActions> = (set, get) => (
 
 async function generateVideoProxy(
   mediaFile: MediaFile,
-  storageKey: string,
+  _storageKey: string,
   controller: { cancelled: boolean },
   updateProgress: (progress: number) => void
-): Promise<{ frameCount: number; fps: number } | null> {
+): Promise<{ blob: Blob; frameCount: number; fps: number } | null> {
   const { getProxyGenerator } = await import('../../../services/proxyGenerator');
   const generator = getProxyGenerator();
 
-  const saveFrame = async (frame: { frameIndex: number; blob: Blob }) => {
-    await projectFileService.saveProxyFrame(storageKey, frame.frameIndex, frame.blob);
-  };
-
   return generator.generate(
     mediaFile.file!,
-    mediaFile.id,
     updateProgress,
     () => controller.cancelled,
-    saveFrame
   );
 }
 

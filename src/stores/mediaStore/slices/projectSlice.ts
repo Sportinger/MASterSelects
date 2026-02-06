@@ -92,13 +92,31 @@ export const createProjectSlice: MediaSliceCreator<ProjectActions> = (set, get) 
           // Check for existing proxy by hash (fallback to mediaId for older projects)
           let proxyStatus: ProxyStatus = 'none';
           let proxyFrameCount: number | undefined;
+          let proxyVideoUrl: string | undefined;
           if (stored.type === 'video' && projectFileService.isProjectOpen()) {
-            // Try fileHash first, then fall back to mediaId (for backwards compatibility)
             const storageKey = stored.fileHash || mediaFile.id;
-            const frameCount = await projectFileService.getProxyFrameCount(storageKey);
-            if (frameCount > 0) {
-              proxyStatus = 'ready';
-              proxyFrameCount = frameCount;
+
+            // Try new MP4 proxy format first
+            const hasVideo = await projectFileService.hasProxyVideo(storageKey);
+            if (hasVideo) {
+              const proxyFile = await projectFileService.getProxyVideo(storageKey);
+              if (proxyFile) {
+                proxyStatus = 'ready';
+                proxyVideoUrl = URL.createObjectURL(proxyFile);
+
+                // Load ProxyPlayer in background
+                const { loadProxyPlayer } = await import('../../../services/proxyPlayer');
+                loadProxyPlayer(mediaFile.id, new Blob([await proxyFile.arrayBuffer()], { type: 'video/mp4' })).catch(() => {});
+              }
+            }
+
+            // Fall back to legacy WebP frames for older projects
+            if (proxyStatus === 'none') {
+              const frameCount = await projectFileService.getProxyFrameCount(storageKey);
+              if (frameCount > 0) {
+                proxyStatus = 'ready';
+                proxyFrameCount = frameCount;
+              }
             }
           }
 
@@ -111,8 +129,9 @@ export const createProjectSlice: MediaSliceCreator<ProjectActions> = (set, get) 
             hasFileHandle: !!file,
             proxyStatus,
             proxyFrameCount,
-            proxyFps: proxyFrameCount ? PROXY_FPS : undefined,
-            proxyProgress: proxyFrameCount ? 100 : 0,
+            proxyVideoUrl,
+            proxyFps: (proxyFrameCount || proxyVideoUrl) ? PROXY_FPS : undefined,
+            proxyProgress: (proxyFrameCount || proxyVideoUrl) ? 100 : 0,
             duration: stored.duration ?? mediaFile.duration,
             width: stored.width ?? mediaFile.width,
             height: stored.height ?? mediaFile.height,

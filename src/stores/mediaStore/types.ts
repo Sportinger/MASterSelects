@@ -44,6 +44,7 @@ export interface MediaFile extends MediaItem {
   proxyFrameCount?: number;
   proxyFps?: number;
   hasProxyAudio?: boolean;
+  proxyVideoUrl?: string;
   // File System Access API
   hasFileHandle?: boolean;
   filePath?: string;

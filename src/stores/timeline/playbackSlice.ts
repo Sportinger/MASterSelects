@@ -7,7 +7,6 @@ import { quantizeTime } from './utils';
 import { Logger } from '../../services/logger';
 import { engine } from '../../engine/WebGPUEngine';
 import { layerBuilder } from '../../services/layerBuilder';
-import { proxyFrameCache } from '../../services/proxyFrameCache';
 import { useMediaStore } from '../mediaStore';
 
 const log = Logger.create('PlaybackSlice');
@@ -358,51 +357,21 @@ export const createPlaybackSlice: SliceCreator<PlaybackAndRamPreviewActions> = (
           const track = tracks.find(t => t.id === clip.trackId);
           if (!track?.visible || track.type !== 'video') continue;
 
-          if (clip.source?.type === 'video' && clip.source.videoElement) {
-            const video = clip.source.videoElement;
+          if (clip.source?.type === 'video' && clip.source.webCodecsPlayer) {
             const webCodecsPlayer = clip.source.webCodecsPlayer;
             const clipLocalTime = time - clip.startTime;
             // Calculate source time using speed integration (handles keyframes)
             const sourceTime = get().getSourceTimeForClip(clip.id, clipLocalTime);
             // Determine start point based on INITIAL speed (speed at t=0), not clip.speed
-            // This is important when keyframes change speed throughout the clip
             const initialSpeed = get().getInterpolatedSpeed(clip.id, 0);
             const startPoint = initialSpeed >= 0 ? clip.inPoint : clip.outPoint;
             const clipTime = Math.max(clip.inPoint, Math.min(clip.outPoint, startPoint + sourceTime));
 
-            // Use WebCodecsPlayer for fast seeking if available
-            if (webCodecsPlayer) {
-              if (checkCancelled()) continue;
-              try {
-                await webCodecsPlayer.seekAsync(clipTime);
-              } catch {
-                // Fallback to video element on error
-                video.currentTime = clipTime;
-                await new Promise(r => setTimeout(r, 50));
-              }
-            } else {
-              // Fallback: HTMLVideoElement seek (slower)
-              if (checkCancelled()) continue;
-              await new Promise<void>((resolve) => {
-                const timeout = setTimeout(() => {
-                  video.removeEventListener('seeked', onSeeked);
-                  resolve();
-                }, 200);
-
-                const onSeeked = () => {
-                  clearTimeout(timeout);
-                  video.removeEventListener('seeked', onSeeked);
-                  resolve();
-                };
-
-                video.addEventListener('seeked', onSeeked);
-                video.currentTime = clipTime;
-              });
-            }
-
+            if (checkCancelled()) continue;
+            await webCodecsPlayer.seekAsync(clipTime);
             if (checkCancelled()) continue;
 
-            // Add to layers (with defensive defaults for transform properties)
+            // Add to layers
             const pos = clip.transform?.position ?? { x: 0, y: 0, z: 0 };
             const scl = clip.transform?.scale ?? { x: 1, y: 1 };
             const rot = clip.transform?.rotation ?? { x: 0, y: 0, z: 0 };
@@ -412,7 +381,7 @@ export const createPlaybackSlice: SliceCreator<PlaybackAndRamPreviewActions> = (
               visible: true,
               opacity: clip.transform?.opacity ?? 1,
               blendMode: clip.transform?.blendMode ?? 'normal',
-              source: { type: 'video', videoElement: video, webCodecsPlayer },
+              source: { type: 'video', videoElement: clip.source.videoElement, webCodecsPlayer },
               effects: [],
               position: { x: pos.x, y: pos.y, z: pos.z },
               scale: { x: scl.x, y: scl.y },
@@ -458,36 +427,9 @@ export const createPlaybackSlice: SliceCreator<PlaybackAndRamPreviewActions> = (
                 ? nestedClip.outPoint - nestedLocalTime
                 : nestedLocalTime + nestedClip.inPoint;
 
-              if (nestedClip.source?.videoElement) {
-                const nestedVideo = nestedClip.source.videoElement;
+              if (nestedClip.source?.webCodecsPlayer) {
                 const nestedWebCodecs = nestedClip.source.webCodecsPlayer;
-
-                // Use WebCodecsPlayer for fast seeking if available
-                if (nestedWebCodecs) {
-                  try {
-                    await nestedWebCodecs.seekAsync(nestedClipTime);
-                  } catch {
-                    nestedVideo.currentTime = nestedClipTime;
-                    await new Promise(r => setTimeout(r, 50));
-                  }
-                } else {
-                  // Fallback: HTMLVideoElement seek
-                  await new Promise<void>((resolve) => {
-                    const timeout = setTimeout(() => {
-                      nestedVideo.removeEventListener('seeked', onSeeked);
-                      resolve();
-                    }, 150);
-
-                    const onSeeked = () => {
-                      clearTimeout(timeout);
-                      nestedVideo.removeEventListener('seeked', onSeeked);
-                      resolve();
-                    };
-
-                    nestedVideo.addEventListener('seeked', onSeeked);
-                    nestedVideo.currentTime = nestedClipTime;
-                  });
-                }
+                await nestedWebCodecs.seekAsync(nestedClipTime);
 
                 const nestedPos = nestedClip.transform?.position ?? { x: 0, y: 0, z: 0 };
                 const nestedScl = nestedClip.transform?.scale ?? { x: 1, y: 1 };
@@ -499,7 +441,7 @@ export const createPlaybackSlice: SliceCreator<PlaybackAndRamPreviewActions> = (
                   visible: true,
                   opacity: nestedClip.transform?.opacity ?? 1,
                   blendMode: nestedClip.transform?.blendMode ?? 'normal',
-                  source: { type: 'video', videoElement: nestedVideo, webCodecsPlayer: nestedWebCodecs },
+                  source: { type: 'video', videoElement: nestedClip.source.videoElement, webCodecsPlayer: nestedWebCodecs },
                   effects: nestedClip.effects || [],
                   position: { x: nestedPos.x, y: nestedPos.y, z: nestedPos.z },
                   scale: { x: nestedScl.x, y: nestedScl.y },
@@ -689,54 +631,24 @@ export const createPlaybackSlice: SliceCreator<PlaybackAndRamPreviewActions> = (
     return ranges;
   },
 
-  // Get proxy frame cached ranges (for yellow timeline indicator)
-  // Returns ranges in timeline time coordinates
+  // Get proxy cached ranges (for yellow timeline indicator)
+  // With WebCodecs all-keyframe proxy, if proxy is ready the entire clip is available
   getProxyCachedRanges: () => {
     const { clips } = get();
     const mediaFiles = useMediaStore.getState().files;
     const allRanges: Array<{ start: number; end: number }> = [];
 
-    // Process all video clips with proxy enabled
     for (const clip of clips) {
-      // Check if clip has video source and mediaFileId
       if (clip.source?.type !== 'video') continue;
 
-      // Try to get mediaFileId from clip or from source
       const mediaFileId = clip.mediaFileId || clip.source?.mediaFileId;
       if (!mediaFileId) continue;
 
       const mediaFile = mediaFiles.find(f => f.id === mediaFileId);
       if (!mediaFile?.proxyFps || mediaFile.proxyStatus !== 'ready') continue;
 
-      // Get cached ranges for this media file (in media time)
-      const mediaCachedRanges = proxyFrameCache.getCachedRanges(mediaFileId, mediaFile.proxyFps);
-
-      if (mediaCachedRanges.length > 0) {
-      }
-
-      // Convert media time ranges to timeline time ranges
-      const playbackRate = clip.speed || 1;
-      for (const range of mediaCachedRanges) {
-        // Media time is relative to inPoint
-        const mediaStart = range.start;
-        const mediaEnd = range.end;
-
-        // Only include ranges that overlap with the visible clip portion
-        const clipMediaStart = clip.inPoint;
-        const clipMediaEnd = clip.inPoint + clip.duration * playbackRate;
-
-        if (mediaEnd < clipMediaStart || mediaStart > clipMediaEnd) continue;
-
-        // Clamp to visible portion
-        const visibleMediaStart = Math.max(mediaStart, clipMediaStart);
-        const visibleMediaEnd = Math.min(mediaEnd, clipMediaEnd);
-
-        // Convert to timeline time
-        const timelineStart = clip.startTime + (visibleMediaStart - clip.inPoint) / playbackRate;
-        const timelineEnd = clip.startTime + (visibleMediaEnd - clip.inPoint) / playbackRate;
-
-        allRanges.push({ start: timelineStart, end: timelineEnd });
-      }
+      // Proxy ready = entire clip range is available (all-keyframe decode)
+      allRanges.push({ start: clip.startTime, end: clip.startTime + clip.duration });
 
       // Also process nested clips if this is a composition
       if (clip.isComposition && clip.nestedClips) {
@@ -746,36 +658,14 @@ export const createPlaybackSlice: SliceCreator<PlaybackAndRamPreviewActions> = (
           const nestedMediaFile = mediaFiles.find(f => f.id === nestedClip.mediaFileId);
           if (!nestedMediaFile?.proxyFps || nestedMediaFile.proxyStatus !== 'ready') continue;
 
-          const nestedCachedRanges = proxyFrameCache.getCachedRanges(nestedMediaFile.id, nestedMediaFile.proxyFps);
-          const nestedPlaybackRate = nestedClip.speed || 1;
+          // Nested clip proxy ready = its portion of parent timeline is available
+          const compInPoint = clip.inPoint;
+          const nestedStart = Math.max(nestedClip.startTime, compInPoint);
+          const nestedEnd = Math.min(nestedClip.startTime + nestedClip.duration, compInPoint + clip.duration);
 
-          for (const range of nestedCachedRanges) {
-            // Convert nested clip media time to parent clip timeline time
-            const mediaStart = range.start;
-            const mediaEnd = range.end;
-
-            const nestedMediaStart = nestedClip.inPoint;
-            const nestedMediaEnd = nestedClip.inPoint + nestedClip.duration * nestedPlaybackRate;
-
-            if (mediaEnd < nestedMediaStart || mediaStart > nestedMediaEnd) continue;
-
-            const visibleMediaStart = Math.max(mediaStart, nestedMediaStart);
-            const visibleMediaEnd = Math.min(mediaEnd, nestedMediaEnd);
-
-            // First convert to nested clip's local time
-            const nestedLocalStart = nestedClip.startTime + (visibleMediaStart - nestedClip.inPoint) / nestedPlaybackRate;
-            const nestedLocalEnd = nestedClip.startTime + (visibleMediaEnd - nestedClip.inPoint) / nestedPlaybackRate;
-
-            // Then convert to parent timeline time (accounting for composition's inPoint)
-            const compInPoint = clip.inPoint;
-            if (nestedLocalEnd < compInPoint || nestedLocalStart > compInPoint + clip.duration) continue;
-
-            const visibleNestedStart = Math.max(nestedLocalStart, compInPoint);
-            const visibleNestedEnd = Math.min(nestedLocalEnd, compInPoint + clip.duration);
-
-            const timelineStart = clip.startTime + (visibleNestedStart - compInPoint);
-            const timelineEnd = clip.startTime + (visibleNestedEnd - compInPoint);
-
+          if (nestedEnd > nestedStart) {
+            const timelineStart = clip.startTime + (nestedStart - compInPoint);
+            const timelineEnd = clip.startTime + (nestedEnd - compInPoint);
             allRanges.push({ start: timelineStart, end: timelineEnd });
           }
         }
@@ -792,7 +682,7 @@ export const createPlaybackSlice: SliceCreator<PlaybackAndRamPreviewActions> = (
       const last = merged[merged.length - 1];
       const current = allRanges[i];
 
-      if (current.start <= last.end + 0.05) { // Allow 50ms gap
+      if (current.start <= last.end + 0.05) {
         last.end = Math.max(last.end, current.end);
       } else {
         merged.push(current);
@@ -905,7 +795,6 @@ export const createPlaybackSlice: SliceCreator<PlaybackAndRamPreviewActions> = (
   },
 
   cancelProxyCachePreload: () => {
-    proxyFrameCache.cancelPreload();
     set({ isProxyCaching: false, proxyCacheProgress: null });
     log.info('Proxy cache preload cancelled');
   },

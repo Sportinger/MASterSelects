@@ -9,6 +9,7 @@ import { createFrameContext, getClipTimeInfo, getMediaFileForClip, isVideoTrackV
 import { LayerCache } from './LayerCache';
 import { TransformCache } from './TransformCache';
 import { AudioSyncHandler, createAudioSyncState, finalizeAudioSync, resumeAudioContextIfNeeded } from './AudioSyncHandler';
+import { getProxyPlayer } from '../proxyPlayer';
 import { proxyFrameCache } from '../proxyFrameCache';
 import { Logger } from '../logger';
 import { getInterpolatedClipTransform } from '../../utils/keyframeInterpolation';
@@ -65,9 +66,6 @@ export class LayerBuilderService {
   // Audio sync throttling
   private lastAudioSyncTime = 0;
   private playbackStartFrames = 0;
-
-  // Proxy frame refs for fallback
-  private proxyFramesRef = new Map<string, { frameIndex: number; image: HTMLImageElement }>();
 
   // Lookahead preloading
   private lastLookaheadTime = 0;
@@ -349,44 +347,47 @@ export class LayerBuilderService {
     ctx: FrameContext,
     opacityOverride?: number
   ): Layer | null {
-    const proxyFps = mediaFile.proxyFps || 30;
-    const frameIndex = Math.floor(clipTime * proxyFps);
-
     // Check proxy availability
-    let useProxy = false;
-    if (mediaFile.proxyStatus === 'ready') {
-      useProxy = true;
-    } else if (mediaFile.proxyStatus === 'generating' && (mediaFile.proxyProgress || 0) > 0) {
-      const totalFrames = Math.ceil((mediaFile.duration || 10) * proxyFps);
-      const maxGeneratedFrame = Math.floor(totalFrames * ((mediaFile.proxyProgress || 0) / 100));
-      useProxy = frameIndex < maxGeneratedFrame;
-    }
+    if (mediaFile.proxyStatus !== 'ready') return null;
 
-    if (!useProxy) return null;
+    // Try to get proxy player
+    const player = getProxyPlayer(mediaFile.id);
+    if (!player || !player.ready) return null;
 
-    // Try to get cached frame
-    const cacheKey = `${mediaFile.id}_${clip.id}`;
-    const cachedFrame = proxyFrameCache.getCachedFrame(mediaFile.id, frameIndex, proxyFps);
+    // Seek to current time - returns VideoFrame from LRU cache or triggers async decode
+    const frame = player.seekToTime(clipTime);
+    if (!frame) return null;
 
-    if (cachedFrame) {
-      this.proxyFramesRef.set(cacheKey, { frameIndex, image: cachedFrame });
-      return this.buildImageLayerFromElement(clip, layerIndex, cachedFrame, clipTime, ctx, opacityOverride);
-    }
+    // Build layer with VideoFrame (texture_external, zero-copy)
+    const timeInfo = getClipTimeInfo(ctx, clip);
+    const transform = this.transformCache.getTransform(
+      `${ctx.activeCompId}_${layerIndex}`,
+      ctx.getInterpolatedTransform(clip.id, timeInfo.clipLocalTime)
+    );
+    const effects = ctx.getInterpolatedEffects(clip.id, timeInfo.clipLocalTime);
 
-    // Try to get nearest cached frame for smooth scrubbing
-    const nearestFrame = proxyFrameCache.getNearestCachedFrame(mediaFile.id, frameIndex, 30);
-    if (nearestFrame) {
-      return this.buildImageLayerFromElement(clip, layerIndex, nearestFrame, clipTime, ctx, opacityOverride);
-    }
+    const finalOpacity = opacityOverride !== undefined
+      ? transform.opacity * opacityOverride
+      : transform.opacity;
 
-    // Use previous cached frame as fallback
-    const cached = this.proxyFramesRef.get(cacheKey);
-    if (cached?.image) {
-      return this.buildImageLayerFromElement(clip, layerIndex, cached.image, clipTime, ctx, opacityOverride);
-    }
+    const layer: Layer = {
+      id: `${ctx.activeCompId}_layer_${layerIndex}`,
+      name: clip.name,
+      visible: true,
+      opacity: finalOpacity,
+      blendMode: transform.blendMode as BlendMode,
+      source: {
+        type: 'video',
+        videoFrame: frame,
+      },
+      effects,
+      position: transform.position,
+      scale: transform.scale,
+      rotation: transform.rotation,
+    };
 
-    // No proxy frame available - return null to fall back to video
-    return null;
+    this.addMaskProperties(layer, clip);
+    return layer;
   }
 
   /**
@@ -412,45 +413,6 @@ export class LayerBuilderService {
       opacity: finalOpacity,
       blendMode: transform.blendMode as BlendMode,
       source: { type: 'image', imageElement: clip.source!.imageElement },
-      effects,
-      position: transform.position,
-      scale: transform.scale,
-      rotation: transform.rotation,
-    };
-
-    this.addMaskProperties(layer, clip);
-    return layer;
-  }
-
-  /**
-   * Build image layer from an image element (for proxy frames)
-   */
-  private buildImageLayerFromElement(
-    clip: TimelineClip,
-    layerIndex: number,
-    imageElement: HTMLImageElement,
-    localTime: number,
-    ctx: FrameContext,
-    opacityOverride?: number
-  ): Layer {
-    const transform = this.transformCache.getTransform(
-      `${ctx.activeCompId}_${layerIndex}`,
-      ctx.getInterpolatedTransform(clip.id, localTime)
-    );
-    const effects = ctx.getInterpolatedEffects(clip.id, localTime);
-
-    // Apply transition opacity override if provided
-    const finalOpacity = opacityOverride !== undefined
-      ? transform.opacity * opacityOverride
-      : transform.opacity;
-
-    const layer: Layer = {
-      id: `${ctx.activeCompId}_layer_${layerIndex}`,
-      name: clip.name,
-      visible: true,
-      opacity: finalOpacity,
-      blendMode: transform.blendMode as BlendMode,
-      source: { type: 'image', imageElement },
       effects,
       position: transform.position,
       scale: transform.scale,
@@ -754,14 +716,8 @@ export class LayerBuilderService {
         ? nestedClip.outPoint - nestedLocalTime
         : nestedLocalTime + nestedClip.inPoint;
 
-      const proxyFps = mediaFile.proxyFps;
-      const frameIndex = Math.floor(nestedClipTime * proxyFps);
-
-      // Preload 60 frames
-      const framesToPreload = Math.min(60, Math.ceil(proxyFps * 2));
-      for (let i = 0; i < framesToPreload; i++) {
-        proxyFrameCache.getCachedFrame(mediaFile.id, frameIndex + i, proxyFps);
-      }
+      // ProxyPlayer handles its own LRU cache, no preloading needed
+      void nestedClipTime;
     }
   }
 

@@ -101,6 +101,69 @@ export class ProxyStorageService {
   }
 
   // ============================================
+  // VIDEO PROXY (MP4) OPERATIONS
+  // ============================================
+
+  /**
+   * Save proxy video MP4 file
+   */
+  async saveProxyVideo(
+    projectHandle: FileSystemDirectoryHandle,
+    mediaId: string,
+    blob: Blob
+  ): Promise<boolean> {
+    try {
+      const proxyFolder = await projectHandle.getDirectoryHandle(PROJECT_FOLDERS.PROXY, { create: true });
+      const mediaFolder = await proxyFolder.getDirectoryHandle(mediaId, { create: true });
+
+      const fileHandle = await mediaFolder.getFileHandle('proxy.mp4', { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+
+      log.debug(`Saved proxy video to ${projectHandle.name}/${PROJECT_FOLDERS.PROXY}/${mediaId}/proxy.mp4 (${(blob.size / 1024 / 1024).toFixed(2)} MB)`);
+      return true;
+    } catch (e) {
+      log.error('Failed to save proxy video:', e);
+      return false;
+    }
+  }
+
+  /**
+   * Get proxy video MP4 file
+   */
+  async getProxyVideo(
+    projectHandle: FileSystemDirectoryHandle,
+    mediaId: string
+  ): Promise<File | null> {
+    try {
+      const proxyFolder = await projectHandle.getDirectoryHandle(PROJECT_FOLDERS.PROXY);
+      const mediaFolder = await proxyFolder.getDirectoryHandle(mediaId);
+      const fileHandle = await mediaFolder.getFileHandle('proxy.mp4');
+      return await fileHandle.getFile();
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /**
+   * Check if proxy video MP4 exists for media
+   */
+  async hasProxyVideo(
+    projectHandle: FileSystemDirectoryHandle,
+    mediaId: string
+  ): Promise<boolean> {
+    try {
+      const proxyFolder = await projectHandle.getDirectoryHandle(PROJECT_FOLDERS.PROXY);
+      const mediaFolder = await proxyFolder.getDirectoryHandle(mediaId);
+      await mediaFolder.getFileHandle('proxy.mp4');
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // ============================================
   // AUDIO PROXY OPERATIONS
   // ============================================
 

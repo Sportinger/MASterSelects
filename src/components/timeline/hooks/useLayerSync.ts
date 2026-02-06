@@ -7,7 +7,7 @@ import type { ClipDragState } from '../types';
 import { useTimelineStore } from '../../../stores/timeline';
 import { useMediaStore } from '../../../stores/mediaStore';
 import { engine } from '../../../engine/WebGPUEngine';
-import { proxyFrameCache } from '../../../services/proxyFrameCache';
+import { getProxyPlayer } from '../../../services/proxyPlayer';
 import { audioManager, audioStatusTracker } from '../../../services/audioManager';
 import { Logger } from '../../../services/logger';
 import { getInterpolatedClipTransform } from '../../../utils/keyframeInterpolation';
@@ -84,12 +84,6 @@ export function useLayerSync({
   // Native decoder throttling
   const nativeDecoderLastFrameRef = useRef<{ [clipId: string]: number }>({});
   const nativeDecoderPendingRef = useRef<{ [clipId: string]: boolean }>({});
-
-  // Track current proxy frames for each clip (for smooth proxy playback)
-  const proxyFramesRef = useRef<
-    Map<string, { frameIndex: number; image: HTMLImageElement }>
-  >(new Map());
-  const proxyLoadingRef = useRef<Set<string>>(new Set());
 
   // RAF debounce: batch rapid scrubbing into one sync per animation frame
   const pendingRafRef = useRef<number | null>(null);
@@ -543,143 +537,20 @@ export function useLayerSync({
         const mediaFile = mediaStore.files.find(
           (f) => f.name === clip.name || clip.mediaFileId === f.id
         );
-        const proxyFps = mediaFile?.proxyFps || 30;
-
-        const frameIndex = Math.floor(clipTime * proxyFps);
         let useProxy = false;
 
-        if (mediaStore.proxyEnabled && mediaFile?.proxyFps) {
-          if (mediaFile.proxyStatus === 'ready') {
+        if (mediaStore.proxyEnabled && mediaFile?.proxyFps && mediaFile.proxyStatus === 'ready') {
+          const player = getProxyPlayer(mediaFile.id);
+          if (player && player.ready) {
             useProxy = true;
-          } else if (
-            mediaFile.proxyStatus === 'generating' &&
-            (mediaFile.proxyProgress || 0) > 0
-          ) {
-            const totalFrames = Math.ceil(
-              (mediaFile.duration || 10) * proxyFps
-            );
-            const maxGeneratedFrame = Math.floor(
-              totalFrames * ((mediaFile.proxyProgress || 0) / 100)
-            );
-            useProxy = frameIndex < maxGeneratedFrame;
-          }
-        }
+            const frame = player.seekToTime(clipTime);
 
-        if (useProxy && mediaFile) {
-          const cacheKey = `${mediaFile.id}_${clip.id}`;
-          const cached = proxyFramesRef.current.get(cacheKey);
+            if (!video.muted) video.muted = true;
+            if (!video.paused) video.pause();
 
-          if (!video.muted) {
-            video.muted = true;
-          }
-          if (isPlaying && video.paused) {
-            video.play().catch(() => {});
-          } else if (!isPlaying && !video.paused) {
-            video.pause();
-          }
-
-          if (!isPlaying) {
-            const timeDiff2 = Math.abs(video.currentTime - clipTime);
-            if (timeDiff2 > 0.1) {
-              video.currentTime = clipTime;
-            }
-          }
-
-          const loadKey = `${mediaFile.id}_${frameIndex}`;
-          const cachedInService = proxyFrameCache.getCachedFrame(
-            mediaFile.id,
-            frameIndex,
-            proxyFps
-          );
-          const interpolatedEffectsForProxy = getInterpolatedEffects(
-            clip.id,
-            keyframeLocalTime
-          );
-
-          if (cachedInService) {
-            proxyFramesRef.current.set(cacheKey, {
-              frameIndex,
-              image: cachedInService,
-            });
-
-            const transform = getInterpolatedTransform(clip.id, keyframeLocalTime);
-            newLayers[layerIndex] = {
-              id: `timeline_layer_${layerIndex}`,
-              name: clip.name,
-              visible: isVideoTrackVisible(track),
-              opacity: transform.opacity,
-              blendMode: transform.blendMode,
-              source: {
-                type: 'image',
-                imageElement: cachedInService,
-              },
-              effects: interpolatedEffectsForProxy,
-              position: { x: transform.position.x, y: transform.position.y, z: transform.position.z },
-              scale: { x: transform.scale.x, y: transform.scale.y },
-              rotation: {
-                x: (transform.rotation.x * Math.PI) / 180,
-                y: (transform.rotation.y * Math.PI) / 180,
-                z: (transform.rotation.z * Math.PI) / 180,
-              },
-            };
-            layersChanged = true;
-          } else if (!cached || cached.frameIndex !== frameIndex) {
-            if (!proxyLoadingRef.current.has(loadKey)) {
-              proxyLoadingRef.current.add(loadKey);
-
-              const capturedLayerIndex = layerIndex;
-              const capturedTransform = getInterpolatedTransform(
-                clip.id,
-                keyframeLocalTime
-              );
-              const capturedTrackVisible = isVideoTrackVisible(track);
-              const capturedClipName = clip.name;
-              const capturedEffects = interpolatedEffectsForProxy;
-
-              proxyFrameCache
-                .getFrame(mediaFile.id, clipTime, proxyFps)
-                .then((image) => {
-                  proxyLoadingRef.current.delete(loadKey);
-                  if (image) {
-                    proxyFramesRef.current.set(cacheKey, { frameIndex, image });
-
-                    const currentLayers2 = useTimelineStore.getState().layers;
-                    const updatedLayers = [...currentLayers2];
-                    updatedLayers[capturedLayerIndex] = {
-                      id: `timeline_layer_${capturedLayerIndex}`,
-                      name: capturedClipName,
-                      visible: capturedTrackVisible,
-                      opacity: capturedTransform.opacity,
-                      blendMode: capturedTransform.blendMode,
-                      source: {
-                        type: 'image',
-                        imageElement: image,
-                      },
-                      effects: capturedEffects,
-                      position: {
-                        x: capturedTransform.position.x,
-                        y: capturedTransform.position.y,
-                        z: capturedTransform.position.z,
-                      },
-                      scale: {
-                        x: capturedTransform.scale.x,
-                        y: capturedTransform.scale.y,
-                      },
-                      rotation: {
-                        x: (capturedTransform.rotation.x * Math.PI) / 180,
-                        y: (capturedTransform.rotation.y * Math.PI) / 180,
-                        z: (capturedTransform.rotation.z * Math.PI) / 180,
-                      },
-                    };
-                    useTimelineStore.setState({ layers: updatedLayers });
-                  }
-                });
-            }
-
-            // Try nearest cached frame for smooth scrubbing, then fall back to previous frame
-            const nearestOrCachedImage = proxyFrameCache.getNearestCachedFrame(mediaFile.id, frameIndex, 30) || cached?.image;
-            if (nearestOrCachedImage) {
+            if (frame) {
               const transform = getInterpolatedTransform(clip.id, keyframeLocalTime);
+              const interpolatedEffectsForProxy = getInterpolatedEffects(clip.id, keyframeLocalTime);
               newLayers[layerIndex] = {
                 id: `timeline_layer_${layerIndex}`,
                 name: clip.name,
@@ -687,40 +558,8 @@ export function useLayerSync({
                 opacity: transform.opacity,
                 blendMode: transform.blendMode,
                 source: {
-                  type: 'image',
-                  imageElement: nearestOrCachedImage,
-                },
-                effects: interpolatedEffectsForProxy,
-                position: { x: transform.position.x, y: transform.position.y, z: transform.position.z },
-                scale: { x: transform.scale.x, y: transform.scale.y },
-                rotation: {
-                  x: (transform.rotation.x * Math.PI) / 180,
-                  y: (transform.rotation.y * Math.PI) / 180,
-                  z: (transform.rotation.z * Math.PI) / 180,
-                },
-              };
-              layersChanged = true;
-            }
-          } else if (cached?.image) {
-            const transform = getInterpolatedTransform(clip.id, keyframeLocalTime);
-            const trackVisible = isVideoTrackVisible(track);
-            const needsUpdate =
-              !layer ||
-              layer.visible !== trackVisible ||
-              layer.source?.imageElement !== cached.image ||
-              layer.source?.type !== 'image' ||
-              effectsChanged(layer.effects, interpolatedEffectsForProxy);
-
-            if (needsUpdate) {
-              newLayers[layerIndex] = {
-                id: `timeline_layer_${layerIndex}`,
-                name: clip.name,
-                visible: trackVisible,
-                opacity: transform.opacity,
-                blendMode: transform.blendMode,
-                source: {
-                  type: 'image',
-                  imageElement: cached.image,
+                  type: 'video',
+                  videoFrame: frame,
                 },
                 effects: interpolatedEffectsForProxy,
                 position: { x: transform.position.x, y: transform.position.y, z: transform.position.z },
@@ -734,7 +573,9 @@ export function useLayerSync({
               layersChanged = true;
             }
           }
-        } else {
+        }
+
+        if (!useProxy) {
           if (webCodecsPlayer) {
             const wcTimeDiff = Math.abs(webCodecsPlayer.currentTime - clipTime);
             if (wcTimeDiff > 0.05) {
