@@ -26,6 +26,8 @@ export class ScrubbingCache {
   // Uses Map insertion order for O(1) LRU operations
   private compositeCache: Map<number, ImageData> = new Map();
   private maxCompositeCacheFrames = 900; // 30 seconds at 30fps
+  private maxCompositeCacheBytes = 512 * 1024 * 1024; // 512MB memory limit
+  private compositeCacheBytes = 0; // Track actual memory usage
 
   // GPU texture cache for instant RAM Preview playback (no CPU->GPU upload needed)
   // Limited size to conserve VRAM (~500MB at 1080p for 60 frames)
@@ -193,13 +195,22 @@ export class ScrubbingCache {
     const key = this.quantizeTime(time);
     if (this.compositeCache.has(key)) return;
 
+    const frameBytes = imageData.data.byteLength;
     this.compositeCache.set(key, imageData);
+    this.compositeCacheBytes += frameBytes;
 
-    // Evict oldest frames if over limit
-    while (this.compositeCache.size > this.maxCompositeCacheFrames) {
+    // Evict oldest frames if over frame count OR memory limit
+    while (
+      this.compositeCache.size > this.maxCompositeCacheFrames ||
+      this.compositeCacheBytes > this.maxCompositeCacheBytes
+    ) {
       const oldestKey = this.compositeCache.keys().next().value;
       if (oldestKey !== undefined) {
+        const evicted = this.compositeCache.get(oldestKey);
+        if (evicted) this.compositeCacheBytes -= evicted.data.byteLength;
         this.compositeCache.delete(oldestKey);
+      } else {
+        break;
       }
     }
   }
@@ -224,10 +235,9 @@ export class ScrubbingCache {
   }
 
   // Get composite cache stats
-  getCompositeCacheStats(outputWidth: number, outputHeight: number): { count: number; maxFrames: number; memoryMB: number } {
+  getCompositeCacheStats(_outputWidth: number, _outputHeight: number): { count: number; maxFrames: number; memoryMB: number } {
     const count = this.compositeCache.size;
-    const bytesPerFrame = outputWidth * outputHeight * 4;
-    const memoryMB = (count * bytesPerFrame) / (1024 * 1024);
+    const memoryMB = this.compositeCacheBytes / (1024 * 1024);
     return { count, maxFrames: this.maxCompositeCacheFrames, memoryMB };
   }
 
@@ -264,6 +274,7 @@ export class ScrubbingCache {
   // Clear composite cache
   clearCompositeCache(): void {
     this.compositeCache.clear();
+    this.compositeCacheBytes = 0;
 
     // Clear GPU frame cache (don't destroy - let GC handle to avoid GPU conflicts)
     this.gpuFrameCache.clear();

@@ -306,7 +306,13 @@ export class WebGPUEngine {
   cleanupVideo(video: HTMLVideoElement): void {
     this.scrubbingCache?.cleanupVideo(video);
     this.videoFrameManager.cleanupVideo(video);
-    if (video.src) this.lastVideoTime.delete(video.src);
+    if (video.src) {
+      this.lastVideoTime.delete(video.src);
+      // Release video element resources to free memory
+      video.pause();
+      video.removeAttribute('src');
+      video.load(); // Forces release of media resources
+    }
     log.debug('Cleaned up video resources');
   }
 
