@@ -2,41 +2,16 @@
 // Composes TimelineRuler, TimelineControls, TimelineHeader, TimelineTrack, TimelineClip, TimelineKeyframes
 
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useTimelineStore } from '../../stores/timeline';
 import {
-  // Core data selectors (subscribe individually for optimal re-renders)
-  selectTracks,
-  selectClips,
-  selectPlayheadPosition,
-  selectDuration,
-  selectZoom,
-  selectScrollX,
-  selectIsPlaying,
-  selectSelectedClipIds,
-  selectMarkers,
-  // UI state selectors
-  selectSnappingEnabled,
-  selectInPoint,
-  selectOutPoint,
-  selectLoopPlayback,
-  selectToolMode,
-  selectThumbnailsEnabled,
-  selectWaveformsEnabled,
-  selectIsDraggingPlayhead,
-  // Preview/export selectors
-  selectRamPreviewEnabled,
-  selectRamPreviewProgress,
-  selectRamPreviewRange,
-  selectIsRamPreviewing,
-  selectIsExporting,
-  selectExportProgress,
-  selectExportRange,
-  selectIsProxyCaching,
-  selectProxyCacheProgress,
-  // Keyframe selectors
-  selectSelectedKeyframeIds,
-  selectClipKeyframes,
-  selectExpandedCurveProperties,
+  // Grouped state selectors (6 subscriptions instead of 29)
+  selectCoreData,
+  selectPlaybackState,
+  selectViewState,
+  selectUISettings,
+  selectPreviewExportState,
+  selectKeyframeState,
 } from '../../stores/timeline/selectors';
 import type { AnimatableProperty, TimelineClip as TimelineClipType } from '../../types';
 import { useMediaStore } from '../../stores/mediaStore';
@@ -75,47 +50,34 @@ import type { ContextMenuState } from './types';
 
 export function Timeline() {
   // ===========================================
-  // OPTIMIZED STORE SUBSCRIPTIONS
-  // Each selector creates a separate subscription, so the component
-  // only re-renders when the specific value it uses changes.
+  // GROUPED STORE SUBSCRIPTIONS (6 instead of 29)
+  // useShallow does shallow comparison on each key, so we only
+  // re-render when an actual value changes within the group.
   // ===========================================
 
-  // Core data (frequently changing)
-  const tracks = useTimelineStore(selectTracks);
-  const clips = useTimelineStore(selectClips);
-  const playheadPosition = useTimelineStore(selectPlayheadPosition);
-  const duration = useTimelineStore(selectDuration);
-  const zoom = useTimelineStore(selectZoom);
-  const scrollX = useTimelineStore(selectScrollX);
-  const isPlaying = useTimelineStore(selectIsPlaying);
-  const selectedClipIds = useTimelineStore(selectSelectedClipIds);
-  const markers = useTimelineStore(selectMarkers);
+  // Core timeline structure (changes on edits)
+  const { tracks, clips, duration, selectedClipIds, markers } =
+    useTimelineStore(useShallow(selectCoreData));
 
-  // UI state (less frequent changes)
-  const snappingEnabled = useTimelineStore(selectSnappingEnabled);
-  const inPoint = useTimelineStore(selectInPoint);
-  const outPoint = useTimelineStore(selectOutPoint);
-  const loopPlayback = useTimelineStore(selectLoopPlayback);
-  const toolMode = useTimelineStore(selectToolMode);
-  const thumbnailsEnabled = useTimelineStore(selectThumbnailsEnabled);
-  const waveformsEnabled = useTimelineStore(selectWaveformsEnabled);
-  const isDraggingPlayhead = useTimelineStore(selectIsDraggingPlayhead);
+  // Playback state (changes every frame during playback)
+  const { playheadPosition, isPlaying, isDraggingPlayhead } =
+    useTimelineStore(useShallow(selectPlaybackState));
+
+  // View state (changes on zoom/scroll)
+  const { zoom, scrollX } =
+    useTimelineStore(useShallow(selectViewState));
+
+  // UI settings (rarely changes)
+  const { snappingEnabled, inPoint, outPoint, loopPlayback, toolMode, thumbnailsEnabled, waveformsEnabled } =
+    useTimelineStore(useShallow(selectUISettings));
 
   // Preview/export state
-  const ramPreviewEnabled = useTimelineStore(selectRamPreviewEnabled);
-  const ramPreviewProgress = useTimelineStore(selectRamPreviewProgress);
-  const ramPreviewRange = useTimelineStore(selectRamPreviewRange);
-  const isRamPreviewing = useTimelineStore(selectIsRamPreviewing);
-  const isExporting = useTimelineStore(selectIsExporting);
-  const exportProgress = useTimelineStore(selectExportProgress);
-  const exportRange = useTimelineStore(selectExportRange);
-  const isProxyCaching = useTimelineStore(selectIsProxyCaching);
-  const proxyCacheProgress = useTimelineStore(selectProxyCacheProgress);
+  const { ramPreviewEnabled, ramPreviewProgress, ramPreviewRange, isRamPreviewing, isExporting, exportProgress, exportRange, isProxyCaching, proxyCacheProgress } =
+    useTimelineStore(useShallow(selectPreviewExportState));
 
   // Keyframe state
-  const selectedKeyframeIds = useTimelineStore(selectSelectedKeyframeIds);
-  const clipKeyframes = useTimelineStore(selectClipKeyframes);
-  const expandedCurveProperties = useTimelineStore(selectExpandedCurveProperties);
+  const { selectedKeyframeIds, clipKeyframes, expandedCurveProperties } =
+    useTimelineStore(useShallow(selectKeyframeState));
 
   // ===========================================
   // STABLE ACTION REFERENCES
@@ -175,15 +137,13 @@ export function Timeline() {
   // Clipboard actions
   const { copyClips, pasteClips } = store;
 
-  const {
-    getActiveComposition,
-    getOpenCompositions,
-    openCompositionTab,
-    proxyEnabled,
-    files: mediaFiles,
-    currentlyGeneratingProxyId,
-    showInExplorer,
-  } = useMediaStore();
+  const getActiveComposition = useMediaStore(state => state.getActiveComposition);
+  const getOpenCompositions = useMediaStore(state => state.getOpenCompositions);
+  const openCompositionTab = useMediaStore(state => state.openCompositionTab);
+  const proxyEnabled = useMediaStore(state => state.proxyEnabled);
+  const mediaFiles = useMediaStore(state => state.files);
+  const currentlyGeneratingProxyId = useMediaStore(state => state.currentlyGeneratingProxyId);
+  const showInExplorer = useMediaStore(state => state.showInExplorer);
   const activeComposition = getActiveComposition() ?? null;
   const openCompositions = getOpenCompositions();
 
@@ -210,9 +170,10 @@ export function Timeline() {
   }, [splitClip, setToolMode]);
 
   // Stable callbacks for TimelineControls (avoids re-renders from inline arrows)
+  const setProxyEnabled = useMediaStore(state => state.setProxyEnabled);
   const handleToggleProxy = useCallback(() => {
-    useMediaStore.getState().setProxyEnabled(!useMediaStore.getState().proxyEnabled);
-  }, []);
+    setProxyEnabled(!proxyEnabled);
+  }, [setProxyEnabled, proxyEnabled]);
 
   const handleToggleTranscriptMarkers = useCallback(() => {
     setShowTranscriptMarkers(prev => !prev);

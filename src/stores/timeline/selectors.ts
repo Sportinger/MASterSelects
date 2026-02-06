@@ -54,6 +54,65 @@ export const selectClipKeyframes = (state: TimelineStore) => state.clipKeyframes
 export const selectExpandedCurveProperties = (state: TimelineStore) => state.expandedCurveProperties;
 
 // ===========================================
+// GROUPED STATE SELECTORS (for useShallow)
+// Reduces 29 individual subscriptions to 6 grouped ones.
+// Use with useShallow() from 'zustand/react/shallow'.
+// ===========================================
+
+// Core timeline structure (changes on edits)
+export const selectCoreData = (state: TimelineStore) => ({
+  tracks: state.tracks,
+  clips: state.clips,
+  duration: state.duration,
+  selectedClipIds: state.selectedClipIds,
+  markers: state.markers,
+});
+
+// Playback state (changes every frame during playback)
+export const selectPlaybackState = (state: TimelineStore) => ({
+  playheadPosition: state.playheadPosition,
+  isPlaying: state.isPlaying,
+  isDraggingPlayhead: state.isDraggingPlayhead,
+});
+
+// View state (changes on zoom/scroll)
+export const selectViewState = (state: TimelineStore) => ({
+  zoom: state.zoom,
+  scrollX: state.scrollX,
+});
+
+// UI settings (rarely changes)
+export const selectUISettings = (state: TimelineStore) => ({
+  snappingEnabled: state.snappingEnabled,
+  inPoint: state.inPoint,
+  outPoint: state.outPoint,
+  loopPlayback: state.loopPlayback,
+  toolMode: state.toolMode,
+  thumbnailsEnabled: state.thumbnailsEnabled,
+  waveformsEnabled: state.waveformsEnabled,
+});
+
+// Preview/export state (changes during preview/export operations)
+export const selectPreviewExportState = (state: TimelineStore) => ({
+  ramPreviewEnabled: state.ramPreviewEnabled,
+  ramPreviewProgress: state.ramPreviewProgress,
+  ramPreviewRange: state.ramPreviewRange,
+  isRamPreviewing: state.isRamPreviewing,
+  isExporting: state.isExporting,
+  exportProgress: state.exportProgress,
+  exportRange: state.exportRange,
+  isProxyCaching: state.isProxyCaching,
+  proxyCacheProgress: state.proxyCacheProgress,
+});
+
+// Keyframe state (changes during keyframe edits)
+export const selectKeyframeState = (state: TimelineStore) => ({
+  selectedKeyframeIds: state.selectedKeyframeIds,
+  clipKeyframes: state.clipKeyframes,
+  expandedCurveProperties: state.expandedCurveProperties,
+});
+
+// ===========================================
 // DERIVED SELECTORS (computed from state)
 // ===========================================
 
