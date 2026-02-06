@@ -4,7 +4,7 @@ import { useTimelineStore } from '../../../stores/timeline';
 import { TextTab } from '../TextTab';
 
 // Tab type
-type PropertiesTab = 'transform' | 'effects' | 'masks' | 'volume' | 'transcript' | 'analysis' | 'text' | 'solid';
+type PropertiesTab = 'transform' | 'effects' | 'masks' | 'volume' | 'transcript' | 'analysis' | 'text';
 
 // Lazy load tab components for code splitting
 const TransformTab = lazy(() => import('./TransformTab').then(m => ({ default: m.TransformTab })));
@@ -49,12 +49,12 @@ export function PropertiesPanel() {
       setLastClipId(selectedClipId);
       // Set appropriate default tab based on clip type
       if (isSolidClip) {
-        setActiveTab('solid');
+        setActiveTab('transform');
       } else if (isTextClip) {
         setActiveTab('text');
-      } else if (isAudioClip && (activeTab === 'transform' || activeTab === 'masks' || activeTab === 'text' || activeTab === 'solid')) {
+      } else if (isAudioClip && (activeTab === 'transform' || activeTab === 'masks' || activeTab === 'text')) {
         setActiveTab('volume');
-      } else if (!isAudioClip && !isTextClip && !isSolidClip && (activeTab === 'volume' || activeTab === 'text' || activeTab === 'solid')) {
+      } else if (!isAudioClip && !isTextClip && (activeTab === 'volume' || activeTab === 'text')) {
         setActiveTab('transform');
       }
     }
@@ -83,6 +83,23 @@ export function PropertiesPanel() {
 
   return (
     <div className="properties-panel">
+      {/* Solid color picker — always visible at top when a solid clip is selected */}
+      {isSolidClip && (
+        <div className="solid-color-bar">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px' }}>
+            <input
+              type="color"
+              value={selectedClip.solidColor || '#ffffff'}
+              onChange={handleSolidColorChange}
+              style={{ width: '28px', height: '22px', padding: '0', border: '1px solid #3a3a3a', borderRadius: '3px', cursor: 'pointer', background: 'transparent' }}
+            />
+            <span style={{ fontSize: '11px', color: '#aaa', fontFamily: 'monospace' }}>
+              {selectedClip.solidColor || '#ffffff'}
+            </span>
+          </div>
+        </div>
+      )}
+
       <div className="properties-tabs">
         {isAudioClip ? (
           <>
@@ -92,17 +109,6 @@ export function PropertiesPanel() {
             </button>
             <button className={`tab-btn ${activeTab === 'transcript' ? 'active' : ''}`} onClick={() => setActiveTab('transcript')}>
               Transcript {selectedClip.transcript && selectedClip.transcript.length > 0 && <span className="badge">{selectedClip.transcript.length}</span>}
-            </button>
-          </>
-        ) : isSolidClip ? (
-          <>
-            <button className={`tab-btn ${activeTab === 'solid' ? 'active' : ''}`} onClick={() => setActiveTab('solid')}>Solid</button>
-            <button className={`tab-btn ${activeTab === 'transform' ? 'active' : ''}`} onClick={() => setActiveTab('transform')}>Transform</button>
-            <button className={`tab-btn ${activeTab === 'effects' ? 'active' : ''}`} onClick={() => setActiveTab('effects')}>
-              Effects {visualEffects.length > 0 && <span className="badge">{visualEffects.length}</span>}
-            </button>
-            <button className={`tab-btn ${activeTab === 'masks' ? 'active' : ''}`} onClick={() => setActiveTab('masks')}>
-              Masks {selectedClip.masks && selectedClip.masks.length > 0 && <span className="badge">{selectedClip.masks.length}</span>}
             </button>
           </>
         ) : isTextClip ? (
@@ -119,43 +125,31 @@ export function PropertiesPanel() {
         ) : (
           <>
             <button className={`tab-btn ${activeTab === 'transform' ? 'active' : ''}`} onClick={() => setActiveTab('transform')}>Transform</button>
-            <button className={`tab-btn ${activeTab === 'volume' ? 'active' : ''}`} onClick={() => setActiveTab('volume')}>Audio</button>
+            {!isSolidClip && (
+              <button className={`tab-btn ${activeTab === 'volume' ? 'active' : ''}`} onClick={() => setActiveTab('volume')}>Audio</button>
+            )}
             <button className={`tab-btn ${activeTab === 'effects' ? 'active' : ''}`} onClick={() => setActiveTab('effects')}>
               Effects {visualEffects.length > 0 && <span className="badge">{visualEffects.length}</span>}
             </button>
             <button className={`tab-btn ${activeTab === 'masks' ? 'active' : ''}`} onClick={() => setActiveTab('masks')}>
               Masks {selectedClip.masks && selectedClip.masks.length > 0 && <span className="badge">{selectedClip.masks.length}</span>}
             </button>
-            <button className={`tab-btn ${activeTab === 'transcript' ? 'active' : ''}`} onClick={() => setActiveTab('transcript')}>
-              Transcript {selectedClip.transcript && selectedClip.transcript.length > 0 && <span className="badge">{selectedClip.transcript.length}</span>}
-            </button>
-            <button className={`tab-btn ${activeTab === 'analysis' ? 'active' : ''}`} onClick={() => setActiveTab('analysis')}>
-              Analysis {selectedClip.analysisStatus === 'ready' && <span className="badge">✓</span>}
-            </button>
+            {!isSolidClip && (
+              <>
+                <button className={`tab-btn ${activeTab === 'transcript' ? 'active' : ''}`} onClick={() => setActiveTab('transcript')}>
+                  Transcript {selectedClip.transcript && selectedClip.transcript.length > 0 && <span className="badge">{selectedClip.transcript.length}</span>}
+                </button>
+                <button className={`tab-btn ${activeTab === 'analysis' ? 'active' : ''}`} onClick={() => setActiveTab('analysis')}>
+                  Analysis {selectedClip.analysisStatus === 'ready' && <span className="badge">✓</span>}
+                </button>
+              </>
+            )}
           </>
         )}
       </div>
 
       <div className="properties-content">
         <Suspense fallback={<TabLoading />}>
-          {activeTab === 'solid' && isSolidClip && (
-            <div className="solid-tab">
-              <div className="solid-color-section">
-                <label style={{ display: 'block', marginBottom: '6px', fontSize: '11px', color: '#888' }}>Color</label>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <input
-                    type="color"
-                    value={selectedClip.solidColor || '#ffffff'}
-                    onChange={handleSolidColorChange}
-                    style={{ width: '36px', height: '28px', padding: '0', border: '1px solid #3a3a3a', borderRadius: '4px', cursor: 'pointer', background: 'transparent' }}
-                  />
-                  <span style={{ fontSize: '12px', color: '#ccc', fontFamily: 'monospace' }}>
-                    {selectedClip.solidColor || '#ffffff'}
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
           {activeTab === 'text' && isTextClip && selectedClip.textProperties && (
             <TextTab clipId={selectedClip.id} textProperties={selectedClip.textProperties} />
           )}

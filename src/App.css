@@ -1897,6 +1897,11 @@ input, textarea {
   text-overflow: ellipsis;
 }
 
+.solid-color-bar {
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+}
+
 .properties-tabs {
   display: flex;
   background: var(--bg-tertiary);
