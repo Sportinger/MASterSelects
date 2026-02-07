@@ -593,7 +593,13 @@ export class ParallelDecodeManager {
         // But ONLY seek if forceFlush is true (we actually need the frame now)
         // Background decodes should just continue forward, not seek
         const isTooFarAhead = targetSampleIndex > clipDecoder.sampleIndex + 30;
-        const isTooFarBehind = clipDecoder.sampleIndex > targetSampleIndex + 30;
+        // When seekTargetSampleIndex is provided, we need a specific frame NOW.
+        // If we've already decoded past that sample, we must seek back since
+        // decoders can only decode forward. Without seekTargetSampleIndex,
+        // use the original tolerance-based check.
+        const isTooFarBehind = seekTargetSampleIndex !== undefined
+          ? clipDecoder.sampleIndex > seekTargetSampleIndex
+          : clipDecoder.sampleIndex > targetSampleIndex + 30;
         const needsSeek = forceFlush && (isTooFarAhead || isTooFarBehind);
 
         // IMPORTANT: Do seek FIRST before calculating framesToDecode
