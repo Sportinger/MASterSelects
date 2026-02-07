@@ -1,7 +1,7 @@
 // App version - INCREMENT ON EVERY COMMIT!
 // Format: MAJOR.MINOR.PATCH
 // Increment PATCH (0.0.X) for each commit
-export const APP_VERSION = '1.2.0';
+export const APP_VERSION = '1.2.1';
 
 // Build/Platform notice shown at top of changelog (set to null to hide)
 export const BUILD_NOTICE: {
@@ -54,13 +54,20 @@ interface RawChangeEntry extends ChangeEntry {
 }
 
 const RAW_CHANGELOG: RawChangeEntry[] = [
-  // === Feb 7, 2026 - Linked Clips, Proxy Rewrite, Transparency Grid ===
+  // === Feb 7, 2026 - Linked Clips, Proxy Rewrite, Split Fix, MOV Import ===
   {
     date: '2026-02-07',
     type: 'new',
     title: 'Linked Clip Selection',
     description: 'Click a linked video or audio clip to select both - Shift+click for independent selection. Properties panel shows the clicked clip.',
     commit: 'e51ce42',
+  },
+  {
+    date: '2026-02-07',
+    type: 'new',
+    title: 'Proxy Resume from Disk',
+    description: 'Proxy generation resumes from disk after interruption instead of starting over',
+    commit: 'bd4259d',
   },
   {
     date: '2026-02-07',
@@ -71,9 +78,37 @@ const RAW_CHANGELOG: RawChangeEntry[] = [
   },
   {
     date: '2026-02-07',
+    type: 'improve',
+    title: 'Instant Media Import',
+    description: 'Media files appear instantly in timeline - faster MOV duration extraction via MP4Box container parsing',
+    commit: '88f3344',
+  },
+  {
+    date: '2026-02-07',
+    type: 'improve',
+    title: 'Playback Performance',
+    description: 'Decoupled playhead position from clip components to prevent unnecessary re-renders during playback',
+    commit: 'f9f996c',
+  },
+  {
+    date: '2026-02-07',
+    type: 'fix',
+    title: 'Split Clips Fully Independent',
+    description: 'Cut/split clips now deep-clone transform, effects, masks and text properties instead of sharing them',
+    commit: 'ef8d208',
+  },
+  {
+    date: '2026-02-07',
+    type: 'fix',
+    title: 'First-Time Save Data Loss',
+    description: 'Saving a project for the first time no longer loses all edits - folder creation no longer wipes store data',
+    commit: 'ef62d34',
+  },
+  {
+    date: '2026-02-07',
     type: 'fix',
     title: 'Transparency Grid in GPU Shader',
-    description: 'Checkerboard transparency grid now renders directly in the GPU shader for correct compositing',
+    description: 'Checkerboard transparency grid now renders directly in the GPU shader with correct sizing',
     commit: '9c6012a',
   },
   {
