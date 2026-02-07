@@ -71,6 +71,8 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
         reversed: clip.reversed || undefined,
         // Text clip support
         textProperties: clip.textProperties,
+        // Solid clip support
+        solidColor: clip.source?.type === 'solid' ? (clip.solidColor || clip.name.replace('Solid ', '')) : undefined,
       };
     });
 
@@ -114,6 +116,7 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
         loopPlayback: false,
         playbackSpeed: 1,
         selectedClipIds: new Set(),
+        primarySelectedClipId: null,
         markers: [],
       });
       return;
@@ -134,6 +137,7 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
       outPoint: data.outPoint,
       loopPlayback: data.loopPlayback,
       selectedClipIds: new Set(),
+      primarySelectedClipId: null,
       // Clear keyframe state
       clipKeyframes: new Map<string, Keyframe[]>(),
       keyframeRecordingEnabled: new Set<string>(),
@@ -618,6 +622,49 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
         continue;
       }
 
+      // Solid clips - restore from solidColor
+      if (serializedClip.sourceType === 'solid' && serializedClip.solidColor) {
+        const color = serializedClip.solidColor;
+        // Use active composition dimensions, fallback to 1920x1080
+        const activeComp = mediaStore.getActiveComposition?.();
+        const compWidth = activeComp?.width || 1920;
+        const compHeight = activeComp?.height || 1080;
+        const canvas = document.createElement('canvas');
+        canvas.width = compWidth;
+        canvas.height = compHeight;
+        const ctx = canvas.getContext('2d')!;
+        ctx.fillStyle = color;
+        ctx.fillRect(0, 0, compWidth, compHeight);
+
+        const solidClip: TimelineClip = {
+          id: serializedClip.id,
+          trackId: serializedClip.trackId,
+          name: serializedClip.name,
+          file: new File([], 'solid-clip.dat', { type: 'application/octet-stream' }),
+          startTime: serializedClip.startTime,
+          duration: serializedClip.duration,
+          inPoint: serializedClip.inPoint,
+          outPoint: serializedClip.outPoint,
+          source: {
+            type: 'solid',
+            textCanvas: canvas,
+            naturalDuration: serializedClip.duration,
+          },
+          transform: serializedClip.transform,
+          effects: serializedClip.effects || [],
+          masks: serializedClip.masks,
+          solidColor: color,
+          isLoading: false,
+        };
+
+        set(state => ({
+          clips: [...state.clips, solidClip],
+        }));
+
+        log.debug('Restored solid clip', { clip: serializedClip.name, color });
+        continue;
+      }
+
       // Regular media clips
       const mediaFile = mediaStore.files.find(f => f.id === serializedClip.mediaFileId);
       if (!mediaFile) {
@@ -848,6 +895,7 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
     set({
       clips: [],
       selectedClipIds: new Set(),
+      primarySelectedClipId: null,
       cachedFrameTimes: new Set(),
       ramPreviewProgress: null,
       ramPreviewRange: null,

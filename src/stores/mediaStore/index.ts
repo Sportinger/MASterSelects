@@ -17,7 +17,7 @@ import { createProxySlice, type ProxyActions } from './slices/proxySlice';
 import { createProjectSlice, type ProjectActions } from './slices/projectSlice';
 
 // Re-export types
-export type { MediaType, ProxyStatus, MediaItem, MediaFile, Composition, MediaFolder, TextItem, ProjectItem } from './types';
+export type { MediaType, ProxyStatus, MediaItem, MediaFile, Composition, MediaFolder, TextItem, SolidItem, ProjectItem } from './types';
 
 // Combined store type with all actions
 type MediaStoreState = MediaState &
@@ -34,6 +34,10 @@ type MediaStoreState = MediaState &
     getOrCreateTextFolder: () => string;
     createTextItem: (name?: string, parentId?: string | null) => string;
     removeTextItem: (id: string) => void;
+    getOrCreateSolidFolder: () => string;
+    createSolidItem: (name?: string, color?: string, parentId?: string | null) => string;
+    removeSolidItem: (id: string) => void;
+    updateSolidItem: (id: string, updates: Partial<{ color: string; width: number; height: number }>) => void;
   };
 
 export const useMediaStore = create<MediaStoreState>()(
@@ -43,6 +47,7 @@ export const useMediaStore = create<MediaStoreState>()(
     compositions: [DEFAULT_COMPOSITION],
     folders: [],
     textItems: [],
+    solidItems: [],
     activeCompositionId: 'comp-1',
     openCompositionIds: ['comp-1'],
     selectedIds: [],
@@ -58,22 +63,24 @@ export const useMediaStore = create<MediaStoreState>()(
 
     // Getters
     getItemsByFolder: (folderId: string | null) => {
-      const { files, compositions, folders, textItems } = get();
+      const { files, compositions, folders, textItems, solidItems } = get();
       return [
         ...folders.filter((f) => f.parentId === folderId),
         ...compositions.filter((c) => c.parentId === folderId),
         ...textItems.filter((t) => t.parentId === folderId),
+        ...solidItems.filter((s) => s.parentId === folderId),
         ...files.filter((f) => f.parentId === folderId),
       ];
     },
 
     getItemById: (id: string) => {
-      const { files, compositions, folders, textItems } = get();
+      const { files, compositions, folders, textItems, solidItems } = get();
       return (
         files.find((f) => f.id === id) ||
         compositions.find((c) => c.id === id) ||
         folders.find((f) => f.id === id) ||
-        textItems.find((t) => t.id === id)
+        textItems.find((t) => t.id === id) ||
+        solidItems.find((s) => s.id === id)
       );
     },
 
@@ -114,6 +121,59 @@ export const useMediaStore = create<MediaStoreState>()(
 
     removeTextItem: (id: string) => {
       set({ textItems: get().textItems.filter(t => t.id !== id) });
+    },
+
+    // Get or create "Solids" folder for organizing solid items
+    getOrCreateSolidFolder: () => {
+      const { folders, createFolder } = get();
+      const existingFolder = folders.find((f) => f.name === 'Solids' && f.parentId === null);
+      if (existingFolder) {
+        return existingFolder.id;
+      }
+      const newFolder = createFolder('Solids', null);
+      return newFolder.id;
+    },
+
+    // Create solid item in Media Panel
+    createSolidItem: (name?: string, color?: string, parentId?: string | null) => {
+      const { solidItems } = get();
+      const id = `solid-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      // Use active composition dimensions, fallback to 1920x1080
+      const activeComp = get().getActiveComposition();
+      const compWidth = activeComp?.width || 1920;
+      const compHeight = activeComp?.height || 1080;
+      const newSolid = {
+        id,
+        name: name || `Solid ${solidItems.length + 1}`,
+        type: 'solid' as const,
+        parentId: parentId !== undefined ? parentId : null,
+        createdAt: Date.now(),
+        color: color || '#ffffff',
+        width: compWidth,
+        height: compHeight,
+        duration: 5, // 5 seconds default
+      };
+      set({ solidItems: [...solidItems, newSolid] });
+      return id;
+    },
+
+    removeSolidItem: (id: string) => {
+      set({ solidItems: get().solidItems.filter(s => s.id !== id) });
+    },
+
+    updateSolidItem: (id: string, updates: Partial<{ color: string; width: number; height: number }>) => {
+      set({
+        solidItems: get().solidItems.map(s =>
+          s.id === id
+            ? {
+                ...s,
+                ...(updates.color !== undefined && { color: updates.color, name: `Solid ${updates.color}` }),
+                ...(updates.width !== undefined && { width: updates.width }),
+                ...(updates.height !== undefined && { height: updates.height }),
+              }
+            : s
+        ),
+      });
     },
 
     // Merge all slices

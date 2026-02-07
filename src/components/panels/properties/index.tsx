@@ -1,5 +1,5 @@
 // Properties Panel - Main container with lazy-loaded tabs
-import { useState, useEffect, Suspense, lazy } from 'react';
+import { useState, useEffect, useCallback, Suspense, lazy } from 'react';
 import { useTimelineStore } from '../../../stores/timeline';
 import { TextTab } from '../TextTab';
 
@@ -24,13 +24,17 @@ export function PropertiesPanel() {
   const clips = useTimelineStore(state => state.clips);
   const tracks = useTimelineStore(state => state.tracks);
   const selectedClipIds = useTimelineStore(state => state.selectedClipIds);
+  const primarySelectedClipId = useTimelineStore(state => state.primarySelectedClipId);
   const playheadPosition = useTimelineStore(state => state.playheadPosition);
   // Actions from getState() - stable, no subscription needed
   const { getInterpolatedTransform, getInterpolatedSpeed } = useTimelineStore.getState();
   const [activeTab, setActiveTab] = useState<PropertiesTab>('transform');
   const [lastClipId, setLastClipId] = useState<string | null>(null);
 
-  const selectedClipId = selectedClipIds.size > 0 ? [...selectedClipIds][0] : null;
+  // Use the primary (clicked) clip for properties, fall back to first selected
+  const selectedClipId = primarySelectedClipId && selectedClipIds.has(primarySelectedClipId)
+    ? primarySelectedClipId
+    : selectedClipIds.size > 0 ? [...selectedClipIds][0] : null;
   const selectedClip = clips.find(c => c.id === selectedClipId);
 
   // Check if it's an audio clip
@@ -40,12 +44,17 @@ export function PropertiesPanel() {
   // Check if it's a text clip
   const isTextClip = selectedClip?.source?.type === 'text';
 
-  // Reset tab when switching between audio/video/text clips
+  // Check if it's a solid clip
+  const isSolidClip = selectedClip?.source?.type === 'solid';
+
+  // Reset tab when switching between audio/video/text/solid clips
   useEffect(() => {
     if (selectedClipId && selectedClipId !== lastClipId) {
       setLastClipId(selectedClipId);
       // Set appropriate default tab based on clip type
-      if (isTextClip) {
+      if (isSolidClip) {
+        setActiveTab('transform');
+      } else if (isTextClip) {
         setActiveTab('text');
       } else if (isAudioClip && (activeTab === 'transform' || activeTab === 'masks' || activeTab === 'text')) {
         setActiveTab('volume');
@@ -53,7 +62,12 @@ export function PropertiesPanel() {
         setActiveTab('transform');
       }
     }
-  }, [selectedClipId, isAudioClip, isTextClip, lastClipId, activeTab]);
+  }, [selectedClipId, isAudioClip, isTextClip, isSolidClip, lastClipId, activeTab]);
+
+  const handleSolidColorChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!selectedClipId) return;
+    useTimelineStore.getState().updateSolidColor(selectedClipId, e.target.value);
+  }, [selectedClipId]);
 
   if (!selectedClip) {
     return (
@@ -73,6 +87,23 @@ export function PropertiesPanel() {
 
   return (
     <div className="properties-panel">
+      {/* Solid color picker — always visible at top when a solid clip is selected */}
+      {isSolidClip && (
+        <div className="solid-color-bar">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px' }}>
+            <input
+              type="color"
+              value={selectedClip.solidColor || '#ffffff'}
+              onChange={handleSolidColorChange}
+              style={{ width: '28px', height: '22px', padding: '0', border: '1px solid #3a3a3a', borderRadius: '3px', cursor: 'pointer', background: 'transparent' }}
+            />
+            <span style={{ fontSize: '11px', color: '#aaa', fontFamily: 'monospace' }}>
+              {selectedClip.solidColor || '#ffffff'}
+            </span>
+          </div>
+        </div>
+      )}
+
       <div className="properties-tabs">
         {isAudioClip ? (
           <>
@@ -98,19 +129,25 @@ export function PropertiesPanel() {
         ) : (
           <>
             <button className={`tab-btn ${activeTab === 'transform' ? 'active' : ''}`} onClick={() => setActiveTab('transform')}>Transform</button>
-            <button className={`tab-btn ${activeTab === 'volume' ? 'active' : ''}`} onClick={() => setActiveTab('volume')}>Audio</button>
+            {!isSolidClip && (
+              <button className={`tab-btn ${activeTab === 'volume' ? 'active' : ''}`} onClick={() => setActiveTab('volume')}>Audio</button>
+            )}
             <button className={`tab-btn ${activeTab === 'effects' ? 'active' : ''}`} onClick={() => setActiveTab('effects')}>
               Effects {visualEffects.length > 0 && <span className="badge">{visualEffects.length}</span>}
             </button>
             <button className={`tab-btn ${activeTab === 'masks' ? 'active' : ''}`} onClick={() => setActiveTab('masks')}>
               Masks {selectedClip.masks && selectedClip.masks.length > 0 && <span className="badge">{selectedClip.masks.length}</span>}
             </button>
-            <button className={`tab-btn ${activeTab === 'transcript' ? 'active' : ''}`} onClick={() => setActiveTab('transcript')}>
-              Transcript {selectedClip.transcript && selectedClip.transcript.length > 0 && <span className="badge">{selectedClip.transcript.length}</span>}
-            </button>
-            <button className={`tab-btn ${activeTab === 'analysis' ? 'active' : ''}`} onClick={() => setActiveTab('analysis')}>
-              Analysis {selectedClip.analysisStatus === 'ready' && <span className="badge">✓</span>}
-            </button>
+            {!isSolidClip && (
+              <>
+                <button className={`tab-btn ${activeTab === 'transcript' ? 'active' : ''}`} onClick={() => setActiveTab('transcript')}>
+                  Transcript {selectedClip.transcript && selectedClip.transcript.length > 0 && <span className="badge">{selectedClip.transcript.length}</span>}
+                </button>
+                <button className={`tab-btn ${activeTab === 'analysis' ? 'active' : ''}`} onClick={() => setActiveTab('analysis')}>
+                  Analysis {selectedClip.analysisStatus === 'ready' && <span className="badge">✓</span>}
+                </button>
+              </>
+            )}
           </>
         )}
       </div>

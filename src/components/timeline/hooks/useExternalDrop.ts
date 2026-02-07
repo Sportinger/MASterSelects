@@ -25,6 +25,7 @@ interface UseExternalDropProps {
   addClip: (trackId: string, file: File, startTime: number, duration?: number, mediaFileId?: string) => void;
   addCompClip: (trackId: string, comp: Composition, startTime: number) => void;
   addTextClip: (trackId: string, startTime: number, duration?: number, skipMediaItem?: boolean) => Promise<string | null>;
+  addSolidClip: (trackId: string, startTime: number, color?: string, duration?: number, skipMediaItem?: boolean) => string | null;
 }
 
 interface UseExternalDropReturn {
@@ -79,6 +80,7 @@ export function useExternalDrop({
   addClip,
   addCompClip,
   addTextClip,
+  addSolidClip,
 }: UseExternalDropProps): UseExternalDropReturn {
   const [externalDrag, setExternalDrag] = useState<ExternalDragState | null>(null);
   const dragCounterRef = useRef(0);
@@ -105,6 +107,11 @@ export function useExternalDrop({
       }
 
       if (e.dataTransfer.types.includes('application/x-text-item-id')) {
+        setExternalDrag({ trackId, startTime, x: e.clientX, y: e.clientY, duration: 5, isVideo: true });
+        return;
+      }
+
+      if (e.dataTransfer.types.includes('application/x-solid-item-id')) {
         setExternalDrag({ trackId, startTime, x: e.clientX, y: e.clientY, duration: 5, isVideo: true });
         return;
       }
@@ -158,9 +165,10 @@ export function useExternalDrop({
       const isCompDrag = e.dataTransfer.types.includes('application/x-composition-id');
       const isMediaPanelDrag = e.dataTransfer.types.includes('application/x-media-file-id');
       const isTextDrag = e.dataTransfer.types.includes('application/x-text-item-id');
+      const isSolidDrag = e.dataTransfer.types.includes('application/x-solid-item-id');
       const isFileDrag = e.dataTransfer.types.includes('Files');
 
-      if ((isCompDrag || isMediaPanelDrag || isTextDrag || isFileDrag) && timelineRef.current) {
+      if ((isCompDrag || isMediaPanelDrag || isTextDrag || isSolidDrag || isFileDrag) && timelineRef.current) {
         const rect = timelineRef.current.getBoundingClientRect();
         const x = e.clientX - rect.left + scrollX;
         const startTime = pixelToTime(x);
@@ -325,6 +333,17 @@ export function useExternalDrop({
         }
       }
 
+      // Handle solid item drag (skipMediaItem=true since it already exists in media panel)
+      const solidItemId = e.dataTransfer.getData('application/x-solid-item-id');
+      if (solidItemId) {
+        const mediaStore = useMediaStore.getState();
+        const solidItem = mediaStore.solidItems.find((s) => s.id === solidItemId);
+        if (solidItem) {
+          addSolidClip(newTrackId, startTime, solidItem.color, solidItem.duration, true);
+          return;
+        }
+      }
+
       // Handle media panel drag
       if (mediaFileId) {
         const mediaStore = useMediaStore.getState();
@@ -350,13 +369,11 @@ export function useExternalDrop({
                 const file = await handle.getFile();
                 if (filePath) (file as any).path = filePath;
                 if (isMediaFile(file)) {
-                  const imported = await mediaStore.importFilesWithHandles([
-                    { file, handle, absolutePath: filePath },
-                  ]);
-                  if (imported.length > 0) {
-                    addClip(newTrackId, file, startTime, cachedDuration, imported[0].id);
-                    log.debug('Imported file with handle:', { name: file.name, absolutePath: filePath });
-                  }
+                  // Add clip immediately for instant visual feedback
+                  addClip(newTrackId, file, startTime, cachedDuration);
+                  // Fire-and-forget media import (loadVideoMedia will pick it up)
+                  mediaStore.importFilesWithHandles([{ file, handle, absolutePath: filePath }]);
+                  log.debug('Imported file with handle:', { name: file.name, absolutePath: filePath });
                   return;
                 }
               }
@@ -369,13 +386,15 @@ export function useExternalDrop({
           const file = item.getAsFile();
           if (file && filePath) (file as any).path = filePath;
           if (file && isMediaFile(file)) {
-            const importedFile = await mediaStore.importFile(file);
-            addClip(newTrackId, file, startTime, cachedDuration, importedFile?.id);
+            // Add clip immediately for instant visual feedback
+            addClip(newTrackId, file, startTime, cachedDuration);
+            // Fire-and-forget media import (loadVideoMedia will pick it up)
+            mediaStore.importFile(file);
           }
         }
       }
     },
-    [scrollX, pixelToTime, addTrack, addCompClip, addClip, addTextClip, externalDrag, timelineRef]
+    [scrollX, pixelToTime, addTrack, addCompClip, addClip, addTextClip, addSolidClip, externalDrag, timelineRef]
   );
 
   // Handle external file drop on track
@@ -417,6 +436,20 @@ export function useExternalDrop({
           const x = e.clientX - rect.left + scrollX;
           const startTime = pixelToTime(x);
           addTextClip(trackId, Math.max(0, startTime), textItem.duration, true);
+          return;
+        }
+      }
+
+      // Handle solid item drag from media panel (skipMediaItem=true since it already exists)
+      const solidItemId = e.dataTransfer.getData('application/x-solid-item-id');
+      if (solidItemId) {
+        const mediaStore = useMediaStore.getState();
+        const solidItem = mediaStore.solidItems.find((s) => s.id === solidItemId);
+        if (solidItem && isVideoTrack) {
+          const rect = e.currentTarget.getBoundingClientRect();
+          const x = e.clientX - rect.left + scrollX;
+          const startTime = pixelToTime(x);
+          addSolidClip(trackId, Math.max(0, startTime), solidItem.color, solidItem.duration, true);
           return;
         }
       }
@@ -484,11 +517,11 @@ export function useExternalDrop({
                     return;
                   }
 
-                  const imported = await mediaStore.importFilesWithHandles([{ file, handle, absolutePath: filePath }]);
-                  if (imported.length > 0) {
-                    addClip(trackId, file, startTime, cachedDuration, imported[0].id);
-                    log.debug('Imported file with handle:', { name: file.name, absolutePath: filePath });
-                  }
+                  // Add clip immediately for instant visual feedback
+                  addClip(trackId, file, startTime, cachedDuration);
+                  // Fire-and-forget media import (loadVideoMedia will pick it up)
+                  mediaStore.importFilesWithHandles([{ file, handle, absolutePath: filePath }]);
+                  log.debug('Imported file with handle:', { name: file.name, absolutePath: filePath });
                   return;
                 }
               }
@@ -514,13 +547,15 @@ export function useExternalDrop({
               return;
             }
 
-            const importedFile = await mediaStore.importFile(file);
-            addClip(trackId, file, startTime, cachedDuration, importedFile?.id);
+            // Add clip immediately for instant visual feedback
+            addClip(trackId, file, startTime, cachedDuration);
+            // Fire-and-forget media import (loadVideoMedia will pick it up)
+            mediaStore.importFile(file);
           }
         }
       }
     },
-    [scrollX, pixelToTime, addCompClip, addClip, addTextClip, externalDrag, tracks, timelineRef]
+    [scrollX, pixelToTime, addCompClip, addClip, addTextClip, addSolidClip, externalDrag, tracks, timelineRef]
   );
 
   return {

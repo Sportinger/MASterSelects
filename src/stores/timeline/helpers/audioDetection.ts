@@ -30,13 +30,17 @@ export async function detectVideoAudio(file: File): Promise<boolean> {
 
   log.debug('Detecting audio', { file: file.name, ext });
 
-  // Method 1: MP4Box for MP4-based containers (most reliable)
+  // Method 1: MP4Box for MP4-based containers (most reliable for positive detection)
   if (MP4_CONTAINERS.includes(ext)) {
     const result = await detectAudioMP4Box(file);
-    if (result !== null) {
-      log.debug('MP4Box detection result', { file: file.name, hasAudio: result });
-      return result;
+    if (result === true) {
+      log.debug('MP4Box detection result', { file: file.name, hasAudio: true });
+      return true;
     }
+    // Don't trust false from MP4Box - camera MOV files often have moov atom at
+    // end of file (past read limit) or use PCM audio codecs MP4Box may not classify
+    // as audioTracks. Fall through to VideoElement detection.
+    log.debug('MP4Box returned non-positive, trying fallback', { file: file.name, result });
   }
 
   // Method 2: HTMLVideoElement for WebM and other formats
@@ -184,7 +188,7 @@ async function detectAudioVideoElement(file: File): Promise<boolean | null> {
           }
           cleanup();
           resolve(null); // Inconclusive
-        }, 100);
+        }, 300); // 300ms for large camera MOV files that need more decode time
       }).catch(() => {
         cleanup();
         resolve(null);

@@ -17,11 +17,13 @@ export function DockSplitPane({ split }: DockSplitPaneProps) {
   const { setSplitRatio } = useDockStore();
   const [isResizing, setIsResizing] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const handleRef = useRef<HTMLDivElement>(null);
 
   const isHorizontal = split.direction === 'horizontal';
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     setIsResizing(true);
   }, []);
 
@@ -86,7 +88,8 @@ export function DockSplitPane({ split }: DockSplitPaneProps) {
         <DockNode node={split.children[0]} />
       </div>
       <div
-        className={`dock-resize-handle ${isHorizontal ? 'horizontal' : 'vertical'}`}
+        ref={handleRef}
+        className={`dock-resize-handle ${isHorizontal ? 'horizontal' : 'vertical'} ${isResizing ? 'active' : ''}`}
         onMouseDown={handleMouseDown}
       />
       <div className="dock-split-child" style={secondChildStyle}>

@@ -64,6 +64,7 @@ export const createClipboardSlice: SliceCreator<ClipboardActions> = (set, get) =
         speed: clip.speed,
         preservesPitch: clip.preservesPitch,
         textProperties: clip.textProperties ? { ...clip.textProperties } : undefined,
+        solidColor: clip.source?.type === 'solid' ? (clip.solidColor || clip.name.replace('Solid ', '')) : undefined,
         // Visual data - reuse existing thumbnails and waveforms
         thumbnails: clip.thumbnails ? [...clip.thumbnails] : undefined,
         waveform: clip.waveform ? [...clip.waveform] : undefined,
@@ -144,6 +145,9 @@ export const createClipboardSlice: SliceCreator<ClipboardActions> = (set, get) =
           type: clipData.sourceType,
           mediaFileId: clipData.mediaFileId,
           naturalDuration: clipData.naturalDuration,
+        } : clipData.solidColor ? {
+          type: 'solid' as const,
+          naturalDuration: clipData.duration,
         } : null,
         transform: {
           ...clipData.transform,
@@ -169,13 +173,14 @@ export const createClipboardSlice: SliceCreator<ClipboardActions> = (set, get) =
         speed: clipData.speed,
         preservesPitch: clipData.preservesPitch,
         textProperties: clipData.textProperties ? { ...clipData.textProperties } : undefined,
+        solidColor: clipData.solidColor,
         // Reuse existing thumbnails and waveforms from copied clip
         thumbnails: clipData.thumbnails ? [...clipData.thumbnails] : undefined,
         waveform: clipData.waveform ? [...clipData.waveform] : undefined,
         isComposition: clipData.isComposition,
         compositionId: clipData.compositionId,
         isLoading: true, // Will need to reload media
-        needsReload: !clipData.textProperties, // Text clips don't need reload
+        needsReload: !clipData.textProperties && !clipData.solidColor, // Text/solid clips don't need reload
       };
 
       newClips.push(newClip);
@@ -243,6 +248,36 @@ export const createClipboardSlice: SliceCreator<ClipboardActions> = (set, get) =
               ),
             }));
           });
+          continue;
+        }
+
+        // Handle solid clips - regenerate canvas
+        if (newClip.source?.type === 'solid') {
+          const originalClipData = clipboardData.find(cd => idMapping.get(cd.id) === newClip.id);
+          const color = originalClipData?.solidColor || '#ffffff';
+          const canvas = document.createElement('canvas');
+          canvas.width = 1920;
+          canvas.height = 1080;
+          const ctx = canvas.getContext('2d')!;
+          ctx.fillStyle = color;
+          ctx.fillRect(0, 0, 1920, 1080);
+
+          set(state => ({
+            clips: state.clips.map(c =>
+              c.id === newClip.id
+                ? {
+                    ...c,
+                    source: {
+                      type: 'solid' as const,
+                      textCanvas: canvas,
+                      naturalDuration: c.duration,
+                    },
+                    isLoading: false,
+                    needsReload: false,
+                  }
+                : c
+            ),
+          }));
           continue;
         }
 

@@ -114,6 +114,7 @@ export const useTimelineStore = create<TimelineStore>()(
       isPlaying: false,
       isDraggingPlayhead: false,
       selectedClipIds: new Set<string>(),
+      primarySelectedClipId: null,
 
       // Render layers (populated by useLayerSync, used by engine)
       layers: [] as import('../../types').Layer[],

@@ -1,6 +1,7 @@
 // Masks Tab - Create and edit clip masks
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useTimelineStore } from '../../../stores/timeline';
+import { startBatch, endBatch } from '../../../stores/historyStore';
 import type { MaskMode, ClipMask } from '../../../types';
 import { DraggableNumber } from './shared';
 
@@ -22,6 +23,9 @@ function MaskItem({ clipId, mask, isActive, onSelect }: MaskItemProps) {
   const { updateMask, removeMask, setActiveMask, setMaskEditMode } = useTimelineStore.getState();
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(mask.name);
+
+  const handleBatchStart = useCallback(() => startBatch('Adjust mask'), []);
+  const handleBatchEnd = useCallback(() => endBatch(), []);
 
   const handleNameDoubleClick = () => { setIsEditing(true); setEditName(mask.name); };
   const handleNameChange = () => { if (editName.trim()) updateMask(clipId, mask.id, { name: editName.trim() }); setIsEditing(false); };
@@ -67,19 +71,24 @@ function MaskItem({ clipId, mask, isActive, onSelect }: MaskItemProps) {
         <div className="mask-item-properties">
           <div className="control-row"><label>Opacity</label>
             <DraggableNumber value={mask.opacity * 100} onChange={(v) => updateMask(clipId, mask.id, { opacity: v / 100 })}
-              defaultValue={100} sensitivity={1} decimals={0} suffix="%" /></div>
+              defaultValue={100} sensitivity={1} decimals={0} suffix="%"
+              onDragStart={handleBatchStart} onDragEnd={handleBatchEnd} /></div>
           <div className="control-row"><label>Feather</label>
             <DraggableNumber value={mask.feather} onChange={(v) => updateMask(clipId, mask.id, { feather: v })}
-              defaultValue={0} sensitivity={1} decimals={1} suffix="px" /></div>
+              defaultValue={0} sensitivity={1} decimals={1} suffix="px"
+              onDragStart={handleBatchStart} onDragEnd={handleBatchEnd} /></div>
           <div className="control-row"><label>Quality</label>
             <DraggableNumber value={mask.featherQuality ?? 50} onChange={(v) => updateMask(clipId, mask.id, { featherQuality: Math.min(100, Math.max(1, Math.round(v))) })}
-              defaultValue={50} min={1} max={100} sensitivity={1} decimals={0} /></div>
+              defaultValue={50} min={1} max={100} sensitivity={1} decimals={0}
+              onDragStart={handleBatchStart} onDragEnd={handleBatchEnd} /></div>
           <div className="control-row"><label>Position X</label>
             <DraggableNumber value={mask.position.x} onChange={(v) => updateMask(clipId, mask.id, { position: { ...mask.position, x: v } })}
-              defaultValue={0} sensitivity={100} decimals={3} /></div>
+              defaultValue={0} sensitivity={100} decimals={3}
+              onDragStart={handleBatchStart} onDragEnd={handleBatchEnd} /></div>
           <div className="control-row"><label>Position Y</label>
             <DraggableNumber value={mask.position.y} onChange={(v) => updateMask(clipId, mask.id, { position: { ...mask.position, y: v } })}
-              defaultValue={0} sensitivity={100} decimals={3} /></div>
+              defaultValue={0} sensitivity={100} decimals={3}
+              onDragStart={handleBatchStart} onDragEnd={handleBatchEnd} /></div>
           <div className="control-row"><label>Inverted</label>
             <input type="checkbox" checked={mask.inverted} onChange={(e) => updateMask(clipId, mask.id, { inverted: e.target.checked })} /></div>
           <div className="mask-info">{mask.vertices.length} vertices | {mask.closed ? 'Closed' : 'Open'}</div>

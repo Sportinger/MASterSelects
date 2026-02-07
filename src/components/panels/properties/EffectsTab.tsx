@@ -1,6 +1,7 @@
 // Effects Tab - Add and configure visual effects
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useTimelineStore } from '../../../stores/timeline';
+import { startBatch, endBatch } from '../../../stores/historyStore';
 import type { AnimatableProperty } from '../../../types';
 import { EFFECT_REGISTRY, getDefaultParams, getCategoriesWithEffects } from '../../../effects';
 import { EffectKeyframeToggle, DraggableNumber } from './shared';
@@ -14,7 +15,9 @@ function renderParamControl(
   onChange: (params: Record<string, number | boolean | string>) => void,
   defaults: Record<string, number | boolean | string>,
   clipId?: string,
-  noMaxLimit?: boolean
+  noMaxLimit?: boolean,
+  onDragStart?: () => void,
+  onDragEnd?: () => void,
 ) {
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -53,6 +56,8 @@ function renderParamControl(
             sensitivity={Math.max(0.5, range / 100)}
             decimals={decimals}
             min={min}
+            onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
           />
         </div>
       );
@@ -97,9 +102,11 @@ interface EffectParamsProps {
   effect: { id: string; type: string; params: Record<string, number | boolean | string> };
   onChange: (params: Record<string, number | boolean | string>) => void;
   clipId?: string;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
 }
 
-function EffectParams({ effect, onChange, clipId }: EffectParamsProps) {
+function EffectParams({ effect, onChange, clipId, onDragStart, onDragEnd }: EffectParamsProps) {
   const [qualityExpanded, setQualityExpanded] = useState(false);
 
   const effectDef = EFFECT_REGISTRY.get(effect.type);
@@ -130,7 +137,7 @@ function EffectParams({ effect, onChange, clipId }: EffectParamsProps) {
       {/* Regular parameters */}
       {regularParams.map(([paramName, paramDef]) => {
         const value = effect.params[paramName] ?? paramDef.default;
-        return renderParamControl(paramName, paramDef, value, effect, onChange, defaults, clipId, false);
+        return renderParamControl(paramName, paramDef, value, effect, onChange, defaults, clipId, false, onDragStart, onDragEnd);
       })}
 
       {/* Quality section (collapsible) */}
@@ -154,7 +161,7 @@ function EffectParams({ effect, onChange, clipId }: EffectParamsProps) {
               {qualityParams.map(([paramName, paramDef]) => {
                 const value = effect.params[paramName] ?? paramDef.default;
                 // Quality params have no max limit when dragging
-                return renderParamControl(paramName, paramDef, value, effect, onChange, defaults, clipId, true);
+                return renderParamControl(paramName, paramDef, value, effect, onChange, defaults, clipId, true, onDragStart, onDragEnd);
               })}
               <div className="effect-quality-warning">
                 High values may cause slowdowns
@@ -178,6 +185,9 @@ export function EffectsTab({ clipId, effects }: EffectsTabProps) {
   const clips = useTimelineStore(state => state.clips);
   // Actions from getState() - stable, no subscription needed
   const { addClipEffect, removeClipEffect, updateClipEffect, setClipEffectEnabled, setPropertyValue, getInterpolatedEffects } = useTimelineStore.getState();
+
+  const handleBatchStart = useCallback(() => startBatch('Adjust effect'), []);
+  const handleBatchEnd = useCallback(() => endBatch(), []);
   const clip = clips.find(c => c.id === clipId);
   const clipLocalTime = clip ? playheadPosition - clip.startTime : 0;
   const interpolatedEffects = getInterpolatedEffects(clipId, clipLocalTime);
@@ -230,6 +240,8 @@ export function EffectsTab({ clipId, effects }: EffectsTabProps) {
                 <div className="effect-params">
                   <EffectParams
                     effect={{ ...effect, params: interpolated.params }}
+                    onDragStart={handleBatchStart}
+                    onDragEnd={handleBatchEnd}
                     onChange={(params) => {
                       Object.entries(params).forEach(([paramName, value]) => {
                         if (typeof value === 'number') {

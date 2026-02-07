@@ -1,19 +1,111 @@
 // Media Panel - Project browser like After Effects
 
-import React, { useCallback, useRef, useState, useEffect } from 'react';
+import React, { useCallback, useRef, useState, useEffect, memo } from 'react';
 import { Logger } from '../../services/logger';
+
+// Small file-type icons (AE style) - inline SVGs, 14px
+const FileTypeIcon = memo(({ type }: { type?: string }) => {
+  const size = 14;
+  const style: React.CSSProperties = { width: size, height: size, flexShrink: 0, display: 'block' };
+
+  switch (type) {
+    case 'video':
+      return (
+        <svg style={style} viewBox="0 0 16 16" fill="none">
+          <rect x="1" y="3" width="14" height="10" rx="1.5" fill="#4a6fa5" stroke="#6b9bd2" strokeWidth="0.7"/>
+          <rect x="3" y="5" width="3" height="3" rx="0.5" fill="#2a4a75" opacity="0.7"/>
+          <rect x="7" y="5" width="3" height="3" rx="0.5" fill="#2a4a75" opacity="0.7"/>
+          <rect x="11" y="5" width="3" height="3" rx="0.5" fill="#2a4a75" opacity="0.7"/>
+          <rect x="3" y="9" width="3" height="3" rx="0.5" fill="#2a4a75" opacity="0.7"/>
+          <rect x="7" y="9" width="3" height="3" rx="0.5" fill="#2a4a75" opacity="0.7"/>
+          <rect x="11" y="9" width="3" height="3" rx="0.5" fill="#2a4a75" opacity="0.7"/>
+        </svg>
+      );
+    case 'audio':
+      return (
+        <svg style={style} viewBox="0 0 16 16" fill="none">
+          <rect x="1" y="2" width="14" height="12" rx="1.5" fill="#4a7a4a" stroke="#6aaa6a" strokeWidth="0.7"/>
+          <path d="M4 6v4M6 5v6M8 4v8M10 5v6M12 6v4" stroke="#8fdf8f" strokeWidth="1.2" strokeLinecap="round"/>
+        </svg>
+      );
+    case 'image':
+      return (
+        <svg style={style} viewBox="0 0 16 16" fill="none">
+          <rect x="1" y="2" width="14" height="12" rx="1.5" fill="#5a6a8a" stroke="#7a9aba" strokeWidth="0.7"/>
+          <circle cx="5.5" cy="6" r="1.5" fill="#aaccee"/>
+          <path d="M1.5 11l3.5-3 2.5 2 3-4 4 5v0.5c0 .55-.45 1-1 1h-12c-.55 0-1-.45-1-1z" fill="#7a9aba" opacity="0.8"/>
+        </svg>
+      );
+    case 'composition':
+      return (
+        <svg style={style} viewBox="0 0 16 16" fill="none">
+          <rect x="1" y="2" width="14" height="12" rx="1.5" fill="#7a5a8a" stroke="#aa7abb" strokeWidth="0.7"/>
+          <circle cx="8" cy="8" r="3.5" stroke="#cc99dd" strokeWidth="1" fill="none"/>
+          <circle cx="8" cy="8" r="1" fill="#cc99dd"/>
+        </svg>
+      );
+    case 'text':
+      return (
+        <svg style={style} viewBox="0 0 16 16" fill="none">
+          <rect x="1" y="2" width="14" height="12" rx="1.5" fill="#8a6a5a" stroke="#bb9a7a" strokeWidth="0.7"/>
+          <text x="8" y="11.5" textAnchor="middle" fill="#eeddcc" fontSize="9" fontWeight="bold" fontFamily="sans-serif">T</text>
+        </svg>
+      );
+    case 'solid':
+      return (
+        <svg style={style} viewBox="0 0 16 16" fill="none">
+          <rect x="1" y="2" width="14" height="12" rx="1.5" fill="#777" stroke="#999" strokeWidth="0.7"/>
+          <rect x="4" y="5" width="8" height="6" rx="0.5" fill="#bbb"/>
+        </svg>
+      );
+    default:
+      return (
+        <svg style={style} viewBox="0 0 16 16" fill="none">
+          <path d="M4 1.5h5.5l4 4V14c0 .55-.45 1-1 1H4c-.55 0-1-.45-1-1V2.5c0-.55.45-1 1-1z" fill="#5a5a5a" stroke="#888" strokeWidth="0.7"/>
+          <path d="M9.5 1.5v4h4" stroke="#888" strokeWidth="0.7" fill="#6a6a6a"/>
+        </svg>
+      );
+  }
+});
 
 const log = Logger.create('MediaPanel');
 import { useMediaStore } from '../../stores/mediaStore';
-import type { MediaFile, Composition, ProjectItem } from '../../stores/mediaStore';
+import type { MediaFile, Composition, ProjectItem, SolidItem } from '../../stores/mediaStore';
+import type { LabelColor } from '../../stores/mediaStore/types';
 import { useTimelineStore } from '../../stores/timeline';
 import { useContextMenuPosition } from '../../hooks/useContextMenuPosition';
 import { RelinkDialog } from '../common/RelinkDialog';
 
-// Column definitions
-type ColumnId = 'name' | 'duration' | 'resolution' | 'fps' | 'container' | 'codec' | 'audio' | 'bitrate' | 'size';
+// AE label color palette
+const LABEL_COLORS: { key: LabelColor; hex: string; name: string }[] = [
+  { key: 'none', hex: 'transparent', name: 'None' },
+  { key: 'red', hex: '#e2514c', name: 'Red' },
+  { key: 'yellow', hex: '#dbb63b', name: 'Yellow' },
+  { key: 'aqua', hex: '#4ec0c0', name: 'Aqua' },
+  { key: 'pink', hex: '#d77bba', name: 'Pink' },
+  { key: 'lavender', hex: '#a278c1', name: 'Lavender' },
+  { key: 'peach', hex: '#e8a264', name: 'Peach' },
+  { key: 'seafoam', hex: '#6bc488', name: 'Sea Foam' },
+  { key: 'blue', hex: '#4a90e2', name: 'Blue' },
+  { key: 'green', hex: '#6db849', name: 'Green' },
+  { key: 'purple', hex: '#8b5fc7', name: 'Purple' },
+  { key: 'orange', hex: '#e07934', name: 'Orange' },
+  { key: 'brown', hex: '#a57249', name: 'Brown' },
+  { key: 'fuchsia', hex: '#d14da1', name: 'Fuchsia' },
+  { key: 'cyan', hex: '#49bce3', name: 'Cyan' },
+  { key: 'tan', hex: '#c4a86c', name: 'Tan' },
+];
 
-const COLUMN_LABELS: Record<ColumnId, string> = {
+function getLabelHex(color?: LabelColor): string {
+  if (!color || color === 'none') return 'transparent';
+  return LABEL_COLORS.find(c => c.key === color)?.hex || 'transparent';
+}
+
+// Column definitions
+type ColumnId = 'label' | 'name' | 'duration' | 'resolution' | 'fps' | 'container' | 'codec' | 'audio' | 'bitrate' | 'size';
+
+const COLUMN_LABELS_MAP: Record<ColumnId, string> = {
+  label: '',
   name: 'Name',
   duration: 'Duration',
   resolution: 'Resolution',
@@ -25,7 +117,7 @@ const COLUMN_LABELS: Record<ColumnId, string> = {
   size: 'Size',
 };
 
-const DEFAULT_COLUMN_ORDER: ColumnId[] = ['name', 'duration', 'resolution', 'fps', 'container', 'codec', 'audio', 'bitrate', 'size'];
+const DEFAULT_COLUMN_ORDER: ColumnId[] = ['label', 'name', 'duration', 'resolution', 'fps', 'container', 'codec', 'audio', 'bitrate', 'size'];
 const STORAGE_KEY = 'media-panel-column-order';
 
 // Load column order from localStorage
@@ -39,12 +131,19 @@ function loadColumnOrder(): ColumnId[] {
           DEFAULT_COLUMN_ORDER.every(col => parsed.includes(col))) {
         return parsed;
       }
-      // If saved order is missing new columns, add them at the end
+      // If saved order is missing new columns, add them
       const missingColumns = DEFAULT_COLUMN_ORDER.filter(col => !parsed.includes(col));
       if (missingColumns.length > 0) {
         // Filter out any invalid columns and add missing ones
         const validColumns = parsed.filter(col => DEFAULT_COLUMN_ORDER.includes(col));
-        return [...validColumns, ...missingColumns];
+        // Ensure 'label' is always first
+        const result = [...validColumns, ...missingColumns];
+        const labelIdx = result.indexOf('label');
+        if (labelIdx > 0) {
+          result.splice(labelIdx, 1);
+          result.unshift('label');
+        }
+        return result;
       }
     }
   } catch {
@@ -58,6 +157,7 @@ export function MediaPanel() {
   const files = useMediaStore(state => state.files);
   const compositions = useMediaStore(state => state.compositions);
   const folders = useMediaStore(state => state.folders);
+  const solidItems = useMediaStore(state => state.solidItems);
   const selectedIds = useMediaStore(state => state.selectedIds);
   const expandedFolderIds = useMediaStore(state => state.expandedFolderIds);
   const fileSystemSupported = useMediaStore(state => state.fileSystemSupported);
@@ -89,6 +189,10 @@ export function MediaPanel() {
     moveToFolder,
     createTextItem,
     getOrCreateTextFolder,
+    createSolidItem,
+    getOrCreateSolidFolder,
+    updateSolidItem,
+    setLabelColor,
   } = useMediaStore.getState();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -97,10 +201,13 @@ export function MediaPanel() {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; itemId?: string } | null>(null);
   const { menuRef: contextMenuRef, adjustedPosition: contextMenuPosition } = useContextMenuPosition(contextMenu);
   const [settingsDialog, setSettingsDialog] = useState<{ compositionId: string; width: number; height: number; frameRate: number; duration: number } | null>(null);
+  const [solidSettingsDialog, setSolidSettingsDialog] = useState<{ solidItemId: string; width: number; height: number; color: string } | null>(null);
   const [addDropdownOpen, setAddDropdownOpen] = useState(false);
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
   const [internalDragId, setInternalDragId] = useState<string | null>(null);
   const [isExternalDragOver, setIsExternalDragOver] = useState(false);
+  const [labelPickerItemId, setLabelPickerItemId] = useState<string | null>(null);
+  const [labelPickerPos, setLabelPickerPos] = useState<{ x: number; y: number } | null>(null);
 
   // Column order state
   const [columnOrder, setColumnOrder] = useState<ColumnId[]>(loadColumnOrder);
@@ -322,6 +429,13 @@ export function MediaPanel() {
     closeContextMenu();
   }, [createTextItem, getOrCreateTextFolder, closeContextMenu]);
 
+  // New solid item (in Media Panel, can be dragged to timeline)
+  const handleNewSolid = useCallback(() => {
+    const solidFolderId = getOrCreateSolidFolder();
+    createSolidItem(undefined, '#ffffff', solidFolderId);
+    closeContextMenu();
+  }, [createSolidItem, getOrCreateSolidFolder, closeContextMenu]);
+
   // Composition settings
   const openCompositionSettings = useCallback((comp: Composition) => {
     setSettingsDialog({
@@ -392,10 +506,20 @@ export function MediaPanel() {
       return;
     }
 
+    // Handle solid item drag
+    if (item.type === 'solid') {
+      e.dataTransfer.setData('application/x-solid-item-id', item.id);
+      e.dataTransfer.effectAllowed = 'copyMove';
+      if (e.currentTarget instanceof HTMLElement) {
+        e.dataTransfer.setDragImage(e.currentTarget, 10, 10);
+      }
+      return;
+    }
+
     // Handle media file drag
     const mediaFile = item as MediaFile;
-    if (!mediaFile.file) {
-      // File not available - only allow internal move
+    if (!mediaFile.file || mediaFile.isImporting) {
+      // File not available or still importing - only allow internal move
       e.dataTransfer.effectAllowed = 'move';
       if (e.currentTarget instanceof HTMLElement) {
         e.dataTransfer.setDragImage(e.currentTarget, 10, 10);
@@ -611,23 +735,52 @@ export function MediaPanel() {
     mediaFile: MediaFile | null
   ) => {
     switch (colId) {
+      case 'label': {
+        const labelColor = 'labelColor' in item ? (item as MediaFile).labelColor : undefined;
+        const hex = getLabelHex(labelColor);
+        return (
+          <div
+            className="media-col media-col-label"
+            onClick={(e) => {
+              e.stopPropagation();
+              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+              setLabelPickerItemId(item.id);
+              setLabelPickerPos({ x: rect.left, y: rect.bottom + 2 });
+            }}
+          >
+            <span
+              className="media-label-dot"
+              style={{
+                background: hex === 'transparent' ? 'var(--border-color)' : hex,
+                opacity: hex === 'transparent' ? 0.4 : 1,
+              }}
+            />
+          </div>
+        );
+      }
       case 'name':
         return (
           <div
             className="media-col media-col-name"
-            style={{ paddingLeft: `${12 + depth * 16}px`, width: nameColumnWidth, minWidth: nameColumnWidth, maxWidth: nameColumnWidth }}
+            style={{ paddingLeft: `${4 + depth * 16}px`, width: nameColumnWidth, minWidth: nameColumnWidth, maxWidth: nameColumnWidth }}
           >
-            <span className="media-item-icon">
-              {isFolder ? (isExpanded ? '📂' : '📁') :
-               'type' in item && item.type === 'composition' ? '🎬' :
-               'type' in item && item.type === 'video' ? '🎥' :
-               'type' in item && item.type === 'audio' ? '🔊' :
-               'type' in item && item.type === 'image' ? '🖼️' :
-               'type' in item && item.type === 'text' ? 'T' : '📄'}
-            </span>
-            {'thumbnailUrl' in item && item.thumbnailUrl && (
-              <img src={item.thumbnailUrl} alt="" className="media-item-thumbnail" draggable={false} />
+            {isFolder && (
+              <span
+                className={`media-folder-arrow ${isExpanded ? 'expanded' : ''}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleFolderExpanded(item.id);
+                }}
+              >
+                ▶
+              </span>
             )}
+            <span className="media-item-icon">
+              {isFolder
+                ? <span className="media-folder-icon">&#128193;</span>
+                : <FileTypeIcon type={'type' in item ? item.type : undefined} />
+              }
+            </span>
             {isRenaming ? (
               <input
                 type="text"
@@ -708,8 +861,9 @@ export function MediaPanel() {
     const isSelected = selectedIds.includes(item.id);
     const isRenaming = renamingId === item.id;
     const isExpanded = isFolder && expandedFolderIds.includes(item.id);
-    const isMediaFile = !isFolder && 'type' in item && item.type !== 'composition' && item.type !== 'text';
+    const isMediaFile = !isFolder && 'type' in item && item.type !== 'composition' && item.type !== 'text' && item.type !== 'solid';
     const hasFile = isMediaFile && 'file' in item && !!(item as MediaFile).file;
+    const isImporting = isMediaFile && !!(item as MediaFile).isImporting;
     const canDrag = true;
     const isDragTarget = isFolder && dragOverFolderId === item.id;
     const isBeingDragged = internalDragId === item.id;
@@ -718,7 +872,7 @@ export function MediaPanel() {
     return (
       <div key={item.id}>
         <div
-          className={`media-item ${isSelected ? 'selected' : ''} ${isFolder ? 'folder' : ''} ${isMediaFile && !hasFile ? 'no-file' : ''} ${isDragTarget ? 'drag-target' : ''} ${isBeingDragged ? 'dragging' : ''}`}
+          className={`media-item ${isSelected ? 'selected' : ''} ${isFolder ? 'folder' : ''} ${isMediaFile && !hasFile ? 'no-file' : ''} ${isImporting ? 'importing' : ''} ${isDragTarget ? 'drag-target' : ''} ${isBeingDragged ? 'dragging' : ''}`}
           draggable={canDrag}
           onDragStart={(e) => handleDragStart(e, item)}
           onDragEnd={handleDragEnd}
@@ -791,25 +945,24 @@ export function MediaPanel() {
             {addDropdownOpen && (
               <div className="add-dropdown-menu">
                 <div className="add-dropdown-item" onClick={() => { handleNewComposition(); setAddDropdownOpen(false); }}>
-                  <span className="add-dropdown-icon">🎬</span>
+                  <span className="add-dropdown-icon"><FileTypeIcon type="composition" /></span>
                   <span>Composition</span>
                 </div>
                 <div className="add-dropdown-item" onClick={() => { handleNewFolder(); setAddDropdownOpen(false); }}>
-                  <span className="add-dropdown-icon">📁</span>
+                  <span className="add-dropdown-icon"><span className="media-folder-icon">&#128193;</span></span>
                   <span>Folder</span>
                 </div>
                 <div className="add-dropdown-separator" />
                 <div className="add-dropdown-item" onClick={() => { handleNewText(); setAddDropdownOpen(false); }}>
-                  <span className="add-dropdown-icon">T</span>
+                  <span className="add-dropdown-icon"><FileTypeIcon type="text" /></span>
                   <span>Text</span>
                 </div>
-                <div className="add-dropdown-item" onClick={() => { /* TODO: Add solid */ setAddDropdownOpen(false); }}>
-                  <span className="add-dropdown-icon">◼</span>
+                <div className="add-dropdown-item" onClick={() => { handleNewSolid(); setAddDropdownOpen(false); }}>
+                  <span className="add-dropdown-icon"><FileTypeIcon type="solid" /></span>
                   <span>Solid</span>
-                  <span className="add-dropdown-hint">Coming soon</span>
                 </div>
                 <div className="add-dropdown-item" onClick={() => { /* TODO: Add adjustment layer */ setAddDropdownOpen(false); }}>
-                  <span className="add-dropdown-icon">◐</span>
+                  <span className="add-dropdown-icon"><FileTypeIcon type="solid" /></span>
                   <span>Adjustment Layer</span>
                   <span className="add-dropdown-hint">Coming soon</span>
                 </div>
@@ -852,14 +1005,14 @@ export function MediaPanel() {
                   key={colId}
                   className={`media-col media-col-${colId} ${draggingColumn === colId ? 'dragging' : ''} ${dragOverColumn === colId ? 'drag-over' : ''}`}
                   style={colId === 'name' ? { width: nameColumnWidth, minWidth: nameColumnWidth, maxWidth: nameColumnWidth } : undefined}
-                  draggable
-                  onDragStart={(e) => handleColumnDragStart(e, colId)}
-                  onDragOver={(e) => handleColumnDragOver(e, colId)}
-                  onDragLeave={handleColumnDragLeave}
-                  onDrop={(e) => handleColumnDrop(e, colId)}
-                  onDragEnd={handleColumnDragEnd}
+                  draggable={colId !== 'label'}
+                  onDragStart={colId !== 'label' ? (e) => handleColumnDragStart(e, colId) : undefined}
+                  onDragOver={colId !== 'label' ? (e) => handleColumnDragOver(e, colId) : undefined}
+                  onDragLeave={colId !== 'label' ? handleColumnDragLeave : undefined}
+                  onDrop={colId !== 'label' ? (e) => handleColumnDrop(e, colId) : undefined}
+                  onDragEnd={colId !== 'label' ? handleColumnDragEnd : undefined}
                 >
-                  {COLUMN_LABELS[colId]}
+                  {COLUMN_LABELS_MAP[colId]}
                   {/* Resize handle after name column */}
                   {colId === 'name' && (
                     <div
@@ -897,12 +1050,15 @@ export function MediaPanel() {
         const selectedItem = contextMenu.itemId
           ? files.find(f => f.id === contextMenu.itemId) ||
             compositions.find(c => c.id === contextMenu.itemId) ||
-            folders.find(f => f.id === contextMenu.itemId)
+            folders.find(f => f.id === contextMenu.itemId) ||
+            solidItems.find(s => s.id === contextMenu.itemId)
           : null;
         const isVideoFile = selectedItem && 'type' in selectedItem && selectedItem.type === 'video';
         const isComposition = selectedItem && 'type' in selectedItem && selectedItem.type === 'composition';
+        const isSolidItem = selectedItem && 'type' in selectedItem && selectedItem.type === 'solid';
         const mediaFile = isVideoFile ? (selectedItem as MediaFile) : null;
         const composition = isComposition ? (selectedItem as Composition) : null;
+        const solidItem = isSolidItem ? (selectedItem as SolidItem) : null;
         const isGenerating = mediaFile?.proxyStatus === 'generating';
         const hasProxy = mediaFile?.proxyStatus === 'ready';
 
@@ -940,6 +1096,21 @@ export function MediaPanel() {
                 {isComposition && composition && (
                   <div className="context-menu-item" onClick={() => openCompositionSettings(composition)}>
                     Composition Settings...
+                  </div>
+                )}
+
+                {/* Solid Settings - only for solid items */}
+                {isSolidItem && solidItem && (
+                  <div className="context-menu-item" onClick={() => {
+                    setSolidSettingsDialog({
+                      solidItemId: solidItem.id,
+                      width: solidItem.width,
+                      height: solidItem.height,
+                      color: solidItem.color,
+                    });
+                    closeContextMenu();
+                  }}>
+                    Solid Settings...
                   </div>
                 )}
 
@@ -1196,6 +1367,177 @@ export function MediaPanel() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Solid Settings Dialog */}
+      {solidSettingsDialog && (
+        <div
+          className="comp-settings-overlay"
+          onClick={() => setSolidSettingsDialog(null)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'transparent',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10001,
+          }}
+        >
+          <div
+            className="comp-settings-dialog"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#1e1e1e',
+              border: '1px solid #3a3a3a',
+              borderRadius: '6px',
+              padding: '20px',
+              minWidth: '340px',
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
+            }}
+          >
+            <h3 style={{ margin: '0 0 16px 0', fontSize: '14px', fontWeight: 500, color: '#e0e0e0' }}>Solid Settings</h3>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              {/* Width */}
+              <div>
+                <label style={{ display: 'block', marginBottom: '4px', fontSize: '11px', color: '#888' }}>Width</label>
+                <input
+                  type="number"
+                  value={solidSettingsDialog.width}
+                  onChange={(e) => setSolidSettingsDialog({
+                    ...solidSettingsDialog,
+                    width: Math.max(1, parseInt(e.target.value) || 1920),
+                  })}
+                  min="1"
+                  max="7680"
+                  style={{ width: '100%', padding: '6px 8px', background: '#2a2a2a', border: '1px solid #3a3a3a', borderRadius: '4px', color: '#fff', fontSize: '13px' }}
+                />
+              </div>
+
+              {/* Height */}
+              <div>
+                <label style={{ display: 'block', marginBottom: '4px', fontSize: '11px', color: '#888' }}>Height</label>
+                <input
+                  type="number"
+                  value={solidSettingsDialog.height}
+                  onChange={(e) => setSolidSettingsDialog({
+                    ...solidSettingsDialog,
+                    height: Math.max(1, parseInt(e.target.value) || 1080),
+                  })}
+                  min="1"
+                  max="4320"
+                  style={{ width: '100%', padding: '6px 8px', background: '#2a2a2a', border: '1px solid #3a3a3a', borderRadius: '4px', color: '#fff', fontSize: '13px' }}
+                />
+              </div>
+
+              {/* Color */}
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={{ display: 'block', marginBottom: '4px', fontSize: '11px', color: '#888' }}>Color</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input
+                    type="color"
+                    value={solidSettingsDialog.color}
+                    onChange={(e) => setSolidSettingsDialog({ ...solidSettingsDialog, color: e.target.value })}
+                    style={{ width: '36px', height: '28px', padding: '0', border: '1px solid #3a3a3a', borderRadius: '4px', cursor: 'pointer', background: 'transparent' }}
+                  />
+                  <span style={{ fontSize: '12px', color: '#ccc', fontFamily: 'monospace' }}>
+                    {solidSettingsDialog.color}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Resolution Presets */}
+            <div style={{ marginTop: '12px' }}>
+              <label style={{ display: 'block', marginBottom: '4px', fontSize: '11px', color: '#888' }}>Presets</label>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                {[
+                  { label: '1080p', w: 1920, h: 1080 },
+                  { label: '4K', w: 3840, h: 2160 },
+                  { label: '720p', w: 1280, h: 720 },
+                  { label: '9:16', w: 1080, h: 1920 },
+                  { label: '1:1', w: 1080, h: 1080 },
+                ].map((preset) => (
+                  <button
+                    key={preset.label}
+                    onClick={() => setSolidSettingsDialog({ ...solidSettingsDialog, width: preset.w, height: preset.h })}
+                    style={{
+                      padding: '4px 8px',
+                      fontSize: '11px',
+                      background: solidSettingsDialog.width === preset.w && solidSettingsDialog.height === preset.h ? '#4a90e2' : '#2a2a2a',
+                      border: '1px solid #3a3a3a',
+                      borderRadius: '3px',
+                      color: '#fff',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Buttons */}
+            <div style={{ display: 'flex', gap: '8px', marginTop: '16px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setSolidSettingsDialog(null)}
+                style={{ padding: '6px 16px', background: '#2a2a2a', border: '1px solid #3a3a3a', borderRadius: '4px', color: '#fff', cursor: 'pointer', fontSize: '12px' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (solidSettingsDialog) {
+                    updateSolidItem(solidSettingsDialog.solidItemId, {
+                      color: solidSettingsDialog.color,
+                      width: solidSettingsDialog.width,
+                      height: solidSettingsDialog.height,
+                    });
+                    setSolidSettingsDialog(null);
+                  }
+                }}
+                style={{ padding: '6px 16px', background: '#4a90e2', border: 'none', borderRadius: '4px', color: '#fff', cursor: 'pointer', fontSize: '12px' }}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Label Color Picker */}
+      {labelPickerItemId && labelPickerPos && (
+        <>
+          <div
+            className="label-picker-backdrop"
+            onClick={() => { setLabelPickerItemId(null); setLabelPickerPos(null); }}
+          />
+          <div
+            className="label-picker-popup"
+            style={{ position: 'fixed', left: labelPickerPos.x, top: labelPickerPos.y, zIndex: 10002 }}
+          >
+            {LABEL_COLORS.map(c => (
+              <span
+                key={c.key}
+                className={`label-picker-swatch ${c.key === 'none' ? 'none' : ''}`}
+                title={c.name}
+                style={{ background: c.key === 'none' ? 'var(--bg-tertiary)' : c.hex }}
+                onClick={() => {
+                  const ids = selectedIds.includes(labelPickerItemId) ? selectedIds : [labelPickerItemId];
+                  setLabelColor(ids, c.key);
+                  setLabelPickerItemId(null);
+                  setLabelPickerPos(null);
+                }}
+              >
+                {c.key === 'none' && <span className="label-picker-x">&times;</span>}
+              </span>
+            ))}
+          </div>
+        </>
       )}
 
       {/* Relink Dialog */}

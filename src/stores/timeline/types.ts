@@ -62,6 +62,7 @@ export interface TimelineState {
   isPlaying: boolean;
   isDraggingPlayhead: boolean;
   selectedClipIds: Set<string>;
+  primarySelectedClipId: string | null; // The clip the user actually clicked (for Properties panel)
 
   // Render layers (populated by useLayerSync from timeline clips, used by engine)
   layers: Layer[];
@@ -171,6 +172,9 @@ export interface ClipActions {
   // Text clip actions
   addTextClip: (trackId: string, startTime: number, duration?: number, skipMediaItem?: boolean) => Promise<string | null>;
   updateTextProperties: (clipId: string, props: Partial<TextClipProperties>) => void;
+  // Solid clip actions
+  addSolidClip: (trackId: string, startTime: number, color?: string, duration?: number, skipMediaItem?: boolean) => string | null;
+  updateSolidColor: (clipId: string, color: string) => void;
   // YouTube pending download clips
   addPendingDownloadClip: (trackId: string, startTime: number, videoId: string, title: string, thumbnail: string, estimatedDuration?: number) => string;
   updateDownloadProgress: (clipId: string, progress: number) => void;
@@ -237,7 +241,7 @@ export interface ExportActions {
 // Selection actions interface
 export interface SelectionActions {
   // Clip selection (multi-select support)
-  selectClip: (id: string | null, addToSelection?: boolean) => void;
+  selectClip: (id: string | null, addToSelection?: boolean, setPrimaryOnly?: boolean) => void;
   selectClips: (ids: string[]) => void;
   addClipToSelection: (id: string) => void;
   removeClipFromSelection: (id: string) => void;
@@ -312,7 +316,7 @@ export interface ClipboardClipData {
   duration: number;
   inPoint: number;
   outPoint: number;
-  sourceType: 'video' | 'audio' | 'image' | 'text';
+  sourceType: 'video' | 'audio' | 'image' | 'text' | 'solid';
   naturalDuration?: number;
   transform: ClipTransform;
   effects: Effect[];
@@ -323,6 +327,7 @@ export interface ClipboardClipData {
   speed?: number;
   preservesPitch?: boolean;
   textProperties?: import('../../types').TextClipProperties;
+  solidColor?: string;
   // Visual data (thumbnails, waveforms)
   thumbnails?: string[];
   waveform?: number[];

@@ -1,6 +1,7 @@
 // File type detection utilities for timeline drag & drop
 
 import { DURATION_CHECK_TIMEOUT } from '../constants';
+import { getMP4MetadataFast, estimateDurationFromFileSize } from '../../../stores/timeline/helpers/mp4MetadataHelper';
 
 const VIDEO_EXTENSIONS = [
   'mov', 'mp4', 'm4v', 'mxf', 'avi', 'mkv', 'webm',  // Common
@@ -63,8 +64,10 @@ export interface VideoMetadata {
 }
 
 /**
- * Quick metadata check for dragged video files
- * Returns duration and whether the video has audio tracks
+ * Quick metadata check for dragged video files.
+ * Tries HTMLVideoElement first (fast for web-optimized files),
+ * then falls back to MP4Box container parsing (handles camera MOV files
+ * with moov atom at end of file), then estimates from file size.
  */
 export async function getVideoMetadataQuick(
   file: File,
@@ -72,7 +75,40 @@ export async function getVideoMetadataQuick(
 ): Promise<VideoMetadata | null> {
   if (!isVideoFile(file)) return null;
 
-  // Get duration from video element
+  // Try video element first (fast path for web-optimized files)
+  const videoResult = await getVideoElementMetadata(file, timeoutMs);
+  if (videoResult?.duration) {
+    return {
+      duration: videoResult.duration,
+      hasAudio: videoResult.hasAudio,
+    };
+  }
+
+  // Video element failed (timeout or error) - try MP4Box
+  // This handles camera MOV files where moov is at end of file
+  const mp4Meta = await getMP4MetadataFast(file, 5000);
+  if (mp4Meta?.duration) {
+    return {
+      duration: mp4Meta.duration,
+      hasAudio: mp4Meta.hasAudio,
+    };
+  }
+
+  // Last resort: estimate from file size (better than nothing)
+  const estimated = estimateDurationFromFileSize(file);
+  return {
+    duration: estimated,
+    hasAudio: true, // Assume audio exists
+  };
+}
+
+/**
+ * Try to get metadata from HTMLVideoElement with timeout.
+ */
+async function getVideoElementMetadata(
+  file: File,
+  timeoutMs: number
+): Promise<{ duration: number | null; hasAudio: boolean } | null> {
   const durationResult = await new Promise<{ duration: number | null; blobUrl: string } | null>((resolve) => {
     const video = document.createElement('video');
     video.preload = 'metadata';
@@ -94,7 +130,7 @@ export async function getVideoMetadataQuick(
       cleanup();
       resolve({
         duration: isFinite(dur) ? dur : null,
-        blobUrl, // Keep blob URL for audio check
+        blobUrl,
       });
     };
 
@@ -110,7 +146,7 @@ export async function getVideoMetadataQuick(
 
   if (!durationResult) return null;
 
-  // Check for audio using Web Audio API (quick check with small sample)
+  // Quick audio check
   const hasAudio = await checkHasAudioQuick(file);
 
   URL.revokeObjectURL(durationResult.blobUrl);

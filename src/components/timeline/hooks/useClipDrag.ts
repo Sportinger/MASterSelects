@@ -22,7 +22,7 @@ interface UseClipDragProps {
   snappingEnabled: boolean;
 
   // Actions
-  selectClip: (clipId: string | null, addToSelection?: boolean) => void;
+  selectClip: (clipId: string | null, addToSelection?: boolean, setPrimaryOnly?: boolean) => void;
   moveClip: (clipId: string, newStartTime: number, trackId: string, skipLinked?: boolean, skipGroup?: boolean, skipTrim?: boolean, excludeClipIds?: string[]) => void;
   openCompositionTab: (compositionId: string) => void;
 
@@ -86,10 +86,12 @@ export function useClipDrag({
       // Use ref for current selection to avoid stale closure
       const currentSelectedIds = selectedClipIdsRef.current;
 
-      // If clip is not selected, select only this clip
-      // If clip is already selected (part of multi-selection), keep selection
+      // If clip is not selected, select it (+ linked clip)
+      // If already selected, keep selection but update primary for Properties panel
       if (!currentSelectedIds.has(clipId)) {
         selectClip(clipId);
+      } else {
+        selectClip(clipId, false, true); // setPrimaryOnly: keep existing selection, just update primary
       }
 
       // Capture other selected clip IDs for multi-select drag (re-read after potential selection change)

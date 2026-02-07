@@ -106,9 +106,11 @@ interface PrecisionSliderProps {
   value: number;
   onChange: (value: number) => void;
   defaultValue?: number;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
 }
 
-export function PrecisionSlider({ min, max, step, value, onChange, defaultValue }: PrecisionSliderProps) {
+export function PrecisionSlider({ min, max, step, value, onChange, defaultValue, onDragStart, onDragEnd }: PrecisionSliderProps) {
   const sliderRef = useRef<HTMLDivElement>(null);
   const accumulatedDelta = useRef(0);
   const startValue = useRef(0);
@@ -118,6 +120,7 @@ export function PrecisionSlider({ min, max, step, value, onChange, defaultValue 
     e.preventDefault();
     accumulatedDelta.current = 0;
     startValue.current = value;
+    onDragStart?.();
 
     const element = sliderRef.current;
     if (element) element.requestPointerLock();
@@ -142,11 +145,12 @@ export function PrecisionSlider({ min, max, step, value, onChange, defaultValue 
       document.exitPointerLock();
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
+      onDragEnd?.();
     };
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-  }, [value, min, max, step, onChange]);
+  }, [value, min, max, step, onChange, onDragStart, onDragEnd]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -181,9 +185,11 @@ interface DraggableNumberProps {
   suffix?: string;
   min?: number;
   max?: number;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
 }
 
-export function DraggableNumber({ value, onChange, defaultValue, sensitivity = 2, decimals = 2, suffix = '', min, max }: DraggableNumberProps) {
+export function DraggableNumber({ value, onChange, defaultValue, sensitivity = 2, decimals = 2, suffix = '', min, max, onDragStart, onDragEnd }: DraggableNumberProps) {
   const inputRef = useRef<HTMLSpanElement>(null);
   const accumulatedDelta = useRef(0);
   const startValue = useRef(0);
@@ -193,6 +199,7 @@ export function DraggableNumber({ value, onChange, defaultValue, sensitivity = 2
     e.preventDefault();
     accumulatedDelta.current = 0;
     startValue.current = value;
+    onDragStart?.();
 
     const element = inputRef.current;
     if (element) element.requestPointerLock();
@@ -216,11 +223,12 @@ export function DraggableNumber({ value, onChange, defaultValue, sensitivity = 2
       document.exitPointerLock();
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
+      onDragEnd?.();
     };
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-  }, [value, sensitivity, decimals, onChange, min, max]);
+  }, [value, sensitivity, decimals, onChange, min, max, onDragStart, onDragEnd]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();

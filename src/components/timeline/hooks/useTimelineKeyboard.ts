@@ -216,13 +216,12 @@ export function useTimelineKeyboard({
         return;
       }
 
-      // Shift + "+": Cycle through blend modes (forward)
-      // Shift + "-": Cycle through blend modes (backward)
-      // Supports: numpad +/-, Shift+=/- on main keyboard
+      // +/-: Cycle through blend modes (forward/backward)
+      // Supports: numpad +/-, direct + key (e.g. German layout), Shift+=/- on US keyboard
       const isNumpadPlus = e.code === 'NumpadAdd';
       const isNumpadMinus = e.code === 'NumpadSubtract';
-      const isMainPlus = e.shiftKey && (e.key === '+' || e.key === '=');
-      const isMainMinus = e.shiftKey && (e.key === '-' || e.key === '_' || e.code === 'Minus');
+      const isMainPlus = e.key === '+' || (e.shiftKey && e.key === '=');
+      const isMainMinus = e.key === '-' || (e.shiftKey && (e.key === '_' || e.code === 'Minus'));
       const isPlus = isNumpadPlus || isMainPlus;
       const isMinus = isNumpadMinus || isMainMinus;
 

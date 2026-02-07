@@ -83,8 +83,8 @@ export class LayerCollector {
       return null;
     }
 
-    // Text sources - skip video/image checks
-    if (sourceType === 'text') {
+    // Text/Solid sources - skip video/image checks
+    if (sourceType === 'text' || sourceType === 'solid') {
       if (source.textCanvas) {
         return this.tryTextCanvas(layer, source.textCanvas, deps);
       }

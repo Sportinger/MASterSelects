@@ -1,6 +1,6 @@
 // Project persistence slice - save, load, init
 
-import type { Composition, MediaFile, MediaFolder, MediaSliceCreator, ProxyStatus } from '../types';
+import type { Composition, MediaFile, MediaFolder, TextItem, SolidItem, MediaSliceCreator, ProxyStatus } from '../types';
 import { PROXY_FPS, DEFAULT_COMPOSITION } from '../constants';
 import { generateId } from '../helpers/importPipeline';
 import { projectDB, type StoredProject } from '../../../services/projectDB';
@@ -89,11 +89,13 @@ export const createProjectSlice: MediaSliceCreator<ProjectActions> = (set, get) 
             }
           }
 
-          // Check for existing proxy by hash
+          // Check for existing proxy by hash (fallback to mediaId for older projects)
           let proxyStatus: ProxyStatus = 'none';
           let proxyFrameCount: number | undefined;
-          if (stored.type === 'video' && stored.fileHash && projectFileService.isProjectOpen()) {
-            const frameCount = await projectFileService.getProxyFrameCount(stored.fileHash);
+          if (stored.type === 'video' && projectFileService.isProjectOpen()) {
+            // Try fileHash first, then fall back to mediaId (for backwards compatibility)
+            const storageKey = stored.fileHash || mediaFile.id;
+            const frameCount = await projectFileService.getProxyFrameCount(storageKey);
             if (frameCount > 0) {
               proxyStatus = 'ready';
               proxyFrameCount = frameCount;
@@ -122,7 +124,24 @@ export const createProjectSlice: MediaSliceCreator<ProjectActions> = (set, get) 
         })
       );
 
-      set({ files: updatedFiles, isLoading: false });
+      // Restore textItems and solidItems from localStorage
+      let restoredTextItems: TextItem[] = [];
+      let restoredSolidItems: SolidItem[] = [];
+      try {
+        const storedText = localStorage.getItem('ms-textItems');
+        if (storedText) restoredTextItems = JSON.parse(storedText);
+      } catch { /* ignore parse errors */ }
+      try {
+        const storedSolid = localStorage.getItem('ms-solidItems');
+        if (storedSolid) restoredSolidItems = JSON.parse(storedSolid);
+      } catch { /* ignore parse errors */ }
+
+      set({
+        files: updatedFiles,
+        isLoading: false,
+        ...(restoredTextItems.length > 0 && { textItems: restoredTextItems }),
+        ...(restoredSolidItems.length > 0 && { solidItems: restoredSolidItems }),
+      });
       log.info(`Restored ${storedFiles.length} files from IndexedDB`);
     } catch (e) {
       log.error('Failed to init from IndexedDB:', e);
@@ -158,6 +177,8 @@ export const createProjectSlice: MediaSliceCreator<ProjectActions> = (set, get) 
         openCompositionIds: state.openCompositionIds,
         expandedFolderIds: state.expandedFolderIds,
         mediaFileIds: state.files.map((f) => f.id),
+        textItems: state.textItems,
+        solidItems: state.solidItems,
       },
     };
 
@@ -221,6 +242,8 @@ export const createProjectSlice: MediaSliceCreator<ProjectActions> = (set, get) 
         files,
         compositions: project.data.compositions as Composition[],
         folders: project.data.folders as MediaFolder[],
+        textItems: (project.data.textItems as TextItem[]) || [],
+        solidItems: (project.data.solidItems as SolidItem[]) || [],
         activeCompositionId: null,
         openCompositionIds: (project.data.openCompositionIds as string[]) || [],
         expandedFolderIds: project.data.expandedFolderIds,
@@ -274,6 +297,8 @@ export const createProjectSlice: MediaSliceCreator<ProjectActions> = (set, get) 
       files: [],
       compositions: [newComposition],
       folders: [],
+      textItems: [],
+      solidItems: [],
       activeCompositionId: newCompId,
       openCompositionIds: [newCompId],
       selectedIds: [],
@@ -284,6 +309,10 @@ export const createProjectSlice: MediaSliceCreator<ProjectActions> = (set, get) 
       proxyGenerationQueue: [],
       currentlyGeneratingProxyId: null,
     });
+
+    // Clear persisted items
+    localStorage.removeItem('ms-textItems');
+    localStorage.removeItem('ms-solidItems');
 
     // Load empty timeline
     timelineStore.loadState(undefined);

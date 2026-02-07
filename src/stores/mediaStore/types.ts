@@ -3,10 +3,13 @@
 import type { CompositionTimelineData } from '../../types';
 
 // Media item types
-export type MediaType = 'video' | 'audio' | 'image' | 'composition' | 'text';
+export type MediaType = 'video' | 'audio' | 'image' | 'composition' | 'text' | 'solid';
 
 // Proxy status for video files
 export type ProxyStatus = 'none' | 'generating' | 'ready' | 'error';
+
+// Label colors (AE-style)
+export type LabelColor = 'none' | 'red' | 'yellow' | 'blue' | 'green' | 'purple' | 'orange' | 'pink' | 'cyan' | 'brown' | 'lavender' | 'peach' | 'seafoam' | 'fuchsia' | 'tan' | 'aqua';
 
 // Base media item
 export interface MediaItem {
@@ -15,6 +18,7 @@ export interface MediaItem {
   type: MediaType;
   parentId: string | null;
   createdAt: number;
+  labelColor?: LabelColor;
 }
 
 // Imported file
@@ -40,11 +44,14 @@ export interface MediaFile extends MediaItem {
   proxyFrameCount?: number;
   proxyFps?: number;
   hasProxyAudio?: boolean;
+  proxyVideoUrl?: string;
   // File System Access API
   hasFileHandle?: boolean;
   filePath?: string;
   absolutePath?: string;
   projectPath?: string;
+  // Import loading state
+  isImporting?: boolean;
 }
 
 // Text item (for Media Panel - can be dragged to timeline)
@@ -54,6 +61,15 @@ export interface TextItem extends MediaItem {
   fontFamily: string;
   fontSize: number;
   color: string;
+  duration: number; // Default duration when added to timeline
+}
+
+// Solid color item (for Media Panel - can be dragged to timeline)
+export interface SolidItem extends MediaItem {
+  type: 'solid';
+  color: string;
+  width: number;
+  height: number;
   duration: number; // Default duration when added to timeline
 }
 
@@ -75,10 +91,11 @@ export interface MediaFolder {
   parentId: string | null;
   isExpanded: boolean;
   createdAt: number;
+  labelColor?: LabelColor;
 }
 
 // Union type for all items
-export type ProjectItem = MediaFile | Composition | MediaFolder | TextItem;
+export type ProjectItem = MediaFile | Composition | MediaFolder | TextItem | SolidItem;
 
 // Slice creator type for mediaStore
 export type MediaSliceCreator<T> = (
@@ -93,6 +110,7 @@ export interface MediaState {
   compositions: Composition[];
   folders: MediaFolder[];
   textItems: TextItem[];
+  solidItems: SolidItem[];
 
   // Active composition
   activeCompositionId: string | null;

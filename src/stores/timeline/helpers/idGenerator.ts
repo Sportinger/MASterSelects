@@ -50,6 +50,13 @@ export function generateTextClipId(): string {
 }
 
 /**
+ * Generate a unique ID for solid clips.
+ */
+export function generateSolidClipId(): string {
+  return generateClipId('clip-solid');
+}
+
+/**
  * Generate a unique ID for composition clips.
  */
 export function generateCompClipId(): string {

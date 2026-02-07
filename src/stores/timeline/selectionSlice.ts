@@ -4,8 +4,14 @@ import type { SelectionActions, SliceCreator, Keyframe } from './types';
 
 export const createSelectionSlice: SliceCreator<SelectionActions> = (set, get) => ({
   // Clip selection (multi-select support)
-  selectClip: (id, addToSelection = false) => {
+  selectClip: (id, addToSelection = false, setPrimaryOnly = false) => {
     const { selectedClipIds, expandedCurveProperties, clips } = get();
+
+    // setPrimaryOnly: just update which clip is "focused" for Properties panel
+    if (setPrimaryOnly && id !== null) {
+      set({ primarySelectedClipId: id });
+      return;
+    }
 
     // Check if a specific clip has a curve editor open on its track
     const clipHasCurveEditorOpen = (clipId: string) => {
@@ -32,11 +38,12 @@ export const createSelectionSlice: SliceCreator<SelectionActions> = (set, get) =
     if (id === null) {
       // Don't clear selection if curve editor is open
       if (hasAnyCurveEditorOpen()) return;
-      set({ selectedClipIds: new Set() });
+      set({ selectedClipIds: new Set(), primarySelectedClipId: null });
       return;
     }
 
     if (addToSelection) {
+      // Shift+click: toggle only the clicked clip (independent selection)
       const newSet = new Set(selectedClipIds);
       if (newSet.has(id)) {
         // Trying to toggle off - prevent if this clip has curve editor open
@@ -45,14 +52,17 @@ export const createSelectionSlice: SliceCreator<SelectionActions> = (set, get) =
       } else {
         newSet.add(id);
       }
-      set({ selectedClipIds: newSet });
+      set({ selectedClipIds: newSet, primarySelectedClipId: id });
     } else {
-      // Selecting a single clip - would deselect others
+      // Normal click: select clip + its linked clip
       // Prevent if any curve editor is open (unless clicking on already selected clip)
       if (!selectedClipIds.has(id) && hasAnyCurveEditorOpen()) {
         return;
       }
-      set({ selectedClipIds: new Set([id]) });
+      const clip = clips.find(c => c.id === id);
+      const linkedId = clip?.linkedClipId;
+      const newSelection = linkedId ? new Set([id, linkedId]) : new Set([id]);
+      set({ selectedClipIds: newSelection, primarySelectedClipId: id });
     }
   },
 
@@ -80,14 +90,14 @@ export const createSelectionSlice: SliceCreator<SelectionActions> = (set, get) =
       if (wouldDeselect) return;
     }
 
-    set({ selectedClipIds: new Set(ids) });
+    set({ selectedClipIds: new Set(ids), primarySelectedClipId: ids.length > 0 ? ids[0] : null });
   },
 
   addClipToSelection: (id) => {
     const { selectedClipIds } = get();
     const newSet = new Set(selectedClipIds);
     newSet.add(id);
-    set({ selectedClipIds: newSet });
+    set({ selectedClipIds: newSet, primarySelectedClipId: id });
   },
 
   removeClipFromSelection: (id) => {
@@ -121,7 +131,7 @@ export const createSelectionSlice: SliceCreator<SelectionActions> = (set, get) =
       }
     }
 
-    set({ selectedClipIds: new Set() });
+    set({ selectedClipIds: new Set(), primarySelectedClipId: null });
   },
 
   // Keyframe selection

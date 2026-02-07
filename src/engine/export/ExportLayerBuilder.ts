@@ -101,8 +101,8 @@ export function buildLayersAtTime(
         source: { type: 'image', imageElement: clip.source.imageElement },
       });
     }
-    // Handle text clips
-    else if (clip.source?.type === 'text' && clip.source.textCanvas) {
+    // Handle text and solid clips
+    else if ((clip.source?.type === 'text' || clip.source?.type === 'solid') && clip.source.textCanvas) {
       layers.push({
         ...baseLayerProps,
         source: { type: 'text', textCanvas: clip.source.textCanvas },

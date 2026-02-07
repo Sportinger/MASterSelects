@@ -205,8 +205,8 @@ function doSetActiveComposition(
     timelineStore.setClipAnimationPhase('exiting');
 
     // Wait for exit animation, then load new composition
-    setTimeout(() => {
-      finishCompositionSwitch(set, get, newId, savedCompId, syncedPlayhead);
+    setTimeout(async () => {
+      await finishCompositionSwitch(set, get, newId, savedCompId, syncedPlayhead);
     }, 350); // Exit animation duration
   } else {
     // No existing clips or same comp, load immediately
@@ -217,13 +217,13 @@ function doSetActiveComposition(
 /**
  * Complete the composition switch after exit animation
  */
-function finishCompositionSwitch(
+async function finishCompositionSwitch(
   set: (partial: Partial<MediaState> | ((state: MediaState) => Partial<MediaState>)) => void,
   get: () => MediaState,
   newId: string | null,
   savedCompId: string | null,
   syncedPlayhead: number | null
-): void {
+): Promise<void> {
   const timelineStore = useTimelineStore.getState();
 
   // Update active composition
@@ -233,7 +233,7 @@ function finishCompositionSwitch(
   if (newId) {
     const freshCompositions = get().compositions;
     const newComp = freshCompositions.find((c) => c.id === newId);
-    timelineStore.loadState(newComp?.timelineData);
+    await timelineStore.loadState(newComp?.timelineData);
 
     if (syncedPlayhead !== null && syncedPlayhead >= 0) {
       timelineStore.setPlayheadPosition(syncedPlayhead);

@@ -1,7 +1,9 @@
-// Output shader - passes through with alpha for CSS checkerboard background
+// Output shader - renders composited result to canvas
+// When showTransparencyGrid is enabled, renders a checkerboard pattern
+// behind transparent areas (like After Effects transparency grid)
 
 struct OutputUniforms {
-  showTransparencyGrid: u32,  // 1 = preserve alpha for CSS checkerboard, 0 = composite over black
+  showTransparencyGrid: u32,  // 1 = show checkerboard behind transparent areas
   outputWidth: f32,
   outputHeight: f32,
   _padding: f32,
@@ -44,7 +46,26 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 
 @fragment
 fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
-  // Always pass through with alpha intact
-  // Each preview handles its background via CSS (checkerboard or black)
-  return textureSample(inputTexture, texSampler, input.uv);
+  let color = textureSample(inputTexture, texSampler, input.uv);
+
+  if (uniforms.showTransparencyGrid == 1u && color.a < 1.0) {
+    // Generate checkerboard pattern in pixel coordinates
+    let pixelX = input.uv.x * uniforms.outputWidth;
+    let pixelY = input.uv.y * uniforms.outputHeight;
+    let checkerSize = 24.0;
+    let cx = floor(pixelX / checkerSize);
+    let cy = floor(pixelY / checkerSize);
+    let checker = (u32(cx) + u32(cy)) % 2u;
+    let light = 0.25;  // #404040
+    let dark = 0.19;   // #303030
+    let bg = select(dark, light, checker == 0u);
+    let checkerColor = vec3f(bg);
+
+    // Blend composited content over checkerboard using alpha
+    let result = mix(checkerColor, color.rgb, color.a);
+    return vec4f(result, 1.0);
+  }
+
+  // No transparency grid: composite over black
+  return vec4f(color.rgb, 1.0);
 }

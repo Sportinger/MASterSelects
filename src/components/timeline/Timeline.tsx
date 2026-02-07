@@ -96,7 +96,7 @@ export function Timeline() {
 
   // Clip actions
   const {
-    addClip, addCompClip, addTextClip, moveClip, trimClip,
+    addClip, addCompClip, addTextClip, addSolidClip, moveClip, trimClip,
     removeClip, selectClip, unlinkGroup, splitClip, splitClipAtPlayhead,
     toggleClipReverse, updateClipTransform, setClipParent, generateWaveformForClip,
     addClipEffect,
@@ -282,6 +282,7 @@ export function Timeline() {
     addClip,
     addCompClip,
     addTextClip,
+    addSolidClip,
   });
 
   // Transition drop handling for drag-and-drop transitions between clips
@@ -666,7 +667,6 @@ export function Timeline() {
           showTranscriptMarkers={showTranscriptMarkers}
           toolMode={toolMode}
           snappingEnabled={snappingEnabled}
-          playheadPosition={playheadPosition}
           cutHoverInfo={cutHoverInfo}
           onCutHover={handleCutHover}
           onMouseDown={(e) => handleClipMouseDown(e, clip.id)}
@@ -703,7 +703,6 @@ export function Timeline() {
       showTranscriptMarkers,
       toolMode,
       snappingEnabled,
-      playheadPosition,
       cutHoverInfo,
       handleCutHover,
       handleClipMouseDown,

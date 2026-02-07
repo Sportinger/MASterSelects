@@ -20,6 +20,7 @@ import { generateLinkedClipIds } from '../helpers/idGenerator';
 import { blobUrlManager } from '../helpers/blobUrlManager';
 import { updateClipById } from '../helpers/clipStateHelpers';
 import { detectVideoAudio } from '../helpers/audioDetection';
+import { getMP4MetadataFast, estimateDurationFromFileSize } from '../helpers/mp4MetadataHelper';
 import { Logger } from '../../../services/logger';
 
 const log = Logger.create('AddVideoClip');
@@ -170,22 +171,34 @@ export async function loadVideoMedia(params: LoadVideoMediaParams): Promise<void
   }
 
   // Fallback to HTMLVideoElement if not using native decoder
-  let videoHasAudio = true; // Default to true for safety
   if (!nativeDecoder) {
     video = createVideoElement(file);
     // Track the blob URL for cleanup
     blobUrlManager.create(clipId, file, 'video');
-    await waitForVideoMetadata(video);
 
-    naturalDuration = video.duration || 5;
+    // Race: MP4Box container parsing vs HTMLVideoElement metadata
+    // MP4Box reads from both start+end of file to handle camera MOV files
+    // where the moov atom is at the end (not web-optimized)
+    const [mp4Meta, _] = await Promise.all([
+      getMP4MetadataFast(file, 6000),
+      waitForVideoMetadata(video, 8000),
+    ]);
 
-    // Check if video has audio (MP4Box for MP4, VideoElement for others)
-    videoHasAudio = await detectVideoAudio(file);
-    if (!videoHasAudio) {
-      log.debug('Video has no audio tracks', { file: file.name });
+    // Prefer MP4Box duration (works with any codec, reads moov from end)
+    // Fall back to video element, then file size estimate
+    if (mp4Meta?.duration && mp4Meta.duration > 0) {
+      naturalDuration = mp4Meta.duration;
+      log.debug('Using MP4Box duration', { file: file.name, duration: naturalDuration.toFixed(2) });
+    } else if (video.duration && isFinite(video.duration)) {
+      naturalDuration = video.duration;
+      log.debug('Using video element duration', { file: file.name, duration: naturalDuration.toFixed(2) });
+    } else {
+      // Last resort: estimate from file size
+      naturalDuration = estimateDurationFromFileSize(file);
+      log.warn('Duration unknown, estimated from file size', { file: file.name, duration: naturalDuration.toFixed(2), size: file.size });
     }
 
-    // Update clip with actual duration
+    // Set isLoading: false immediately so clip becomes interactive
     updateClip(clipId, {
       duration: naturalDuration,
       outPoint: naturalDuration,
@@ -193,13 +206,56 @@ export async function loadVideoMedia(params: LoadVideoMediaParams): Promise<void
       isLoading: false,
     });
 
-    // If video has no audio, remove the audio clip if one was created
-    if (!videoHasAudio && audioClipId) {
-      log.debug('Removing audio clip for video without audio', { file: file.name });
-      setClips(clips => clips.filter(c => c.id !== audioClipId));
-      blobUrlManager.revokeAll(audioClipId);
-    } else if (audioClipId) {
+    if (audioClipId) {
       updateClip(audioClipId, { duration: naturalDuration, outPoint: naturalDuration });
+    }
+
+    // Audio detection in background (non-blocking)
+    // Use MP4Box result if available, otherwise detect separately
+    if (mp4Meta) {
+      if (!mp4Meta.hasAudio && audioClipId) {
+        log.debug('MP4Box: no audio tracks, removing audio clip', { file: file.name });
+        setClips(clips => clips.filter(c => c.id !== audioClipId));
+        blobUrlManager.revokeAll(audioClipId);
+      }
+    } else {
+      detectVideoAudio(file).then(videoHasAudio => {
+        if (!videoHasAudio) {
+          log.debug('Video has no audio tracks', { file: file.name });
+          if (audioClipId) {
+            log.debug('Removing audio clip for video without audio', { file: file.name });
+            setClips(clips => clips.filter(c => c.id !== audioClipId));
+            blobUrlManager.revokeAll(audioClipId);
+          }
+        }
+      });
+    }
+
+    // If video element eventually loads real metadata, update duration
+    // (covers the file-size-estimate fallback case)
+    if (!video.duration || !isFinite(video.duration)) {
+      video.addEventListener('loadedmetadata', () => {
+        if (video!.duration && isFinite(video!.duration) && video!.duration !== naturalDuration) {
+          const realDuration = video!.duration;
+          log.debug('Late metadata arrived, updating duration', { file: file.name, from: naturalDuration.toFixed(2), to: realDuration.toFixed(2) });
+          setClips(clips => clips.map(c => {
+            if (c.id !== clipId) return c;
+            return {
+              ...c,
+              duration: realDuration,
+              outPoint: realDuration,
+              source: c.source ? { ...c.source, naturalDuration: realDuration } : c.source,
+            };
+          }));
+          // Also update audio clip duration
+          if (audioClipId) {
+            setClips(clips => clips.map(c => {
+              if (c.id !== audioClipId) return c;
+              return { ...c, duration: realDuration, outPoint: realDuration };
+            }));
+          }
+        }
+      }, { once: true });
     }
 
     // Warm up video decoder in background (non-blocking)
@@ -207,17 +263,18 @@ export async function loadVideoMedia(params: LoadVideoMediaParams): Promise<void
       log.debug('Decoder warmed up', { file: file.name });
     });
 
-    // Initialize WebCodecsPlayer for hardware-accelerated decoding
-    const webCodecsPlayer = await initWebCodecsPlayer(video, file.name);
-    if (webCodecsPlayer) {
-      setClips(clips => clips.map(c => {
-        if (c.id !== clipId || !c.source) return c;
-        return {
-          ...c,
-          source: { ...c.source, webCodecsPlayer },
-        };
-      }));
-    }
+    // Initialize WebCodecsPlayer for hardware-accelerated decoding (non-blocking)
+    initWebCodecsPlayer(video, file.name).then(webCodecsPlayer => {
+      if (webCodecsPlayer) {
+        setClips(clips => clips.map(c => {
+          if (c.id !== clipId || !c.source) return c;
+          return {
+            ...c,
+            source: { ...c.source, webCodecsPlayer },
+          };
+        }));
+      }
+    });
   }
 
   // Generate thumbnails in background (non-blocking) - only if enabled and not large file
@@ -229,10 +286,10 @@ export async function loadVideoMedia(params: LoadVideoMediaParams): Promise<void
   }
 
   // Load audio for linked clip (skip for NativeDecoder - browser can't decode ProRes/DNxHD audio)
-  // Also skip if video doesn't have audio
-  if (audioClipId && !nativeDecoder && videoHasAudio) {
-    await loadLinkedAudio(file, audioClipId, naturalDuration, mediaFileId, waveformsEnabled, updateClip, setClips);
-  } else if (audioClipId && nativeDecoder && videoHasAudio) {
+  // For browser path, audio clip is already created and will be removed by background detectVideoAudio if no audio
+  if (audioClipId && !nativeDecoder) {
+    loadLinkedAudio(file, audioClipId, naturalDuration, mediaFileId, waveformsEnabled, updateClip, setClips);
+  } else if (audioClipId && nativeDecoder) {
     log.debug('Skipping audio decoding for NativeDecoder file (audio clip kept)', { file: file.name });
     updateClip(audioClipId, {
       source: { type: 'audio', naturalDuration, mediaFileId },

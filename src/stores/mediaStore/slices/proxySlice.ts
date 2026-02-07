@@ -11,6 +11,14 @@ const log = Logger.create('Proxy');
 // Track active generations for cancellation
 const activeProxyGenerations = new Map<string, { cancelled: boolean }>();
 
+/** Check if a proxy is complete (>= 98% of expected frames) */
+function isProxyComplete(file: MediaFile, frameCountOverride?: number): boolean {
+  const frameCount = frameCountOverride ?? file.proxyFrameCount;
+  if (!frameCount || !file.duration) return false;
+  const expectedFrames = Math.ceil(file.duration * PROXY_FPS);
+  return frameCount >= expectedFrames * 0.98;
+}
+
 export interface ProxyActions {
   proxyEnabled: boolean;
   setProxyEnabled: (enabled: boolean) => void;
@@ -79,9 +87,9 @@ export const createProxySlice: MediaSliceCreator<ProxyActions> = (set, get) => (
       (f) =>
         f.type === 'video' &&
         f.file &&
-        f.proxyStatus !== 'ready' &&
         f.proxyStatus !== 'generating' &&
-        f.id !== currentlyGeneratingProxyId
+        f.id !== currentlyGeneratingProxyId &&
+        (f.proxyStatus !== 'ready' || !isProxyComplete(f))
     );
   },
 
@@ -106,11 +114,11 @@ export const createProxySlice: MediaSliceCreator<ProxyActions> = (set, get) => (
 
     log.info(`Starting generation for ${mediaFile.name}...`);
 
-    // Check if already exists
+    // Check existing frames on disk
     const storageKey = mediaFile.fileHash || mediaFileId;
     const existingCount = await projectFileService.getProxyFrameCount(storageKey);
-    if (existingCount > 0) {
-      log.debug('Already exists:', mediaFile.name);
+    if (existingCount > 0 && isProxyComplete(mediaFile, existingCount)) {
+      log.debug('Already complete:', mediaFile.name);
       set((s) => ({
         files: s.files.map((f) =>
           f.id === mediaFileId
@@ -121,15 +129,26 @@ export const createProxySlice: MediaSliceCreator<ProxyActions> = (set, get) => (
       return;
     }
 
+    // Log resume info if partial proxy exists
+    if (existingCount > 0) {
+      const expectedFrames = Math.ceil((mediaFile.duration || 0) * PROXY_FPS);
+      log.info(`Resuming proxy for ${mediaFile.name}: ${existingCount}/${expectedFrames} frames on disk`);
+    }
+
     // Set up cancellation
     const controller = { cancelled: false };
     activeProxyGenerations.set(mediaFileId, controller);
+
+    // Calculate initial progress for resume
+    const initialProgress = existingCount > 0 && mediaFile.duration
+      ? Math.min(99, Math.round((existingCount / Math.ceil(mediaFile.duration * PROXY_FPS)) * 100))
+      : 0;
 
     // Inline setProxyStatus and updateProxyProgress
     set({ currentlyGeneratingProxyId: mediaFileId });
     set((state) => ({
       files: state.files.map((f) =>
-        f.id === mediaFileId ? { ...f, proxyStatus: 'generating' as ProxyStatus, proxyProgress: 0, proxyFps: PROXY_FPS } : f
+        f.id === mediaFileId ? { ...f, proxyStatus: 'generating' as ProxyStatus, proxyProgress: initialProgress, proxyFps: PROXY_FPS } : f
       ),
     }));
 
@@ -212,13 +231,20 @@ export const createProxySlice: MediaSliceCreator<ProxyActions> = (set, get) => (
       log.info('Cancelled:', mediaFileId);
     }
 
-    const { currentlyGeneratingProxyId } = get();
+    const { currentlyGeneratingProxyId, files } = get();
     if (currentlyGeneratingProxyId === mediaFileId) {
+      const mediaFile = files.find((f) => f.id === mediaFileId);
+      const hasExistingFrames = mediaFile?.proxyFrameCount && mediaFile.proxyFrameCount > 0;
+
       set((state) => ({
         currentlyGeneratingProxyId: null,
         files: state.files.map((f) =>
           f.id === mediaFileId
-            ? { ...f, proxyStatus: 'none' as ProxyStatus, proxyProgress: 0 }
+            ? {
+                ...f,
+                proxyStatus: (hasExistingFrames ? 'ready' : 'none') as ProxyStatus,
+                proxyProgress: hasExistingFrames ? 100 : 0,
+              }
             : f
         ),
       }));
@@ -235,6 +261,9 @@ async function generateVideoProxy(
   const { getProxyGenerator } = await import('../../../services/proxyGenerator');
   const generator = getProxyGenerator();
 
+  // Fetch existing frame indices for resume
+  const existingIndices = await projectFileService.getProxyFrameIndices(storageKey);
+
   const saveFrame = async (frame: { frameIndex: number; blob: Blob }) => {
     await projectFileService.saveProxyFrame(storageKey, frame.frameIndex, frame.blob);
   };
@@ -244,7 +273,8 @@ async function generateVideoProxy(
     mediaFile.id,
     updateProgress,
     () => controller.cancelled,
-    saveFrame
+    saveFrame,
+    existingIndices.size > 0 ? existingIndices : undefined
   );
 }
 

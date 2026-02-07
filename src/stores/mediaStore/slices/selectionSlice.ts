@@ -1,6 +1,6 @@
 // Selection actions
 
-import type { MediaSliceCreator } from '../types';
+import type { MediaSliceCreator, LabelColor } from '../types';
 
 export interface SelectionActions {
   moveToFolder: (itemIds: string[], folderId: string | null) => void;
@@ -8,6 +8,7 @@ export interface SelectionActions {
   addToSelection: (id: string) => void;
   removeFromSelection: (id: string) => void;
   clearSelection: () => void;
+  setLabelColor: (itemIds: string[], color: LabelColor) => void;
 }
 
 export const createSelectionSlice: MediaSliceCreator<SelectionActions> = (set) => ({
@@ -24,6 +25,9 @@ export const createSelectionSlice: MediaSliceCreator<SelectionActions> = (set) =
       ),
       textItems: state.textItems.map((t) =>
         itemIds.includes(t.id) ? { ...t, parentId: folderId } : t
+      ),
+      solidItems: state.solidItems.map((s) =>
+        itemIds.includes(s.id) ? { ...s, parentId: folderId } : s
       ),
     }));
   },
@@ -48,5 +52,25 @@ export const createSelectionSlice: MediaSliceCreator<SelectionActions> = (set) =
 
   clearSelection: () => {
     set({ selectedIds: [] });
+  },
+
+  setLabelColor: (itemIds: string[], color: LabelColor) => {
+    set((state) => ({
+      files: state.files.map((f) =>
+        itemIds.includes(f.id) ? { ...f, labelColor: color } : f
+      ),
+      compositions: state.compositions.map((c) =>
+        itemIds.includes(c.id) ? { ...c, labelColor: color } : c
+      ),
+      folders: state.folders.map((f) =>
+        itemIds.includes(f.id) ? { ...f, labelColor: color } : f
+      ),
+      textItems: state.textItems.map((t) =>
+        itemIds.includes(t.id) ? { ...t, labelColor: color } : t
+      ),
+      solidItems: state.solidItems.map((s) =>
+        itemIds.includes(s.id) ? { ...s, labelColor: color } : s
+      ),
+    }));
   },
 });

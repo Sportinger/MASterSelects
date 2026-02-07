@@ -512,7 +512,6 @@ function TimelineClipComponent({
   showTranscriptMarkers,
   toolMode,
   snappingEnabled,
-  playheadPosition,
   cutHoverInfo,
   onCutHover,
   onMouseDown,
@@ -573,6 +572,9 @@ function TimelineClipComponent({
 
   // Determine if this is a text clip
   const isTextClip = clip.source?.type === 'text';
+
+  // Determine if this is a solid clip
+  const isSolidClip = clip.source?.type === 'solid';
 
   const isGeneratingProxy = proxyStatus === 'generating';
   const hasProxy = proxyStatus === 'ready';
@@ -680,7 +682,7 @@ function TimelineClipComponent({
   }
 
   // Determine clip type class (audio, video, text, or image)
-  const clipTypeClass = isTextClip ? 'text' : isAudioClip ? 'audio' : (clip.source?.type || 'video');
+  const clipTypeClass = isSolidClip ? 'solid' : isTextClip ? 'text' : isAudioClip ? 'audio' : (clip.source?.type || 'video');
 
   // Check if this clip is part of a multi-select drag
   const isInMultiSelectDrag = clipDrag?.multiSelectClipIds?.includes(clip.id) && clipDrag.multiSelectTimeDelta !== undefined;
@@ -715,6 +717,11 @@ function TimelineClipComponent({
 
   // Get parent clip name for tooltip
   const parentClip = clip.parentClipId ? clips.find(c => c.id === clip.parentClipId) : null;
+
+  // Subscribe to playhead position only when cut tool is active (avoids re-renders during playback)
+  const playheadPosition = useTimelineStore((state) =>
+    toolMode === 'cut' ? state.playheadPosition : 0
+  );
 
   // Cut tool snapping helper
   const snapCutTime = (rawTime: number, shouldSnap: boolean): number => {
@@ -797,6 +804,10 @@ function TimelineClipComponent({
         width,
         cursor: toolMode === 'cut' ? 'crosshair' : undefined,
         animationDelay: `${animationDelay}s`,
+        ...(isSolidClip && clip.solidColor ? {
+          background: clip.solidColor,
+          borderColor: clip.solidColor,
+        } : {}),
       }}
       data-clip-id={clip.id}
       onMouseDown={toolMode === 'cut' ? undefined : onMouseDown}
@@ -1001,6 +1012,9 @@ function TimelineClipComponent({
       <div className="clip-content">
         {clip.isLoading && <div className="clip-loading-spinner" />}
         <div className="clip-name-row">
+          {isSolidClip && (
+            <span className="clip-solid-swatch" title="Solid Clip" style={{ background: clip.solidColor || '#fff' }} />
+          )}
           {isTextClip && (
             <span className="clip-text-icon" title="Text Clip">T</span>
           )}

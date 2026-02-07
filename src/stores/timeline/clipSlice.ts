@@ -14,6 +14,19 @@ import { Logger } from '../../services/logger';
 
 const log = Logger.create('ClipSlice');
 
+/** Deep clone properties that must not be shared between split clips */
+function deepCloneClipProps(clip: TimelineClip): Partial<TimelineClip> {
+  return {
+    transform: structuredClone(clip.transform),
+    effects: clip.effects.map(e => structuredClone(e)),
+    ...(clip.masks ? { masks: clip.masks.map(m => structuredClone(m)) } : {}),
+    ...(clip.textProperties ? { textProperties: structuredClone(clip.textProperties) } : {}),
+    ...(clip.transitionIn ? { transitionIn: structuredClone(clip.transitionIn) } : {}),
+    ...(clip.transitionOut ? { transitionOut: structuredClone(clip.transitionOut) } : {}),
+    ...(clip.analysis ? { analysis: structuredClone(clip.analysis) } : {}),
+  };
+}
+
 // Import extracted modules
 import { detectMediaType } from './helpers/mediaTypeHelpers';
 import { loadVideoMedia } from './clip/addVideoClip';
@@ -31,6 +44,7 @@ import {
 import { completeDownload as completeDownloadImpl } from './clip/completeDownload';
 import {
   generateTextClipId,
+  generateSolidClipId,
   generateYouTubeClipId,
   generateEffectId,
   generateLinkedGroupId,
@@ -324,47 +338,51 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
   removeClip: (id) => {
     const { clips, selectedClipIds, updateDuration, invalidateCache } = get();
     const clipToRemove = clips.find(c => c.id === id);
+    if (!clipToRemove) return;
 
-    if (clipToRemove) {
-      // Clean up video resources
-      if (clipToRemove.source?.type === 'video' && clipToRemove.source.videoElement) {
-        const video = clipToRemove.source.videoElement;
+    // Determine whether to also remove the linked clip:
+    // Only remove linked clip if it is also currently selected
+    const linkedId = clipToRemove.linkedClipId;
+    const removeLinked = !!(linkedId && selectedClipIds.has(linkedId));
+    const idsToRemove = new Set([id]);
+    if (removeLinked && linkedId) idsToRemove.add(linkedId);
+
+    // Clean up resources for all clips being removed
+    for (const removeId of idsToRemove) {
+      const clip = clips.find(c => c.id === removeId);
+      if (!clip) continue;
+      if (clip.source?.type === 'video' && clip.source.videoElement) {
+        const video = clip.source.videoElement;
         video.pause();
         video.src = '';
         video.load();
         import('../../engine/WebGPUEngine').then(({ engine }) => engine.cleanupVideo(video));
       }
-      // Clean up audio resources
-      if (clipToRemove.source?.type === 'audio' && clipToRemove.source.audioElement) {
-        const audio = clipToRemove.source.audioElement;
+      if (clip.source?.type === 'audio' && clip.source.audioElement) {
+        const audio = clip.source.audioElement;
         audio.pause();
         audio.src = '';
         audio.load();
       }
-
-      // Revoke blob URLs via manager (handles all URL types for this clip)
-      blobUrlManager.revokeAll(id);
-
-      // Also cleanup linked clip
-      if (clipToRemove.linkedClipId) {
-        const linkedClip = clips.find(c => c.id === clipToRemove.linkedClipId);
-        if (linkedClip?.source?.type === 'audio' && linkedClip.source.audioElement) {
-          const audio = linkedClip.source.audioElement;
-          audio.pause();
-          audio.src = '';
-          audio.load();
-        }
-        // Revoke linked clip's blob URLs
-        blobUrlManager.revokeAll(clipToRemove.linkedClipId);
-      }
+      blobUrlManager.revokeAll(removeId);
     }
 
     const newSelectedIds = new Set(selectedClipIds);
-    newSelectedIds.delete(id);
-    if (clipToRemove?.linkedClipId) newSelectedIds.delete(clipToRemove.linkedClipId);
+    for (const removeId of idsToRemove) newSelectedIds.delete(removeId);
+
+    // Build updated clips: remove the clip(s) and clear linkedClipId on the survivor
+    const updatedClips = clips
+      .filter(c => !idsToRemove.has(c.id))
+      .map(c => {
+        // If a surviving clip was linked to a removed clip, clear the link
+        if (c.linkedClipId && idsToRemove.has(c.linkedClipId)) {
+          return { ...c, linkedClipId: undefined };
+        }
+        return c;
+      });
 
     set({
-      clips: clips.filter(c => c.id !== id && c.id !== clipToRemove?.linkedClipId),
+      clips: updatedClips,
       selectedClipIds: newSelectedIds,
     });
     updateDuration();
@@ -492,20 +510,24 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
 
     const firstClip: TimelineClip = {
       ...clip,
+      ...deepCloneClipProps(clip),
       id: `clip-${timestamp}-${randomSuffix}-a`,
       duration: firstPartDuration,
       outPoint: splitInSource,
       linkedClipId: undefined,
+      transitionOut: undefined,
     };
 
     const secondClip: TimelineClip = {
       ...clip,
+      ...deepCloneClipProps(clip),
       id: `clip-${timestamp}-${randomSuffix}-b`,
       startTime: splitTime,
       duration: secondPartDuration,
       inPoint: splitInSource,
       linkedClipId: undefined,
       source: secondClipSource,
+      transitionIn: undefined,
     };
 
     const newClips: TimelineClip[] = clips.filter(c => c.id !== clipId && c.id !== clip.linkedClipId);
@@ -544,6 +566,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
 
         const linkedFirstClip: TimelineClip = {
           ...linkedClip,
+          ...deepCloneClipProps(linkedClip),
           id: `clip-${timestamp}-${randomSuffix}-linked-a`,
           duration: firstPartDuration,
           outPoint: linkedClip.inPoint + firstPartDuration,
@@ -551,6 +574,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
         };
         const linkedSecondClip: TimelineClip = {
           ...linkedClip,
+          ...deepCloneClipProps(linkedClip),
           id: `clip-${timestamp}-${randomSuffix}-linked-b`,
           startTime: splitTime,
           duration: secondPartDuration,
@@ -746,6 +770,104 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
           log.debug('Direct render after font load failed', e);
         }
       });
+    }
+  },
+
+  // ========== SOLID CLIP ACTIONS ==========
+
+  addSolidClip: (trackId, startTime, color = '#ffffff', duration = 5, skipMediaItem = false) => {
+    const { clips, tracks, updateDuration, invalidateCache } = get();
+    const track = tracks.find(t => t.id === trackId);
+
+    if (!track || track.type !== 'video') {
+      log.warn('Solid clips can only be added to video tracks');
+      return null;
+    }
+
+    const clipId = generateSolidClipId();
+
+    // Use active composition dimensions, fallback to 1920x1080
+    const activeComp = useMediaStore.getState().getActiveComposition();
+    const compWidth = activeComp?.width || 1920;
+    const compHeight = activeComp?.height || 1080;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = compWidth;
+    canvas.height = compHeight;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, compWidth, compHeight);
+
+    const solidClip: TimelineClip = {
+      id: clipId,
+      trackId,
+      name: `Solid ${color}`,
+      file: new File([], 'solid-clip.dat', { type: 'application/octet-stream' }),
+      startTime,
+      duration,
+      inPoint: 0,
+      outPoint: duration,
+      source: { type: 'solid', textCanvas: canvas, naturalDuration: duration },
+      transform: { ...DEFAULT_TRANSFORM },
+      effects: [],
+      solidColor: color,
+      isLoading: false,
+    };
+
+    set({ clips: [...clips, solidClip] });
+    updateDuration();
+    invalidateCache();
+
+    // Also create a media item in the Solids folder (unless dragged from media panel)
+    if (!skipMediaItem) {
+      const mediaStore = useMediaStore.getState();
+      const solidFolderId = mediaStore.getOrCreateSolidFolder();
+      mediaStore.createSolidItem(`Solid ${color}`, color, solidFolderId);
+    }
+
+    log.debug('Created solid clip', { clipId, color });
+    return clipId;
+  },
+
+  updateSolidColor: (clipId, color) => {
+    const { clips, invalidateCache } = get();
+    const clip = clips.find(c => c.id === clipId);
+    if (!clip || clip.source?.type !== 'solid') return;
+
+    // Re-fill the existing canvas with new color
+    const canvas = clip.source.textCanvas;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = color;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+
+      // Re-upload canvas pixels to existing GPU texture
+      const texMgr = engine.getTextureManager();
+      if (texMgr) {
+        texMgr.updateCanvasTexture(canvas);
+      }
+    }
+
+    // Update clip in store
+    set({
+      clips: clips.map(c => c.id !== clipId ? c : {
+        ...c,
+        solidColor: color,
+        name: `Solid ${color}`,
+        source: { ...c.source!, textCanvas: canvas },
+      }),
+    });
+    invalidateCache();
+
+    // Force immediate render for live preview
+    try {
+      layerBuilder.invalidateCache();
+      const layers = layerBuilder.buildLayersFromStore();
+      engine.render(layers);
+    } catch (e) {
+      log.debug('Direct render after solid color update failed', e);
     }
   },
 
