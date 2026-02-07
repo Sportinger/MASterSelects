@@ -15,12 +15,14 @@ import { SavedToast } from './SavedToast';
 import { InfoDialog } from './InfoDialog';
 import { NativeHelperStatus } from './NativeHelperStatus';
 import { projectFileService } from '../../services/projectFileService';
+import { useMediaStore } from '../../stores/mediaStore';
 import {
   createNewProject,
   openExistingProject,
   saveCurrentProject,
   loadProjectToStores,
   setupAutoSync,
+  syncStoresToProject,
 } from '../../services/projectSync';
 import { APP_VERSION } from '../../version';
 
@@ -307,8 +309,16 @@ export function Toolbar() {
     if (!name) return;
 
     setIsLoading(true);
-    const success = await createNewProject(name);
-    if (success) {
+    // Create project folder first (user picks directory via dialog)
+    const folderCreated = await projectFileService.createProject(name);
+    if (folderCreated) {
+      // Reset all stores to clean state
+      useMediaStore.getState().newProject();
+      useMediaStore.getState().setProjectName(name);
+      // Sync clean state to project file and save
+      await syncStoresToProject();
+      await projectFileService.saveProject();
+
       setProjectName(name);
       setIsProjectOpen(true);
       setNeedsPermission(false);
