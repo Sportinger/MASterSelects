@@ -100,6 +100,33 @@ export class ProxyStorageService {
     }
   }
 
+  /**
+   * Get proxy frame indices for a media file
+   * Returns Set of frame indices found on disk
+   */
+  async getProxyFrameIndices(
+    projectHandle: FileSystemDirectoryHandle,
+    mediaId: string
+  ): Promise<Set<number>> {
+    const indices = new Set<number>();
+    try {
+      const proxyFolder = await projectHandle.getDirectoryHandle(PROJECT_FOLDERS.PROXY);
+      const mediaFolder = await proxyFolder.getDirectoryHandle(mediaId);
+
+      for await (const entry of (mediaFolder as any).values()) {
+        if (entry.kind === 'file' && entry.name.endsWith('.webp')) {
+          const match = entry.name.match(/^frame_(\d+)\.webp$/);
+          if (match) {
+            indices.add(parseInt(match[1], 10));
+          }
+        }
+      }
+    } catch {
+      // No proxy folder exists
+    }
+    return indices;
+  }
+
   // ============================================
   // VIDEO PROXY (MP4) OPERATIONS
   // ============================================

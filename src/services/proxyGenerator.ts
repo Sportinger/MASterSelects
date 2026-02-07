@@ -88,16 +88,25 @@ class ProxyGeneratorWebCodecs {
     onProgress: (progress: number) => void,
     checkCancelled: () => boolean,
     saveFrame: (frame: { frameIndex: number; blob: Blob }) => Promise<void>,
+    existingFrameIndices?: Set<number>,
   ): Promise<{ frameCount: number; fps: number } | null> {
     this.onProgress = onProgress;
     this.checkCancelled = checkCancelled;
     this.saveFrame = saveFrame;
     this.isCancelled = false;
-    this.processedFrames = 0;
-    this.savedFrameIndices.clear();
     this.samples = [];
     this.decodedFrames.clear();
     this.canvasPool = [];
+
+    // Pre-populate with existing frames for resume
+    if (existingFrameIndices && existingFrameIndices.size > 0) {
+      this.savedFrameIndices = new Set(existingFrameIndices);
+      this.processedFrames = existingFrameIndices.size;
+      log.info(`Resuming: ${existingFrameIndices.size} frames already on disk`);
+    } else {
+      this.savedFrameIndices.clear();
+      this.processedFrames = 0;
+    }
 
     try {
       if (!('VideoDecoder' in window)) {
@@ -111,6 +120,13 @@ class ProxyGeneratorWebCodecs {
       }
 
       log.info(`Source: ${this.videoTrack!.video.width}x${this.videoTrack!.video.height} → Proxy: ${this.outputWidth}x${this.outputHeight} @ ${PROXY_FPS}fps`);
+
+      // Report initial progress if resuming
+      if (this.processedFrames > 0 && this.totalFrames > 0) {
+        const initialProgress = Math.min(99, Math.round((this.processedFrames / this.totalFrames) * 100));
+        this.onProgress?.(initialProgress);
+        log.info(`Resume progress: ${initialProgress}% (${this.processedFrames}/${this.totalFrames} frames)`);
+      }
 
       // Initialize canvas pool for parallel encoding
       for (let i = 0; i < CANVAS_POOL_SIZE; i++) {
@@ -128,8 +144,10 @@ class ProxyGeneratorWebCodecs {
       } catch (firstError) {
         log.warn('First decode attempt failed, trying without description...');
         this.closeDecodedFrames();
-        this.processedFrames = 0;
-        this.savedFrameIndices.clear();
+        // Reset to existing frames only (preserve disk state for resume)
+        const existingCount = existingFrameIndices?.size ?? 0;
+        this.processedFrames = existingCount;
+        this.savedFrameIndices = existingFrameIndices ? new Set(existingFrameIndices) : new Set();
 
         if (this.codecConfig?.description) {
           const configWithoutDesc: VideoDecoderConfig = {

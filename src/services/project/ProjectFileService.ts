@@ -302,6 +302,12 @@ class ProjectFileService {
     return this.proxyStorageService.getProxyFrameCount(handle, mediaId);
   }
 
+  async getProxyFrameIndices(mediaId: string): Promise<Set<number>> {
+    const handle = this.coreService.getProjectHandle();
+    if (!handle) return new Set();
+    return this.proxyStorageService.getProxyFrameIndices(handle, mediaId);
+  }
+
   async saveProxyVideo(mediaId: string, blob: Blob): Promise<boolean> {
     const handle = this.coreService.getProjectHandle();
     if (!handle) {
