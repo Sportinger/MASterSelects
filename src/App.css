@@ -3811,6 +3811,17 @@ input[type="checkbox"] {
   border-color: #fbbf24 !important;
 }
 
+/* Loading state takes visual priority over proxy states */
+.timeline-clip.loading.has-proxy,
+.timeline-clip.loading.generating-proxy {
+  border-color: #3b82f6 !important;
+}
+
+.timeline-clip.loading .clip-proxy-generating,
+.timeline-clip.loading .clip-proxy-badge {
+  display: none;
+}
+
 /* Reversed clip styles */
 .clip-reversed-badge {
   position: absolute;
