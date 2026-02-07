@@ -252,7 +252,6 @@ export interface TimelineClipProps {
   showTranscriptMarkers: boolean;
   toolMode: 'select' | 'cut';
   snappingEnabled: boolean;
-  playheadPosition: number;
   cutHoverInfo: { clipId: string; time: number } | null;
   onCutHover: (clipId: string | null, time: number | null) => void;
   onMouseDown: (e: React.MouseEvent) => void;

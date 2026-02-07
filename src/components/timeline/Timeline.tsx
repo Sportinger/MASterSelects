@@ -667,7 +667,6 @@ export function Timeline() {
           showTranscriptMarkers={showTranscriptMarkers}
           toolMode={toolMode}
           snappingEnabled={snappingEnabled}
-          playheadPosition={playheadPosition}
           cutHoverInfo={cutHoverInfo}
           onCutHover={handleCutHover}
           onMouseDown={(e) => handleClipMouseDown(e, clip.id)}
@@ -704,7 +703,6 @@ export function Timeline() {
       showTranscriptMarkers,
       toolMode,
       snappingEnabled,
-      playheadPosition,
       cutHoverInfo,
       handleCutHover,
       handleClipMouseDown,

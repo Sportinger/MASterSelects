@@ -512,7 +512,6 @@ function TimelineClipComponent({
   showTranscriptMarkers,
   toolMode,
   snappingEnabled,
-  playheadPosition,
   cutHoverInfo,
   onCutHover,
   onMouseDown,
@@ -718,6 +717,11 @@ function TimelineClipComponent({
 
   // Get parent clip name for tooltip
   const parentClip = clip.parentClipId ? clips.find(c => c.id === clip.parentClipId) : null;
+
+  // Subscribe to playhead position only when cut tool is active (avoids re-renders during playback)
+  const playheadPosition = useTimelineStore((state) =>
+    toolMode === 'cut' ? state.playheadPosition : 0
+  );
 
   // Cut tool snapping helper
   const snapCutTime = (rawTime: number, shouldSnap: boolean): number => {
