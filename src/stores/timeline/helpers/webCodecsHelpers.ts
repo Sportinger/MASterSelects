@@ -121,15 +121,26 @@ export function createAudioElement(file: File): HTMLAudioElement {
 
 /**
  * Wait for video metadata to load.
+ * Includes timeout for large files where moov atom is at end of file (camera MOV/MP4).
  */
-export function waitForVideoMetadata(video: HTMLVideoElement): Promise<void> {
+export function waitForVideoMetadata(video: HTMLVideoElement, timeout = 8000): Promise<void> {
   return new Promise((resolve) => {
     if (video.readyState >= 1) {
       resolve();
       return;
     }
-    video.onloadedmetadata = () => resolve();
-    video.onerror = () => resolve();
+    const timeoutId = setTimeout(() => {
+      log.warn('Video metadata load timeout', { src: video.src?.substring(0, 50) });
+      resolve();
+    }, timeout);
+    video.onloadedmetadata = () => {
+      clearTimeout(timeoutId);
+      resolve();
+    };
+    video.onerror = () => {
+      clearTimeout(timeoutId);
+      resolve();
+    };
   });
 }
 

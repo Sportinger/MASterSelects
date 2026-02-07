@@ -50,6 +50,8 @@ export interface MediaFile extends MediaItem {
   filePath?: string;
   absolutePath?: string;
   projectPath?: string;
+  // Import loading state
+  isImporting?: boolean;
 }
 
 // Text item (for Media Panel - can be dragged to timeline)

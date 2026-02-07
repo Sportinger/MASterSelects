@@ -518,8 +518,8 @@ export function MediaPanel() {
 
     // Handle media file drag
     const mediaFile = item as MediaFile;
-    if (!mediaFile.file) {
-      // File not available - only allow internal move
+    if (!mediaFile.file || mediaFile.isImporting) {
+      // File not available or still importing - only allow internal move
       e.dataTransfer.effectAllowed = 'move';
       if (e.currentTarget instanceof HTMLElement) {
         e.dataTransfer.setDragImage(e.currentTarget, 10, 10);
@@ -863,6 +863,7 @@ export function MediaPanel() {
     const isExpanded = isFolder && expandedFolderIds.includes(item.id);
     const isMediaFile = !isFolder && 'type' in item && item.type !== 'composition' && item.type !== 'text' && item.type !== 'solid';
     const hasFile = isMediaFile && 'file' in item && !!(item as MediaFile).file;
+    const isImporting = isMediaFile && !!(item as MediaFile).isImporting;
     const canDrag = true;
     const isDragTarget = isFolder && dragOverFolderId === item.id;
     const isBeingDragged = internalDragId === item.id;
@@ -871,7 +872,7 @@ export function MediaPanel() {
     return (
       <div key={item.id}>
         <div
-          className={`media-item ${isSelected ? 'selected' : ''} ${isFolder ? 'folder' : ''} ${isMediaFile && !hasFile ? 'no-file' : ''} ${isDragTarget ? 'drag-target' : ''} ${isBeingDragged ? 'dragging' : ''}`}
+          className={`media-item ${isSelected ? 'selected' : ''} ${isFolder ? 'folder' : ''} ${isMediaFile && !hasFile ? 'no-file' : ''} ${isImporting ? 'importing' : ''} ${isDragTarget ? 'drag-target' : ''} ${isBeingDragged ? 'dragging' : ''}`}
           draggable={canDrag}
           onDragStart={(e) => handleDragStart(e, item)}
           onDragEnd={handleDragEnd}

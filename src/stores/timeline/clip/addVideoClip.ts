@@ -170,22 +170,16 @@ export async function loadVideoMedia(params: LoadVideoMediaParams): Promise<void
   }
 
   // Fallback to HTMLVideoElement if not using native decoder
-  let videoHasAudio = true; // Default to true for safety
   if (!nativeDecoder) {
     video = createVideoElement(file);
     // Track the blob URL for cleanup
     blobUrlManager.create(clipId, file, 'video');
     await waitForVideoMetadata(video);
 
-    naturalDuration = video.duration || 5;
+    naturalDuration = (video.duration && isFinite(video.duration)) ? video.duration : 5;
 
-    // Check if video has audio (MP4Box for MP4, VideoElement for others)
-    videoHasAudio = await detectVideoAudio(file);
-    if (!videoHasAudio) {
-      log.debug('Video has no audio tracks', { file: file.name });
-    }
-
-    // Update clip with actual duration
+    // Set isLoading: false immediately so clip becomes interactive
+    // Audio detection runs in background - audio clip defaults to present
     updateClip(clipId, {
       duration: naturalDuration,
       outPoint: naturalDuration,
@@ -193,31 +187,39 @@ export async function loadVideoMedia(params: LoadVideoMediaParams): Promise<void
       isLoading: false,
     });
 
-    // If video has no audio, remove the audio clip if one was created
-    if (!videoHasAudio && audioClipId) {
-      log.debug('Removing audio clip for video without audio', { file: file.name });
-      setClips(clips => clips.filter(c => c.id !== audioClipId));
-      blobUrlManager.revokeAll(audioClipId);
-    } else if (audioClipId) {
+    if (audioClipId) {
       updateClip(audioClipId, { duration: naturalDuration, outPoint: naturalDuration });
     }
+
+    // Audio detection in background (non-blocking) - remove audio clip if no audio found
+    detectVideoAudio(file).then(videoHasAudio => {
+      if (!videoHasAudio) {
+        log.debug('Video has no audio tracks', { file: file.name });
+        if (audioClipId) {
+          log.debug('Removing audio clip for video without audio', { file: file.name });
+          setClips(clips => clips.filter(c => c.id !== audioClipId));
+          blobUrlManager.revokeAll(audioClipId);
+        }
+      }
+    });
 
     // Warm up video decoder in background (non-blocking)
     warmUpVideoDecoder(video).then(() => {
       log.debug('Decoder warmed up', { file: file.name });
     });
 
-    // Initialize WebCodecsPlayer for hardware-accelerated decoding
-    const webCodecsPlayer = await initWebCodecsPlayer(video, file.name);
-    if (webCodecsPlayer) {
-      setClips(clips => clips.map(c => {
-        if (c.id !== clipId || !c.source) return c;
-        return {
-          ...c,
-          source: { ...c.source, webCodecsPlayer },
-        };
-      }));
-    }
+    // Initialize WebCodecsPlayer for hardware-accelerated decoding (non-blocking)
+    initWebCodecsPlayer(video, file.name).then(webCodecsPlayer => {
+      if (webCodecsPlayer) {
+        setClips(clips => clips.map(c => {
+          if (c.id !== clipId || !c.source) return c;
+          return {
+            ...c,
+            source: { ...c.source, webCodecsPlayer },
+          };
+        }));
+      }
+    });
   }
 
   // Generate thumbnails in background (non-blocking) - only if enabled and not large file
@@ -229,10 +231,10 @@ export async function loadVideoMedia(params: LoadVideoMediaParams): Promise<void
   }
 
   // Load audio for linked clip (skip for NativeDecoder - browser can't decode ProRes/DNxHD audio)
-  // Also skip if video doesn't have audio
-  if (audioClipId && !nativeDecoder && videoHasAudio) {
-    await loadLinkedAudio(file, audioClipId, naturalDuration, mediaFileId, waveformsEnabled, updateClip, setClips);
-  } else if (audioClipId && nativeDecoder && videoHasAudio) {
+  // For browser path, audio clip is already created and will be removed by background detectVideoAudio if no audio
+  if (audioClipId && !nativeDecoder) {
+    loadLinkedAudio(file, audioClipId, naturalDuration, mediaFileId, waveformsEnabled, updateClip, setClips);
+  } else if (audioClipId && nativeDecoder) {
     log.debug('Skipping audio decoding for NativeDecoder file (audio clip kept)', { file: file.name });
     updateClip(audioClipId, {
       source: { type: 'audio', naturalDuration, mediaFileId },

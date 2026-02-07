@@ -5647,6 +5647,22 @@ input[type="checkbox"] {
   color: var(--text-secondary);
 }
 
+.media-item.importing {
+  opacity: 0.5;
+}
+
+.media-item.importing .media-col-name::after {
+  content: ' (importing...)';
+  font-size: 10px;
+  color: var(--accent);
+  animation: importPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes importPulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
 .media-folder-arrow {
   font-size: 8px;
   color: var(--text-secondary);
