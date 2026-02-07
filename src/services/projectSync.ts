@@ -941,17 +941,12 @@ async function reloadNestedCompositionClips(): Promise<void> {
  * Create a new project
  */
 export async function createNewProject(name: string): Promise<boolean> {
-  // Sync current state first (in case user wants to save)
-  await syncStoresToProject();
-
-  // Create project on filesystem
+  // Create project folder on filesystem first
   const success = await projectFileService.createProject(name);
   if (!success) return false;
 
-  // Reset stores for new project
-  useMediaStore.getState().newProject();
-
-  // Sync empty state to new project
+  // Now sync current store state into the newly created project
+  // This overwrites the empty initial project data with actual user edits
   await syncStoresToProject();
   await projectFileService.saveProject();
 
