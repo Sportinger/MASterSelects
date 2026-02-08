@@ -80,10 +80,10 @@ fn fs(in: VertexOutput) -> @location(0) vec4f {
   let gCount = f32(accumG[idx]);
   let bCount = f32(accumB[idx]);
 
-  let ref = params.refValue;
-  let rN = clamp(sqrt(rCount) / ref, 0.0, 1.0);
-  let gN = clamp(sqrt(gCount) / ref, 0.0, 1.0);
-  let bN = clamp(sqrt(bCount) / ref, 0.0, 1.0);
+  let rv = params.refValue;
+  let rN = clamp(sqrt(rCount) / rv, 0.0, 1.0);
+  let gN = clamp(sqrt(gCount) / rv, 0.0, 1.0);
+  let bN = clamp(sqrt(bCount) / rv, 0.0, 1.0);
 
   // Boost intensity
   let s = params.intensity;
@@ -317,10 +317,10 @@ fn fs(in: VertexOutput) -> @location(0) vec4f {
     let gVal = f32(accumG[idx]);
     let bVal = f32(accumB[idx]);
     if (rVal > 0.0 || gVal > 0.0 || bVal > 0.0) {
-      let ref = params.refValue;
-      let rN = pow(clamp(sqrt(rVal) / ref, 0.0, 1.0), 0.55);
-      let gN = pow(clamp(sqrt(gVal) / ref, 0.0, 1.0), 0.55);
-      let bN = pow(clamp(sqrt(bVal) / ref, 0.0, 1.0), 0.55);
+      let rv = params.refValue;
+      let rN = pow(clamp(sqrt(rVal) / rv, 0.0, 1.0), 0.55);
+      let gN = pow(clamp(sqrt(gVal) / rv, 0.0, 1.0), 0.55);
+      let bN = pow(clamp(sqrt(bVal) / rv, 0.0, 1.0), 0.55);
       color = max(color, vec3f(rN, gN, bN));
     }
   }
