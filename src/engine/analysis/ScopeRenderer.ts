@@ -29,12 +29,27 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   let g = min(u32(pixel.g * 255.0), 255u);
   let b = min(u32(pixel.b * 255.0), 255u);
 
-  let wx = gid.x * params.outW / params.srcW;
+  // Sub-pixel X: distribute weight across 2 adjacent columns (scale 256)
+  let fxPos = f32(gid.x) * f32(params.outW) / f32(params.srcW);
+  let x0 = u32(fxPos);
+  let x1 = min(x0 + 1u, params.outW - 1u);
+  let frac = fxPos - f32(x0);
+  let w0 = u32((1.0 - frac) * 256.0);
+  let w1 = 256u - w0;
+
   let hm1 = params.outH - 1u;
 
-  atomicAdd(&accumR[(hm1 - r * hm1 / 255u) * params.outW + wx], 1u);
-  atomicAdd(&accumG[(hm1 - g * hm1 / 255u) * params.outW + wx], 1u);
-  atomicAdd(&accumB[(hm1 - b * hm1 / 255u) * params.outW + wx], 1u);
+  let ry = (hm1 - r * hm1 / 255u) * params.outW;
+  atomicAdd(&accumR[ry + x0], w0);
+  atomicAdd(&accumR[ry + x1], w1);
+
+  let gyp = (hm1 - g * hm1 / 255u) * params.outW;
+  atomicAdd(&accumG[gyp + x0], w0);
+  atomicAdd(&accumG[gyp + x1], w1);
+
+  let byp = (hm1 - b * hm1 / 255u) * params.outW;
+  atomicAdd(&accumB[byp + x0], w0);
+  atomicAdd(&accumB[byp + x1], w1);
 }
 `;
 
@@ -103,12 +118,12 @@ fn fs(in: VertexOutput) -> @location(0) vec4f {
   let gN = clamp(sqrt(gCount) / rv, 0.0, 1.0);
   let bN = clamp(sqrt(bCount) / rv, 0.0, 1.0);
 
-  // Gamma + intensity
+  // Conservative gamma — keep dim traces subtle, only dense areas glow
   let s = params.intensity;
   var color = vec3f(
-    pow(rN, 0.55) * s,
-    pow(gN, 0.55) * s,
-    pow(bN, 0.55) * s,
+    pow(rN, 0.75) * s,
+    pow(gN, 0.75) * s,
+    pow(bN, 0.75) * s,
   );
 
   // Grid: every 10 IRE (10% of height)
@@ -450,8 +465,9 @@ export class ScopeRenderer {
     const srcH = sourceTexture.height;
 
     d.queue.writeBuffer(this.wfComputeParams, 0, new Uint32Array([OUT_W, OUT_H, srcW, srcH]));
-    const refValue = Math.sqrt(srcH / OUT_H) * 2.5;
-    d.queue.writeBuffer(this.wfRenderParams, 0, new Float32Array([OUT_W, OUT_H, refValue, 1.1]));
+    // Weights are 256x scaled from sub-pixel distribution → sqrt(256)=16 factor
+    const refValue = Math.sqrt(srcH / OUT_H) * 40.0;
+    d.queue.writeBuffer(this.wfRenderParams, 0, new Float32Array([OUT_W, OUT_H, refValue, 0.9]));
 
     const encoder = d.createCommandEncoder();
 
