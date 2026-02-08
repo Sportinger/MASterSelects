@@ -1,7 +1,7 @@
 // useTimelineZoom - Zoom, scroll, and wheel handling for timeline
 // Extracted from Timeline.tsx for better maintainability
 
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { MIN_ZOOM, MAX_ZOOM } from '../../../stores/timeline/constants';
 
 interface UseTimelineZoomProps {
@@ -43,6 +43,10 @@ export function useTimelineZoom({
   setScrollX,
   setScrollY,
 }: UseTimelineZoomProps): UseTimelineZoomReturn {
+  // Ref to avoid stale closure for scrollY in wheel handler
+  const scrollYRef = useRef(scrollY);
+  scrollYRef.current = scrollY;
+
   // Fit composition to window - calculate zoom to show entire duration
   const handleFitToWindow = useCallback(() => {
     const trackLanes = timelineBodyRef.current?.querySelector('.track-lanes-scroll');
@@ -142,39 +146,28 @@ export function useTimelineZoom({
           const maxScrollX = Math.max(0, duration * zoom - viewportWidth + END_PADDING);
           setScrollX(Math.max(0, Math.min(maxScrollX, scrollX + e.deltaX)));
         }
-        // Handle vertical scroll with track snapping
+        // Handle vertical scroll — snap to track boundaries (1 track per step)
         if (e.deltaY !== 0 && !e.shiftKey && !e.ctrlKey && !e.altKey) {
           e.preventDefault();
           const maxScrollY = Math.max(0, contentHeight - viewportHeight);
+          const currentY = scrollYRef.current;
           if (trackSnapPositions.length > 1) {
-            // Compute raw target, then snap to nearest track boundary
-            const raw = scrollY + e.deltaY;
-            let best = trackSnapPositions[0];
-            let bestDist = Math.abs(raw - best);
-            for (let i = 1; i < trackSnapPositions.length; i++) {
-              const dist = Math.abs(raw - trackSnapPositions[i]);
-              if (dist < bestDist) {
-                best = trackSnapPositions[i];
-                bestDist = dist;
+            // Find current snap index
+            let currentIdx = 0;
+            for (let i = trackSnapPositions.length - 1; i >= 0; i--) {
+              if (trackSnapPositions[i] <= currentY + 1) {
+                currentIdx = i;
+                break;
               }
             }
-            // Ensure we move at least one track in scroll direction
-            if (best === scrollY && e.deltaY !== 0) {
-              let currentIdx = 0;
-              for (let i = trackSnapPositions.length - 1; i >= 0; i--) {
-                if (trackSnapPositions[i] <= scrollY + 1) {
-                  currentIdx = i;
-                  break;
-                }
-              }
-              const nextIdx = e.deltaY > 0
-                ? Math.min(currentIdx + 1, trackSnapPositions.length - 1)
-                : Math.max(currentIdx - 1, 0);
-              best = trackSnapPositions[nextIdx];
-            }
-            setScrollY(Math.max(0, Math.min(maxScrollY, best)));
+            const nextIdx = e.deltaY > 0
+              ? Math.min(currentIdx + 1, trackSnapPositions.length - 1)
+              : Math.max(currentIdx - 1, 0);
+            const newY = Math.max(0, Math.min(maxScrollY, trackSnapPositions[nextIdx]));
+            scrollYRef.current = newY;
+            setScrollY(newY);
           } else {
-            setScrollY(Math.max(0, Math.min(maxScrollY, scrollY + e.deltaY)));
+            setScrollY(Math.max(0, Math.min(maxScrollY, currentY + e.deltaY)));
           }
         }
       }
@@ -182,7 +175,7 @@ export function useTimelineZoom({
 
     el.addEventListener('wheel', handleWheel, { passive: false });
     return () => el.removeEventListener('wheel', handleWheel);
-  }, [timelineBodyRef, zoom, scrollX, scrollY, playheadPosition, duration, contentHeight, viewportHeight, trackSnapPositions, setZoom, setScrollX, setScrollY]);
+  }, [timelineBodyRef, zoom, scrollX, playheadPosition, duration, contentHeight, viewportHeight, trackSnapPositions, setZoom, setScrollX, setScrollY]);
 
   return {
     handleSetZoom,
