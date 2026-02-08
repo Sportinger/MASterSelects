@@ -6633,10 +6633,13 @@ input[type="checkbox"] {
 
 /* Keyframe track row when curve is expanded */
 .keyframe-track-row.flat.curve-expanded {
+  height: auto;
   flex-direction: column;
 }
 
 .keyframe-track-row.flat.curve-expanded .keyframe-track {
+  position: relative;
+  height: 18px;
   flex-shrink: 0;
 }
 
