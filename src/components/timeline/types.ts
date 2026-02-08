@@ -8,6 +8,7 @@ export interface ClipDragState {
   originalStartTime: number;
   originalTrackId: string;
   grabOffsetX: number;      // Where on the clip we grabbed (in pixels)
+  grabY: number;            // Mouse Y relative to track lanes at grab start (for track-change resistance)
   currentX: number;         // Current mouse X position
   currentTrackId: string;
   snappedTime: number | null;  // Snapped position (if snapping)

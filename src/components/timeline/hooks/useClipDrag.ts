@@ -103,12 +103,15 @@ export function useClipDrag({
       const clipElement = e.currentTarget as HTMLElement;
       const clipRect = clipElement.getBoundingClientRect();
       const grabOffsetX = e.clientX - clipRect.left;
+      const lanesRectInit = trackLanesRef.current?.getBoundingClientRect();
+      const grabY = lanesRectInit ? e.clientY - lanesRectInit.top : 0;
 
       const initialDrag: ClipDragState = {
         clipId,
         originalStartTime: clip.startTime,
         originalTrackId: clip.trackId,
         grabOffsetX,
+        grabY,
         currentX: e.clientX,
         currentTrackId: clip.trackId,
         snappedTime: null,
@@ -130,14 +133,17 @@ export function useClipDrag({
         const lanesRect = trackLanesRef.current.getBoundingClientRect();
         const mouseY = moveEvent.clientY - lanesRect.top;
 
-        // Only allow track changes after 300ms of dragging (prevents accidental track switches)
-        const trackChangeAllowed = Date.now() - drag.dragStartTime >= 300;
+        // Track change requires BOTH a time delay (300ms) AND a vertical distance (20px from grab point)
+        const TRACK_CHANGE_DELAY_MS = 300;
+        const TRACK_CHANGE_RESISTANCE_PX = 20;
+        const trackChangeAllowed = Date.now() - drag.dragStartTime >= TRACK_CHANGE_DELAY_MS
+          && Math.abs(mouseY - drag.grabY) >= TRACK_CHANGE_RESISTANCE_PX;
 
         let currentY = 24;
         let newTrackId = drag.currentTrackId; // Keep current track by default
         for (const track of tracks) {
           if (mouseY >= currentY && mouseY < currentY + track.height) {
-            // Only change to a different track if the delay has passed
+            // Only change to a different track if both delay and distance thresholds are met
             if (trackChangeAllowed || track.id === drag.originalTrackId) {
               newTrackId = track.id;
             }
