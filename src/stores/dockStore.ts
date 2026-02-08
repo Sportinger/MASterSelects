@@ -103,14 +103,13 @@ const DEFAULT_LAYOUT: DockLayout = {
                 kind: 'tab-group',
                 id: 'right-group',
                 panels: [
-                  { id: 'multicam', type: 'multicam', title: 'Multi-Cam' },
                   { id: 'export', type: 'export', title: 'Export' },
                   { id: 'clip-properties', type: 'clip-properties', title: 'Properties' },
                   { id: 'scope-waveform', type: 'scope-waveform', title: 'Waveform' },
                   { id: 'scope-histogram', type: 'scope-histogram', title: 'Histogram' },
                   { id: 'scope-vectorscope', type: 'scope-vectorscope', title: 'Vectorscope' },
                 ],
-                activeIndex: 3, // Waveform active
+                activeIndex: 2, // Waveform active
               },
             ],
           },

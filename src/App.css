@@ -222,6 +222,16 @@ input, textarea {
   background: transparent;
 }
 
+.menu-option-wip {
+  opacity: 0.5;
+}
+
+.menu-wip-badge {
+  font-size: 11px;
+  margin-left: auto;
+  filter: saturate(3) brightness(0.9);
+}
+
 .menu-option .shortcut {
   color: var(--text-muted);
   font-size: 11px;
