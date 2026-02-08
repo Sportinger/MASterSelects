@@ -413,7 +413,11 @@ export function Timeline() {
     return false;
   }, [anyAudioSolo]);
 
+  // Subscribe to curveEditorHeight for snap position recalculation
+  const curveEditorHeight = useTimelineStore(s => s.curveEditorHeight);
+
   // Calculate total content height and track snap positions for vertical scrollbar
+  // Dependencies: tracks, expansion state, curve editor state, selected clips (affects property rows)
   const { contentHeight, trackSnapPositions } = useMemo(() => {
     let totalHeight = 0;
     const snapPositions: number[] = [0];
@@ -423,7 +427,8 @@ export function Timeline() {
       snapPositions.push(totalHeight);
     }
     return { contentHeight: totalHeight, trackSnapPositions: snapPositions };
-  }, [tracks, isTrackExpanded, getExpandedTrackHeight]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tracks, isTrackExpanded, getExpandedTrackHeight, expandedCurveProperties, curveEditorHeight, selectedClipIds, clipKeyframes]);
 
   // Track viewport height for scrollbar
   const [viewportHeight, setViewportHeight] = useState(300);
