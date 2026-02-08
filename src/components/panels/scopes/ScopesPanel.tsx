@@ -1,37 +1,37 @@
 import { useState } from 'react';
-import { useScopeAnalysis } from './useScopeAnalysis';
+import { useScopeAnalysis, type ScopeTab } from './useScopeAnalysis';
 import { HistogramScope } from './HistogramScope';
 import { VectorscopeScope } from './VectorscopeScope';
+import { WaveformScope } from './WaveformScope';
 import './ScopesPanel.css';
 
-type ScopeTab = 'histogram' | 'vectorscope';
+const TABS: { id: ScopeTab; label: string }[] = [
+  { id: 'histogram', label: 'Histogram' },
+  { id: 'vectorscope', label: 'Vectorscope' },
+  { id: 'waveform', label: 'Waveform' },
+];
 
 export function ScopesPanel() {
-  const [activeTab, setActiveTab] = useState<ScopeTab>('histogram');
-  const { histogramData, vectorscopeData } = useScopeAnalysis(activeTab, true);
+  const [activeTab, setActiveTab] = useState<ScopeTab>('waveform');
+  const { histogramData, vectorscopeData, waveformData } = useScopeAnalysis(activeTab, true);
 
   return (
     <div className="scopes-panel">
       <div className="scopes-tab-bar">
-        <button
-          className={`scopes-tab ${activeTab === 'histogram' ? 'active' : ''}`}
-          onClick={() => setActiveTab('histogram')}
-        >
-          Histogram
-        </button>
-        <button
-          className={`scopes-tab ${activeTab === 'vectorscope' ? 'active' : ''}`}
-          onClick={() => setActiveTab('vectorscope')}
-        >
-          Vectorscope
-        </button>
+        {TABS.map((tab) => (
+          <button
+            key={tab.id}
+            className={`scopes-tab ${activeTab === tab.id ? 'active' : ''}`}
+            onClick={() => setActiveTab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
       <div className="scopes-content">
-        {activeTab === 'histogram' ? (
-          <HistogramScope data={histogramData} />
-        ) : (
-          <VectorscopeScope data={vectorscopeData} />
-        )}
+        {activeTab === 'histogram' && <HistogramScope data={histogramData} />}
+        {activeTab === 'vectorscope' && <VectorscopeScope data={vectorscopeData} />}
+        {activeTab === 'waveform' && <WaveformScope data={waveformData} />}
       </div>
     </div>
   );

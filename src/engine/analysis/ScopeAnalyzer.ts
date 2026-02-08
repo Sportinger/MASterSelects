@@ -159,3 +159,97 @@ export function computeVectorscope(
 
   return imageData;
 }
+
+/**
+ * Compute waveform monitor as a pre-rendered ImageData.
+ * X-axis = horizontal position in source frame.
+ * Y-axis = pixel value (0 bottom, 255 top).
+ * Each source pixel plots its R, G, B values as separate colored dots.
+ * Additive accumulation makes dense regions glow brighter.
+ *
+ * @param pixels - Uint8ClampedArray in RGBA order
+ * @param width - frame width
+ * @param height - frame height
+ * @param step - pixel sampling stride
+ * @param outWidth - output waveform width in pixels
+ * @param outHeight - output waveform height in pixels (256 = 1:1 value mapping)
+ */
+export function computeWaveform(
+  pixels: Uint8ClampedArray,
+  width: number,
+  height: number,
+  step: number,
+  outWidth: number = 384,
+  outHeight: number = 256
+): ImageData {
+  // Accumulator: 3 channels (R, G, B) stored separately for additive blending
+  const acc = new Uint32Array(outWidth * outHeight * 3);
+
+  const xScale = (outWidth - 1) / (width - 1);
+  const yScale = (outHeight - 1) / 255;
+
+  for (let y = 0; y < height; y += step) {
+    const rowStart = y * width * 4;
+    const rowEnd = rowStart + width * 4;
+    for (let i = rowStart; i < rowEnd; i += step * 4) {
+      const pixelX = (i - rowStart) / 4;
+      const rv = pixels[i];
+      const gv = pixels[i + 1];
+      const bv = pixels[i + 2];
+
+      const wx = (pixelX * xScale + 0.5) | 0;
+
+      // Plot R channel
+      const ryPos = outHeight - 1 - ((rv * yScale + 0.5) | 0);
+      const rIdx = (ryPos * outWidth + wx) * 3;
+      acc[rIdx] += 80 + rv;     // red-tinted
+      acc[rIdx + 1] += 8;
+      acc[rIdx + 2] += 8;
+
+      // Plot G channel
+      const gyPos = outHeight - 1 - ((gv * yScale + 0.5) | 0);
+      const gIdx = (gyPos * outWidth + wx) * 3;
+      acc[gIdx] += 8;
+      acc[gIdx + 1] += 80 + gv; // green-tinted
+      acc[gIdx + 2] += 8;
+
+      // Plot B channel
+      const byPos = outHeight - 1 - ((bv * yScale + 0.5) | 0);
+      const bIdx = (byPos * outWidth + wx) * 3;
+      acc[bIdx] += 8;
+      acc[bIdx + 1] += 8;
+      acc[bIdx + 2] += 80 + bv; // blue-tinted
+    }
+  }
+
+  // Find max for normalization
+  let maxVal = 1;
+  for (let i = 0; i < acc.length; i++) {
+    if (acc[i] > maxVal) maxVal = acc[i];
+  }
+
+  const imageData = new ImageData(outWidth, outHeight);
+  const d = imageData.data;
+  const invMax = 1 / maxVal;
+
+  for (let i = 0; i < outWidth * outHeight; i++) {
+    const si = i * 3;
+    const di = i * 4;
+    const rVal = acc[si];
+    const gVal = acc[si + 1];
+    const bVal = acc[si + 2];
+    if (rVal | gVal | bVal) {
+      // Gamma curve to reveal dim areas
+      const brightness = Math.max(rVal, gVal, bVal);
+      const linear = brightness * invMax;
+      const t = Math.pow(linear, 0.35);
+      const norm = t / linear;
+      d[di] = Math.min(255, (rVal * invMax * norm * 255) | 0);
+      d[di + 1] = Math.min(255, (gVal * invMax * norm * 255) | 0);
+      d[di + 2] = Math.min(255, (bVal * invMax * norm * 255) | 0);
+      d[di + 3] = 255;
+    }
+  }
+
+  return imageData;
+}
