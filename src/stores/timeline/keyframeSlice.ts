@@ -461,6 +461,60 @@ export const createKeyframeSlice: SliceCreator<KeyframeActions> = (set, get) => 
     set({ curveEditorHeight: Math.round(Math.max(MIN_CURVE_EDITOR_HEIGHT, Math.min(MAX_CURVE_EDITOR_HEIGHT, height))) });
   },
 
+  // Disable keyframes for a property: save current value as static, remove all keyframes, disable recording
+  disablePropertyKeyframes: (clipId, property, currentValue) => {
+    const { clips, clipKeyframes, keyframeRecordingEnabled, invalidateCache, updateClipTransform, updateClipEffect } = get();
+    const clip = clips.find(c => c.id === clipId);
+    if (!clip) return;
+
+    // 1. Write current value to base clip value (same logic as setPropertyValue static path)
+    if (property.startsWith('effect.')) {
+      const parts = property.split('.');
+      if (parts.length === 3) {
+        const effectId = parts[1];
+        const paramName = parts[2];
+        updateClipEffect(clipId, effectId, { [paramName]: currentValue });
+      }
+    } else if (property === 'speed') {
+      const { updateDuration } = get();
+      const sourceDuration = clip.outPoint - clip.inPoint;
+      const absSpeed = Math.abs(currentValue) || 0.01;
+      const newDuration = sourceDuration / absSpeed;
+      set({
+        clips: get().clips.map(c => c.id === clipId ? { ...c, speed: currentValue, duration: newDuration } : c)
+      });
+      updateDuration();
+    } else if (property === 'opacity') {
+      updateClipTransform(clipId, { opacity: currentValue });
+    } else if (property.startsWith('position.')) {
+      const axis = property.split('.')[1] as 'x' | 'y' | 'z';
+      updateClipTransform(clipId, { position: { ...clip.transform.position, [axis]: currentValue } });
+    } else if (property.startsWith('scale.')) {
+      const axis = property.split('.')[1] as 'x' | 'y';
+      updateClipTransform(clipId, { scale: { ...clip.transform.scale, [axis]: currentValue } });
+    } else if (property.startsWith('rotation.')) {
+      const axis = property.split('.')[1] as 'x' | 'y' | 'z';
+      updateClipTransform(clipId, { rotation: { ...clip.transform.rotation, [axis]: currentValue } });
+    }
+
+    // 2. Remove all keyframes for this property
+    const existingKeyframes = clipKeyframes.get(clipId) || [];
+    const filtered = existingKeyframes.filter(k => k.property !== property);
+    const newMap = new Map(clipKeyframes);
+    if (filtered.length > 0) {
+      newMap.set(clipId, filtered);
+    } else {
+      newMap.delete(clipId);
+    }
+
+    // 3. Disable recording
+    const newRecording = new Set(keyframeRecordingEnabled);
+    newRecording.delete(`${clipId}:${property}`);
+
+    set({ clipKeyframes: newMap, keyframeRecordingEnabled: newRecording });
+    invalidateCache();
+  },
+
   // Bezier handle manipulation
   updateBezierHandle: (keyframeId, handle, position) => {
     const { clipKeyframes, invalidateCache } = get();

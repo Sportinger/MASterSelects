@@ -285,6 +285,8 @@ export interface KeyframeActions {
   setCurveEditorHeight: (height: number) => void;
   // Bezier handle manipulation
   updateBezierHandle: (keyframeId: string, handle: 'in' | 'out', position: BezierHandle) => void;
+  // Disable keyframes for a property: save current value as static, remove all keyframes, disable recording
+  disablePropertyKeyframes: (clipId: string, property: AnimatableProperty, currentValue: number) => void;
 }
 
 // Layer actions interface (render layers for engine)
