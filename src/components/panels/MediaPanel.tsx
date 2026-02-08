@@ -76,8 +76,8 @@ import { useTimelineStore } from '../../stores/timeline';
 import { useContextMenuPosition } from '../../hooks/useContextMenuPosition';
 import { RelinkDialog } from '../common/RelinkDialog';
 
-// AE label color palette
-const LABEL_COLORS: { key: LabelColor; hex: string; name: string }[] = [
+// AE label color palette (exported for reuse in TimelineClip)
+export const LABEL_COLORS: { key: LabelColor; hex: string; name: string }[] = [
   { key: 'none', hex: 'transparent', name: 'None' },
   { key: 'red', hex: '#e2514c', name: 'Red' },
   { key: 'yellow', hex: '#dbb63b', name: 'Yellow' },
@@ -96,7 +96,7 @@ const LABEL_COLORS: { key: LabelColor; hex: string; name: string }[] = [
   { key: 'tan', hex: '#c4a86c', name: 'Tan' },
 ];
 
-function getLabelHex(color?: LabelColor): string {
+export function getLabelHex(color?: LabelColor): string {
   if (!color || color === 'none') return 'transparent';
   return LABEL_COLORS.find(c => c.key === color)?.hex || 'transparent';
 }

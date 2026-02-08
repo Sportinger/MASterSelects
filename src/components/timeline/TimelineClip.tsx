@@ -5,6 +5,8 @@ import type { TimelineClipProps } from './types';
 import { THUMB_WIDTH } from './constants';
 import type { ClipAnalysis } from '../../types';
 import { useTimelineStore } from '../../stores/timeline';
+import { useMediaStore } from '../../stores/mediaStore';
+import { getLabelHex } from '../panels/MediaPanel';
 // PickWhip disabled
 import { Logger } from '../../services/logger';
 
@@ -538,6 +540,29 @@ function TimelineClipComponent({
     toolMode === 'cut' ? state.playheadPosition : 0
   );
 
+  // Look up media label color from mediaStore
+  const mediaLabelHex = useMediaStore(s => {
+    const mediaFileId = clip.mediaFileId || clip.source?.mediaFileId;
+    if (clip.compositionId) {
+      const comp = s.compositions.find(c => c.id === clip.compositionId);
+      if (comp?.labelColor && comp.labelColor !== 'none') return getLabelHex(comp.labelColor);
+    }
+    if (mediaFileId) {
+      const file = s.files.find(f => f.id === mediaFileId);
+      if (file?.labelColor && file.labelColor !== 'none') return getLabelHex(file.labelColor);
+    }
+    // Check solid items and text items by matching clip name as fallback
+    if (clip.source?.type === 'solid') {
+      const solid = s.solidItems.find(si => si.id === mediaFileId);
+      if (solid?.labelColor && solid.labelColor !== 'none') return getLabelHex(solid.labelColor);
+    }
+    if (clip.source?.type === 'text') {
+      const text = s.textItems.find(ti => ti.id === mediaFileId);
+      if (text?.labelColor && text.labelColor !== 'none') return getLabelHex(text.labelColor);
+    }
+    return null;
+  });
+
   // Animation phase for enter/exit transitions
   const clipAnimationPhase = useTimelineStore(s => s.clipAnimationPhase);
   const clipEntranceKey = useTimelineStore(s => s.clipEntranceAnimationKey);
@@ -804,6 +829,9 @@ function TimelineClipComponent({
         ...(isSolidClip && clip.solidColor ? {
           background: clip.solidColor,
           borderColor: clip.solidColor,
+        } : mediaLabelHex ? {
+          background: mediaLabelHex,
+          borderColor: mediaLabelHex,
         } : {}),
       }}
       data-clip-id={clip.id}
