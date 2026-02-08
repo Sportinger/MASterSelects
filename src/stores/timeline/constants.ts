@@ -48,7 +48,7 @@ export const MIN_ZOOM = 0.1;
 export const MAX_ZOOM = 200;
 
 // Track height limits
-export const MIN_TRACK_HEIGHT = 30;
+export const MIN_TRACK_HEIGHT = 20;
 export const MAX_TRACK_HEIGHT = 200;
 
 // RAM Preview settings
