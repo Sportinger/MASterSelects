@@ -156,7 +156,7 @@ export const useTimelineStore = create<TimelineStore>()(
       // Keyframe animation state
       clipKeyframes: new Map<string, Keyframe[]>(),
       keyframeRecordingEnabled: new Set<string>(),
-      expandedTracks: new Set<string>(DEFAULT_TRACKS.filter(t => t.type === 'video').map(t => t.id)),
+      expandedTracks: new Set<string>(DEFAULT_TRACKS.map(t => t.id)),
       expandedTrackPropertyGroups: new Map<string, Set<string>>(),
       selectedKeyframeIds: new Set<string>(),
       expandedCurveProperties: new Map<string, Set<import('../../types').AnimatableProperty>>(),

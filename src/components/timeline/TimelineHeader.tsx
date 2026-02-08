@@ -467,8 +467,8 @@ function TimelineHeaderComponent({
     // Don't toggle if editing or if click was on a button
     if (isEditing) return;
     if ((e.target as HTMLElement).closest('.track-controls')) return;
-    // Both video and audio tracks can expand (if they have keyframes)
-    if (track.type === 'video' || (track.type === 'audio' && hasKeyframes)) {
+    // Both video and audio tracks can expand
+    if (track.type === 'video' || track.type === 'audio') {
       onToggleExpand();
     }
   };
@@ -483,12 +483,12 @@ function TimelineHeaderComponent({
     >
       <div
         className="track-header-top"
-        style={{ height: track.height, cursor: (track.type === 'video' || (track.type === 'audio' && hasKeyframes)) ? 'pointer' : 'default' }}
+        style={{ height: track.height, cursor: (track.type === 'video' || track.type === 'audio') ? 'pointer' : 'default' }}
         onClick={handleHeaderClick}
       >
         <div className="track-header-main">
-          {/* Video tracks always get expand arrow, audio tracks get it when they have keyframes */}
-          {(track.type === 'video' || (track.type === 'audio' && hasKeyframes)) && (
+          {/* Video and audio tracks always get expand arrow */}
+          {(track.type === 'video' || track.type === 'audio') && (
             <span
               className={`track-expand-arrow ${isExpanded ? 'expanded' : ''} ${
                 hasKeyframes ? 'has-keyframes' : ''
