@@ -46,12 +46,29 @@ export function computeHistogram(
     }
   }
 
-  // Find max bin value across all channels for normalization
+  // Find max bin value — skip bins 0 and 255 which often spike unrealistically
   let max = 0;
-  for (let i = 0; i < 256; i++) {
+  for (let i = 1; i < 255; i++) {
     if (r[i] > max) max = r[i];
     if (g[i] > max) max = g[i];
     if (b[i] > max) max = b[i];
+  }
+
+  // Soft-cap: clamp outlier bins to 2x the interior max so spikes don't crush the rest
+  const cap = max * 2;
+  if (r[0] > cap) r[0] = cap;
+  if (r[255] > cap) r[255] = cap;
+  if (g[0] > cap) g[0] = cap;
+  if (g[255] > cap) g[255] = cap;
+  if (b[0] > cap) b[0] = cap;
+  if (b[255] > cap) b[255] = cap;
+  if (luma[0] > cap) luma[0] = cap;
+  if (luma[255] > cap) luma[255] = cap;
+
+  // Recalculate max including capped edge bins
+  for (const ch of [r, g, b]) {
+    if (ch[0] > max) max = ch[0];
+    if (ch[255] > max) max = ch[255];
   }
 
   return { r, g, b, luma, max };
