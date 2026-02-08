@@ -199,19 +199,39 @@ export const createPositioningUtils: SliceCreator<PositioningUtils> = (set, get)
     const snapToPosition = distToSnapBefore < distToSnapAfter ? snapBeforePosition : snapAfterPosition;
     const distToSnapTime = Math.min(distToSnapBefore, distToSnapAfter);
 
-    // Cross-track moves: never allow overlap, always snap to nearest free spot
+    // Cross-track moves: never allow overlap, find closest free position
     if (isTrackChange) {
-      // Verify the snap position is actually free (not overlapping another clip)
-      const snapEnd = snapToPosition + duration;
-      const snapOverlaps = otherClips.some(c => {
-        const cEnd = c.startTime + c.duration;
-        return !(snapEnd <= c.startTime || snapToPosition >= cEnd);
-      });
-      if (snapOverlaps) {
-        // Snap position also overlaps — signal no free space on this track
-        return { startTime: Math.max(0, desiredStartTime), forcingOverlap: false, noFreeSpace: true };
+      // Generate candidate positions at edges of every clip on the track (+ timeline start)
+      const candidates: number[] = [0];
+      for (const c of otherClips) {
+        candidates.push(c.startTime - duration); // right before clip
+        candidates.push(c.startTime + c.duration); // right after clip
       }
-      return { startTime: Math.max(0, snapToPosition), forcingOverlap: false };
+
+      let bestPos: number | null = null;
+      let bestDist = Infinity;
+      for (const pos of candidates) {
+        if (pos < 0) continue;
+        const posEnd = pos + duration;
+        const posOverlaps = otherClips.some(c => {
+          const cEnd = c.startTime + c.duration;
+          return !(posEnd <= c.startTime || pos >= cEnd);
+        });
+        if (!posOverlaps) {
+          const dist = Math.abs(pos - desiredStartTime);
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestPos = pos;
+          }
+        }
+      }
+
+      if (bestPos !== null) {
+        return { startTime: bestPos, forcingOverlap: false };
+      }
+
+      // No valid position found — track is fully packed
+      return { startTime: Math.max(0, desiredStartTime), forcingOverlap: false, noFreeSpace: true };
     }
 
     // Convert time distance to PIXELS using current zoom level
