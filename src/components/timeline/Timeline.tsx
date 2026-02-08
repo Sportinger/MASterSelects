@@ -153,17 +153,9 @@ export function Timeline() {
   const scrollWrapperRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
-  // Composition switch crossfade (200ms)
-  const [compFading, setCompFading] = useState(false);
-  const prevCompId = useRef(activeComposition?.id);
-  useEffect(() => {
-    if (activeComposition?.id !== prevCompId.current) {
-      prevCompId.current = activeComposition?.id;
-      setCompFading(true);
-      const timer = setTimeout(() => setCompFading(false), 20); // brief flash then fade in
-      return () => clearTimeout(timer);
-    }
-  }, [activeComposition?.id]);
+  // Composition switch crossfade — fade ruler/tracks out during 'exiting', in during 'entering'
+  const clipAnimationPhase = useTimelineStore(s => s.clipAnimationPhase);
+  const compFading = clipAnimationPhase === 'exiting';
 
   // Cut tool hover state (shared across linked clips)
   const [cutHoverInfo, setCutHoverInfo] = useState<{ clipId: string; time: number } | null>(null);

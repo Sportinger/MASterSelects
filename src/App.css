@@ -3146,7 +3146,6 @@ input[type="checkbox"] {
 
 .time-ruler-wrapper.comp-fading {
   opacity: 0;
-  transition: none;
 }
 
 .timeline-scroll-wrapper {
@@ -3158,7 +3157,6 @@ input[type="checkbox"] {
 
 .timeline-scroll-wrapper.comp-fading {
   opacity: 0;
-  transition: none;
 }
 
 /* Content row - track headers and lanes side by side */
