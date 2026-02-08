@@ -9,6 +9,17 @@ interface UsePickWhipDragProps {
 }
 
 export function usePickWhipDrag({ setClipParent, setTrackParent }: UsePickWhipDragProps) {
+  // Pick whip disabled
+  const noop = useCallback(() => {}, []);
+  return {
+    pickWhipDrag: null,
+    handlePickWhipDragStart: noop as any,
+    handlePickWhipDragEnd: noop,
+    trackPickWhipDrag: null,
+    handleTrackPickWhipDragStart: noop as any,
+    handleTrackPickWhipDragEnd: noop,
+  };
+
   // Pick whip drag state for clip parenting
   const [pickWhipDrag, setPickWhipDrag] = useState<PickWhipDragState | null>(null);
 

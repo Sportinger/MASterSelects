@@ -27,10 +27,10 @@ interface TransformTabProps {
 }
 
 // Labeled value cell: tiny axis label + draggable number
-function LabeledValue({ label, ...props }: { label: string } & React.ComponentProps<typeof DraggableNumber>) {
+function LabeledValue({ label, wip, ...props }: { label: string; wip?: boolean } & React.ComponentProps<typeof DraggableNumber>) {
   return (
     <div className="labeled-value">
-      <span className="labeled-value-label">{label}</span>
+      <span className="labeled-value-label">{label}{wip && <span className="menu-wip-badge">🐛</span>}</span>
       <DraggableNumber {...props} />
     </div>
   );
@@ -103,7 +103,7 @@ export function TransformTab({ clipId, transform, speed = 1 }: TransformTabProps
         </div>
         <div className="control-row">
           <KeyframeToggle clipId={clipId} property="speed" value={speed} />
-          <label className="prop-label">Speed</label>
+          <label className="prop-label">Speed <span className="menu-wip-badge">🐛</span></label>
           <DraggableNumber value={speedPct} onChange={handleSpeedChange}
             defaultValue={100} decimals={0} suffix="%" min={-400} max={400} sensitivity={1}
             onDragStart={handleBatchStart} onDragEnd={handleBatchEnd} />
@@ -122,7 +122,7 @@ export function TransformTab({ clipId, transform, speed = 1 }: TransformTabProps
             <LabeledValue label="Y" value={posYPx} onChange={handlePosYChange}
               defaultValue={0} decimals={1} sensitivity={0.5}
               onDragStart={handleBatchStart} onDragEnd={handleBatchEnd} />
-            <LabeledValue label="Z" value={posZPx} onChange={handlePosZChange}
+            <LabeledValue label="Z" wip value={posZPx} onChange={handlePosZChange}
               defaultValue={0} decimals={1} sensitivity={0.5}
               onDragStart={handleBatchStart} onDragEnd={handleBatchEnd} />
           </div>
@@ -154,10 +154,10 @@ export function TransformTab({ clipId, transform, speed = 1 }: TransformTabProps
           <RotationKeyframeToggle clipId={clipId} x={transform.rotation.x} y={transform.rotation.y} z={transform.rotation.z} />
           <label className="prop-label">Rotation</label>
           <div className="multi-value-row">
-            <LabeledValue label="X" value={transform.rotation.x} onChange={(v) => handlePropertyChange('rotation.x', v)}
+            <LabeledValue label="X" wip value={transform.rotation.x} onChange={(v) => handlePropertyChange('rotation.x', v)}
               defaultValue={0} decimals={1} suffix="°" min={-180} max={180} sensitivity={0.5}
               onDragStart={handleBatchStart} onDragEnd={handleBatchEnd} />
-            <LabeledValue label="Y" value={transform.rotation.y} onChange={(v) => handlePropertyChange('rotation.y', v)}
+            <LabeledValue label="Y" wip value={transform.rotation.y} onChange={(v) => handlePropertyChange('rotation.y', v)}
               defaultValue={0} decimals={1} suffix="°" min={-180} max={180} sensitivity={0.5}
               onDragStart={handleBatchStart} onDragEnd={handleBatchEnd} />
             <LabeledValue label="Z" value={transform.rotation.z} onChange={(v) => handlePropertyChange('rotation.z', v)}

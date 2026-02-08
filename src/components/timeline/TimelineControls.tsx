@@ -209,7 +209,7 @@ function TimelineControlsComponent({
               : 'RAM Preview OFF - Click to enable auto-caching for instant scrubbing'
           }
         >
-          RAM {ramPreviewEnabled ? 'ON' : 'OFF'}
+          RAM {ramPreviewEnabled ? 'ON' : 'OFF'} <span className="menu-wip-badge">🐛</span>
         </button>
         <button
           className={`btn btn-sm ${isProxyCaching ? 'btn-active' : ''}`}
@@ -220,7 +220,7 @@ function TimelineControlsComponent({
               : 'Warmup all videos for smooth scrubbing (seeks through to fill browser cache)'
           }
         >
-          {isProxyCaching ? `Warmup ${proxyCacheProgress ?? 0}%` : 'Warmup'}
+          {isProxyCaching ? `Warmup ${proxyCacheProgress ?? 0}%` : 'Warmup'} <span className="menu-wip-badge">🐛</span>
         </button>
         <div className="view-dropdown" ref={viewDropdownRef}>
           <button

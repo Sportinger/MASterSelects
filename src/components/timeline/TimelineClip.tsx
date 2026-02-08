@@ -5,7 +5,9 @@ import type { TimelineClipProps } from './types';
 import { THUMB_WIDTH } from './constants';
 import type { ClipAnalysis } from '../../types';
 import { useTimelineStore } from '../../stores/timeline';
-import { PickWhip } from './PickWhip';
+import { useMediaStore } from '../../stores/mediaStore';
+import { getLabelHex } from '../panels/MediaPanel';
+// PickWhip disabled
 import { Logger } from '../../services/logger';
 
 const log = Logger.create('TimelineClip');
@@ -528,9 +530,6 @@ function TimelineClipComponent({
   timeToPixel,
   pixelToTime,
   formatTime,
-  onPickWhipDragStart,
-  onPickWhipDragEnd,
-  onSetClipParent,
 }: TimelineClipProps) {
   const thumbnails = clip.thumbnails || [];
   const thumbnailsEnabled = useTimelineStore(s => s.thumbnailsEnabled);
@@ -541,15 +540,45 @@ function TimelineClipComponent({
     toolMode === 'cut' ? state.playheadPosition : 0
   );
 
+  // Look up media label color from mediaStore
+  const mediaLabelHex = useMediaStore(s => {
+    const mediaFileId = clip.mediaFileId || clip.source?.mediaFileId;
+    if (clip.compositionId) {
+      const comp = s.compositions.find(c => c.id === clip.compositionId);
+      if (comp?.labelColor && comp.labelColor !== 'none') return getLabelHex(comp.labelColor);
+    }
+    if (mediaFileId) {
+      const file = s.files.find(f => f.id === mediaFileId);
+      if (file?.labelColor && file.labelColor !== 'none') return getLabelHex(file.labelColor);
+    }
+    // Check solid items and text items by matching clip name as fallback
+    if (clip.source?.type === 'solid') {
+      const solid = s.solidItems.find(si => si.id === mediaFileId);
+      if (solid?.labelColor && solid.labelColor !== 'none') return getLabelHex(solid.labelColor);
+    }
+    if (clip.source?.type === 'text') {
+      const text = s.textItems.find(ti => ti.id === mediaFileId);
+      if (text?.labelColor && text.labelColor !== 'none') return getLabelHex(text.labelColor);
+    }
+    return null;
+  });
+
   // Animation phase for enter/exit transitions
   const clipAnimationPhase = useTimelineStore(s => s.clipAnimationPhase);
   const clipEntranceKey = useTimelineStore(s => s.clipEntranceAnimationKey);
   const mountKeyRef = useRef(clipEntranceKey);
 
-  // Calculate stagger delay based on track index (vertical) + startTime (horizontal)
-  const trackIndex = track ? tracks.findIndex(t => t.id === track.id) : 0;
-  // 80ms per track + 20ms per second of timeline position
-  const animationDelay = (trackIndex * 0.08) + Math.min(clip.startTime * 0.02, 0.5);
+  // Calculate stagger delay: sort all clips by track order + startTime, then 20ms per clip
+  const clipStaggerIndex = (() => {
+    const sorted = [...clips].sort((a, b) => {
+      const aTrack = tracks.findIndex(t => t.id === a.trackId);
+      const bTrack = tracks.findIndex(t => t.id === b.trackId);
+      if (aTrack !== bTrack) return aTrack - bTrack;
+      return a.startTime - b.startTime;
+    });
+    return sorted.findIndex(c => c.id === clip.id);
+  })();
+  const animationDelay = Math.max(0, clipStaggerIndex) * 0.02;
 
   // Determine animation class:
   // - 'exiting': apply exit animation
@@ -723,9 +752,6 @@ function TimelineClipComponent({
     .filter(Boolean)
     .join(' ');
 
-  // Get parent clip name for tooltip
-  const parentClip = clip.parentClipId ? clips.find(c => c.id === clip.parentClipId) : null;
-
   // Cut tool snapping helper
   const snapCutTime = (rawTime: number, shouldSnap: boolean): number => {
     log.debug('CUT SNAP', { shouldSnap, snappingEnabled, rawTime, zoom, playheadPosition });
@@ -810,6 +836,9 @@ function TimelineClipComponent({
         ...(isSolidClip && clip.solidColor ? {
           background: clip.solidColor,
           borderColor: clip.solidColor,
+        } : mediaLabelHex ? {
+          background: mediaLabelHex,
+          borderColor: mediaLabelHex,
         } : {}),
       }}
       data-clip-id={clip.id}
@@ -1022,15 +1051,7 @@ function TimelineClipComponent({
             <span className="clip-text-icon" title="Text Clip">T</span>
           )}
           <span className="clip-name">{isTextClip && clip.textProperties ? clip.textProperties.text.slice(0, 30) || 'Text' : clip.name}</span>
-          <PickWhip
-            clipId={clip.id}
-            clipName={clip.name}
-            parentClipId={clip.parentClipId}
-            parentClipName={parentClip?.name}
-            onSetParent={onSetClipParent}
-            onDragStart={onPickWhipDragStart}
-            onDragEnd={onPickWhipDragEnd}
-          />
+          {/* PickWhip disabled */}
         </div>
         <span className="clip-duration">{formatTime(displayDuration)}</span>
       </div>

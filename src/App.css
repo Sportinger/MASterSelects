@@ -3141,6 +3141,11 @@ input[type="checkbox"] {
   overflow: hidden;
   height: 30px;
   border-bottom: 1px solid var(--border-color);
+  transition: opacity 200ms ease;
+}
+
+.time-ruler-wrapper.comp-switching {
+  opacity: 0;
 }
 
 .timeline-scroll-wrapper {
@@ -3148,6 +3153,40 @@ input[type="checkbox"] {
   overflow: hidden;
   position: relative;
 }
+
+/* Composition switch: track exit animation (slide up + fade out) */
+@keyframes track-exit {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-12px); }
+}
+
+/* Composition switch: track enter animation (slide down + fade in) */
+@keyframes track-enter {
+  from { opacity: 0; transform: translateY(-12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.phase-exiting > .track-header,
+.phase-exiting > .track-lane {
+  animation: track-exit 200ms ease-in forwards;
+}
+
+.phase-entering > .track-header,
+.phase-entering > .track-lane {
+  animation: track-enter 200ms ease-out;
+}
+
+/* Stagger tracks by index */
+.phase-exiting > :nth-child(1),
+.phase-entering > :nth-child(1) { animation-delay: 0ms; }
+.phase-exiting > :nth-child(2),
+.phase-entering > :nth-child(2) { animation-delay: 30ms; }
+.phase-exiting > :nth-child(3),
+.phase-entering > :nth-child(3) { animation-delay: 60ms; }
+.phase-exiting > :nth-child(4),
+.phase-entering > :nth-child(4) { animation-delay: 90ms; }
+.phase-exiting > :nth-child(5),
+.phase-entering > :nth-child(5) { animation-delay: 120ms; }
 
 /* Content row - track headers and lanes side by side */
 .timeline-content-row {
@@ -5542,11 +5581,27 @@ input[type="checkbox"] {
   background: rgba(74, 144, 226, 0.3);
 }
 
+.media-column-headers .media-col.sorted {
+  color: var(--text-primary);
+}
+
+.media-sort-indicator {
+  font-size: 7px;
+  margin-left: 2px;
+  opacity: 0.7;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.media-column-headers .media-col:hover {
+  color: var(--text-primary);
+}
+
 /* Label color column */
 .media-col-label {
-  width: 18px;
-  min-width: 18px;
-  max-width: 18px;
+  width: 30px;
+  min-width: 30px;
+  max-width: 30px;
   display: flex;
   align-items: center;
   justify-content: center;

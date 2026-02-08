@@ -217,6 +217,12 @@ export const createPlaybackSlice: SliceCreator<PlaybackAndRamPreviewActions> = (
     const clampedDuration = Math.max(1, duration); // Minimum 1 second
     set({ duration: clampedDuration, durationLocked: true });
 
+    // Sync to composition in media store so it persists
+    const { activeCompositionId, updateComposition } = useMediaStore.getState();
+    if (activeCompositionId) {
+      updateComposition(activeCompositionId, { duration: clampedDuration });
+    }
+
     // Clamp playhead if it's beyond new duration
     const { playheadPosition, inPoint, outPoint } = get();
     if (playheadPosition > clampedDuration) {

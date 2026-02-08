@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useEffect, useState, useMemo } from 'react';
 import type { DockTabGroup, DockPanel } from '../../types/dock';
+import { WIP_PANEL_TYPES } from '../../types/dock';
 import { useDockStore } from '../../stores/dockStore';
 import { useMediaStore } from '../../stores/mediaStore';
 import { useTimelineStore } from '../../stores/timeline';
@@ -501,7 +502,7 @@ export function DockTabPane({ group }: DockTabPaneProps) {
                 onMouseLeave={handleTabMouseLeave}
                 title={panel.type === 'clip-properties' ? selectedClipName || panel.title : panel.title}
               >
-                <span className="dock-tab-title">{tabTitle}</span>
+                <span className="dock-tab-title">{tabTitle}{WIP_PANEL_TYPES.includes(panel.type) && <span className="menu-wip-badge">🐛</span>}</span>
               </div>
             );
           })

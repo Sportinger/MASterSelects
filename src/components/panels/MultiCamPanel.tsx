@@ -483,7 +483,7 @@ export function MultiCamPanel() {
     <div className="multicam-panel">
       {/* Header */}
       <div className="multicam-header">
-        <h2>Multi-Cam Editor</h2>
+        <h2>Multi-Cam Editor <span className="menu-wip-badge">🐛</span></h2>
         <button
           className="btn-icon settings-btn"
           title="Settings"

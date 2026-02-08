@@ -76,8 +76,8 @@ import { useTimelineStore } from '../../stores/timeline';
 import { useContextMenuPosition } from '../../hooks/useContextMenuPosition';
 import { RelinkDialog } from '../common/RelinkDialog';
 
-// AE label color palette
-const LABEL_COLORS: { key: LabelColor; hex: string; name: string }[] = [
+// AE label color palette (exported for reuse in TimelineClip)
+export const LABEL_COLORS: { key: LabelColor; hex: string; name: string }[] = [
   { key: 'none', hex: 'transparent', name: 'None' },
   { key: 'red', hex: '#e2514c', name: 'Red' },
   { key: 'yellow', hex: '#dbb63b', name: 'Yellow' },
@@ -96,7 +96,7 @@ const LABEL_COLORS: { key: LabelColor; hex: string; name: string }[] = [
   { key: 'tan', hex: '#c4a86c', name: 'Tan' },
 ];
 
-function getLabelHex(color?: LabelColor): string {
+export function getLabelHex(color?: LabelColor): string {
   if (!color || color === 'none') return 'transparent';
   return LABEL_COLORS.find(c => c.key === color)?.hex || 'transparent';
 }
@@ -105,7 +105,7 @@ function getLabelHex(color?: LabelColor): string {
 type ColumnId = 'label' | 'name' | 'duration' | 'resolution' | 'fps' | 'container' | 'codec' | 'audio' | 'bitrate' | 'size';
 
 const COLUMN_LABELS_MAP: Record<ColumnId, string> = {
-  label: '',
+  label: '●',
   name: 'Name',
   duration: 'Duration',
   resolution: 'Resolution',
@@ -117,7 +117,7 @@ const COLUMN_LABELS_MAP: Record<ColumnId, string> = {
   size: 'Size',
 };
 
-const DEFAULT_COLUMN_ORDER: ColumnId[] = ['label', 'name', 'duration', 'resolution', 'fps', 'container', 'codec', 'audio', 'bitrate', 'size'];
+const DEFAULT_COLUMN_ORDER: ColumnId[] = ['name', 'label', 'duration', 'resolution', 'fps', 'container', 'codec', 'audio', 'bitrate', 'size'];
 const STORAGE_KEY = 'media-panel-column-order';
 
 // Load column order from localStorage
@@ -136,14 +136,7 @@ function loadColumnOrder(): ColumnId[] {
       if (missingColumns.length > 0) {
         // Filter out any invalid columns and add missing ones
         const validColumns = parsed.filter(col => DEFAULT_COLUMN_ORDER.includes(col));
-        // Ensure 'label' is always first
-        const result = [...validColumns, ...missingColumns];
-        const labelIdx = result.indexOf('label');
-        if (labelIdx > 0) {
-          result.splice(labelIdx, 1);
-          result.unshift('label');
-        }
-        return result;
+        return [...validColumns, ...missingColumns];
       }
     }
   } catch {
@@ -214,6 +207,10 @@ export function MediaPanel() {
   const [draggingColumn, setDraggingColumn] = useState<ColumnId | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<ColumnId | null>(null);
 
+  // Sort state
+  const [sortColumn, setSortColumn] = useState<ColumnId | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
   // Save column order to localStorage
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(columnOrder));
@@ -261,6 +258,67 @@ export function MediaPanel() {
     setDraggingColumn(null);
     setDragOverColumn(null);
   }, []);
+
+  // Sort handler - click on column header to sort
+  const handleColumnSort = useCallback((colId: ColumnId) => {
+    if (sortColumn === colId) {
+      if (sortDirection === 'asc') {
+        setSortDirection('desc');
+      } else {
+        // Third click: remove sort
+        setSortColumn(null);
+        setSortDirection('asc');
+      }
+    } else {
+      setSortColumn(colId);
+      setSortDirection('asc');
+    }
+  }, [sortColumn, sortDirection]);
+
+  // Sort items comparator
+  const getSortValue = useCallback((item: ProjectItem, colId: ColumnId): string | number => {
+    const mediaFile = ('type' in item && item.type !== 'composition' && item.type !== 'text' && item.type !== 'solid') ? item as MediaFile : null;
+    switch (colId) {
+      case 'name': return item.name.toLowerCase();
+      case 'label': {
+        const labelColor = 'labelColor' in item ? (item as MediaFile).labelColor : undefined;
+        const idx = LABEL_COLORS.findIndex(c => c.key === (labelColor || 'none'));
+        return idx >= 0 ? idx : 999;
+      }
+      case 'duration': return 'duration' in item && item.duration ? item.duration : 0;
+      case 'resolution': return 'width' in item && 'height' in item && item.width && item.height ? item.width * item.height : 0;
+      case 'fps': return mediaFile?.fps || ('type' in item && item.type === 'composition' ? (item as Composition).frameRate : 0);
+      case 'container': return mediaFile?.container?.toLowerCase() || '';
+      case 'codec': return mediaFile?.codec?.toLowerCase() || '';
+      case 'audio': return mediaFile?.hasAudio ? 1 : 0;
+      case 'bitrate': return mediaFile?.bitrate || 0;
+      case 'size': return mediaFile?.fileSize || 0;
+      default: return 0;
+    }
+  }, []);
+
+  const sortItems = useCallback((items: ProjectItem[]): ProjectItem[] => {
+    if (!sortColumn) return items;
+    // Separate folders from other items - folders stay at top
+    const folderItems = items.filter(i => 'isExpanded' in i);
+    const nonFolderItems = items.filter(i => !('isExpanded' in i));
+
+    const compare = (a: ProjectItem, b: ProjectItem): number => {
+      const va = getSortValue(a, sortColumn);
+      const vb = getSortValue(b, sortColumn);
+      let result: number;
+      if (typeof va === 'string' && typeof vb === 'string') {
+        result = va.localeCompare(vb);
+      } else {
+        result = (va as number) - (vb as number);
+      }
+      return sortDirection === 'desc' ? -result : result;
+    };
+
+    folderItems.sort(compare);
+    nonFolderItems.sort(compare);
+    return [...folderItems, ...nonFolderItems];
+  }, [sortColumn, sortDirection, getSortValue]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -891,15 +949,15 @@ export function MediaPanel() {
         </div>
         {isFolder && isExpanded && (
           <div className="media-folder-children">
-            {getItemsByFolder(item.id).map(child => renderItem(child, depth + 1))}
+            {sortItems(getItemsByFolder(item.id)).map(child => renderItem(child, depth + 1))}
           </div>
         )}
       </div>
     );
   };
 
-  // Get root items
-  const rootItems = getItemsByFolder(null);
+  // Get root items (with sorting applied)
+  const rootItems = sortItems(getItemsByFolder(null));
   const totalItems = files.length + compositions.length;
 
   // Check if any files need reload (lost permission after refresh)
@@ -1003,16 +1061,20 @@ export function MediaPanel() {
               {columnOrder.map((colId) => (
                 <div
                   key={colId}
-                  className={`media-col media-col-${colId} ${draggingColumn === colId ? 'dragging' : ''} ${dragOverColumn === colId ? 'drag-over' : ''}`}
+                  className={`media-col media-col-${colId} ${draggingColumn === colId ? 'dragging' : ''} ${dragOverColumn === colId ? 'drag-over' : ''} ${sortColumn === colId ? 'sorted' : ''}`}
                   style={colId === 'name' ? { width: nameColumnWidth, minWidth: nameColumnWidth, maxWidth: nameColumnWidth } : undefined}
-                  draggable={colId !== 'label'}
-                  onDragStart={colId !== 'label' ? (e) => handleColumnDragStart(e, colId) : undefined}
-                  onDragOver={colId !== 'label' ? (e) => handleColumnDragOver(e, colId) : undefined}
-                  onDragLeave={colId !== 'label' ? handleColumnDragLeave : undefined}
-                  onDrop={colId !== 'label' ? (e) => handleColumnDrop(e, colId) : undefined}
-                  onDragEnd={colId !== 'label' ? handleColumnDragEnd : undefined}
+                  draggable
+                  onDragStart={(e) => handleColumnDragStart(e, colId)}
+                  onDragOver={(e) => handleColumnDragOver(e, colId)}
+                  onDragLeave={handleColumnDragLeave}
+                  onDrop={(e) => handleColumnDrop(e, colId)}
+                  onDragEnd={handleColumnDragEnd}
+                  onClick={() => handleColumnSort(colId)}
                 >
                   {COLUMN_LABELS_MAP[colId]}
+                  {sortColumn === colId && (
+                    <span className="media-sort-indicator">{sortDirection === 'asc' ? '▲' : '▼'}</span>
+                  )}
                   {/* Resize handle after name column */}
                   {colId === 'name' && (
                     <div

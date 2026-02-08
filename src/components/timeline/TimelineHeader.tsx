@@ -1,6 +1,6 @@
 // TimelineHeader component - Track headers (left side)
 
-import { memo, useMemo, useState, useRef, useEffect, useCallback } from 'react';
+import { memo, useMemo, useState, useRef, useEffect } from 'react';
 import type { TimelineHeaderProps } from './types';
 import type { AnimatableProperty, ClipTransform, Keyframe } from '../../types';
 import { CurveEditorHeader } from './CurveEditorHeader';
@@ -397,7 +397,6 @@ function TrackPropertyLabels({
 
 function TimelineHeaderComponent({
   track,
-  tracks,
   isDimmed,
   isExpanded,
   dynamicHeight,
@@ -419,9 +418,6 @@ function TimelineHeaderComponent({
   setPropertyValue,
   expandedCurveProperties,
   onToggleCurveExpanded,
-  onSetTrackParent,
-  onTrackPickWhipDragStart,
-  onTrackPickWhipDragEnd,
 }: TimelineHeaderProps) {
   // Get the first selected clip in this track
   const trackClips = clips.filter((c) => c.trackId === track.id);
@@ -471,88 +467,11 @@ function TimelineHeaderComponent({
     // Don't toggle if editing or if click was on a button
     if (isEditing) return;
     if ((e.target as HTMLElement).closest('.track-controls')) return;
-    // Both video and audio tracks can expand (if they have keyframes)
-    if (track.type === 'video' || (track.type === 'audio' && hasKeyframes)) {
+    // Both video and audio tracks can expand
+    if (track.type === 'video' || track.type === 'audio') {
       onToggleExpand();
     }
   };
-
-  // Track pick whip for layer parenting
-  const pickWhipRef = useRef<HTMLDivElement>(null);
-  const [isPickWhipDragging, setIsPickWhipDragging] = useState(false);
-
-  // Get parent track name for tooltip
-  const parentTrack = track.parentTrackId ? tracks.find(t => t.id === track.parentTrackId) : null;
-  const hasParent = !!track.parentTrackId;
-
-  // Find child tracks (tracks that have this track as their parent)
-  const childTracks = useMemo(() =>
-    tracks.filter(t => t.parentTrackId === track.id),
-    [tracks, track.id]
-  );
-  const hasChildren = childTracks.length > 0;
-
-  // Build tooltip text for pickwhip
-  const pickWhipTooltip = useMemo(() => {
-    const lines: string[] = [];
-
-    if (hasParent) {
-      lines.push(`Parent: ${parentTrack?.name || track.parentTrackId}`);
-    }
-
-    if (hasChildren) {
-      const childNames = childTracks.map(c => c.name).join(', ');
-      lines.push(`Children: ${childNames}`);
-    }
-
-    if (hasParent) {
-      lines.push('Click to unparent, drag to reparent');
-    } else {
-      lines.push(`Drag to parent "${track.name}" to another layer`);
-    }
-
-    return lines.join('\n');
-  }, [hasParent, hasChildren, parentTrack, childTracks, track.name, track.parentTrackId]);
-
-  const handlePickWhipMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsPickWhipDragging(true);
-
-    const rect = pickWhipRef.current?.getBoundingClientRect();
-    if (rect) {
-      onTrackPickWhipDragStart(track.id, rect.left + rect.width / 2, rect.top + rect.height / 2);
-    }
-  }, [track.id, onTrackPickWhipDragStart]);
-
-  const handlePickWhipMouseUp = useCallback(() => {
-    if (isPickWhipDragging) {
-      setIsPickWhipDragging(false);
-      onTrackPickWhipDragEnd();
-    }
-  }, [isPickWhipDragging, onTrackPickWhipDragEnd]);
-
-  // Click to unparent
-  const handlePickWhipClick = useCallback((e: React.MouseEvent) => {
-    if (hasParent && !isPickWhipDragging) {
-      e.preventDefault();
-      e.stopPropagation();
-      onSetTrackParent(track.id, null);
-    }
-  }, [track.id, hasParent, isPickWhipDragging, onSetTrackParent]);
-
-  // Global mouse up listener when dragging
-  useEffect(() => {
-    if (isPickWhipDragging) {
-      const handleGlobalMouseUp = () => {
-        setIsPickWhipDragging(false);
-        onTrackPickWhipDragEnd();
-      };
-
-      window.addEventListener('mouseup', handleGlobalMouseUp);
-      return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
-    }
-  }, [isPickWhipDragging, onTrackPickWhipDragEnd]);
 
   return (
     <div
@@ -564,12 +483,12 @@ function TimelineHeaderComponent({
     >
       <div
         className="track-header-top"
-        style={{ height: track.height, cursor: (track.type === 'video' || (track.type === 'audio' && hasKeyframes)) ? 'pointer' : 'default' }}
+        style={{ height: track.height, cursor: (track.type === 'video' || track.type === 'audio') ? 'pointer' : 'default' }}
         onClick={handleHeaderClick}
       >
         <div className="track-header-main">
-          {/* Video tracks always get expand arrow, audio tracks get it when they have keyframes */}
-          {(track.type === 'video' || (track.type === 'audio' && hasKeyframes)) && (
+          {/* Video and audio tracks always get expand arrow */}
+          {(track.type === 'video' || track.type === 'audio') && (
             <span
               className={`track-expand-arrow ${isExpanded ? 'expanded' : ''} ${
                 hasKeyframes ? 'has-keyframes' : ''
@@ -601,45 +520,7 @@ function TimelineHeaderComponent({
           )}
         </div>
         <div className="track-controls">
-          {/* Pick Whip for layer parenting - before other controls */}
-          {track.type === 'video' && (
-            <div
-              ref={pickWhipRef}
-              className={`track-pick-whip ${isPickWhipDragging ? 'dragging' : ''} ${hasParent ? 'has-parent' : ''} ${hasChildren ? 'has-children' : ''}`}
-              data-track-id={track.id}
-              onMouseDown={handlePickWhipMouseDown}
-              onMouseUp={handlePickWhipMouseUp}
-              onClick={handlePickWhipClick}
-              title={pickWhipTooltip}
-            >
-              <svg viewBox="0 0 16 16" width="14" height="14" className="track-pick-whip-icon">
-                {hasParent ? (
-                  <>
-                    <path
-                      d="M8 2C5 2 3 4 3 7s2 5 5 5c2 0 3.5-1 4-2.5"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                    />
-                    <circle cx="12" cy="9.5" r="2" fill="currentColor" />
-                  </>
-                ) : (
-                  <>
-                    <path
-                      d="M8 2C5 2 3 4 3 7s2 5 5 5c2 0 3.5-1 4-2.5"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeOpacity="0.5"
-                    />
-                    <circle cx="12" cy="9.5" r="1.5" fill="none" stroke="currentColor" strokeOpacity="0.5" />
-                  </>
-                )}
-              </svg>
-            </div>
-          )}
+          {/* Pick Whip disabled */}
           <button
             className={`btn-icon ${track.solo ? 'solo-active' : ''}`}
             onClick={(e) => { e.stopPropagation(); onToggleSolo(); }}
