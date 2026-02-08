@@ -4,7 +4,7 @@
 
 ### Browser-based Video Compositor
 
-[![Version](https://img.shields.io/badge/version-1.1.5-blue.svg)](https://github.com/Sportinger/MASterSelects/releases)
+[![Version](https://img.shields.io/badge/version-1.2.2-blue.svg)](https://github.com/Sportinger/MASterSelects/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![WebGPU](https://img.shields.io/badge/WebGPU-Powered-orange.svg)](#)
 
@@ -30,14 +30,18 @@ Built with Claude as my pair-programmer. I'm not mass-prompting generic code - e
 
 | | |
 |---|---|
-| **Multi-track Timeline** | Cut, copy, paste, nested compositions |
+| **Multi-track Timeline** | Cut, copy, paste, multi-select, JKL shuttle, nested compositions |
 | **30+ GPU Effects** | Color correction, blur, distort, keying - all real-time |
-| **Keyframe Animation** | Bezier curves, 5 easing modes |
-| **Vector Masks** | Pen tool, feathering, multiple masks per clip |
+| **Video Scopes** | GPU-accelerated Histogram, Vectorscope, Waveform monitor |
+| **Keyframe Animation** | Bezier curves, copy/paste, tick marks, 5 easing modes |
+| **Vector Masks** | Pen tool, edge dragging, feathering, multiple masks per clip |
+| **Transitions** | Crossfade transitions with GPU-accelerated rendering |
 | **AI Integration** | 50+ tools controllable via GPT-4/GPT-5 |
-| **Live Output** | Separate window for live video performances |
-| **YouTube Download** | Search and grab videos directly |
-| **Text & Typography** | 50 Google Fonts, stroke, shadow |
+| **4 Export Modes** | WebCodecs Fast/Precise, FFmpeg ProRes/DNxHR, FCP XML |
+| **Live EQ** | 10-band parametric EQ with real-time Web Audio preview |
+| **YouTube Download** | Search, download, and edit directly |
+| **Text & Solids** | 50 Google Fonts, stroke, shadow, solid color clips |
+| **Proxy System** | GPU-accelerated proxies with resume and cache indicator |
 
 <details>
 <summary><b>See Keyframe Editor</b></summary>
@@ -64,10 +68,9 @@ npm run dev     # http://localhost:5173
 
 This is alpha software. Features get added fast, things break.
 
-- Some effects still bleed through layers occasionally
-- Export can be flaky with complex compositions
-- RAM Preview needs more RAM than it should
-- Nested compositions are powerful but buggy
+- YouTube download requires Native Helper with yt-dlp installed
+- Audio waveforms may not display for some video formats
+- Very long videos (>2 hours) may cause performance issues
 
 If something breaks, refresh. If it's still broken, [open an issue](https://github.com/Sportinger/MASterSelects/issues).
 
@@ -75,11 +78,12 @@ If something breaks, refresh. If it's still broken, [open an issue](https://gith
 
 ## Tech Stack
 
-- **Frontend:** React 19, TypeScript, Zustand
-- **Rendering:** WebGPU + WGSL shaders (the hard part)
-- **Video:** WebCodecs for decode/encode, FFmpeg WASM for ProRes
-- **Audio:** Web Audio API with 10-band EQ
-- **AI:** OpenAI API integration with custom tool handlers
+- **Frontend:** React 19, TypeScript, Zustand, Vite 7.2
+- **Rendering:** WebGPU + WGSL shaders (2,000+ lines)
+- **Video:** WebCodecs for decode/encode, FFmpeg WASM for ProRes/DNxHR/HAP
+- **Audio:** Web Audio API with 10-band live EQ, audio master clock, varispeed
+- **AI:** OpenAI GPT-4/GPT-5 function calling, PiAPI video generation
+- **Storage:** File System Access API, local project folders with Raw media
 
 ---
 
@@ -88,9 +92,12 @@ If something breaks, refresh. If it's still broken, [open an issue](https://gith
 | Key | Action |
 |-----|--------|
 | `Space` | Play/Pause |
+| `J` / `K` / `L` | Reverse / Pause / Forward (shuttle) |
 | `C` | Cut at playhead |
 | `I` / `O` | Set in/out points |
-| `Ctrl+C/V` | Copy/Paste clips |
+| `Ctrl+C/V` | Copy/Paste clips or keyframes |
+| `Shift+Click` | Multi-select clips |
+| `Tab` | Toggle edit mode |
 | `Ctrl+Z` | Undo |
 | `Ctrl+S` | Save project |
 

@@ -87,7 +87,7 @@ Ports: WebSocket `9876`, HTTP `9877`
 src/
 ├── components/          # React UI
 │   ├── timeline/        # Timeline-Editor (hooks/, components/)
-│   ├── panels/          # Properties, Media, AI, YouTube, Export
+│   ├── panels/          # Properties, Media, AI, YouTube, Export, Scopes, Transitions
 │   ├── preview/         # Canvas + Overlays
 │   └── dock/            # Panel-System
 ├── stores/              # Zustand State
@@ -99,7 +99,7 @@ src/
 │   ├── export/          # FrameExporter, VideoEncoder, AudioEncoder
 │   ├── audio/           # AudioMixer, TimeStretch
 │   └── ffmpeg/          # FFmpegBridge
-├── effects/             # 30+ GPU Effects (color/, blur/, distort/, stylize/)
+├── effects/             # 30+ GPU Effects (color/, blur/, distort/, stylize/, keying/)
 ├── services/            # Audio, AI, Project, NativeHelper
 └── shaders/             # WGSL (composite, effects, output)
 ```
