@@ -22,47 +22,64 @@ export interface CurveEditorProps {
   pixelToTime: (pixel: number) => number;
 }
 
-// Get value range for Y axis based on property type
-function getPropertyRange(property: AnimatableProperty): { min: number; max: number; step: number } {
+// Get default range for a property type (used as fallback when no keyframes exist)
+function getPropertyDefaults(property: AnimatableProperty): { min: number; max: number; fallbackPad: number } {
   if (property === 'opacity') {
-    return { min: 0, max: 1, step: 0.1 };
+    return { min: 0, max: 1, fallbackPad: 0.05 };
   }
   if (property.startsWith('scale.')) {
-    return { min: 0, max: 2, step: 0.1 };
+    return { min: 0, max: 2, fallbackPad: 0.05 };
   }
   if (property.startsWith('rotation.')) {
-    return { min: -360, max: 360, step: 15 };
+    return { min: -360, max: 360, fallbackPad: 5 };
   }
   if (property.startsWith('position.')) {
-    return { min: -1000, max: 1000, step: 100 };
+    return { min: -1000, max: 1000, fallbackPad: 10 };
   }
   // Effect properties
-  return { min: -100, max: 100, step: 10 };
+  return { min: -100, max: 100, fallbackPad: 5 };
 }
 
-// Compute auto-range based on keyframe values
+// Calculate a "nice" step size for grid lines that produces clean label values
+function niceStep(range: number, targetLines: number = 5): number {
+  if (range <= 0) return 1;
+  const roughStep = range / targetLines;
+  const magnitude = Math.pow(10, Math.floor(Math.log10(roughStep)));
+  const normalized = roughStep / magnitude;
+
+  let nice: number;
+  if (normalized <= 1) nice = 1;
+  else if (normalized <= 2) nice = 2;
+  else if (normalized <= 5) nice = 5;
+  else nice = 10;
+
+  return nice * magnitude;
+}
+
+// Compute auto-range that always fits tightly to actual keyframe values
 function computeAutoRange(keyframes: Keyframe[], property: AnimatableProperty): { min: number; max: number } {
-  const defaultRange = getPropertyRange(property);
+  const defaults = getPropertyDefaults(property);
 
   if (keyframes.length === 0) {
-    return defaultRange;
+    return { min: defaults.min, max: defaults.max };
   }
 
   const values = keyframes.map(k => k.value);
   let min = Math.min(...values);
   let max = Math.max(...values);
 
-  // Add padding
   const range = max - min;
-  const padding = range > 0 ? range * 0.2 : defaultRange.step;
-  min -= padding;
-  max += padding;
 
-  // Ensure we have a reasonable range
-  if (max - min < defaultRange.step) {
-    const mid = (min + max) / 2;
-    min = mid - defaultRange.step;
-    max = mid + defaultRange.step;
+  if (range > 0) {
+    // Add 10% padding so curve doesn't touch top/bottom edges
+    const pad = range * 0.1;
+    min -= pad;
+    max += pad;
+  } else {
+    // All values identical — create a small range around the value
+    const pad = Math.max(Math.abs(min) * 0.1, defaults.fallbackPad) || 1;
+    min -= pad;
+    max += pad;
   }
 
   return { min, max };
@@ -175,27 +192,22 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     return valueRange.min + normalized * range;
   }, [valueRange, height, padding]);
 
-  // Generate grid lines
+  // Generate grid lines with adaptive step size
   const gridLines = useMemo(() => {
     const lines: { y: number; value: number; major: boolean }[] = [];
     const range = valueRange.max - valueRange.min;
-    const defaultRange = getPropertyRange(property);
-    const step = defaultRange.step;
+    const step = niceStep(range);
 
-    // Calculate nice step size
-    const numLines = Math.ceil(range / step);
-    const adjustedStep = numLines > 10 ? step * 2 : step;
-
-    for (let value = Math.ceil(valueRange.min / adjustedStep) * adjustedStep; value <= valueRange.max; value += adjustedStep) {
+    for (let value = Math.ceil(valueRange.min / step) * step; value <= valueRange.max; value += step) {
       lines.push({
         y: valueToY(value),
         value,
-        major: Math.abs(value) < 0.001 || value % (adjustedStep * 2) === 0,
+        major: Math.abs(value) < 0.001 || value % (step * 2) === 0,
       });
     }
 
     return lines;
-  }, [valueRange, valueToY, property]);
+  }, [valueRange, valueToY]);
 
   // Handle mouse down on keyframe
   const handleKeyframeMouseDown = useCallback((e: React.MouseEvent, kf: Keyframe) => {
@@ -377,7 +389,8 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
               {property === 'opacity' ? `${(line.value * 100).toFixed(0)}%` :
                property.startsWith('scale.') ? `${(line.value * 100).toFixed(0)}%` :
                property.startsWith('rotation.') ? `${line.value.toFixed(0)}°` :
-               line.value.toFixed(0)}
+               Number.isInteger(line.value) ? line.value.toFixed(0) :
+               line.value.toPrecision(3)}
             </text>
           )}
         </g>
