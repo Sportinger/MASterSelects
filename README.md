@@ -28,20 +28,22 @@ Built with Claude as my pair-programmer. I'm not mass-prompting generic code - e
 
 ## What It Does
 
-| | |
+| Feature | Description |
 |---|---|
-| **Multi-track Timeline** | Cut, copy, paste, multi-select, JKL shuttle, nested compositions |
-| **30+ GPU Effects** | Color correction, blur, distort, keying - all real-time |
-| **Video Scopes** | GPU-accelerated Histogram, Vectorscope, Waveform monitor |
-| **Keyframe Animation** | Bezier curves, copy/paste, tick marks, 5 easing modes |
-| **Vector Masks** | Pen tool, edge dragging, feathering, multiple masks per clip |
-| **Transitions** | Crossfade transitions with GPU-accelerated rendering |
-| **AI Integration** | 50+ tools controllable via GPT-4/GPT-5 |
-| **4 Export Modes** | WebCodecs Fast/Precise, FFmpeg ProRes/DNxHR, FCP XML |
-| **Live EQ** | 10-band parametric EQ with real-time Web Audio preview |
-| **YouTube Download** | Search, download, and edit directly |
-| **Text & Solids** | 50 Google Fonts, stroke, shadow, solid color clips |
-| **Proxy System** | GPU-accelerated proxies with resume and cache indicator |
+| [**Multi-track Timeline**](docs/Features/Timeline.md) | Cut, copy, paste, multi-select, JKL shuttle, nested compositions |
+| [**30+ GPU Effects**](docs/Features/Effects.md) | Color correction, blur, distort, keying - all real-time |
+| [**Video Scopes**](docs/Features/UI-Panels.md#video-scopes-panels) | GPU-accelerated Histogram, Vectorscope, Waveform monitor |
+| [**Keyframe Animation**](docs/Features/Keyframes.md) | Bezier curves, copy/paste, tick marks, 5 easing modes |
+| [**Vector Masks**](docs/Features/Masks.md) | Pen tool, edge dragging, feathering, multiple masks per clip |
+| [**Transitions**](docs/Features/UI-Panels.md#transitions-panel) | Crossfade transitions with GPU-accelerated rendering |
+| [**AI Integration**](docs/Features/AI-Integration.md) | 50+ tools controllable via GPT-4/GPT-5 |
+| [**4 Export Modes**](docs/Features/Export.md) | WebCodecs Fast/Precise, FFmpeg ProRes/DNxHR, FCP XML |
+| [**Live EQ & Audio**](docs/Features/Audio.md) | 10-band parametric EQ with real-time Web Audio preview |
+| [**YouTube Download**](docs/Features/YouTube.md) | Search, download, and edit directly |
+| [**Text & Solids**](docs/Features/Text-Clips.md) | 50 Google Fonts, stroke, shadow, solid color clips |
+| [**Proxy System**](docs/Features/Proxy-System.md) | GPU-accelerated proxies with resume and cache indicator |
+| [**Preview & Playback**](docs/Features/Preview.md) | RAM Preview, transform handles, multiple outputs |
+| [**Project Storage**](docs/Features/Project-Persistence.md) | Local folders, Raw media auto-copy, autosave, backups |
 
 <details>
 <summary><b>See Keyframe Editor</b></summary>
