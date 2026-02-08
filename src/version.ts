@@ -54,6 +54,64 @@ interface RawChangeEntry extends ChangeEntry {
 }
 
 const RAW_CHANGELOG: RawChangeEntry[] = [
+  // === Feb 9, 2026 - Comp Switch Animations, Label Colors, Timeline Polish ===
+  {
+    date: '2026-02-09',
+    type: 'improve',
+    title: 'Composition Switch Animations',
+    description: 'Smooth 200ms crossfade with per-track slide-in animation when switching compositions',
+    commit: '4266604',
+  },
+  {
+    date: '2026-02-09',
+    type: 'improve',
+    title: 'Staggered Clip Entrance',
+    description: 'Clips animate in sequentially with 20ms delay per clip for a cascading entrance effect',
+    commit: 'c3efc3e',
+  },
+  {
+    date: '2026-02-09',
+    type: 'new',
+    title: 'Clip Label Colors',
+    description: 'Timeline clips inherit label color from their media file or composition in the media panel',
+    commit: '8ead363',
+  },
+  {
+    date: '2026-02-09',
+    type: 'new',
+    title: 'Sortable Media Panel Columns',
+    description: 'Label color column as proper sortable column with clickable column headers',
+    commit: '865c45d',
+  },
+  {
+    date: '2026-02-09',
+    type: 'improve',
+    title: 'Audio Tracks Default Expanded',
+    description: 'Audio tracks always show expand arrow and start expanded by default',
+    commit: 'e194550',
+  },
+  {
+    date: '2026-02-09',
+    type: 'improve',
+    title: 'NativeHelper Auto-Connect',
+    description: 'Auto-check connection status when NativeHelper dialog opens, updated dialog to focus on YouTube downloading',
+    commit: '1441015',
+  },
+  {
+    date: '2026-02-09',
+    type: 'fix',
+    title: 'Timeline Duration Sync',
+    description: 'Timeline duration edits now correctly sync and persist to the active composition',
+    commit: '6b48cf8',
+  },
+  {
+    date: '2026-02-09',
+    type: 'refactor',
+    title: 'Disable Marquee Selection & Pick Whip',
+    description: 'Removed marquee/lasso selection and pick whip parenting from timeline',
+    commit: '6a0b69b',
+  },
+
   // === Feb 8, 2026 - Scopes, Curve Editor, Timeline UX, Mask Performance ===
   {
     date: '2026-02-08',
