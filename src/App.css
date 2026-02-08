@@ -3144,7 +3144,7 @@ input[type="checkbox"] {
   transition: opacity 200ms ease;
 }
 
-.time-ruler-wrapper.comp-fading {
+.time-ruler-wrapper.comp-switching {
   opacity: 0;
 }
 
@@ -3152,12 +3152,41 @@ input[type="checkbox"] {
   flex: 1;
   overflow: hidden;
   position: relative;
-  transition: opacity 200ms ease;
 }
 
-.timeline-scroll-wrapper.comp-fading {
-  opacity: 0;
+/* Composition switch: track exit animation (slide up + fade out) */
+@keyframes track-exit {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-12px); }
 }
+
+/* Composition switch: track enter animation (slide down + fade in) */
+@keyframes track-enter {
+  from { opacity: 0; transform: translateY(-12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.phase-exiting > .track-header,
+.phase-exiting > .track-lane {
+  animation: track-exit 200ms ease-in forwards;
+}
+
+.phase-entering > .track-header,
+.phase-entering > .track-lane {
+  animation: track-enter 200ms ease-out;
+}
+
+/* Stagger tracks by index */
+.phase-exiting > :nth-child(1),
+.phase-entering > :nth-child(1) { animation-delay: 0ms; }
+.phase-exiting > :nth-child(2),
+.phase-entering > :nth-child(2) { animation-delay: 30ms; }
+.phase-exiting > :nth-child(3),
+.phase-entering > :nth-child(3) { animation-delay: 60ms; }
+.phase-exiting > :nth-child(4),
+.phase-entering > :nth-child(4) { animation-delay: 90ms; }
+.phase-exiting > :nth-child(5),
+.phase-entering > :nth-child(5) { animation-delay: 120ms; }
 
 /* Content row - track headers and lanes side by side */
 .timeline-content-row {
@@ -3185,25 +3214,10 @@ input[type="checkbox"] {
   border-bottom: 1px solid var(--border-color);
 }
 
-/* Track enter animation */
-@keyframes track-slide-in {
-  from {
-    opacity: 0;
-    max-height: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    max-height: 300px;
-    transform: translateY(0);
-  }
-}
-
 .track-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  animation: track-slide-in 200ms ease-out;
   padding: 0;
   border-bottom: 1px solid var(--border-color);
   background: var(--bg-tertiary);
@@ -3472,7 +3486,6 @@ input[type="checkbox"] {
   background: var(--bg-secondary);
   min-width: 100%;
   overflow: hidden;
-  animation: track-slide-in 200ms ease-out;
 }
 
 .track-lane.video {

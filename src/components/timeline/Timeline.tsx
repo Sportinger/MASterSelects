@@ -153,9 +153,8 @@ export function Timeline() {
   const scrollWrapperRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
-  // Composition switch crossfade — fade ruler/tracks out during 'exiting', in during 'entering'
+  // Composition switch animation phase for tracks/ruler
   const clipAnimationPhase = useTimelineStore(s => s.clipAnimationPhase);
-  const compFading = clipAnimationPhase === 'exiting';
 
   // Cut tool hover state (shared across linked clips)
   const [cutHoverInfo, setCutHoverInfo] = useState<{ clipId: string; time: number } | null>(null);
@@ -812,7 +811,7 @@ export function Timeline() {
                 M
               </button>
             </div>
-            <div className={`time-ruler-wrapper ${compFading ? 'comp-fading' : ''}`}>
+            <div className={`time-ruler-wrapper ${clipAnimationPhase !== 'idle' ? 'comp-switching' : ''}`}>
               <TimelineRuler
                 duration={duration}
                 zoom={zoom}
@@ -822,9 +821,9 @@ export function Timeline() {
               />
             </div>
           </div>
-          <div className={`timeline-scroll-wrapper ${compFading ? 'comp-fading' : ''}`} ref={scrollWrapperRef}>
+          <div className="timeline-scroll-wrapper" ref={scrollWrapperRef}>
             <div className="timeline-content-row" ref={contentRef} style={{ transform: `translateY(-${scrollY}px)` }}>
-          <div className="track-headers">
+          <div className={`track-headers ${clipAnimationPhase === 'exiting' ? 'phase-exiting' : clipAnimationPhase === 'entering' ? 'phase-entering' : ''}`}>
             {/* New video track preview header - appears when dragging over new track zone */}
             {externalDrag && (
               <div
@@ -908,7 +907,7 @@ export function Timeline() {
             className={`timeline-tracks ${clipDrag ? 'dragging-clip' : ''} ${marquee ? 'marquee-selecting' : ''}`}
             onMouseDown={handleMarqueeMouseDown}
           >
-            <div className="track-lanes-scroll" style={{
+            <div className={`track-lanes-scroll ${clipAnimationPhase === 'exiting' ? 'phase-exiting' : clipAnimationPhase === 'entering' ? 'phase-entering' : ''}`} style={{
               transform: `translateX(-${scrollX}px)`,
               minWidth: Math.max(duration * zoom + 500, 2000), // Ensure background extends beyond visible content
               ['--grid-size' as string]: `${gridSize}px`,
