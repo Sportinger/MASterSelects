@@ -2,7 +2,7 @@
 // Extracted from index.ts for maintainability
 
 import type { SliceCreator, TimelineClip, TimelineUtils } from './types';
-import { SNAP_THRESHOLD_SECONDS, OVERLAP_RESISTANCE_PIXELS } from './constants';
+import { SNAP_THRESHOLD_SECONDS } from './constants';
 
 type PositioningUtils = Pick<
   TimelineUtils,
@@ -154,9 +154,8 @@ export const createPositioningUtils: SliceCreator<PositioningUtils> = (set, get)
   // Apply magnetic resistance at clip edges during drag
   // Returns position with resistance applied, and whether user has "broken through" to force overlap
   // Uses PIXEL-based resistance so it works regardless of clip duration
-  getPositionWithResistance: (clipId: string, desiredStartTime: number, trackId: string, duration: number, zoom?: number, excludeClipIds?: string[]) => {
-    const { clips, zoom: storeZoom } = get();
-    const currentZoom = zoom ?? storeZoom;
+  getPositionWithResistance: (clipId: string, desiredStartTime: number, trackId: string, duration: number, _zoom?: number, excludeClipIds?: string[]) => {
+    const { clips } = get();
     const movingClip = clips.find(c => c.id === clipId);
     const excludeSet = new Set(excludeClipIds || []);
     const isTrackChange = movingClip ? movingClip.trackId !== trackId : false;
@@ -185,19 +184,6 @@ export const createPositioningUtils: SliceCreator<PositioningUtils> = (set, get)
     if (!overlappingClip) {
       return { startTime: Math.max(0, desiredStartTime), forcingOverlap: false };
     }
-
-    const overlappingEnd = overlappingClip.startTime + overlappingClip.duration;
-
-    // Calculate which non-overlapping position is closer (before or after the other clip)
-    const snapBeforePosition = overlappingClip.startTime - duration; // Place our clip END at other clip START
-    const snapAfterPosition = overlappingEnd; // Place our clip START at other clip END
-
-    const distToSnapBefore = Math.abs(desiredStartTime - snapBeforePosition);
-    const distToSnapAfter = Math.abs(desiredStartTime - snapAfterPosition);
-
-    // Choose the closer snap position
-    const snapToPosition = distToSnapBefore < distToSnapAfter ? snapBeforePosition : snapAfterPosition;
-    const distToSnapTime = Math.min(distToSnapBefore, distToSnapAfter);
 
     // Cross-track moves: never allow overlap, find closest free position
     if (isTrackChange) {
@@ -234,16 +220,8 @@ export const createPositioningUtils: SliceCreator<PositioningUtils> = (set, get)
       return { startTime: Math.max(0, desiredStartTime), forcingOverlap: false, noFreeSpace: true };
     }
 
-    // Convert time distance to PIXELS using current zoom level
-    const distToSnapPixels = distToSnapTime * currentZoom;
-
-    // If the user hasn't dragged far enough past the snap point (in pixels), resist (snap back)
-    if (distToSnapPixels < OVERLAP_RESISTANCE_PIXELS) {
-      return { startTime: Math.max(0, snapToPosition), forcingOverlap: false };
-    } else {
-      // User has pushed through the resistance - allow overlap (same track only)
-      return { startTime: Math.max(0, desiredStartTime), forcingOverlap: true };
-    }
+    // Same-track moves: free movement, overlap trimmed on drop
+    return { startTime: Math.max(0, desiredStartTime), forcingOverlap: true };
   },
 
   // Trim any clips that the placed clip overlaps with
