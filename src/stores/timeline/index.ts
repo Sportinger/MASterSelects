@@ -151,6 +151,7 @@ export const useTimelineStore = create<TimelineStore>()(
       // Performance toggles (enabled by default)
       thumbnailsEnabled: true,
       waveformsEnabled: true,
+      showTranscriptMarkers: true,
 
       // Keyframe animation state
       clipKeyframes: new Map<string, Keyframe[]>(),
@@ -159,6 +160,7 @@ export const useTimelineStore = create<TimelineStore>()(
       expandedTrackPropertyGroups: new Map<string, Set<string>>(),
       selectedKeyframeIds: new Set<string>(),
       expandedCurveProperties: new Map<string, Set<import('../../types').AnimatableProperty>>(),
+      curveEditorHeight: 250,
 
       // Mask state
       maskEditMode: 'none' as const,
@@ -181,6 +183,7 @@ export const useTimelineStore = create<TimelineStore>()(
 
       // Clipboard state for copy/paste
       clipboardData: null as import('./types').ClipboardClipData[] | null,
+      clipboardKeyframes: null as import('./types').ClipboardKeyframeData[] | null,
     };
 
     // Layer actions (render layers for engine, moved from mixerStore)

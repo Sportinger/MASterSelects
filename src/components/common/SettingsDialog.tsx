@@ -286,9 +286,6 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
 
             <div className="settings-group">
               <div className="settings-group-title">Provider</div>
-              <p className="settings-description">
-                Select the provider for automatic speech-to-text transcription.
-              </p>
 
               <div className="provider-list">
                 {providers.map((provider) => (
@@ -313,79 +310,9 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
                   </label>
                 ))}
               </div>
-            </div>
-
-            <div className="settings-group">
-              <div className="settings-group-title">API Keys</div>
               <p className="settings-hint">
-                Configure API keys for cloud transcription providers.
+                API keys for transcription providers can be configured in the API Keys section.
               </p>
-
-              {/* OpenAI */}
-              <div className="api-key-row">
-                <label>OpenAI API Key</label>
-                <div className="api-key-input">
-                  <input
-                    type={showKeys.openai ? 'text' : 'password'}
-                    value={localKeys.openai}
-                    onChange={(e) => handleKeyChange('openai', e.target.value)}
-                    placeholder="sk-..."
-                  />
-                  <button
-                    className="toggle-visibility"
-                    onClick={() => toggleShowKey('openai')}
-                  >
-                    {showKeys.openai ? '👁' : '○'}
-                  </button>
-                </div>
-                <a className="api-key-link" href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">
-                  Get API Key
-                </a>
-              </div>
-
-              {/* AssemblyAI */}
-              <div className="api-key-row">
-                <label>AssemblyAI API Key</label>
-                <div className="api-key-input">
-                  <input
-                    type={showKeys.assemblyai ? 'text' : 'password'}
-                    value={localKeys.assemblyai}
-                    onChange={(e) => handleKeyChange('assemblyai', e.target.value)}
-                    placeholder="Enter API key..."
-                  />
-                  <button
-                    className="toggle-visibility"
-                    onClick={() => toggleShowKey('assemblyai')}
-                  >
-                    {showKeys.assemblyai ? '👁' : '○'}
-                  </button>
-                </div>
-                <a className="api-key-link" href="https://www.assemblyai.com/dashboard/signup" target="_blank" rel="noopener noreferrer">
-                  Get API Key
-                </a>
-              </div>
-
-              {/* Deepgram */}
-              <div className="api-key-row">
-                <label>Deepgram API Key</label>
-                <div className="api-key-input">
-                  <input
-                    type={showKeys.deepgram ? 'text' : 'password'}
-                    value={localKeys.deepgram}
-                    onChange={(e) => handleKeyChange('deepgram', e.target.value)}
-                    placeholder="Enter API key..."
-                  />
-                  <button
-                    className="toggle-visibility"
-                    onClick={() => toggleShowKey('deepgram')}
-                  >
-                    {showKeys.deepgram ? '👁' : '○'}
-                  </button>
-                </div>
-                <a className="api-key-link" href="https://console.deepgram.com/signup" target="_blank" rel="noopener noreferrer">
-                  Get API Key
-                </a>
-              </div>
             </div>
           </div>
         );
@@ -506,13 +433,79 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
         return (
           <div className="settings-category-content">
             <h2>API Keys</h2>
-            <p className="settings-description">
-              Keys are stored locally in your browser and never sent to our servers.
+            <p className="settings-hint" style={{ marginTop: 0, marginBottom: 8 }}>
+              Keys are stored locally and encrypted in your browser.
             </p>
 
             <div className="settings-group">
+              <div className="settings-group-title">Transcription</div>
+
+              <div className="api-key-row">
+                <label>OpenAI API Key</label>
+                <div className="api-key-input">
+                  <input
+                    type={showKeys.openai ? 'text' : 'password'}
+                    value={localKeys.openai}
+                    onChange={(e) => handleKeyChange('openai', e.target.value)}
+                    placeholder="sk-..."
+                  />
+                  <button
+                    className="toggle-visibility"
+                    onClick={() => toggleShowKey('openai')}
+                  >
+                    {showKeys.openai ? '👁' : '○'}
+                  </button>
+                </div>
+                <a className="api-key-link" href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">
+                  Get API Key
+                </a>
+              </div>
+
+              <div className="api-key-row">
+                <label>AssemblyAI API Key</label>
+                <div className="api-key-input">
+                  <input
+                    type={showKeys.assemblyai ? 'text' : 'password'}
+                    value={localKeys.assemblyai}
+                    onChange={(e) => handleKeyChange('assemblyai', e.target.value)}
+                    placeholder="Enter API key..."
+                  />
+                  <button
+                    className="toggle-visibility"
+                    onClick={() => toggleShowKey('assemblyai')}
+                  >
+                    {showKeys.assemblyai ? '👁' : '○'}
+                  </button>
+                </div>
+                <a className="api-key-link" href="https://www.assemblyai.com/dashboard/signup" target="_blank" rel="noopener noreferrer">
+                  Get API Key
+                </a>
+              </div>
+
+              <div className="api-key-row">
+                <label>Deepgram API Key</label>
+                <div className="api-key-input">
+                  <input
+                    type={showKeys.deepgram ? 'text' : 'password'}
+                    value={localKeys.deepgram}
+                    onChange={(e) => handleKeyChange('deepgram', e.target.value)}
+                    placeholder="Enter API key..."
+                  />
+                  <button
+                    className="toggle-visibility"
+                    onClick={() => toggleShowKey('deepgram')}
+                  >
+                    {showKeys.deepgram ? '👁' : '○'}
+                  </button>
+                </div>
+                <a className="api-key-link" href="https://console.deepgram.com/signup" target="_blank" rel="noopener noreferrer">
+                  Get API Key
+                </a>
+              </div>
+            </div>
+
+            <div className="settings-group">
               <div className="settings-group-title">AI Video Generation</div>
-              <p className="settings-hint">PiAPI provides access to multiple AI video models (Kling, Luma, Hailuo, etc.)</p>
 
               <div className="api-key-row">
                 <label>PiAPI API Key</label>
@@ -531,14 +524,13 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
                   </button>
                 </div>
                 <a className="api-key-link" href="https://piapi.ai/workspace" target="_blank" rel="noopener noreferrer">
-                  Get API Key (free credits on signup)
+                  Get API Key
                 </a>
               </div>
             </div>
 
             <div className="settings-group">
               <div className="settings-group-title">YouTube</div>
-              <p className="settings-hint">Optional - Invidious works without an API key.</p>
 
               <div className="api-key-row">
                 <label>YouTube Data API v3 Key</label>
@@ -629,10 +621,10 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
             pointer-events: auto;
             background: var(--bg-primary, #1a1a1a);
             border: 1px solid var(--border-color);
-            border-radius: 8px;
-            width: 720px;
+            border-radius: 6px;
+            width: 640px;
             max-width: 95vw;
-            height: 560px;
+            height: 480px;
             max-height: 90vh;
             display: flex;
             flex-direction: column;
@@ -650,7 +642,7 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 12px 16px;
+            padding: 6px 12px;
             background: var(--bg-tertiary);
             border-bottom: 1px solid var(--border-color);
             flex-shrink: 0;
@@ -664,7 +656,7 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
 
           .settings-header h1 {
             margin: 0;
-            font-size: 14px;
+            font-size: 12px;
             font-weight: 600;
             color: var(--text-primary);
             pointer-events: none;
@@ -673,17 +665,17 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
           .settings-close {
             background: none;
             border: none;
-            font-size: 20px;
+            font-size: 16px;
             color: var(--text-secondary);
             cursor: pointer;
             padding: 0;
             line-height: 1;
-            width: 24px;
-            height: 24px;
+            width: 20px;
+            height: 20px;
             display: flex;
             align-items: center;
             justify-content: center;
-            border-radius: 4px;
+            border-radius: 3px;
           }
 
           .settings-close:hover {
@@ -700,24 +692,24 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
 
           /* Sidebar */
           .settings-sidebar {
-            width: 160px;
+            width: 140px;
             flex-shrink: 0;
             background: var(--bg-secondary);
             border-right: 1px solid var(--border-color);
-            padding: 8px 0;
+            padding: 4px 0;
             overflow-y: auto;
           }
 
           .sidebar-item {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 8px;
             width: 100%;
-            padding: 10px 16px;
+            padding: 6px 12px;
             background: none;
             border: none;
             color: var(--text-secondary);
-            font-size: 13px;
+            font-size: 11px;
             text-align: left;
             cursor: pointer;
             transition: all 0.15s;
@@ -734,8 +726,8 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
           }
 
           .sidebar-icon {
-            font-size: 14px;
-            width: 18px;
+            font-size: 12px;
+            width: 16px;
             text-align: center;
           }
 
@@ -746,22 +738,22 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
           /* Content area */
           .settings-content {
             flex: 1;
-            padding: 20px 24px;
+            padding: 10px 14px;
             overflow-y: auto;
             background: var(--bg-primary, #1a1a1a);
           }
 
           .settings-category-content h2 {
-            margin: 0 0 20px 0;
-            font-size: 16px;
+            margin: 0 0 10px 0;
+            font-size: 12px;
             font-weight: 600;
             color: var(--text-primary);
-            padding-bottom: 8px;
+            padding-bottom: 6px;
             border-bottom: 1px solid var(--border-color);
           }
 
           .settings-group {
-            margin-bottom: 24px;
+            margin-bottom: 14px;
           }
 
           .settings-group:last-child {
@@ -769,25 +761,25 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
           }
 
           .settings-group-title {
-            font-size: 11px;
+            font-size: 10px;
             font-weight: 600;
             color: var(--text-secondary);
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            margin-bottom: 12px;
+            margin-bottom: 6px;
           }
 
           .settings-description {
-            font-size: 12px;
+            font-size: 11px;
             color: var(--text-secondary);
-            margin: 0 0 12px 0;
-            line-height: 1.5;
+            margin: 0 0 8px 0;
+            line-height: 1.4;
           }
 
           .settings-hint {
-            font-size: 11px;
+            font-size: 10px;
             color: var(--text-secondary);
-            margin: 6px 0 0 0;
+            margin: 4px 0 0 0;
             opacity: 0.8;
           }
 
@@ -796,7 +788,7 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 8px 0;
+            padding: 4px 0;
             border-bottom: 1px solid rgba(255, 255, 255, 0.05);
           }
 
@@ -805,25 +797,25 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
           }
 
           .settings-label {
-            font-size: 13px;
+            font-size: 11px;
             color: var(--text-primary);
           }
 
           .settings-checkbox {
-            width: 16px;
-            height: 16px;
+            width: 14px;
+            height: 14px;
             accent-color: var(--accent);
             cursor: pointer;
           }
 
           .settings-select {
-            padding: 6px 10px;
+            padding: 4px 8px;
             background: var(--bg-tertiary);
             border: 1px solid var(--border-color);
-            border-radius: 4px;
+            border-radius: 3px;
             color: var(--text-primary);
-            font-size: 12px;
-            min-width: 180px;
+            font-size: 11px;
+            min-width: 160px;
             cursor: pointer;
           }
 
@@ -838,12 +830,12 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
           }
 
           .settings-input {
-            padding: 6px 10px;
+            padding: 4px 8px;
             background: var(--bg-tertiary);
             border: 1px solid var(--border-color);
-            border-radius: 4px;
+            border-radius: 3px;
             color: var(--text-primary);
-            font-size: 12px;
+            font-size: 11px;
           }
 
           .settings-input:focus {
@@ -857,17 +849,17 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
           }
 
           .settings-input-number {
-            width: 100px;
+            width: 80px;
             text-align: right;
           }
 
           .settings-button {
-            padding: 8px 16px;
+            padding: 4px 12px;
             background: var(--bg-tertiary);
             border: 1px solid var(--border-color);
-            border-radius: 4px;
+            border-radius: 3px;
             color: var(--text-primary);
-            font-size: 12px;
+            font-size: 11px;
             cursor: pointer;
             transition: all 0.15s;
           }
@@ -880,17 +872,17 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
           /* Preset buttons */
           .preset-buttons {
             display: flex;
-            gap: 8px;
-            margin-top: 12px;
+            gap: 6px;
+            margin-top: 8px;
           }
 
           .preset-btn {
-            padding: 6px 12px;
+            padding: 3px 10px;
             background: var(--bg-tertiary);
             border: 1px solid var(--border-color);
-            border-radius: 4px;
+            border-radius: 3px;
             color: var(--text-secondary);
-            font-size: 11px;
+            font-size: 10px;
             cursor: pointer;
             transition: all 0.15s;
           }
@@ -905,13 +897,13 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
           .settings-status {
             display: flex;
             align-items: center;
-            gap: 8px;
-            padding: 8px 0;
+            gap: 6px;
+            padding: 4px 0;
           }
 
           .status-indicator {
-            width: 8px;
-            height: 8px;
+            width: 6px;
+            height: 6px;
             border-radius: 50%;
           }
 
@@ -925,7 +917,7 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
           }
 
           .status-text {
-            font-size: 12px;
+            font-size: 11px;
             color: var(--text-secondary);
           }
 
@@ -933,17 +925,17 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
           .provider-list {
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            gap: 4px;
           }
 
           .provider-option {
             display: flex;
             align-items: center;
-            gap: 12px;
-            padding: 10px 12px;
+            gap: 8px;
+            padding: 5px 8px;
             background: var(--bg-tertiary);
             border: 1px solid var(--border-color);
-            border-radius: 4px;
+            border-radius: 3px;
             cursor: pointer;
             transition: all 0.15s;
           }
@@ -970,24 +962,24 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
           }
 
           .provider-label {
-            font-size: 13px;
+            font-size: 11px;
             font-weight: 500;
             color: var(--text-primary);
           }
 
           .provider-description {
-            font-size: 11px;
+            font-size: 10px;
             color: var(--text-secondary);
           }
 
           .provider-status {
             color: #22c55e;
-            font-size: 14px;
+            font-size: 12px;
           }
 
           /* API Key inputs */
           .api-key-row {
-            margin-bottom: 16px;
+            margin-bottom: 10px;
           }
 
           .api-key-row:last-child {
@@ -996,24 +988,24 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
 
           .api-key-row label {
             display: block;
-            margin-bottom: 6px;
-            font-size: 12px;
+            margin-bottom: 3px;
+            font-size: 11px;
             color: var(--text-secondary);
           }
 
           .api-key-input {
             display: flex;
-            gap: 4px;
+            gap: 3px;
           }
 
           .api-key-input input {
             flex: 1;
-            padding: 8px 10px;
+            padding: 4px 8px;
             background: var(--bg-tertiary);
             border: 1px solid var(--border-color);
-            border-radius: 4px;
+            border-radius: 3px;
             color: var(--text-primary);
-            font-size: 12px;
+            font-size: 11px;
             font-family: monospace;
           }
 
@@ -1028,12 +1020,12 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
           }
 
           .toggle-visibility {
-            padding: 8px 10px;
+            padding: 4px 8px;
             background: var(--bg-tertiary);
             border: 1px solid var(--border-color);
-            border-radius: 4px;
+            border-radius: 3px;
             cursor: pointer;
-            font-size: 12px;
+            font-size: 11px;
             color: var(--text-secondary);
             transition: all 0.15s;
           }
@@ -1045,8 +1037,8 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
 
           .api-key-link {
             display: inline-block;
-            margin-top: 6px;
-            font-size: 11px;
+            margin-top: 3px;
+            font-size: 10px;
             color: var(--accent);
             text-decoration: none;
           }
@@ -1059,18 +1051,18 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
           .settings-footer {
             display: flex;
             justify-content: flex-end;
-            gap: 8px;
-            padding: 12px 16px;
+            gap: 6px;
+            padding: 6px 12px;
             background: var(--bg-secondary);
             border-top: 1px solid var(--border-color);
             flex-shrink: 0;
           }
 
           .settings-footer button {
-            padding: 8px 20px;
-            border-radius: 4px;
+            padding: 4px 16px;
+            border-radius: 3px;
             border: 1px solid var(--border-color);
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 500;
             cursor: pointer;
             transition: all 0.15s;

@@ -253,6 +253,10 @@ export async function syncStoresToProject(): Promise<void> {
       mediaPanelColumns: mediaPanelColumns ? JSON.parse(mediaPanelColumns) : undefined,
       mediaPanelNameWidth: mediaPanelNameWidth ? parseInt(mediaPanelNameWidth, 10) : undefined,
       transcriptLanguage: transcriptLanguage || undefined,
+      thumbnailsEnabled: timelineState.thumbnailsEnabled,
+      waveformsEnabled: timelineState.waveformsEnabled,
+      proxyEnabled: useMediaStore.getState().proxyEnabled,
+      showTranscriptMarkers: timelineState.showTranscriptMarkers,
     };
 
     // Save text and solid items
@@ -523,6 +527,16 @@ export async function loadProjectToStores(): Promise<void> {
   }
   if (projectData.uiState?.transcriptLanguage) {
     localStorage.setItem('transcriptLanguage', projectData.uiState.transcriptLanguage);
+  }
+
+  // Restore view toggle states
+  if (projectData.uiState) {
+    const ui = projectData.uiState;
+    const ts = useTimelineStore.getState();
+    if (ui.thumbnailsEnabled !== undefined) ts.setThumbnailsEnabled(ui.thumbnailsEnabled);
+    if (ui.waveformsEnabled !== undefined) ts.setWaveformsEnabled(ui.waveformsEnabled);
+    if (ui.showTranscriptMarkers !== undefined) ts.setShowTranscriptMarkers(ui.showTranscriptMarkers);
+    if (ui.proxyEnabled !== undefined) useMediaStore.getState().setProxyEnabled(ui.proxyEnabled);
   }
 
   log.info(' Loaded project to stores:', projectData.name);

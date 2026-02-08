@@ -99,6 +99,7 @@ export interface TimelineState {
   // Performance toggles
   thumbnailsEnabled: boolean;
   waveformsEnabled: boolean;
+  showTranscriptMarkers: boolean;
 
   // Keyframe animation state
   clipKeyframes: Map<string, Keyframe[]>;
@@ -107,6 +108,7 @@ export interface TimelineState {
   expandedTrackPropertyGroups: Map<string, Set<string>>;
   selectedKeyframeIds: Set<string>;
   expandedCurveProperties: Map<string, Set<AnimatableProperty>>;  // trackId -> expanded curve editors
+  curveEditorHeight: number;
 
   // Mask state
   maskEditMode: MaskEditMode;
@@ -229,6 +231,10 @@ export interface RamPreviewActions {
   // Performance toggles
   toggleThumbnailsEnabled: () => void;
   toggleWaveformsEnabled: () => void;
+  setThumbnailsEnabled: (enabled: boolean) => void;
+  setWaveformsEnabled: (enabled: boolean) => void;
+  toggleTranscriptMarkers: () => void;
+  setShowTranscriptMarkers: (enabled: boolean) => void;
 }
 
 // Export progress actions interface
@@ -276,8 +282,11 @@ export interface KeyframeActions {
   // Curve editor expansion
   toggleCurveExpanded: (trackId: string, property: AnimatableProperty) => void;
   isCurveExpanded: (trackId: string, property: AnimatableProperty) => boolean;
+  setCurveEditorHeight: (height: number) => void;
   // Bezier handle manipulation
   updateBezierHandle: (keyframeId: string, handle: 'in' | 'out', position: BezierHandle) => void;
+  // Disable keyframes for a property: save current value as static, remove all keyframes, disable recording
+  disablePropertyKeyframes: (clipId: string, property: AnimatableProperty, currentValue: number) => void;
 }
 
 // Layer actions interface (render layers for engine)
@@ -336,8 +345,20 @@ export interface ClipboardClipData {
   compositionId?: string;
 }
 
+// Clipboard data for keyframe copy/paste
+export interface ClipboardKeyframeData {
+  clipId: string;
+  property: AnimatableProperty;
+  time: number;        // relative time within the copied set (0 = earliest)
+  value: number;
+  easing: EasingType;
+  handleIn?: BezierHandle;
+  handleOut?: BezierHandle;
+}
+
 export interface ClipboardState {
   clipboardData: ClipboardClipData[] | null;
+  clipboardKeyframes: ClipboardKeyframeData[] | null;
 }
 
 // Clipboard actions interface
@@ -345,6 +366,8 @@ export interface ClipboardActions {
   copyClips: () => void;
   pasteClips: () => void;
   hasClipboardData: () => boolean;
+  copyKeyframes: () => void;
+  pasteKeyframes: () => void;
 }
 
 // Mask actions interface
@@ -378,7 +401,7 @@ export interface TimelineUtils {
   // Get position with magnetic resistance at clip edges - returns adjusted position and whether user has "broken through"
   // Uses pixel-based resistance (zoom converts time distance to pixels)
   // excludeClipIds: optional list of clip IDs to exclude from collision detection (for multi-select)
-  getPositionWithResistance: (clipId: string, desiredStartTime: number, trackId: string, duration: number, zoom?: number, excludeClipIds?: string[]) => { startTime: number; forcingOverlap: boolean };
+  getPositionWithResistance: (clipId: string, desiredStartTime: number, trackId: string, duration: number, zoom?: number, excludeClipIds?: string[]) => { startTime: number; forcingOverlap: boolean; noFreeSpace?: boolean };
   // Trim any clips that the placed clip overlaps with
   trimOverlappingClips: (clipId: string, startTime: number, trackId: string, duration: number) => void;
   getSerializableState: () => CompositionTimelineData;

@@ -7,7 +7,7 @@ const log = Logger.create('Toolbar');
 import { useEngine } from '../../hooks/useEngine';
 import { useEngineStore } from '../../stores/engineStore';
 import { useDockStore } from '../../stores/dockStore';
-import { PANEL_CONFIGS, type PanelType } from '../../types/dock';
+import { PANEL_CONFIGS, SCOPE_PANEL_TYPES, WIP_PANEL_TYPES, type PanelType } from '../../types/dock';
 import { useSettingsStore, type PreviewQuality, type AutosaveInterval } from '../../stores/settingsStore';
 import { useMIDI } from '../../hooks/useMIDI';
 import { SettingsDialog } from './SettingsDialog';
@@ -570,6 +570,7 @@ export function Toolbar() {
               <div className="menu-submenu">
                 <span className="menu-label">Panels</span>
                 {(Object.keys(PANEL_CONFIGS) as PanelType[])
+                  .filter((type) => !SCOPE_PANEL_TYPES.includes(type) && !WIP_PANEL_TYPES.includes(type))
                   .map((type) => {
                     const config = PANEL_CONFIGS[type];
                     const isVisible = isPanelTypeVisible(type);
@@ -583,6 +584,36 @@ export function Toolbar() {
                       </button>
                     );
                   })}
+                {WIP_PANEL_TYPES.map((type) => {
+                  const config = PANEL_CONFIGS[type];
+                  return (
+                    <button
+                      key={type}
+                      className="menu-option menu-option-wip"
+                      disabled
+                    >
+                      <span>   {config.title}</span>
+                      <span className="menu-wip-badge">🐛</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="menu-separator" />
+              <div className="menu-submenu">
+                <span className="menu-label">Scopes</span>
+                {SCOPE_PANEL_TYPES.map((type) => {
+                  const config = PANEL_CONFIGS[type];
+                  const isVisible = isPanelTypeVisible(type);
+                  return (
+                    <button
+                      key={type}
+                      className={`menu-option ${isVisible ? 'checked' : ''}`}
+                      onClick={() => togglePanelType(type)}
+                    >
+                      <span>{isVisible ? '✓ ' : '   '}{config.title}</span>
+                    </button>
+                  );
+                })}
               </div>
               <div className="menu-separator" />
               <button className="menu-option" onClick={handleNewOutput} disabled={!isEngineReady}>

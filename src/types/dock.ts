@@ -2,7 +2,13 @@
 
 // Panel types that can be docked
 // Note: Effects, Transcript, Analysis are now integrated into Properties panel
-export type PanelType = 'preview' | 'timeline' | 'clip-properties' | 'media' | 'export' | 'multicam' | 'ai-chat' | 'ai-video' | 'youtube' | 'transitions';
+export type PanelType = 'preview' | 'timeline' | 'clip-properties' | 'media' | 'export' | 'multicam' | 'ai-chat' | 'ai-video' | 'youtube' | 'transitions' | 'scope-waveform' | 'scope-histogram' | 'scope-vectorscope';
+
+// Scope panel types for filtering in View menu
+export const SCOPE_PANEL_TYPES: PanelType[] = ['scope-waveform', 'scope-histogram', 'scope-vectorscope'];
+
+// WIP panel types — shown grayed out with bug icon in View menu
+export const WIP_PANEL_TYPES: PanelType[] = ['multicam', 'transitions'];
 
 // Panel-specific data for configurable panels
 export interface PreviewPanelData {
@@ -152,6 +158,27 @@ export const PANEL_CONFIGS: Record<PanelType, PanelConfig> = {
     type: 'transitions',
     title: 'Transitions',
     icon: 'Blend',
+    minWidth: 200,
+    minHeight: 200,
+    closable: false,
+  },
+  'scope-waveform': {
+    type: 'scope-waveform',
+    title: 'Waveform',
+    minWidth: 200,
+    minHeight: 200,
+    closable: false,
+  },
+  'scope-histogram': {
+    type: 'scope-histogram',
+    title: 'Histogram',
+    minWidth: 200,
+    minHeight: 200,
+    closable: false,
+  },
+  'scope-vectorscope': {
+    type: 'scope-vectorscope',
+    title: 'Vectorscope',
     minWidth: 200,
     minHeight: 200,
     closable: false,

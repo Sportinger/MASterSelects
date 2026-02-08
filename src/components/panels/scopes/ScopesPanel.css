@@ -1,0 +1,162 @@
+/* Scope panel container (used by WaveformPanel, HistogramPanel, VectorscopePanel) */
+.scope-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  overflow: hidden;
+}
+
+.scope-panel-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+}
+
+/* Scope mode toolbar (RGB / R / G / B / Y buttons) */
+.scope-mode-toolbar {
+  display: flex;
+  gap: 2px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+  flex-shrink: 0;
+}
+
+.scope-mode-btn {
+  padding: 3px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  font-family: monospace;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  user-select: none;
+  min-width: 28px;
+  text-align: center;
+}
+
+.scope-mode-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.scope-mode-btn.active {
+  border-color: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Color accents for active mode buttons */
+.scope-mode-btn.scope-mode-rgb.active {
+  color: #e0e0e0;
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.scope-mode-btn.scope-mode-r.active {
+  color: #ff6666;
+  border-color: rgba(255, 102, 102, 0.4);
+  background: rgba(255, 80, 80, 0.12);
+}
+
+.scope-mode-btn.scope-mode-g.active {
+  color: #66cc66;
+  border-color: rgba(102, 204, 102, 0.4);
+  background: rgba(80, 200, 80, 0.12);
+}
+
+.scope-mode-btn.scope-mode-b.active {
+  color: #6688ff;
+  border-color: rgba(102, 136, 255, 0.4);
+  background: rgba(80, 120, 255, 0.12);
+}
+
+.scope-mode-btn.scope-mode-luma.active {
+  color: #ccccaa;
+  border-color: rgba(204, 204, 170, 0.4);
+  background: rgba(200, 200, 160, 0.12);
+}
+
+/* ── Legend layout ── */
+
+/* Container with Y-axis legend on the left */
+.scope-with-legend {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: stretch;
+}
+
+/* Variant with both X and Y axis */
+.scope-with-legend.scope-with-legend-xy {
+  flex-direction: column;
+}
+
+.scope-with-legend-xy .scope-canvas-area {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+}
+
+/* Y-axis legend (left side — IRE scale for waveform) */
+.scope-legend-y {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 2px 0;
+  width: 28px;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.scope-legend-y .scope-legend-label {
+  font-size: 9px;
+  font-family: monospace;
+  color: rgba(255, 255, 255, 0.35);
+  text-align: right;
+  padding-right: 5px;
+  line-height: 1;
+}
+
+/* X-axis legend (bottom — value bins for histogram) */
+.scope-legend-x {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0 0;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.scope-legend-x .scope-legend-label {
+  font-size: 9px;
+  font-family: monospace;
+  color: rgba(255, 255, 255, 0.35);
+  text-align: center;
+  width: 28px;
+  line-height: 1;
+}
+
+/* Canvas container */
+.scope-canvas-container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.scope-canvas-container canvas {
+  display: block;
+}
+
+/* Vectorscope: canvas stays square via ResizeObserver, container fills panel */

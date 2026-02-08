@@ -153,7 +153,7 @@ export function useEngine() {
 
   // Throttle mask texture updates during drag (100ms = 10fps for GPU texture)
   const lastMaskTextureUpdate = useRef(0);
-  const MASK_TEXTURE_THROTTLE_MS = 100; // Update GPU texture max 10fps during drag
+  const MASK_TEXTURE_THROTTLE_MS = 32; // Update GPU texture ~30fps during drag
 
   // Helper function to update mask textures - extracted to avoid duplication
   const updateMaskTextures = useCallback(() => {
@@ -240,8 +240,14 @@ export function useEngine() {
       (state) => state.maskDragging,
       (maskDragging) => {
         if (wasDragging && !maskDragging) {
-          // Drag just ended - force texture regeneration by clearing version cache
-          maskVersionRef.current.clear();
+          // Drag just ended - force texture regeneration only for the active clip
+          const { activeMaskId, clips } = useTimelineStore.getState();
+          if (activeMaskId) {
+            const activeClip = clips.find(c => c.masks?.some(m => m.id === activeMaskId));
+            if (activeClip) {
+              maskVersionRef.current.delete(activeClip.id);
+            }
+          }
           updateMaskTextures();
         }
         wasDragging = maskDragging;

@@ -1,7 +1,7 @@
 // Clipboard-related actions slice for copy/paste functionality
 
-import type { ClipboardActions, SliceCreator, ClipboardClipData, Keyframe } from './types';
-import type { TimelineClip } from '../../types';
+import type { ClipboardActions, SliceCreator, ClipboardClipData, ClipboardKeyframeData, Keyframe } from './types';
+import type { TimelineClip, EasingType } from '../../types';
 import { Logger } from '../../services/logger';
 import { captureSnapshot } from '../historyStore';
 
@@ -420,5 +420,98 @@ export const createClipboardSlice: SliceCreator<ClipboardActions> = (set, get) =
   hasClipboardData: () => {
     const { clipboardData } = get();
     return clipboardData !== null && clipboardData.length > 0;
+  },
+
+  copyKeyframes: () => {
+    const { selectedKeyframeIds, clipKeyframes } = get();
+
+    if (selectedKeyframeIds.size === 0) {
+      log.debug('No keyframes selected to copy');
+      return;
+    }
+
+    // Collect all selected keyframes
+    const selectedKfs: Keyframe[] = [];
+    clipKeyframes.forEach((keyframes) => {
+      keyframes.forEach(kf => {
+        if (selectedKeyframeIds.has(kf.id)) {
+          selectedKfs.push(kf);
+        }
+      });
+    });
+
+    if (selectedKfs.length === 0) return;
+
+    // Find earliest time to normalize (so pasting is relative to playhead)
+    const earliestTime = Math.min(...selectedKfs.map(kf => kf.time));
+
+    const clipboardKeyframes: ClipboardKeyframeData[] = selectedKfs.map(kf => ({
+      clipId: kf.clipId,
+      property: kf.property,
+      time: kf.time - earliestTime,
+      value: kf.value,
+      easing: kf.easing as EasingType,
+      handleIn: kf.handleIn ? { ...kf.handleIn } : undefined,
+      handleOut: kf.handleOut ? { ...kf.handleOut } : undefined,
+    }));
+
+    set({ clipboardKeyframes });
+    log.info('Copied keyframes', { count: clipboardKeyframes.length });
+  },
+
+  pasteKeyframes: () => {
+    const { clipboardKeyframes, playheadPosition, clips, selectedClipIds, clipKeyframes, invalidateCache, pasteClips } = get();
+
+    if (!clipboardKeyframes || clipboardKeyframes.length === 0) {
+      // Fall through to clip paste
+      pasteClips();
+      return;
+    }
+
+    // Determine target clip: use selected clip, or fall back to the original clip
+    const targetClipId = selectedClipIds.size === 1
+      ? [...selectedClipIds][0]
+      : clipboardKeyframes[0].clipId;
+
+    const targetClip = clips.find(c => c.id === targetClipId);
+    if (!targetClip) {
+      log.warn('No target clip found for keyframe paste');
+      return;
+    }
+
+    captureSnapshot('Paste keyframes');
+
+    const clipLocalTime = playheadPosition - targetClip.startTime;
+    const newMap = new Map(clipKeyframes);
+    const existingKeyframes = newMap.get(targetClipId) || [];
+    const newKeyframes = [...existingKeyframes];
+
+    const timestamp = Date.now();
+    const randomSuffix = () => Math.random().toString(36).substr(2, 5);
+
+    for (const kfData of clipboardKeyframes) {
+      const newTime = Math.max(0, Math.min(targetClip.duration, clipLocalTime + kfData.time));
+
+      const newKf: Keyframe = {
+        id: `kf_${timestamp}_${randomSuffix()}`,
+        clipId: targetClipId,
+        time: newTime,
+        property: kfData.property,
+        value: kfData.value,
+        easing: kfData.easing,
+        handleIn: kfData.handleIn ? { ...kfData.handleIn } : undefined,
+        handleOut: kfData.handleOut ? { ...kfData.handleOut } : undefined,
+      };
+
+      newKeyframes.push(newKf);
+    }
+
+    // Sort by time
+    newKeyframes.sort((a, b) => a.time - b.time);
+    newMap.set(targetClipId, newKeyframes);
+
+    set({ clipKeyframes: newMap });
+    invalidateCache();
+    log.info('Pasted keyframes', { count: clipboardKeyframes.length, targetClipId });
   },
 });

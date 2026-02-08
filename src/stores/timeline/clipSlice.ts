@@ -407,7 +407,36 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
     }
 
     const { startTime: snappedTime } = getSnappedPosition(id, newStartTime, targetTrackId);
-    const { startTime: finalStartTime, forcingOverlap } = getPositionWithResistance(id, snappedTime, targetTrackId, movingClip.duration, undefined, excludeClipIds);
+    let { startTime: finalStartTime, forcingOverlap, noFreeSpace } = getPositionWithResistance(id, snappedTime, targetTrackId, movingClip.duration, undefined, excludeClipIds);
+
+    // If no free space on target track (cross-track move), find alternative track or create new one
+    let actualTrackId = targetTrackId;
+    if (noFreeSpace && targetTrackId !== movingClip.trackId) {
+      const targetTrack = tracks.find(t => t.id === targetTrackId);
+      if (targetTrack) {
+        const altTracks = tracks.filter(t =>
+          t.type === targetTrack.type && t.id !== targetTrackId && t.id !== movingClip.trackId
+        );
+        let found = false;
+        for (const alt of altTracks) {
+          const altResult = getPositionWithResistance(id, snappedTime, alt.id, movingClip.duration, undefined, excludeClipIds);
+          if (!altResult.noFreeSpace) {
+            actualTrackId = alt.id;
+            finalStartTime = altResult.startTime;
+            forcingOverlap = altResult.forcingOverlap;
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          // No existing track has space — create a new one
+          actualTrackId = get().addTrack(targetTrack.type);
+          finalStartTime = Math.max(0, snappedTime);
+          forcingOverlap = false;
+        }
+      }
+    }
+
     const timeDelta = finalStartTime - movingClip.startTime;
 
     const linkedClip = clips.find(c => c.id === movingClip.linkedClipId || c.linkedClipId === id);
@@ -425,7 +454,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
 
     set({
       clips: clips.map(c => {
-        if (c.id === id) return { ...c, startTime: Math.max(0, finalStartTime), trackId: targetTrackId };
+        if (c.id === id) return { ...c, startTime: Math.max(0, finalStartTime), trackId: actualTrackId };
         if (!skipLinked && (c.id === movingClip.linkedClipId || c.linkedClipId === id)) {
           return { ...c, startTime: Math.max(0, linkedFinalTime) };
         }
@@ -437,7 +466,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
       }),
     });
 
-    if (forcingOverlap && !skipTrim) trimOverlappingClips(id, finalStartTime, targetTrackId, movingClip.duration);
+    if (forcingOverlap && !skipTrim) trimOverlappingClips(id, finalStartTime, actualTrackId, movingClip.duration);
     if (linkedForcingOverlap && linkedClip && !skipLinked && !skipTrim) {
       trimOverlappingClips(linkedClip.id, linkedFinalTime, linkedClip.trackId, linkedClip.duration);
     }

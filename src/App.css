@@ -222,6 +222,16 @@ input, textarea {
   background: transparent;
 }
 
+.menu-option-wip {
+  opacity: 0.5;
+}
+
+.menu-wip-badge {
+  font-size: 11px;
+  margin-left: auto;
+  filter: saturate(3) brightness(0.9);
+}
+
 .menu-option .shortcut {
   color: var(--text-muted);
   font-size: 11px;
@@ -3183,6 +3193,12 @@ input[type="checkbox"] {
   background: linear-gradient(90deg, rgba(45, 107, 74, 0.15), transparent);
 }
 
+/* Green separator line between video and audio track sections */
+.track-header.video + .track-header.audio,
+.track-lane.video + .track-lane.audio {
+  border-top: 2px solid #4CAF50;
+}
+
 /* Preview header shown when dragging media to create new track */
 .track-header-preview {
   display: flex;
@@ -4420,13 +4436,14 @@ input[type="checkbox"] {
 .clip-content {
   position: relative;
   z-index: 5;
-  padding: 4px 8px;
-  height: auto;
+  padding: 2px 6px;
+  height: 100%;
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
   background: linear-gradient(to bottom, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.2) 50%, transparent 100%);
   pointer-events: none;
+  overflow: hidden;
 }
 
 .clip-name-row {
@@ -4437,7 +4454,8 @@ input[type="checkbox"] {
 }
 
 .clip-name {
-  font-size: 11px;
+  font-size: 10px;
+  line-height: 1.2;
   font-weight: 600;
   color: #fff;
   white-space: nowrap;
@@ -4574,6 +4592,31 @@ input[type="checkbox"] {
 }
 
 /* Fade curve container - SVG bezier curve showing opacity animation */
+/* Keyframe tick marks on clip bar */
+.clip-keyframe-ticks {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 8px;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.keyframe-tick {
+  position: absolute;
+  bottom: 1px;
+  width: 4px;
+  height: 4px;
+  background: #f59e0b;
+  transform: translateX(-50%) rotate(45deg);
+  opacity: 0.7;
+}
+
+.timeline-clip.selected .keyframe-tick {
+  opacity: 1;
+}
+
 .fade-curve-container {
   position: absolute;
   top: 0;
@@ -5140,11 +5183,16 @@ input[type="checkbox"] {
   background: var(--bg-tertiary);
 }
 
-.view-dropdown-item input[type="checkbox"] {
+.view-check {
   width: 14px;
-  height: 14px;
-  accent-color: var(--accent-color);
-  cursor: pointer;
+  font-size: 11px;
+  text-align: center;
+  color: transparent;
+  flex-shrink: 0;
+}
+
+.view-check.checked {
+  color: var(--accent-color, #4a9eff);
 }
 
 .btn-danger {
@@ -6628,10 +6676,13 @@ input[type="checkbox"] {
 
 /* Keyframe track row when curve is expanded */
 .keyframe-track-row.flat.curve-expanded {
+  height: auto;
   flex-direction: column;
 }
 
 .keyframe-track-row.flat.curve-expanded .keyframe-track {
+  position: relative;
+  height: 18px;
   flex-shrink: 0;
 }
 

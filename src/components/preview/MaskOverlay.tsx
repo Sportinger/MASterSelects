@@ -480,6 +480,136 @@ export function MaskOverlay({ canvasWidth, canvasHeight }: MaskOverlayProps) {
     window.addEventListener('mouseup', handleMouseUp);
   }, [activeMask, selectedClip, canvasWidth, canvasHeight, setMaskDragging]);
 
+  // Handle edge drag - dragging a line segment between two vertices moves both
+  const edgeDragState = useRef<{
+    isDragging: boolean;
+    startX: number;
+    startY: number;
+    vertexA: { id: string; x: number; y: number };
+    vertexB: { id: string; x: number; y: number };
+  }>({ isDragging: false, startX: 0, startY: 0, vertexA: { id: '', x: 0, y: 0 }, vertexB: { id: '', x: 0, y: 0 } });
+
+  const handleEdgeMouseDown = useCallback((e: React.MouseEvent, vertexIdA: string, vertexIdB: string) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!activeMask || !selectedClip) return;
+
+    const vA = activeMask.vertices.find(v => v.id === vertexIdA);
+    const vB = activeMask.vertices.find(v => v.id === vertexIdB);
+    if (!vA || !vB) return;
+
+    setMaskDragging(true);
+    edgeDragState.current = {
+      isDragging: true,
+      startX: e.clientX,
+      startY: e.clientY,
+      vertexA: { id: vA.id, x: vA.x, y: vA.y },
+      vertexB: { id: vB.id, x: vB.x, y: vB.y },
+    };
+
+    let lastUpdate = 0;
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (!edgeDragState.current.isDragging || !selectedClip || !activeMask) return;
+      const now = performance.now();
+      if (now - lastUpdate < 16) return;
+      lastUpdate = now;
+
+      const svg = svgRef.current;
+      if (!svg) return;
+      const rect = svg.getBoundingClientRect();
+      const scaleX = canvasWidth / rect.width;
+      const scaleY = canvasHeight / rect.height;
+
+      const dx = (moveEvent.clientX - edgeDragState.current.startX) * scaleX / canvasWidth;
+      const dy = (moveEvent.clientY - edgeDragState.current.startY) * scaleY / canvasHeight;
+
+      const { vertexA, vertexB } = edgeDragState.current;
+      const newAx = Math.max(0, Math.min(1, vertexA.x + dx));
+      const newAy = Math.max(0, Math.min(1, vertexA.y + dy));
+      const newBx = Math.max(0, Math.min(1, vertexB.x + dx));
+      const newBy = Math.max(0, Math.min(1, vertexB.y + dy));
+
+      // Batch update both vertices via direct store mutation
+      const { clips } = useTimelineStore.getState();
+      const updatedClips = clips.map(c => {
+        if (c.id !== selectedClip.id) return c;
+        return {
+          ...c,
+          masks: (c.masks || []).map(m => {
+            if (m.id !== activeMask.id) return m;
+            return {
+              ...m,
+              vertices: m.vertices.map(v => {
+                if (v.id === vertexA.id) return { ...v, x: newAx, y: newAy };
+                if (v.id === vertexB.id) return { ...v, x: newBx, y: newBy };
+                return v;
+              }),
+            };
+          }),
+        };
+      });
+      useTimelineStore.setState({ clips: updatedClips });
+    };
+
+    const handleMouseUp = () => {
+      edgeDragState.current = { isDragging: false, startX: 0, startY: 0, vertexA: { id: '', x: 0, y: 0 }, vertexB: { id: '', x: 0, y: 0 } };
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      setMaskDragging(false);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  }, [activeMask, selectedClip, canvasWidth, canvasHeight, setMaskDragging]);
+
+  // Generate individual edge path segments for hit testing
+  const edgeSegments = useMemo(() => {
+    if (!activeMask || !activeMask.visible || activeMask.vertices.length < 2) return [];
+    const verts = activeMask.vertices;
+    const posX = activeMask.position?.x || 0;
+    const posY = activeMask.position?.y || 0;
+    const segments: Array<{ d: string; idA: string; idB: string }> = [];
+
+    for (let i = 1; i < verts.length; i++) {
+      const prev = verts[i - 1];
+      const curr = verts[i];
+      const prevX = (prev.x + posX) * canvasWidth;
+      const prevY = (prev.y + posY) * canvasHeight;
+      const currX = (curr.x + posX) * canvasWidth;
+      const currY = (curr.y + posY) * canvasHeight;
+      const cp1x = prevX + prev.handleOut.x * canvasWidth;
+      const cp1y = prevY + prev.handleOut.y * canvasHeight;
+      const cp2x = currX + curr.handleIn.x * canvasWidth;
+      const cp2y = currY + curr.handleIn.y * canvasHeight;
+      segments.push({
+        d: `M ${prevX} ${prevY} C ${cp1x},${cp1y} ${cp2x},${cp2y} ${currX},${currY}`,
+        idA: prev.id,
+        idB: curr.id,
+      });
+    }
+
+    // Closing segment
+    if (activeMask.closed && verts.length > 2) {
+      const last = verts[verts.length - 1];
+      const first = verts[0];
+      const lastX = (last.x + posX) * canvasWidth;
+      const lastY = (last.y + posY) * canvasHeight;
+      const firstX = (first.x + posX) * canvasWidth;
+      const firstY = (first.y + posY) * canvasHeight;
+      const cp1x = lastX + last.handleOut.x * canvasWidth;
+      const cp1y = lastY + last.handleOut.y * canvasHeight;
+      const cp2x = firstX + first.handleIn.x * canvasWidth;
+      const cp2y = firstY + first.handleIn.y * canvasHeight;
+      segments.push({
+        d: `M ${lastX} ${lastY} C ${cp1x},${cp1y} ${cp2x},${cp2y} ${firstX},${firstY}`,
+        idA: last.id,
+        idB: first.id,
+      });
+    }
+
+    return segments;
+  }, [activeMask, canvasWidth, canvasHeight]);
+
   // Handle clicking on SVG background (add vertex in drawing mode, deselect in editing mode)
   const handleSvgClick = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
     if (!selectedClip) return;
@@ -791,6 +921,20 @@ export function MaskOverlay({ canvasWidth, canvasHeight }: MaskOverlayProps) {
           pointerEvents="none"
         />
       )}
+
+      {/* Edge hit areas — wide invisible strokes for dragging edges between vertices */}
+      {maskEditMode === 'editing' && edgeSegments.map((seg) => (
+        <path
+          key={`edge-${seg.idA}-${seg.idB}`}
+          d={seg.d}
+          fill="none"
+          stroke="transparent"
+          strokeWidth="12"
+          cursor="move"
+          pointerEvents="stroke"
+          onMouseDown={(e) => handleEdgeMouseDown(e, seg.idA, seg.idB)}
+        />
+      ))}
 
       {/* Bezier control handles (only show for selected vertices when visible) */}
       {activeMask?.visible && canvasVertices.map((vertex) => {

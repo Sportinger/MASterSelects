@@ -135,7 +135,7 @@ export function Timeline() {
   const { addMarker, moveMarker, removeMarker } = store;
 
   // Clipboard actions
-  const { copyClips, pasteClips } = store;
+  const { copyClips, pasteClips, copyKeyframes, pasteKeyframes } = store;
 
   const getActiveComposition = useMediaStore(state => state.getActiveComposition);
   const getOpenCompositions = useMediaStore(state => state.getOpenCompositions);
@@ -170,14 +170,9 @@ export function Timeline() {
   }, [splitClip, setToolMode]);
 
   // Stable callbacks for TimelineControls (avoids re-renders from inline arrows)
-  const setProxyEnabled = useMediaStore(state => state.setProxyEnabled);
-  const handleToggleProxy = useCallback(() => {
-    setProxyEnabled(!proxyEnabled);
-  }, [setProxyEnabled, proxyEnabled]);
+  const toggleProxyEnabled = useMediaStore(state => state.toggleProxyEnabled);
 
-  const handleToggleTranscriptMarkers = useCallback(() => {
-    setShowTranscriptMarkers(prev => !prev);
-  }, []);
+  // Use store toggle directly (no useCallback needed - stable store reference)
 
   const handleAddVideoTrack = useCallback(() => addTrack('video'), [addTrack]);
   const handleAddAudioTrack = useCallback(() => addTrack('audio'), [addTrack]);
@@ -333,8 +328,9 @@ export function Timeline() {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const handleClipContextMenu = useClipContextMenu(selectedClipIds, selectClip, setContextMenu);
 
-  // Transcript markers visibility toggle
-  const [showTranscriptMarkers, setShowTranscriptMarkers] = useState(true);
+  // Transcript markers visibility toggle (from store for persistence)
+  const showTranscriptMarkers = useTimelineStore(s => s.showTranscriptMarkers);
+  const toggleTranscriptMarkers = useTimelineStore(s => s.toggleTranscriptMarkers);
 
   // Multicam dialog state
   const [multicamDialogOpen, setMulticamDialogOpen] = useState(false);
@@ -417,15 +413,22 @@ export function Timeline() {
     return false;
   }, [anyAudioSolo]);
 
-  // Calculate total content height for vertical scrollbar
-  const contentHeight = useMemo(() => {
+  // Subscribe to curveEditorHeight for snap position recalculation
+  const curveEditorHeight = useTimelineStore(s => s.curveEditorHeight);
+
+  // Calculate total content height and track snap positions for vertical scrollbar
+  // Dependencies: tracks, expansion state, curve editor state, selected clips (affects property rows)
+  const { contentHeight, trackSnapPositions } = useMemo(() => {
     let totalHeight = 0;
+    const snapPositions: number[] = [0];
     for (const track of tracks) {
       const isExpanded = isTrackExpanded(track.id);
       totalHeight += isExpanded ? getExpandedTrackHeight(track.id, track.height) : track.height;
+      snapPositions.push(totalHeight);
     }
-    return totalHeight;
-  }, [tracks, isTrackExpanded, getExpandedTrackHeight]);
+    return { contentHeight: totalHeight, trackSnapPositions: snapPositions };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tracks, isTrackExpanded, getExpandedTrackHeight, expandedCurveProperties, curveEditorHeight, selectedClipIds, clipKeyframes]);
 
   // Track viewport height for scrollbar
   const [viewportHeight, setViewportHeight] = useState(300);
@@ -467,6 +470,8 @@ export function Timeline() {
     updateClipTransform,
     copyClips,
     pasteClips,
+    copyKeyframes,
+    pasteKeyframes,
     toolMode,
     toggleCutTool,
     clipMap,
@@ -539,12 +544,13 @@ export function Timeline() {
       if (e.altKey) {
         e.preventDefault();
         e.stopPropagation();
-        const delta = e.deltaY > 0 ? -10 : 10;
+        // Smooth scaling: small multiplier so each wheel notch (~100 deltaY) = ~5px
+        const delta = -e.deltaY * 0.05;
         useTimelineStore.getState().scaleTracksOfType(track.type, delta);
       } else if (e.shiftKey) {
         e.preventDefault();
         e.stopPropagation();
-        const delta = e.deltaY > 0 ? -10 : 10;
+        const delta = -e.deltaY * 0.05;
         useTimelineStore.getState().setTrackHeight(trackId, track.height + delta);
       }
     },
@@ -561,6 +567,7 @@ export function Timeline() {
     playheadPosition,
     contentHeight,
     viewportHeight,
+    trackSnapPositions,
     setZoom,
     setScrollX,
     setScrollY,
@@ -679,6 +686,7 @@ export function Timeline() {
           fadeInDuration={getFadeInDuration(clip.id)}
           fadeOutDuration={getFadeOutDuration(clip.id)}
           opacityKeyframes={getClipKeyframes(clip.id).filter(k => k.property === 'opacity')}
+          allKeyframeTimes={[...new Set(getClipKeyframes(clip.id).map(k => k.time))]}
           timeToPixel={timeToPixel}
           pixelToTime={pixelToTime}
           formatTime={formatTime}
@@ -769,12 +777,12 @@ export function Timeline() {
         onSetOutPoint={setOutPointAtPlayhead}
         onClearInOut={clearInOut}
         onToggleRamPreview={toggleRamPreviewEnabled}
-        onToggleProxy={handleToggleProxy}
+        onToggleProxy={toggleProxyEnabled}
         isProxyCaching={isProxyCaching}
         proxyCacheProgress={proxyCacheProgress}
         onStartProxyCachePreload={startProxyCachePreload}
         onCancelProxyCachePreload={cancelProxyCachePreload}
-        onToggleTranscriptMarkers={handleToggleTranscriptMarkers}
+        onToggleTranscriptMarkers={toggleTranscriptMarkers}
         onToggleThumbnails={toggleThumbnailsEnabled}
         onToggleWaveforms={toggleWaveformsEnabled}
         onToggleCutTool={toggleCutTool}
@@ -830,44 +838,44 @@ export function Timeline() {
               const dynamicHeight = getExpandedTrackHeight(track.id, track.height);
 
               return (
-                <TimelineHeader
-                  key={track.id}
-                  track={track}
-                  tracks={tracks}
-                  isDimmed={isDimmed}
-                  isExpanded={isExpanded}
-                  dynamicHeight={dynamicHeight}
-                  hasKeyframes={trackHasKeyframes(track.id)}
-                  selectedClipIds={selectedClipIds}
-                  clips={clips}
-                  playheadPosition={playheadPosition}
-                  onToggleExpand={() => toggleTrackExpanded(track.id)}
-                  onToggleSolo={() =>
-                    useTimelineStore.getState().setTrackSolo(track.id, !track.solo)
-                  }
-                  onToggleMuted={() =>
-                    useTimelineStore.getState().setTrackMuted(track.id, !track.muted)
-                  }
-                  onToggleVisible={() =>
-                    useTimelineStore.getState().setTrackVisible(track.id, !track.visible)
-                  }
-                  onRenameTrack={(name) =>
-                    useTimelineStore.getState().renameTrack(track.id, name)
-                  }
-                  onWheel={(e) => handleTrackHeaderWheel(e, track.id)}
-                  clipKeyframes={clipKeyframes}
-                  getClipKeyframes={getClipKeyframes}
-                  getInterpolatedTransform={getInterpolatedTransform}
-                  getInterpolatedEffects={getInterpolatedEffects}
-                  addKeyframe={addKeyframe}
-                  setPlayheadPosition={setPlayheadPosition}
-                  setPropertyValue={setPropertyValue}
-                  expandedCurveProperties={expandedCurveProperties}
-                  onToggleCurveExpanded={toggleCurveExpanded}
-                  onSetTrackParent={setTrackParent}
-                  onTrackPickWhipDragStart={handleTrackPickWhipDragStart}
-                  onTrackPickWhipDragEnd={handleTrackPickWhipDragEnd}
-                />
+                  <TimelineHeader
+                    key={track.id}
+                    track={track}
+                    tracks={tracks}
+                    isDimmed={isDimmed}
+                    isExpanded={isExpanded}
+                    dynamicHeight={dynamicHeight}
+                    hasKeyframes={trackHasKeyframes(track.id)}
+                    selectedClipIds={selectedClipIds}
+                    clips={clips}
+                    playheadPosition={playheadPosition}
+                    onToggleExpand={() => toggleTrackExpanded(track.id)}
+                    onToggleSolo={() =>
+                      useTimelineStore.getState().setTrackSolo(track.id, !track.solo)
+                    }
+                    onToggleMuted={() =>
+                      useTimelineStore.getState().setTrackMuted(track.id, !track.muted)
+                    }
+                    onToggleVisible={() =>
+                      useTimelineStore.getState().setTrackVisible(track.id, !track.visible)
+                    }
+                    onRenameTrack={(name) =>
+                      useTimelineStore.getState().renameTrack(track.id, name)
+                    }
+                    onWheel={(e) => handleTrackHeaderWheel(e, track.id)}
+                    clipKeyframes={clipKeyframes}
+                    getClipKeyframes={getClipKeyframes}
+                    getInterpolatedTransform={getInterpolatedTransform}
+                    getInterpolatedEffects={getInterpolatedEffects}
+                    addKeyframe={addKeyframe}
+                    setPlayheadPosition={setPlayheadPosition}
+                    setPropertyValue={setPropertyValue}
+                    expandedCurveProperties={expandedCurveProperties}
+                    onToggleCurveExpanded={toggleCurveExpanded}
+                    onSetTrackParent={setTrackParent}
+                    onTrackPickWhipDragStart={handleTrackPickWhipDragStart}
+                    onTrackPickWhipDragEnd={handleTrackPickWhipDragEnd}
+                  />
               );
             })}
             {/* New audio track preview header - appears when dragging over new track zone or linked audio needs new track */}

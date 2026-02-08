@@ -13,7 +13,6 @@ function TrackPropertyTracks({
   renderKeyframeDiamonds,
   expandedCurveProperties,
   selectedKeyframeIds,
-  scrollX,
   onSelectKeyframe,
   onMoveKeyframe,
   onUpdateBezierHandle,
@@ -26,7 +25,6 @@ function TrackPropertyTracks({
   renderKeyframeDiamonds: (trackId: string, property: AnimatableProperty) => React.ReactNode;
   expandedCurveProperties: Map<string, Set<AnimatableProperty>>;
   selectedKeyframeIds: Set<string>;
-  scrollX: number;
   onSelectKeyframe: (keyframeId: string, addToSelection: boolean) => void;
   onMoveKeyframe: (keyframeId: string, newTime: number) => void;
   onUpdateBezierHandle: (keyframeId: string, handle: 'in' | 'out', position: BezierHandle) => void;
@@ -103,13 +101,10 @@ function TrackPropertyTracks({
                 clipStartTime={selectedClip.startTime}
                 clipDuration={selectedClip.duration}
                 width={containerWidth}
-                scrollX={scrollX}
                 selectedKeyframeIds={selectedKeyframeIds}
                 onSelectKeyframe={onSelectKeyframe}
                 onMoveKeyframe={(id, newTime, _newValue) => {
-                  // CurveEditor passes both time and value, but we need separate calls
                   onMoveKeyframe(id, newTime);
-                  // Value changes happen through bezier handle updates
                 }}
                 onUpdateBezierHandle={onUpdateBezierHandle}
                 timeToPixel={timeToPixel}
@@ -144,7 +139,7 @@ function TimelineTrackComponent({
   renderKeyframeDiamonds,
   timeToPixel,
   pixelToTime,
-  scrollX,
+  scrollX: _scrollX,
   expandedCurveProperties,
   onSelectKeyframe,
   onMoveKeyframe,
@@ -218,7 +213,6 @@ function TimelineTrackComponent({
           renderKeyframeDiamonds={renderKeyframeDiamonds}
           expandedCurveProperties={expandedCurveProperties}
           selectedKeyframeIds={selectedKeyframeIds}
-          scrollX={scrollX}
           onSelectKeyframe={onSelectKeyframe}
           onMoveKeyframe={onMoveKeyframe}
           onUpdateBezierHandle={onUpdateBezierHandle}

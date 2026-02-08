@@ -235,38 +235,38 @@ function TimelineControlsComponent({
           </button>
           {viewDropdownOpen && (
             <div className="view-dropdown-menu">
-              <label
+              <div
                 className="view-dropdown-item"
-                onClick={(e) => { e.preventDefault(); onToggleProxy(); }}
+                onClick={onToggleProxy}
               >
-                <input type="checkbox" checked={proxyEnabled} readOnly />
+                <span className={`view-check ${proxyEnabled ? 'checked' : ''}`}>✓</span>
                 <span>
                   Proxy
                   {currentlyGeneratingProxyId && ' (Generating...)'}
                   {!currentlyGeneratingProxyId && mediaFilesWithProxy > 0 && ` (${mediaFilesWithProxy})`}
                 </span>
-              </label>
-              <label
+              </div>
+              <div
                 className="view-dropdown-item"
-                onClick={(e) => { e.preventDefault(); onToggleThumbnails(); }}
+                onClick={onToggleThumbnails}
               >
-                <input type="checkbox" checked={thumbnailsEnabled} readOnly />
+                <span className={`view-check ${thumbnailsEnabled ? 'checked' : ''}`}>✓</span>
                 <span>Thumbnails</span>
-              </label>
-              <label
+              </div>
+              <div
                 className="view-dropdown-item"
-                onClick={(e) => { e.preventDefault(); onToggleWaveforms(); }}
+                onClick={onToggleWaveforms}
               >
-                <input type="checkbox" checked={waveformsEnabled} readOnly />
+                <span className={`view-check ${waveformsEnabled ? 'checked' : ''}`}>✓</span>
                 <span>Waveforms</span>
-              </label>
-              <label
+              </div>
+              <div
                 className="view-dropdown-item"
-                onClick={(e) => { e.preventDefault(); onToggleTranscriptMarkers(); }}
+                onClick={onToggleTranscriptMarkers}
               >
-                <input type="checkbox" checked={showTranscriptMarkers} readOnly />
+                <span className={`view-check ${showTranscriptMarkers ? 'checked' : ''}`}>✓</span>
                 <span>Transcript Markers</span>
-              </label>
+              </div>
             </div>
           )}
         </div>

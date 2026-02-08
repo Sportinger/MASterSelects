@@ -45,6 +45,11 @@ export interface ProjectUIState {
   mediaPanelNameWidth?: number;
   // Transcript settings
   transcriptLanguage?: string;
+  // View toggles
+  thumbnailsEnabled?: boolean;
+  waveformsEnabled?: boolean;
+  proxyEnabled?: boolean;
+  showTranscriptMarkers?: boolean;
 }
 
 export interface ProjectFile {

@@ -22,6 +22,7 @@ function isProxyComplete(file: MediaFile, frameCountOverride?: number): boolean 
 export interface ProxyActions {
   proxyEnabled: boolean;
   setProxyEnabled: (enabled: boolean) => void;
+  toggleProxyEnabled: () => void;
   generateProxy: (mediaFileId: string) => Promise<void>;
   cancelProxyGeneration: (mediaFileId: string) => void;
   updateProxyProgress: (mediaFileId: string, progress: number) => void;
@@ -31,6 +32,24 @@ export interface ProxyActions {
 
 export const createProxySlice: MediaSliceCreator<ProxyActions> = (set, get) => ({
   proxyEnabled: false,
+
+  toggleProxyEnabled: () => {
+    const enabled = !get().proxyEnabled;
+    set({ proxyEnabled: enabled });
+
+    if (enabled) {
+      const clips = useTimelineStore.getState().clips;
+      clips.forEach(clip => {
+        if (clip.source?.videoElement) {
+          clip.source.videoElement.muted = true;
+          if (!clip.source.videoElement.paused) {
+            clip.source.videoElement.pause();
+          }
+        }
+      });
+      log.info('Mode enabled - muted all videos');
+    }
+  },
 
   setProxyEnabled: async (enabled: boolean) => {
     set({ proxyEnabled: enabled });

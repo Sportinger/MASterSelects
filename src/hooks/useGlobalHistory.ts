@@ -117,6 +117,10 @@ export function useGlobalHistory() {
       (curr, prev) => {
         if (useHistoryStore.getState().isApplying) return;
 
+        // Skip captures during mask dragging — vertex updates fire at 60fps
+        // and would cause expensive deep-clone snapshots every 150ms
+        if (useTimelineStore.getState().maskDragging) return;
+
         if (curr.clips !== prev.clips) {
           if (curr.clips.length !== prev.clips.length) {
             debouncedCapture(curr.clips.length > prev.clips.length ? 'Add clip' : 'Remove clip');

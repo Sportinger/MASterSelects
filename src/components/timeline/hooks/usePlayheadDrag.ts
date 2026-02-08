@@ -68,7 +68,8 @@ export function usePlayheadDrag({
         cancelRamPreview();
       }
 
-      const rect = e.currentTarget.getBoundingClientRect();
+      if (!timelineRef.current) return;
+      const rect = timelineRef.current.getBoundingClientRect();
       const x = e.clientX - rect.left + scrollX;
       const time = pixelToTime(x);
       setPlayheadPosition(Math.max(0, Math.min(time, duration)));
@@ -80,6 +81,7 @@ export function usePlayheadDrag({
       pause,
       isRamPreviewing,
       cancelRamPreview,
+      timelineRef,
       scrollX,
       pixelToTime,
       duration,

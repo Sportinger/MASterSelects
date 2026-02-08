@@ -2,6 +2,7 @@
 
 import type { TimelineTrack } from '../../types';
 import type { TrackActions, SliceCreator } from './types';
+import { MIN_TRACK_HEIGHT, MAX_TRACK_HEIGHT } from './constants';
 import { Logger } from '../../services/logger';
 
 const log = Logger.create('TrackSlice');
@@ -87,7 +88,7 @@ export const createTrackSlice: SliceCreator<TrackActions> = (set, get) => ({
   setTrackHeight: (id, height) => {
     const { tracks } = get();
     set({
-      tracks: tracks.map(t => t.id === id ? { ...t, height: Math.max(30, Math.min(200, height)) } : t),
+      tracks: tracks.map(t => t.id === id ? { ...t, height: Math.max(MIN_TRACK_HEIGHT, Math.min(MAX_TRACK_HEIGHT, height)) } : t),
     });
   },
 
@@ -113,7 +114,7 @@ export const createTrackSlice: SliceCreator<TrackActions> = (set, get) => ({
       });
     } else {
       // All already synced, scale uniformly
-      const newHeight = Math.max(30, Math.min(200, maxHeight + delta));
+      const newHeight = Math.max(MIN_TRACK_HEIGHT, Math.min(MAX_TRACK_HEIGHT, maxHeight + delta));
       set({
         tracks: tracks.map(t =>
           t.type === type ? { ...t, height: newHeight } : t

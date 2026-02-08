@@ -68,6 +68,7 @@ export class WebGPUEngine {
   private isGeneratingRamPreview = false;
   private isExporting = false;
   private showTransparencyGrid = false;
+  private lastRenderHadContent = false;
 
   // Video time tracking (for optimization)
   private lastVideoTime: Map<string, number> = new Map();
@@ -565,10 +566,12 @@ export class WebGPUEngine {
 
     // Handle empty layers
     if (layerData.length === 0) {
+      this.lastRenderHadContent = false;
       this.renderEmptyFrame(device);
       this.performanceStats.setLayerCount(0);
       return;
     }
+    this.lastRenderHadContent = true;
 
     // Pre-render nested compositions (batched with main composite)
     const commandBuffers: GPUCommandBuffer[] = [];
@@ -1037,6 +1040,14 @@ export class WebGPUEngine {
 
   getDevice(): GPUDevice | null {
     return this.context.getDevice();
+  }
+
+  getLastRenderedTexture(): GPUTexture | null {
+    if (!this.renderTargetManager || !this.compositor) return null;
+    if (!this.lastRenderHadContent) return null;
+    return this.compositor.getLastRenderWasPing()
+      ? this.renderTargetManager.getPingTexture()
+      : this.renderTargetManager.getPongTexture();
   }
 
   getTextureManager(): TextureManager | null {

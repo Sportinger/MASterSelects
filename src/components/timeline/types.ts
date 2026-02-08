@@ -8,6 +8,7 @@ export interface ClipDragState {
   originalStartTime: number;
   originalTrackId: string;
   grabOffsetX: number;      // Where on the clip we grabbed (in pixels)
+  grabY: number;            // Mouse Y relative to track lanes at grab start (for track-change resistance)
   currentX: number;         // Current mouse X position
   currentTrackId: string;
   snappedTime: number | null;  // Snapped position (if snapping)
@@ -271,6 +272,7 @@ export interface TimelineClipProps {
     handleIn?: { x: number; y: number };
     handleOut?: { x: number; y: number };
   }>;  // Opacity keyframes for fade curve visualization
+  allKeyframeTimes: number[];  // Unique keyframe times for tick marks on clip bar
   timeToPixel: (time: number) => number;
   pixelToTime: (pixel: number) => number;
   formatTime: (seconds: number) => string;

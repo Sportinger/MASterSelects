@@ -16,6 +16,9 @@ const AIChatPanel = lazy(() => import('../panels/AIChatPanel').then(m => ({ defa
 const AIVideoPanel = lazy(() => import('../panels/AIVideoPanel').then(m => ({ default: m.AIVideoPanel })));
 const YouTubePanel = lazy(() => import('../panels/YouTubePanel').then(m => ({ default: m.YouTubePanel })));
 const TransitionsPanel = lazy(() => import('../panels/TransitionsPanel').then(m => ({ default: m.TransitionsPanel })));
+const WaveformPanel = lazy(() => import('../panels/scopes/WaveformPanel').then(m => ({ default: m.WaveformPanel })));
+const HistogramPanel = lazy(() => import('../panels/scopes/HistogramPanel').then(m => ({ default: m.HistogramPanel })));
+const VectorscopePanel = lazy(() => import('../panels/scopes/VectorscopePanel').then(m => ({ default: m.VectorscopePanel })));
 
 function PanelLoading() {
   return <div className="flex items-center justify-center h-full text-gray-500 text-sm">Loading...</div>;
@@ -49,6 +52,12 @@ export function DockPanelContent({ panel }: DockPanelContentProps) {
       return <Suspense fallback={<PanelLoading />}><YouTubePanel /></Suspense>;
     case 'transitions':
       return <Suspense fallback={<PanelLoading />}><TransitionsPanel /></Suspense>;
+    case 'scope-waveform':
+      return <Suspense fallback={<PanelLoading />}><WaveformPanel /></Suspense>;
+    case 'scope-histogram':
+      return <Suspense fallback={<PanelLoading />}><HistogramPanel /></Suspense>;
+    case 'scope-vectorscope':
+      return <Suspense fallback={<PanelLoading />}><VectorscopePanel /></Suspense>;
     default:
       return <div className="panel-placeholder">Unknown panel: {panel.type}</div>;
   }

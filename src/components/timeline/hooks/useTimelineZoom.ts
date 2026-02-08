@@ -1,7 +1,7 @@
 // useTimelineZoom - Zoom, scroll, and wheel handling for timeline
 // Extracted from Timeline.tsx for better maintainability
 
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { MIN_ZOOM, MAX_ZOOM } from '../../../stores/timeline/constants';
 
 interface UseTimelineZoomProps {
@@ -16,6 +16,7 @@ interface UseTimelineZoomProps {
   playheadPosition: number;
   contentHeight: number;
   viewportHeight: number;
+  trackSnapPositions: number[];
 
   // Actions
   setZoom: (zoom: number) => void;
@@ -37,10 +38,15 @@ export function useTimelineZoom({
   playheadPosition,
   contentHeight,
   viewportHeight,
+  trackSnapPositions,
   setZoom,
   setScrollX,
   setScrollY,
 }: UseTimelineZoomProps): UseTimelineZoomReturn {
+  // Ref to avoid stale closure for scrollY in wheel handler
+  const scrollYRef = useRef(scrollY);
+  scrollYRef.current = scrollY;
+
   // Fit composition to window - calculate zoom to show entire duration
   const handleFitToWindow = useCallback(() => {
     const trackLanes = timelineBodyRef.current?.querySelector('.track-lanes-scroll');
@@ -108,11 +114,12 @@ export function useTimelineZoom({
         // Calculate dynamic minimum zoom with padding to see end marker
         const dynamicMinZoom = Math.max(MIN_ZOOM, (viewportWidth - END_PADDING) / duration);
 
-        // Adjust delta based on current zoom level for smoother zooming
-        // Use smaller steps at low zoom levels for precision
-        const zoomFactor = zoom < 1 ? 0.1 : zoom < 10 ? 1 : 5;
-        const delta = e.deltaY > 0 ? -zoomFactor : zoomFactor;
-        const newZoom = Math.max(dynamicMinZoom, Math.min(MAX_ZOOM, zoom + delta));
+        // Exponential zoom: each scroll step changes zoom by a constant ratio
+        // This feels consistent at all zoom levels (same % change per step)
+        const zoomMultiplier = 1.08; // 8% per scroll step
+        const newZoom = Math.max(dynamicMinZoom, Math.min(MAX_ZOOM,
+          e.deltaY > 0 ? zoom / zoomMultiplier : zoom * zoomMultiplier
+        ));
 
         // Calculate max scroll with padding
         const maxScrollX = Math.max(0, duration * newZoom - viewportWidth + END_PADDING);
@@ -140,18 +147,36 @@ export function useTimelineZoom({
           const maxScrollX = Math.max(0, duration * zoom - viewportWidth + END_PADDING);
           setScrollX(Math.max(0, Math.min(maxScrollX, scrollX + e.deltaX)));
         }
-        // Handle vertical scroll with custom scrollbar
+        // Handle vertical scroll — snap to track boundaries (1 track per step)
         if (e.deltaY !== 0 && !e.shiftKey && !e.ctrlKey && !e.altKey) {
           e.preventDefault();
           const maxScrollY = Math.max(0, contentHeight - viewportHeight);
-          setScrollY(Math.max(0, Math.min(maxScrollY, scrollY + e.deltaY)));
+          const currentY = scrollYRef.current;
+          if (trackSnapPositions.length > 1) {
+            // Find current snap index
+            let currentIdx = 0;
+            for (let i = trackSnapPositions.length - 1; i >= 0; i--) {
+              if (trackSnapPositions[i] <= currentY + 1) {
+                currentIdx = i;
+                break;
+              }
+            }
+            const nextIdx = e.deltaY > 0
+              ? Math.min(currentIdx + 1, trackSnapPositions.length - 1)
+              : Math.max(currentIdx - 1, 0);
+            const newY = Math.max(0, Math.min(maxScrollY, trackSnapPositions[nextIdx]));
+            scrollYRef.current = newY;
+            setScrollY(newY);
+          } else {
+            setScrollY(Math.max(0, Math.min(maxScrollY, currentY + e.deltaY)));
+          }
         }
       }
     };
 
     el.addEventListener('wheel', handleWheel, { passive: false });
     return () => el.removeEventListener('wheel', handleWheel);
-  }, [timelineBodyRef, zoom, scrollX, scrollY, playheadPosition, duration, contentHeight, viewportHeight, setZoom, setScrollX, setScrollY]);
+  }, [timelineBodyRef, zoom, scrollX, playheadPosition, duration, contentHeight, viewportHeight, trackSnapPositions, setZoom, setScrollX, setScrollY]);
 
   return {
     handleSetZoom,

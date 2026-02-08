@@ -1,7 +1,7 @@
 // App version - INCREMENT ON EVERY COMMIT!
 // Format: MAJOR.MINOR.PATCH
 // Increment PATCH (0.0.X) for each commit
-export const APP_VERSION = '1.2.1';
+export const APP_VERSION = '1.2.2';
 
 // Build/Platform notice shown at top of changelog (set to null to hide)
 export const BUILD_NOTICE: {
@@ -54,6 +54,169 @@ interface RawChangeEntry extends ChangeEntry {
 }
 
 const RAW_CHANGELOG: RawChangeEntry[] = [
+  // === Feb 8, 2026 - Scopes, Curve Editor, Timeline UX, Mask Performance ===
+  {
+    date: '2026-02-08',
+    type: 'new',
+    title: 'Video Scopes Panel',
+    description: 'GPU-accelerated Histogram, Vectorscope and Waveform monitor — zero readPixels overhead with DaVinci Resolve-style rendering',
+    commit: '8c735e8',
+  },
+  {
+    date: '2026-02-08',
+    type: 'new',
+    title: 'Waveform Monitor',
+    description: 'DaVinci-style waveform with smooth phosphor glow traces, sub-pixel distribution and bilinear sampling',
+    commit: '1cf164e',
+  },
+  {
+    date: '2026-02-08',
+    type: 'improve',
+    title: 'Keyframe Curve Editor',
+    description: 'Auto-scale Y-axis to fit curve tightly, Shift+wheel to resize height, fix scroll offset and overlapping rows',
+    commit: '4ccbcbc',
+  },
+  {
+    date: '2026-02-08',
+    type: 'improve',
+    title: 'Single Curve Editor',
+    description: 'Only one curve editor open at a time to prevent UI clutter',
+    commit: '48af4ac',
+  },
+  {
+    date: '2026-02-08',
+    type: 'improve',
+    title: 'Keyframe Toggle Off',
+    description: 'Toggling keyframes off now saves the current value and deletes all keyframes cleanly',
+    commit: '0e19f8b',
+  },
+  {
+    date: '2026-02-08',
+    type: 'improve',
+    title: 'Timeline Vertical Scroll Snapping',
+    description: 'Vertical scrolling in the timeline snaps to track boundaries — each scroll step moves exactly one layer',
+    commit: 'a62e57a',
+  },
+  {
+    date: '2026-02-08',
+    type: 'new',
+    title: 'Video/Audio Track Separator',
+    description: 'Green divider line between video and audio tracks for clearer visual structure',
+    commit: '3f16953',
+  },
+  {
+    date: '2026-02-08',
+    type: 'new',
+    title: 'Mask Edge Dragging',
+    description: 'Drag a line segment between two mask vertices to move both at once — works alongside vertex and whole-mask dragging',
+    commit: '3f16953',
+  },
+  {
+    date: '2026-02-08',
+    type: 'improve',
+    title: 'Mask Drag Performance',
+    description: 'Skip history snapshots during mask dragging, GPU texture updates at 30fps instead of 10fps, targeted cache invalidation',
+    commit: '867d843',
+  },
+  {
+    date: '2026-02-08',
+    type: 'improve',
+    title: 'Compact Settings Dialog',
+    description: 'Consolidated all API keys into settings and improved layout',
+    commit: '716747f',
+  },
+  {
+    date: '2026-02-08',
+    type: 'fix',
+    title: 'View Toggle Checkboxes',
+    description: 'View dropdown checkboxes now update visually on click and thumbnails/waveforms toggles actually hide content',
+    commit: '01715bf',
+  },
+  {
+    date: '2026-02-08',
+    type: 'fix',
+    title: 'WGSL Reserved Keyword',
+    description: 'Renamed WGSL reserved keyword "ref" to "rv" in scope shaders',
+    commit: 'cf05b82',
+  },
+  {
+    date: '2026-02-08',
+    type: 'improve',
+    title: 'Persist View Toggles',
+    description: 'View toggle states (thumbnails, waveforms, scopes) saved in project file',
+    commit: '49dc4cd',
+  },
+  {
+    date: '2026-02-08',
+    type: 'new',
+    title: 'Separate Scope Panels',
+    description: 'Histogram, Waveform and Vectorscope are now 3 independent panels with RGB/R/G/B/Luma view mode buttons and IRE legend',
+    commit: '36b190f',
+  },
+  {
+    date: '2026-02-08',
+    type: 'new',
+    title: 'Keyframe Copy/Paste',
+    description: 'Ctrl+C/V with selected keyframes copies only keyframes — paste at playhead position on the selected clip',
+    commit: '604e20f',
+  },
+  {
+    date: '2026-02-08',
+    type: 'new',
+    title: 'Keyframe Tick Marks on Clips',
+    description: 'Small amber diamond markers at the bottom of clips show keyframe positions without expanding tracks',
+    commit: '9a65a52',
+  },
+  {
+    date: '2026-02-08',
+    type: 'improve',
+    title: 'Exponential Timeline Zoom',
+    description: 'Alt+Scroll zoom now uses exponential scaling (8% per step) — consistent feel at all zoom levels',
+    commit: '1642bb9',
+  },
+  {
+    date: '2026-02-08',
+    type: 'improve',
+    title: 'Cross-Track Clip Movement',
+    description: 'Smart overlap prevention on track changes — find free track or create new one. 100px vertical resistance prevents accidental moves',
+    commit: '6a47f4e',
+  },
+  {
+    date: '2026-02-08',
+    type: 'improve',
+    title: 'Track Height: Smooth & Compact',
+    description: 'Continuous scrolling for track height (no fixed steps), minimum 20px for ultra-compact view with single line of text',
+    commit: '080b9fc',
+  },
+  {
+    date: '2026-02-08',
+    type: 'improve',
+    title: 'High-Res Vectorscope',
+    description: 'Higher resolution vectorscope with smooth histogram rendering and fixed white blob issue',
+    commit: 'd6cae47',
+  },
+  {
+    date: '2026-02-08',
+    type: 'fix',
+    title: 'Ctrl+Z Crash Fix',
+    description: 'Fixed undo crash caused by undefined layers in history snapshots',
+    commit: '7559e0b',
+  },
+  {
+    date: '2026-02-08',
+    type: 'fix',
+    title: 'Ruler Click Position',
+    description: 'Fixed ruler click using wrong reference element for position calculation',
+    commit: '723b76c',
+  },
+  {
+    date: '2026-02-08',
+    type: 'fix',
+    title: 'Histogram Peak Clipping',
+    description: 'Increased normalization headroom to prevent histogram peaks from being cut off',
+    commit: 'cc1bf39',
+  },
+
   // === Feb 7, 2026 - Linked Clips, Proxy Rewrite, Split Fix, MOV Import ===
   {
     date: '2026-02-07',

@@ -919,6 +919,22 @@ export const createPlaybackSlice: SliceCreator<PlaybackAndRamPreviewActions> = (
     set({ waveformsEnabled: !get().waveformsEnabled });
   },
 
+  setThumbnailsEnabled: (enabled: boolean) => {
+    set({ thumbnailsEnabled: enabled });
+  },
+
+  setWaveformsEnabled: (enabled: boolean) => {
+    set({ waveformsEnabled: enabled });
+  },
+
+  toggleTranscriptMarkers: () => {
+    set({ showTranscriptMarkers: !get().showTranscriptMarkers });
+  },
+
+  setShowTranscriptMarkers: (enabled: boolean) => {
+    set({ showTranscriptMarkers: enabled });
+  },
+
   // Tool mode actions
   setToolMode: (mode) => {
     set({ toolMode: mode });

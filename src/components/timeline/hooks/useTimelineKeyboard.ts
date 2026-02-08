@@ -33,6 +33,8 @@ interface UseTimelineKeyboardProps {
   // Copy/Paste
   copyClips: () => void;
   pasteClips: () => void;
+  copyKeyframes: () => void;
+  pasteKeyframes: () => void;
 
   // Tool mode
   toolMode: 'select' | 'cut';
@@ -69,6 +71,8 @@ export function useTimelineKeyboard({
   updateClipTransform,
   copyClips,
   pasteClips,
+  copyKeyframes,
+  pasteKeyframes,
   toolMode,
   toggleCutTool,
   clipMap,
@@ -179,17 +183,21 @@ export function useTimelineKeyboard({
         return;
       }
 
-      // Ctrl+C / Cmd+C: Copy selected clips
+      // Ctrl+C / Cmd+C: Copy selected keyframes or clips
       if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C') && !e.shiftKey) {
         e.preventDefault();
-        copyClips();
+        if (selectedKeyframeIds.size > 0) {
+          copyKeyframes();
+        } else {
+          copyClips();
+        }
         return;
       }
 
-      // Ctrl+V / Cmd+V: Paste clips at playhead
+      // Ctrl+V / Cmd+V: Paste keyframes or clips at playhead
       if ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V')) {
         e.preventDefault();
-        pasteClips();
+        pasteKeyframes();
         return;
       }
 
@@ -292,6 +300,8 @@ export function useTimelineKeyboard({
     updateClipTransform,
     copyClips,
     pasteClips,
+    copyKeyframes,
+    pasteKeyframes,
     toolMode,
     toggleCutTool,
     activeComposition,

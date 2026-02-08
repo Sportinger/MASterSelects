@@ -59,27 +59,26 @@ function cleanupPersistedLayout(layout: DockLayout): DockLayout {
 }
 
 // Default layout configuration
-// 3-column layout: Media/Properties/AI Chat left, Preview center, Multi-Cam/Export right
+// 3-column layout: Media/AI left, Preview center, Properties/Scopes right
 // Timeline at bottom
 const DEFAULT_LAYOUT: DockLayout = {
   root: {
     kind: 'split',
     id: 'root-split',
     direction: 'vertical',
-    ratio: 0.55, // Top section 55%, Timeline 45%
+    ratio: 0.6, // Top section 60%, Timeline 40%
     children: [
       {
         kind: 'split',
         id: 'top-split',
         direction: 'horizontal',
-        ratio: 0.25, // Left column 25%
+        ratio: 0.15, // Left column 15%
         children: [
           {
             kind: 'tab-group',
             id: 'left-group',
             panels: [
               { id: 'media', type: 'media', title: 'Media' },
-              { id: 'clip-properties', type: 'clip-properties', title: 'Properties' },
               { id: 'ai-chat', type: 'ai-chat', title: 'AI Chat' },
               { id: 'ai-video', type: 'ai-video', title: 'AI Video' },
               { id: 'youtube', type: 'youtube', title: 'YouTube' },
@@ -90,7 +89,7 @@ const DEFAULT_LAYOUT: DockLayout = {
             kind: 'split',
             id: 'center-right-split',
             direction: 'horizontal',
-            ratio: 0.73, // Center 73% of remaining (≈55% total), Right 27% (≈20% total)
+            ratio: 0.67, // Center 67% of remaining (≈57% total), Right 33% (≈28% total)
             children: [
               {
                 kind: 'tab-group',
@@ -104,10 +103,13 @@ const DEFAULT_LAYOUT: DockLayout = {
                 kind: 'tab-group',
                 id: 'right-group',
                 panels: [
-                  { id: 'multicam', type: 'multicam', title: 'Multi-Cam' },
                   { id: 'export', type: 'export', title: 'Export' },
+                  { id: 'clip-properties', type: 'clip-properties', title: 'Properties' },
+                  { id: 'scope-waveform', type: 'scope-waveform', title: 'Waveform' },
+                  { id: 'scope-histogram', type: 'scope-histogram', title: 'Histogram' },
+                  { id: 'scope-vectorscope', type: 'scope-vectorscope', title: 'Vectorscope' },
                 ],
-                activeIndex: 1,
+                activeIndex: 2, // Waveform active
               },
             ],
           },

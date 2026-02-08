@@ -187,7 +187,7 @@ function createSnapshot(label: string): StateSnapshot {
       selectedClipIds: timeline.selectedClipIds ? [...timeline.selectedClipIds] : [],
       zoom: timeline.zoom || 50,
       scrollX: timeline.scrollX || 0,
-      layers: deepClone(timeline.layers || []),
+      layers: deepClone((timeline.layers || []).filter(Boolean)),
       selectedLayerId: timeline.selectedLayerId || null,
       clipKeyframes: keyframesObj,
       markers: deepClone(timeline.markers || []),
@@ -214,9 +214,9 @@ function applySnapshot(snapshot: StateSnapshot) {
   // Apply timeline state (including layers)
   if (setTimelineState && getTimelineState) {
     const currentTimeline = getTimelineState();
-    // Preserve source references for layers
-    const restoredLayers = snapshot.timeline.layers.map((layer) => {
-      const currentLayer = currentTimeline.layers?.find((l) => l?.id === layer.id);
+    // Preserve source references for layers (filter out undefined entries from snapshots)
+    const restoredLayers = (snapshot.timeline.layers || []).filter(Boolean).map((layer) => {
+      const currentLayer = (currentTimeline.layers || []).find((l) => l?.id === layer.id);
       return {
         ...deepClone(layer),
         source: currentLayer?.source || layer.source,
@@ -247,8 +247,8 @@ function applySnapshot(snapshot: StateSnapshot) {
   // Apply media state (preserve file references)
   if (setMediaState && getMediaState) {
     const currentMedia = getMediaState();
-    const restoredFiles = snapshot.media.files.map((file) => {
-      const currentFile = currentMedia.files?.find((f) => f.id === file.id);
+    const restoredFiles = (snapshot.media.files || []).filter(Boolean).map((file) => {
+      const currentFile = (currentMedia.files || []).find((f) => f?.id === file.id);
       return {
         ...deepClone(file),
         file: currentFile?.file || file.file, // Preserve File reference

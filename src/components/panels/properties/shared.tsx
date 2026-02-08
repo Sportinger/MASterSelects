@@ -31,16 +31,20 @@ interface KeyframeToggleProps {
 
 export function KeyframeToggle({ clipId, property, value }: KeyframeToggleProps) {
   // Use getState() for actions - they're stable and don't need subscriptions
-  const { isRecording, toggleKeyframeRecording, hasKeyframes, addKeyframe } = useTimelineStore.getState();
+  const { isRecording, toggleKeyframeRecording, hasKeyframes, addKeyframe, disablePropertyKeyframes } = useTimelineStore.getState();
   const recording = isRecording(clipId, property);
   const hasKfs = hasKeyframes(clipId, property);
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!recording && !hasKfs) {
+    if (recording || hasKfs) {
+      // Turning OFF: save current value as static, remove all keyframes
+      disablePropertyKeyframes(clipId, property, value);
+    } else {
+      // Turning ON: add initial keyframe and enable recording
       addKeyframe(clipId, property, value);
+      toggleKeyframeRecording(clipId, property);
     }
-    toggleKeyframeRecording(clipId, property);
   };
 
   return (
@@ -62,7 +66,7 @@ export function KeyframeToggle({ clipId, property, value }: KeyframeToggleProps)
 // Master keyframe toggle for Scale X and Y together
 export function ScaleKeyframeToggle({ clipId, scaleX, scaleY }: { clipId: string; scaleX: number; scaleY: number }) {
   // Use getState() for actions - they're stable and don't need subscriptions
-  const { isRecording, toggleKeyframeRecording, hasKeyframes, addKeyframe } = useTimelineStore.getState();
+  const { isRecording, toggleKeyframeRecording, hasKeyframes, addKeyframe, disablePropertyKeyframes } = useTimelineStore.getState();
 
   const xRecording = isRecording(clipId, 'scale.x');
   const yRecording = isRecording(clipId, 'scale.y');
@@ -74,12 +78,17 @@ export function ScaleKeyframeToggle({ clipId, scaleX, scaleY }: { clipId: string
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!anyRecording && !anyHasKfs) {
+    if (anyRecording || anyHasKfs) {
+      // Turning OFF: save current values as static, remove all keyframes
+      disablePropertyKeyframes(clipId, 'scale.x', scaleX);
+      disablePropertyKeyframes(clipId, 'scale.y', scaleY);
+    } else {
+      // Turning ON: add initial keyframes and enable recording
       addKeyframe(clipId, 'scale.x', scaleX);
       addKeyframe(clipId, 'scale.y', scaleY);
+      toggleKeyframeRecording(clipId, 'scale.x');
+      toggleKeyframeRecording(clipId, 'scale.y');
     }
-    toggleKeyframeRecording(clipId, 'scale.x');
-    toggleKeyframeRecording(clipId, 'scale.y');
   };
 
   return (
@@ -100,7 +109,7 @@ export function ScaleKeyframeToggle({ clipId, scaleX, scaleY }: { clipId: string
 
 // Master keyframe toggle for Position X, Y, Z together
 export function PositionKeyframeToggle({ clipId, x, y, z }: { clipId: string; x: number; y: number; z: number }) {
-  const { isRecording, toggleKeyframeRecording, hasKeyframes, addKeyframe } = useTimelineStore.getState();
+  const { isRecording, toggleKeyframeRecording, hasKeyframes, addKeyframe, disablePropertyKeyframes } = useTimelineStore.getState();
 
   const xRec = isRecording(clipId, 'position.x');
   const yRec = isRecording(clipId, 'position.y');
@@ -114,14 +123,20 @@ export function PositionKeyframeToggle({ clipId, x, y, z }: { clipId: string; x:
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!anyRecording && !anyHasKfs) {
+    if (anyRecording || anyHasKfs) {
+      // Turning OFF: save current values as static, remove all keyframes
+      disablePropertyKeyframes(clipId, 'position.x', x);
+      disablePropertyKeyframes(clipId, 'position.y', y);
+      disablePropertyKeyframes(clipId, 'position.z', z);
+    } else {
+      // Turning ON: add initial keyframes and enable recording
       addKeyframe(clipId, 'position.x', x);
       addKeyframe(clipId, 'position.y', y);
       addKeyframe(clipId, 'position.z', z);
+      toggleKeyframeRecording(clipId, 'position.x');
+      toggleKeyframeRecording(clipId, 'position.y');
+      toggleKeyframeRecording(clipId, 'position.z');
     }
-    toggleKeyframeRecording(clipId, 'position.x');
-    toggleKeyframeRecording(clipId, 'position.y');
-    toggleKeyframeRecording(clipId, 'position.z');
   };
 
   return (
@@ -142,7 +157,7 @@ export function PositionKeyframeToggle({ clipId, x, y, z }: { clipId: string; x:
 
 // Master keyframe toggle for Rotation X, Y, Z together
 export function RotationKeyframeToggle({ clipId, x, y, z }: { clipId: string; x: number; y: number; z: number }) {
-  const { isRecording, toggleKeyframeRecording, hasKeyframes, addKeyframe } = useTimelineStore.getState();
+  const { isRecording, toggleKeyframeRecording, hasKeyframes, addKeyframe, disablePropertyKeyframes } = useTimelineStore.getState();
 
   const xRec = isRecording(clipId, 'rotation.x');
   const yRec = isRecording(clipId, 'rotation.y');
@@ -156,14 +171,20 @@ export function RotationKeyframeToggle({ clipId, x, y, z }: { clipId: string; x:
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!anyRecording && !anyHasKfs) {
+    if (anyRecording || anyHasKfs) {
+      // Turning OFF: save current values as static, remove all keyframes
+      disablePropertyKeyframes(clipId, 'rotation.x', x);
+      disablePropertyKeyframes(clipId, 'rotation.y', y);
+      disablePropertyKeyframes(clipId, 'rotation.z', z);
+    } else {
+      // Turning ON: add initial keyframes and enable recording
       addKeyframe(clipId, 'rotation.x', x);
       addKeyframe(clipId, 'rotation.y', y);
       addKeyframe(clipId, 'rotation.z', z);
+      toggleKeyframeRecording(clipId, 'rotation.x');
+      toggleKeyframeRecording(clipId, 'rotation.y');
+      toggleKeyframeRecording(clipId, 'rotation.z');
     }
-    toggleKeyframeRecording(clipId, 'rotation.x');
-    toggleKeyframeRecording(clipId, 'rotation.y');
-    toggleKeyframeRecording(clipId, 'rotation.z');
   };
 
   return (
@@ -335,15 +356,21 @@ export function DraggableNumber({ value, onChange, defaultValue, sensitivity = 2
 // Effect keyframe toggle
 export function EffectKeyframeToggle({ clipId, effectId, paramName, value }: { clipId: string; effectId: string; paramName: string; value: number }) {
   // Use getState() for actions - they're stable and don't need subscriptions
-  const { isRecording, toggleKeyframeRecording, hasKeyframes, addKeyframe } = useTimelineStore.getState();
+  const { isRecording, toggleKeyframeRecording, hasKeyframes, addKeyframe, disablePropertyKeyframes } = useTimelineStore.getState();
   const property = createEffectProperty(effectId, paramName);
   const recording = isRecording(clipId, property);
   const hasKfs = hasKeyframes(clipId, property);
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!recording && !hasKfs) addKeyframe(clipId, property, value);
-    toggleKeyframeRecording(clipId, property);
+    if (recording || hasKfs) {
+      // Turning OFF: save current value as static, remove all keyframes
+      disablePropertyKeyframes(clipId, property, value);
+    } else {
+      // Turning ON: add initial keyframe and enable recording
+      addKeyframe(clipId, property, value);
+      toggleKeyframeRecording(clipId, property);
+    }
   };
 
   return (
@@ -360,7 +387,7 @@ export function EffectKeyframeToggle({ clipId, effectId, paramName, value }: { c
 // Master keyframe toggle for all 10 EQ bands at once
 export function EQKeyframeToggle({ clipId, effectId, eqBands }: { clipId: string; effectId: string; eqBands: number[] }) {
   // Use getState() for actions - they're stable and don't need subscriptions
-  const { isRecording, toggleKeyframeRecording, hasKeyframes, addKeyframe } = useTimelineStore.getState();
+  const { isRecording, toggleKeyframeRecording, hasKeyframes, addKeyframe, disablePropertyKeyframes } = useTimelineStore.getState();
 
   // Check if any band is recording or has keyframes
   const anyRecording = EQ_BAND_PARAMS.some(param => isRecording(clipId, createEffectProperty(effectId, param)));
@@ -368,15 +395,20 @@ export function EQKeyframeToggle({ clipId, effectId, eqBands }: { clipId: string
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    // Toggle all 10 bands at once
-    EQ_BAND_PARAMS.forEach((param, index) => {
-      const property = createEffectProperty(effectId, param);
-      if (!anyRecording && !anyHasKfs) {
-        // Add keyframe for each band with current value
+    if (anyRecording || anyHasKfs) {
+      // Turning OFF: save current values as static, remove all keyframes
+      EQ_BAND_PARAMS.forEach((param, index) => {
+        const property = createEffectProperty(effectId, param);
+        disablePropertyKeyframes(clipId, property, eqBands[index]);
+      });
+    } else {
+      // Turning ON: add initial keyframes and enable recording
+      EQ_BAND_PARAMS.forEach((param, index) => {
+        const property = createEffectProperty(effectId, param);
         addKeyframe(clipId, property, eqBands[index]);
-      }
-      toggleKeyframeRecording(clipId, property);
-    });
+        toggleKeyframeRecording(clipId, property);
+      });
+    }
   };
 
   return (
