@@ -2,6 +2,36 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useDockStore } from '../../stores/dockStore';
 import type { PanelType } from '../../types/dock';
 
+function ClippyMascot() {
+  const [useWebP, setUseWebP] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const source = videoRef.current?.querySelector('source');
+    if (source) {
+      source.addEventListener('error', () => setUseWebP(true), { once: true });
+    }
+  }, []);
+
+  if (useWebP) {
+    return <img src="/clippy.webp" alt="" className="tutorial-clippy" draggable={false} />;
+  }
+
+  return (
+    <video
+      ref={videoRef}
+      className="tutorial-clippy"
+      autoPlay
+      loop
+      muted
+      playsInline
+      disablePictureInPicture
+    >
+      <source src="/clippy.webm" type="video/webm" />
+    </video>
+  );
+}
+
 // Part 1: Panel-level steps (existing)
 interface PanelStep {
   groupId: string;
@@ -184,8 +214,8 @@ export function TutorialOverlay({ onClose, part = 1 }: Props) {
     const anchorRect = isPart2 ? highlightRect : panelRect;
     if (!anchorRect) return { opacity: 0 };
 
-    const tooltipW = 300;
-    const tooltipH = 160;
+    const tooltipW = 380;
+    const tooltipH = 180;
     const pos = step.tooltipPosition;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
@@ -256,19 +286,24 @@ export function TutorialOverlay({ onClose, part = 1 }: Props) {
 
       <div className="tutorial-tooltip" style={getTooltipStyle()}>
         <div className={`tutorial-tooltip-arrow tutorial-tooltip-arrow--${step.tooltipPosition}`} />
-        <div className="tutorial-tooltip-step">Step {stepIndex + 1} of {steps.length}</div>
-        <div className="tutorial-tooltip-title">{step.title}</div>
-        <div className="tutorial-tooltip-desc">{step.description}</div>
-        <div className="tutorial-dots">
-          {steps.map((_: PanelStep | TimelineStep, i: number) => (
-            <span
-              key={i}
-              className={`tutorial-dot ${i === stepIndex ? 'active' : ''} ${i < stepIndex ? 'completed' : ''}`}
-            />
-          ))}
-        </div>
-        <div className="tutorial-tooltip-hint">
-          {stepIndex < steps.length - 1 ? 'Click anywhere to continue' : 'Click to finish'}
+        <div className="tutorial-tooltip-content">
+          <ClippyMascot />
+          <div className="tutorial-tooltip-text">
+            <div className="tutorial-tooltip-step">Step {stepIndex + 1} of {steps.length}</div>
+            <div className="tutorial-tooltip-title">{step.title}</div>
+            <div className="tutorial-tooltip-desc">{step.description}</div>
+            <div className="tutorial-dots">
+              {steps.map((_: PanelStep | TimelineStep, i: number) => (
+                <span
+                  key={i}
+                  className={`tutorial-dot ${i === stepIndex ? 'active' : ''} ${i < stepIndex ? 'completed' : ''}`}
+                />
+              ))}
+            </div>
+            <div className="tutorial-tooltip-hint">
+              {stepIndex < steps.length - 1 ? 'Click anywhere to continue' : 'Click to finish'}
+            </div>
+          </div>
         </div>
       </div>
     </div>

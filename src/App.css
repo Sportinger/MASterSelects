@@ -9234,7 +9234,7 @@ input[type="checkbox"] {
 
 .tutorial-tooltip {
   position: fixed;
-  width: 300px;
+  width: 380px;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 16px;
@@ -9243,6 +9243,26 @@ input[type="checkbox"] {
   pointer-events: none;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
   animation: tutorial-tooltip-in 300ms ease forwards;
+}
+
+.tutorial-tooltip-content {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.tutorial-tooltip-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.tutorial-clippy {
+  width: 80px;
+  height: auto;
+  flex-shrink: 0;
+  border-radius: 8px;
+  object-fit: contain;
+  margin-top: 4px;
 }
 
 @keyframes tutorial-tooltip-in {
