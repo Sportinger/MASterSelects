@@ -9220,6 +9220,7 @@ input[type="checkbox"] {
   width: 340px;
   pointer-events: none;
   z-index: 10003;
+  transition: left 400ms ease, top 400ms ease;
 }
 
 @keyframes tutorial-fade-in {
@@ -9253,6 +9254,7 @@ input[type="checkbox"] {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
   animation: tutorial-tooltip-in 300ms ease forwards;
   overflow: visible;
+  transition: left 400ms ease, top 400ms ease;
 }
 
 .tutorial-tooltip-content {
