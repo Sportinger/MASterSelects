@@ -306,24 +306,40 @@ export function TutorialOverlay({ onClose, part = 1 }: Props) {
     setWelcomePhase(false);
   }, [setUserBackground]);
 
-  // Welcome screen for Part 1
+  // Welcome screen for Part 1 — same backdrop + tooltip style as regular steps
   if (welcomePhase) {
     return (
-      <div className="tutorial-welcome" onClick={(e) => e.stopPropagation()}>
-        <ClippyMascot isClosing={false} />
-        <div className="tutorial-welcome-title">Welcome! Where are you coming from?</div>
-        <div className="tutorial-welcome-subtitle">This helps us tailor tips to your experience</div>
-        <div className="tutorial-welcome-grid">
-          {WELCOME_BUTTONS.map((btn) => (
-            <button
-              key={btn.id}
-              className="tutorial-welcome-btn"
-              onClick={() => handleWelcomeSelect(btn.id)}
-            >
-              <div className={`tutorial-welcome-icon ${btn.className}`}>{btn.abbr}</div>
-              <div className="tutorial-welcome-label">{btn.label}</div>
-            </button>
-          ))}
+      <div className="tutorial-backdrop">
+        {/* Full dark overlay, no cutout */}
+        <svg className="tutorial-overlay-svg" width="100%" height="100%">
+          <rect width="100%" height="100%" fill="rgba(0,0,0,0.75)" />
+        </svg>
+
+        {/* Clippy wrapper — centered above the tooltip */}
+        <div className="tutorial-clippy-wrapper tutorial-welcome-clippy-pos">
+          <ClippyMascot isClosing={false} />
+        </div>
+
+        {/* Tooltip-style dialog, centered */}
+        <div className="tutorial-tooltip tutorial-welcome-dialog">
+          <div className="tutorial-tooltip-content">
+            <div className="tutorial-tooltip-text">
+              <div className="tutorial-welcome-title">Welcome! Where are you coming from?</div>
+              <div className="tutorial-welcome-subtitle">This helps us tailor tips to your experience</div>
+              <div className="tutorial-welcome-grid">
+                {WELCOME_BUTTONS.map((btn) => (
+                  <button
+                    key={btn.id}
+                    className="tutorial-welcome-btn"
+                    onClick={() => handleWelcomeSelect(btn.id)}
+                  >
+                    <div className={`tutorial-welcome-icon ${btn.className}`}>{btn.abbr}</div>
+                    <div className="tutorial-welcome-label">{btn.label}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     );
