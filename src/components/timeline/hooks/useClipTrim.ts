@@ -93,9 +93,9 @@ export function useClipTrim({
         const deltaX = trim.currentX - trim.startX;
         const deltaTime = pixelToTime(deltaX);
 
-        // Text and image clips can be extended infinitely (no natural duration limit)
+        // Text, image, and solid clips can be extended infinitely (no natural duration limit)
         const sourceType = clipToTrim.source?.type;
-        const isInfiniteClip = sourceType === 'text' || sourceType === 'image';
+        const isInfiniteClip = sourceType === 'text' || sourceType === 'image' || sourceType === 'solid';
         const maxDuration = isInfiniteClip
           ? Number.MAX_SAFE_INTEGER
           : (clipToTrim.source?.naturalDuration || clipToTrim.duration);
