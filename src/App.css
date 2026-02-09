@@ -9259,10 +9259,10 @@ input[type="checkbox"] {
 
 .tutorial-clippy {
   position: absolute;
-  width: 90px;
+  width: 120px;
   height: auto;
-  top: -45px;
-  left: -30px;
+  top: -55px;
+  right: -35px;
   object-fit: contain;
   filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.5));
   z-index: 1;
