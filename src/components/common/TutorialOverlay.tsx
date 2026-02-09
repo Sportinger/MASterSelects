@@ -286,8 +286,8 @@ export function TutorialOverlay({ onClose, part = 1 }: Props) {
 
       <div className="tutorial-tooltip" style={getTooltipStyle()}>
         <div className={`tutorial-tooltip-arrow tutorial-tooltip-arrow--${step.tooltipPosition}`} />
+        <ClippyMascot />
         <div className="tutorial-tooltip-content">
-          <ClippyMascot />
           <div className="tutorial-tooltip-text">
             <div className="tutorial-tooltip-step">Step {stepIndex + 1} of {steps.length}</div>
             <div className="tutorial-tooltip-title">{step.title}</div>
