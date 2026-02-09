@@ -1,7 +1,7 @@
 // App version - INCREMENT ON EVERY COMMIT!
 // Format: MAJOR.MINOR.PATCH
 // Increment PATCH (0.0.X) for each commit
-export const APP_VERSION = '1.2.2';
+export const APP_VERSION = '1.2.3';
 
 // Build/Platform notice shown at top of changelog (set to null to hide)
 export const BUILD_NOTICE: {
@@ -54,6 +54,78 @@ interface RawChangeEntry extends ChangeEntry {
 }
 
 const RAW_CHANGELOG: RawChangeEntry[] = [
+  // === Feb 9, 2026 - Tutorial System, SAM2 AI Segmentation, Composition Resolution ===
+  {
+    date: '2026-02-09',
+    type: 'new',
+    title: 'Interactive Tutorial with Clippy',
+    description: 'Two-part guided tutorial: Part 1 introduces panels with spotlight overlay, Part 2 deep-dives into timeline features. Animated Clippy mascot with intro/outro animations',
+    commit: '9b97b62',
+  },
+  {
+    date: '2026-02-09',
+    type: 'new',
+    title: 'Tutorial Welcome Screen',
+    description: 'Choose your NLE background (Premiere Pro, DaVinci Resolve, Final Cut Pro, After Effects, Beginner) at tutorial start — stored for future personalization',
+    commit: '78397d3',
+  },
+  {
+    date: '2026-02-09',
+    type: 'new',
+    title: 'SAM 2 AI Segmentation',
+    description: 'AI-powered object segmentation using Segment Anything Model 2 — click to select objects in the preview with GPU-accelerated inference',
+    commit: 'abd2c9a',
+  },
+  {
+    date: '2026-02-09',
+    type: 'new',
+    title: 'Vitest Test Suite',
+    description: '182 unit and store tests covering timeline, media, history and utility modules',
+    commit: 'f74f65a',
+  },
+  {
+    date: '2026-02-09',
+    type: 'improve',
+    title: 'Composition-Driven Resolution',
+    description: 'Active composition resolution now drives the render pipeline instead of a global setting — supports per-comp resolution',
+    commit: '80bece4',
+  },
+  {
+    date: '2026-02-09',
+    type: 'improve',
+    title: 'Native Pixel Scale for Clips',
+    description: 'Newly added clips and composition resize auto-adjust scale for pixel-accurate content display',
+    commit: '1f47ce8',
+  },
+  {
+    date: '2026-02-09',
+    type: 'improve',
+    title: 'Reorganized Menus',
+    description: 'Scopes moved to Panels submenu in View, AI panels grouped as submenu, tutorials accessible from Info menu',
+    commit: '2122520',
+  },
+  {
+    date: '2026-02-09',
+    type: 'fix',
+    title: 'Clip Overlap & Audio Desync',
+    description: 'Fixed clips overlapping and audio desyncing when moving clips on the same track',
+    commit: 'c5c29f5',
+  },
+  {
+    date: '2026-02-09',
+    type: 'fix',
+    title: 'SAM2 Model Loading',
+    description: 'Use ORT-optimized encoder from webgpu-sam2 CDN with correct tensor names and mask overlay alignment',
+    commit: '7c28463',
+  },
+  {
+    date: '2026-02-09',
+    type: 'fix',
+    title: 'Wrong Track Type Drag Prevention',
+    description: 'Clips can no longer be dragged to incompatible track types in preview',
+    commit: '03aa49a',
+  },
+
   // === Feb 9, 2026 - Comp Switch Animations, Label Colors, Timeline Polish ===
   {
     date: '2026-02-09',
