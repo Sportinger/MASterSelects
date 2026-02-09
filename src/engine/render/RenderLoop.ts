@@ -28,8 +28,15 @@ export class RenderLoop {
   private isPlaying = false;
   private lastRenderTime = 0;
 
+  // Health monitoring - detect frozen render loop
+  private lastSuccessfulRender = 0;
+  private watchdogTimer: ReturnType<typeof setInterval> | null = null;
+  private renderCount = 0;
+
   private readonly IDLE_TIMEOUT = 1000; // 1s before idle
   private readonly VIDEO_FRAME_TIME = 16.67; // ~60fps target
+  private readonly WATCHDOG_INTERVAL = 2000; // Check every 2s
+  private readonly WATCHDOG_STALL_THRESHOLD = 3000; // 3s without render = stalled
 
   private lastFpsReset = 0;
 
@@ -45,7 +52,9 @@ export class RenderLoop {
     if (this.isRunning) return;
     this.isRunning = true;
     this.lastActivityTime = performance.now();
+    this.lastSuccessfulRender = performance.now();
     this.isIdle = false;
+    this.renderCount = 0;
     log.info('Starting');
 
     let lastTimestamp = 0;
@@ -98,6 +107,8 @@ export class RenderLoop {
       if (!this.callbacks.isExporting()) {
         try {
           this.callbacks.onRender();
+          this.lastSuccessfulRender = timestamp;
+          this.renderCount++;
         } catch (e) {
           log.error('Error in render callback', e);
           // Continue loop despite error to prevent freeze
@@ -119,6 +130,9 @@ export class RenderLoop {
     };
 
     this.animationId = requestAnimationFrame(loop);
+
+    // Start watchdog timer to detect stalled render loops
+    this.startWatchdog();
   }
 
   stop(): void {
@@ -126,6 +140,57 @@ export class RenderLoop {
     if (this.animationId !== null) {
       cancelAnimationFrame(this.animationId);
       this.animationId = null;
+    }
+    this.stopWatchdog();
+  }
+
+  private startWatchdog(): void {
+    this.stopWatchdog();
+    this.watchdogTimer = setInterval(() => {
+      this.checkHealth();
+    }, this.WATCHDOG_INTERVAL);
+  }
+
+  private stopWatchdog(): void {
+    if (this.watchdogTimer !== null) {
+      clearInterval(this.watchdogTimer);
+      this.watchdogTimer = null;
+    }
+  }
+
+  /**
+   * Check render loop health - detect and recover from stalls.
+   * When playing, the render loop should be rendering every frame.
+   * If it hasn't rendered for WATCHDOG_STALL_THRESHOLD ms, force a wake-up.
+   */
+  private checkHealth(): void {
+    if (!this.isRunning) return;
+
+    const now = performance.now();
+    const timeSinceRender = now - this.lastSuccessfulRender;
+
+    // During recovery, don't interfere
+    if (this.callbacks.isRecovering()) return;
+
+    // Check if we're stalled (no render for too long while we should be rendering)
+    if (timeSinceRender > this.WATCHDOG_STALL_THRESHOLD) {
+      // If we're idle and not playing, this is expected - not a stall
+      if (this.isIdle && !this.isPlaying) return;
+
+      log.warn(`Render stall detected: ${timeSinceRender.toFixed(0)}ms since last render (idle=${this.isIdle}, playing=${this.isPlaying})`);
+
+      // Force wake from idle
+      this.isIdle = false;
+      this.renderRequested = true;
+      this.lastActivityTime = now;
+
+      // If the RAF loop itself has died (animationId is null but isRunning is true),
+      // restart it
+      if (this.animationId === null && this.isRunning) {
+        log.warn('RAF loop died - restarting');
+        this.stop();
+        this.start();
+      }
     }
   }
 
@@ -139,6 +204,14 @@ export class RenderLoop {
 
   getIsIdle(): boolean {
     return this.isIdle;
+  }
+
+  getLastSuccessfulRenderTime(): number {
+    return this.lastSuccessfulRender;
+  }
+
+  getRenderCount(): number {
+    return this.renderCount;
   }
 
   updatePlayheadTracking(playhead: number): boolean {

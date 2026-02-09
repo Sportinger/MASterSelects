@@ -645,7 +645,14 @@ export class WebGPUEngine {
     // Batch submit all command buffers in single call
     commandBuffers.push(commandEncoder.finish());
     const t3 = performance.now();
-    device.queue.submit(commandBuffers);
+    try {
+      device.queue.submit(commandBuffers);
+    } catch (e) {
+      // GPU submit failed - likely device lost or validation error
+      // Log and return to let device recovery handle it
+      log.error('GPU submit failed', e);
+      return;
+    }
     const submitTime = performance.now() - t3;
 
     // Cleanup after submit
@@ -699,28 +706,36 @@ export class WebGPUEngine {
     } else {
       // Fallback: direct clear
       if (this.previewContext) {
+        try {
+          const pass = commandEncoder.beginRenderPass({
+            colorAttachments: [{
+              view: this.previewContext.getCurrentTexture().createView(),
+              clearValue: { r: 0, g: 0, b: 0, a: 1 },
+              loadOp: 'clear',
+              storeOp: 'store',
+            }],
+          });
+          pass.end();
+        } catch {
+          // Canvas context lost - skip
+        }
+      }
+    }
+    // Also clear export canvas when exporting (needed for empty frames at export boundaries)
+    if (this.isExporting && this.exportCanvasContext) {
+      try {
         const pass = commandEncoder.beginRenderPass({
           colorAttachments: [{
-            view: this.previewContext.getCurrentTexture().createView(),
+            view: this.exportCanvasContext.getCurrentTexture().createView(),
             clearValue: { r: 0, g: 0, b: 0, a: 1 },
             loadOp: 'clear',
             storeOp: 'store',
           }],
         });
         pass.end();
+      } catch {
+        // Export canvas context lost - skip
       }
-    }
-    // Also clear export canvas when exporting (needed for empty frames at export boundaries)
-    if (this.isExporting && this.exportCanvasContext) {
-      const pass = commandEncoder.beginRenderPass({
-        colorAttachments: [{
-          view: this.exportCanvasContext.getCurrentTexture().createView(),
-          clearValue: { r: 0, g: 0, b: 0, a: 1 },
-          loadOp: 'clear',
-          storeOp: 'store',
-        }],
-      });
-      pass.end();
     }
     device.queue.submit([commandEncoder.finish()]);
   }

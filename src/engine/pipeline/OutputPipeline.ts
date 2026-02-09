@@ -119,10 +119,18 @@ export class OutputPipeline {
   ): void {
     if (!this.outputPipeline) return;
 
+    // getCurrentTexture() can throw if canvas context is lost/unconfigured
+    let canvasView: GPUTextureView;
+    try {
+      canvasView = context.getCurrentTexture().createView();
+    } catch {
+      return; // Canvas context lost - skip this canvas, render loop continues
+    }
+
     const renderPass = commandEncoder.beginRenderPass({
       colorAttachments: [
         {
-          view: context.getCurrentTexture().createView(),
+          view: canvasView,
           loadOp: 'clear',
           storeOp: 'store',
         },
