@@ -1187,6 +1187,8 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
               <SAM2Overlay
                 canvasWidth={effectiveResolution.width}
                 canvasHeight={effectiveResolution.height}
+                displayWidth={canvasSize.width}
+                displayHeight={canvasSize.height}
               />
             )}
           </>
