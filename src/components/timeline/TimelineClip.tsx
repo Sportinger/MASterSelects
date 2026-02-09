@@ -633,11 +633,17 @@ function TimelineClipComponent({
   if (isTrimming && clipTrim) {
     const deltaX = clipTrim.currentX - clipTrim.startX;
     const deltaTime = pixelToTime(deltaX);
-    const maxDuration = clip.source?.naturalDuration || clip.duration;
+    const sourceType = clip.source?.type;
+    const isInfiniteClip = sourceType === 'text' || sourceType === 'image' || sourceType === 'solid';
+    const maxDuration = isInfiniteClip
+      ? Number.MAX_SAFE_INTEGER
+      : (clip.source?.naturalDuration || clip.duration);
 
     if (clipTrim.edge === 'left') {
       const maxTrim = clipTrim.originalDuration - 0.1;
-      const minTrim = -clipTrim.originalInPoint;
+      const minTrim = isInfiniteClip
+        ? -clipTrim.originalStartTime
+        : -clipTrim.originalInPoint;
       const clampedDelta = Math.max(minTrim, Math.min(maxTrim, deltaTime));
       displayStartTime = clipTrim.originalStartTime + clampedDelta;
       displayDuration = clipTrim.originalDuration - clampedDelta;
