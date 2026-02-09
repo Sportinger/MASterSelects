@@ -223,13 +223,22 @@ export class Compositor {
         );
       } else if (sourceTextureView) {
         pipeline = this.compositorPipeline.getCompositePipeline()!;
+        // When complex effects are applied, the final texture view alternates between
+        // effectTempView/effectTempView2 depending on effect count parity.
+        // Don't use the bind group cache in this case - it would return a stale bind group
+        // pointing to the wrong texture view.
+        const cacheLayerId = complexEffects ? undefined : layer.id;
+        if (complexEffects) {
+          // Invalidate any stale cached bind group for this layer
+          this.compositorPipeline.invalidateBindGroupCache(layer.id);
+        }
         bindGroup = this.compositorPipeline.createCompositeBindGroup(
           state.sampler,
           readView,
           sourceTextureView,
           uniformBuffer,
           maskTextureView,
-          layer.id,
+          cacheLayerId,
           isPingBase
         );
       } else {
