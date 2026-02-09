@@ -52,7 +52,7 @@ export interface ProjectClip {
   compositionId?: string;
 
   // Additional clip metadata (for restoration)
-  sourceType?: 'video' | 'audio' | 'image';
+  sourceType?: 'video' | 'audio' | 'image' | 'text' | 'solid';
   naturalDuration?: number;
   linkedClipId?: string;
   linkedGroupId?: string;
@@ -61,6 +61,9 @@ export interface ProjectClip {
 
   // Text clip support
   textProperties?: any;
+
+  // Solid clip support
+  solidColor?: string;
 
   // Transcript data
   transcript?: any[];

@@ -142,6 +142,8 @@ function convertCompositions(compositions: Composition[]): ProjectComposition[] 
       compositionId: c.compositionId || undefined,
       // Text clip support
       textProperties: c.textProperties || undefined,
+      // Solid clip support
+      solidColor: c.solidColor || undefined,
       // Transcript data
       transcript: c.transcript || undefined,
       transcriptStatus: c.transcriptStatus || undefined,
@@ -401,6 +403,8 @@ function convertProjectCompositionToStore(
         compositionId: c.compositionId,
         // Text clip support
         textProperties: c.textProperties,
+        // Solid clip support
+        solidColor: c.solidColor,
         // Transcript data
         transcript: c.transcript,
         transcriptStatus: c.transcriptStatus,
