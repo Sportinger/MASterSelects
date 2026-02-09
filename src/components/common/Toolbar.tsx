@@ -7,7 +7,7 @@ const log = Logger.create('Toolbar');
 import { useEngine } from '../../hooks/useEngine';
 import { useEngineStore } from '../../stores/engineStore';
 import { useDockStore } from '../../stores/dockStore';
-import { PANEL_CONFIGS, SCOPE_PANEL_TYPES, WIP_PANEL_TYPES, type PanelType } from '../../types/dock';
+import { PANEL_CONFIGS, AI_PANEL_TYPES, SCOPE_PANEL_TYPES, WIP_PANEL_TYPES, type PanelType } from '../../types/dock';
 import { useSettingsStore, type AutosaveInterval } from '../../stores/settingsStore';
 import { useMIDI } from '../../hooks/useMIDI';
 import { SettingsDialog } from './SettingsDialog';
@@ -569,7 +569,7 @@ export function Toolbar() {
               <div className="menu-submenu">
                 <span className="menu-label">Panels</span>
                 {(Object.keys(PANEL_CONFIGS) as PanelType[])
-                  .filter((type) => !SCOPE_PANEL_TYPES.includes(type) && !WIP_PANEL_TYPES.includes(type))
+                  .filter((type) => !SCOPE_PANEL_TYPES.includes(type) && !WIP_PANEL_TYPES.includes(type) && !AI_PANEL_TYPES.includes(type))
                   .map((type) => {
                     const config = PANEL_CONFIGS[type];
                     const isVisible = isPanelTypeVisible(type);
@@ -583,7 +583,30 @@ export function Toolbar() {
                       </button>
                     );
                   })}
-                {WIP_PANEL_TYPES.map((type) => {
+                <div className="menu-item-with-submenu">
+                  <button className="menu-option">
+                    <span>   AI</span>
+                  </button>
+                  <div className="menu-nested-submenu">
+                    {AI_PANEL_TYPES.map((type) => {
+                      const config = PANEL_CONFIGS[type];
+                      const isWip = WIP_PANEL_TYPES.includes(type);
+                      const isVisible = isPanelTypeVisible(type);
+                      return (
+                        <button
+                          key={type}
+                          className={`menu-option ${isWip ? 'menu-option-wip' : ''} ${isVisible ? 'checked' : ''}`}
+                          onClick={isWip ? undefined : () => togglePanelType(type)}
+                          disabled={isWip}
+                        >
+                          <span>{isVisible ? '✓ ' : '   '}{config.title}</span>
+                          {isWip && <span className="menu-wip-badge">🐛</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                {WIP_PANEL_TYPES.filter((type) => !AI_PANEL_TYPES.includes(type)).map((type) => {
                   const config = PANEL_CONFIGS[type];
                   return (
                     <button
@@ -627,13 +650,6 @@ export function Toolbar() {
               </button>
               <button className="menu-option" onClick={() => { resetLayout(); closeMenu(); }}>
                 <span>Reset Layout</span>
-              </button>
-              <div className="menu-separator" />
-              <button className="menu-option" onClick={() => { window.dispatchEvent(new CustomEvent('start-tutorial')); closeMenu(); }}>
-                <span>Tutorial</span>
-              </button>
-              <button className="menu-option" onClick={() => { window.dispatchEvent(new CustomEvent('start-timeline-tutorial')); closeMenu(); }}>
-                <span>Timeline Tutorial</span>
               </button>
             </div>
           )}
@@ -699,11 +715,25 @@ export function Toolbar() {
         <div className="menu-item">
           <button
             className={`menu-trigger ${openMenu === 'info' ? 'active' : ''}`}
-            onClick={() => { setShowInfoDialog(true); closeMenu(); }}
+            onClick={() => handleMenuClick('info')}
             onMouseEnter={() => handleMenuHover('info')}
           >
             Info
           </button>
+          {openMenu === 'info' && (
+            <div className="menu-dropdown">
+              <button className="menu-option" onClick={() => { window.dispatchEvent(new CustomEvent('start-tutorial')); closeMenu(); }}>
+                <span>Tutorial</span>
+              </button>
+              <button className="menu-option" onClick={() => { window.dispatchEvent(new CustomEvent('start-timeline-tutorial')); closeMenu(); }}>
+                <span>Timeline Tutorial</span>
+              </button>
+              <div className="menu-separator" />
+              <button className="menu-option" onClick={() => { setShowInfoDialog(true); closeMenu(); }}>
+                <span>About</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

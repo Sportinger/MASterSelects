@@ -4,6 +4,9 @@
 // Note: Effects, Transcript, Analysis are now integrated into Properties panel
 export type PanelType = 'preview' | 'timeline' | 'clip-properties' | 'media' | 'export' | 'multicam' | 'ai-chat' | 'ai-video' | 'ai-segment' | 'youtube' | 'transitions' | 'scope-waveform' | 'scope-histogram' | 'scope-vectorscope';
 
+// AI panel types for grouping in View menu
+export const AI_PANEL_TYPES: PanelType[] = ['ai-chat', 'ai-video', 'ai-segment'];
+
 // Scope panel types for filtering in View menu
 export const SCOPE_PANEL_TYPES: PanelType[] = ['scope-waveform', 'scope-histogram', 'scope-vectorscope'];
 
