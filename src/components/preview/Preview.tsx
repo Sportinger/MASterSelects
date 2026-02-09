@@ -1084,7 +1084,7 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
           onClick={() => setEditMode(!editMode)}
           title="Toggle Edit Mode [Tab]"
         >
-          {editMode ? '✓ Edit' : 'Edit'}
+          {editMode ? '✓ Edit' : 'Edit'} <span className="menu-wip-badge">🐛</span>
         </button>
         {editMode && (
           <>

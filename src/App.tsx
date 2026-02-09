@@ -230,7 +230,7 @@ function App() {
         <IndexedDBErrorDialog onClose={handleIndexedDBErrorClose} />
       )}
       {showTutorial && (
-        <TutorialOverlay onClose={handleTutorialClose} part={tutorialPart} />
+        <TutorialOverlay key={tutorialPart} onClose={handleTutorialClose} part={tutorialPart} />
       )}
     </div>
   );
