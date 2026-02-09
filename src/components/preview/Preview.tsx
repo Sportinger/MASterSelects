@@ -238,10 +238,9 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
   const displayedComp = compositions.find(c => c.id === displayedCompId);
 
   // Engine resolution = active composition dimensions (fallback to settingsStore default)
-  const effectiveResolution = useMemo(() => {
-    if (displayedComp) return { width: displayedComp.width, height: displayedComp.height };
-    return useSettingsStore.getState().outputResolution;
-  }, [displayedComp?.width, displayedComp?.height]);
+  const effectiveResolution = displayedComp
+    ? { width: displayedComp.width, height: displayedComp.height }
+    : useSettingsStore.getState().outputResolution;
 
   // Is this an independent preview? (user explicitly selected a composition, not "Active")
   // If compositionId is null, it means "Active" is selected -> use main render loop
