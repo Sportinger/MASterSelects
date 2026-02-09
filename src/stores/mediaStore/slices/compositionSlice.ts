@@ -168,17 +168,21 @@ function adjustClipTransformsOnResize(
           y: clip.transform.position.y * scaleY,
           z: clip.transform.position.z,
         },
+        scale: {
+          x: clip.transform.scale.x * scaleX,
+          y: clip.transform.scale.y * scaleY,
+        },
       },
     }));
 
-    // Adjust keyframes for position properties
+    // Adjust keyframes for position and scale properties
     const updatedKeyframes = new Map<string, import('../../../types').Keyframe[]>();
     clipKeyframes.forEach((keyframes: import('../../../types').Keyframe[], clipId: string) => {
       updatedKeyframes.set(clipId, keyframes.map(kf => {
-        if (kf.property === 'position.x') {
+        if (kf.property === 'position.x' || kf.property === 'scale.x') {
           return { ...kf, value: kf.value * scaleX };
         }
-        if (kf.property === 'position.y') {
+        if (kf.property === 'position.y' || kf.property === 'scale.y') {
           return { ...kf, value: kf.value * scaleY };
         }
         return kf;
@@ -201,12 +205,16 @@ function adjustClipTransformsOnResize(
           y: clip.transform.position.y * scaleY,
           z: clip.transform.position.z,
         },
+        scale: {
+          x: clip.transform.scale.x * scaleX,
+          y: clip.transform.scale.y * scaleY,
+        },
       },
       keyframes: clip.keyframes?.map(kf => {
-        if (kf.property === 'position.x') {
+        if (kf.property === 'position.x' || kf.property === 'scale.x') {
           return { ...kf, value: kf.value * scaleX };
         }
-        if (kf.property === 'position.y') {
+        if (kf.property === 'position.y' || kf.property === 'scale.y') {
           return { ...kf, value: kf.value * scaleY };
         }
         return kf;
