@@ -225,14 +225,16 @@ export const createPositioningUtils: SliceCreator<PositioningUtils> = (set, get)
   },
 
   // Trim any clips that the placed clip overlaps with
-  trimOverlappingClips: (clipId: string, startTime: number, trackId: string, duration: number) => {
+  trimOverlappingClips: (clipId: string, startTime: number, trackId: string, duration: number, excludeClipIds?: string[]) => {
     const { clips, invalidateCache } = get();
     const movingClip = clips.find(c => c.id === clipId);
+    const excludeSet = new Set(excludeClipIds || []);
 
-    // Get other clips on the same track (excluding the moving clip and its linked clip)
+    // Get other clips on the same track (excluding the moving clip, its linked clip, and excluded clips)
     const otherClips = clips.filter(c =>
       c.trackId === trackId &&
       c.id !== clipId &&
+      !excludeSet.has(c.id) &&
       (movingClip ? c.id !== movingClip.linkedClipId && c.linkedClipId !== clipId : true)
     );
 
@@ -271,6 +273,20 @@ export const createPositioningUtils: SliceCreator<PositioningUtils> = (set, get)
 
     // Apply modifications
     if (clipsToModify.length === 0) return;
+
+    // Propagate modifications to linked clips to keep audio in sync
+    const linkedModifications: typeof clipsToModify = [];
+    for (const mod of clipsToModify) {
+      const modClip = clips.find(c => c.id === mod.id);
+      if (modClip?.linkedClipId && !excludeSet.has(modClip.linkedClipId)) {
+        // Only propagate if the linked clip isn't already being modified
+        const alreadyModified = clipsToModify.some(m => m.id === modClip.linkedClipId);
+        if (!alreadyModified) {
+          linkedModifications.push({ ...mod, id: modClip.linkedClipId });
+        }
+      }
+    }
+    clipsToModify.push(...linkedModifications);
 
     const clipIdsToDelete = new Set(clipsToModify.filter(m => m.action === 'delete').map(m => m.id));
 

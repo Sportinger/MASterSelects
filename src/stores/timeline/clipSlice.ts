@@ -466,9 +466,9 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
       }),
     });
 
-    if (forcingOverlap && !skipTrim) trimOverlappingClips(id, finalStartTime, actualTrackId, movingClip.duration);
+    if (forcingOverlap && !skipTrim) trimOverlappingClips(id, finalStartTime, actualTrackId, movingClip.duration, excludeClipIds);
     if (linkedForcingOverlap && linkedClip && !skipLinked && !skipTrim) {
-      trimOverlappingClips(linkedClip.id, linkedFinalTime, linkedClip.trackId, linkedClip.duration);
+      trimOverlappingClips(linkedClip.id, linkedFinalTime, linkedClip.trackId, linkedClip.duration, excludeClipIds);
     }
 
     updateDuration();

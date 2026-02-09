@@ -403,7 +403,8 @@ export interface TimelineUtils {
   // excludeClipIds: optional list of clip IDs to exclude from collision detection (for multi-select)
   getPositionWithResistance: (clipId: string, desiredStartTime: number, trackId: string, duration: number, zoom?: number, excludeClipIds?: string[]) => { startTime: number; forcingOverlap: boolean; noFreeSpace?: boolean };
   // Trim any clips that the placed clip overlaps with
-  trimOverlappingClips: (clipId: string, startTime: number, trackId: string, duration: number) => void;
+  // excludeClipIds: optional list of clip IDs to exclude from being trimmed (for multi-select)
+  trimOverlappingClips: (clipId: string, startTime: number, trackId: string, duration: number, excludeClipIds?: string[]) => void;
   getSerializableState: () => CompositionTimelineData;
   loadState: (data: CompositionTimelineData | undefined) => Promise<void>;
   clearTimeline: () => void;

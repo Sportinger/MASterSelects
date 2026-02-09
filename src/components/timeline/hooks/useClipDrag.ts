@@ -351,7 +351,7 @@ export function useClipDrag({
             // skipLinked depends on whether linked clip is also selected
             const draggedClip = currentClipMap.get(drag.clipId);
             const draggedLinkedInSelection = !!(draggedClip?.linkedClipId && currentSelectedIds.has(draggedClip.linkedClipId));
-            moveClip(drag.clipId, finalStartTime, drag.currentTrackId, draggedLinkedInSelection, drag.altKeyPressed, true, allExcludedIds);
+            moveClip(drag.clipId, finalStartTime, drag.currentTrackId, draggedLinkedInSelection, drag.altKeyPressed, false, allExcludedIds);
             movedClipIds.add(drag.clipId);
             // If linked clip was moved via skipLinked=false, mark it as moved
             if (draggedClip?.linkedClipId && !draggedLinkedInSelection && !drag.altKeyPressed) {
@@ -367,7 +367,7 @@ export function useClipDrag({
                 // If linked clip is also selected, skip it (will be moved in its own iteration)
                 // If linked clip is NOT selected, move it with this clip (skipLinked=false)
                 const linkedInSelection = !!(selectedClip.linkedClipId && currentSelectedIds.has(selectedClip.linkedClipId));
-                moveClip(selectedId, newTime, selectedClip.trackId, linkedInSelection, true, true, allExcludedIds); // skipGroup, skipTrim always true
+                moveClip(selectedId, newTime, selectedClip.trackId, linkedInSelection, true, false, allExcludedIds); // skipGroup always true, skipTrim false
                 movedClipIds.add(selectedId);
                 // If linked clip was moved via skipLinked=false, mark it as moved
                 if (selectedClip.linkedClipId && !linkedInSelection) {
