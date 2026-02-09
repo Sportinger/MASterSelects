@@ -9220,7 +9220,11 @@ input[type="checkbox"] {
   width: 340px;
   pointer-events: none;
   z-index: 10003;
-  transition: left 400ms ease, top 400ms ease;
+  transition: left 400ms ease, top 400ms ease, width 400ms ease;
+}
+
+.tutorial-clippy-wrapper--welcome {
+  width: 480px;
 }
 
 @keyframes tutorial-fade-in {
@@ -9254,7 +9258,7 @@ input[type="checkbox"] {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
   animation: tutorial-tooltip-in 300ms ease forwards;
   overflow: visible;
-  transition: left 400ms ease, top 400ms ease;
+  transition: left 400ms ease, top 400ms ease, width 400ms ease;
 }
 
 .tutorial-tooltip-content {
@@ -9396,21 +9400,11 @@ input[type="checkbox"] {
   50% { box-shadow: 0 0 20px rgba(255, 215, 0, 0.7), inset 0 0 20px rgba(255, 215, 0, 0.2); }
 }
 
-/* Tutorial Welcome Screen — uses same tooltip style, centered on screen */
-.tutorial-welcome-dialog {
-  width: auto !important;
-  max-width: 520px;
-  left: 50% !important;
-  top: 50% !important;
-  transform: translate(-50%, -50%);
-  pointer-events: auto !important;
+/* Tutorial Welcome Screen — wider tooltip for the button grid */
+.tutorial-tooltip--welcome {
+  width: 480px;
+  pointer-events: auto;
   cursor: default;
-}
-
-.tutorial-welcome-clippy-pos {
-  left: 50% !important;
-  top: 50% !important;
-  transform: translate(calc(-50% + 100px), calc(-50% - 140px));
 }
 
 .tutorial-welcome-title {

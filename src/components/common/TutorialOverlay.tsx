@@ -181,8 +181,8 @@ interface Props {
 }
 
 export function TutorialOverlay({ onClose, part = 1 }: Props) {
-  const [welcomePhase, setWelcomePhase] = useState<boolean>(part === 1);
-  const [stepIndex, setStepIndex] = useState(0);
+  // stepIndex -1 = welcome screen (only part 1), 0+ = normal steps
+  const [stepIndex, setStepIndex] = useState(part === 1 ? -1 : 0);
   const [panelRect, setPanelRect] = useState<DOMRect | null>(null);
   const [highlightRect, setHighlightRect] = useState<DOMRect | null>(null);
   const [isClosing, setIsClosing] = useState(false);
@@ -191,20 +191,25 @@ export function TutorialOverlay({ onClose, part = 1 }: Props) {
   const closingRef = useRef(false);
 
   const isPart2 = part === 2;
+  const isWelcome = stepIndex === -1;
   const steps = isPart2 ? TIMELINE_STEPS : PANEL_STEPS;
-  const step = steps[stepIndex];
+  const step = isWelcome ? null : steps[stepIndex];
 
   // Find and measure targets
   const measureTargets = useCallback(() => {
+    if (isWelcome) {
+      // No panel to highlight during welcome
+      setPanelRect(null);
+      setHighlightRect(null);
+      return;
+    }
     if (isPart2) {
-      // Part 2: Always measure the timeline panel for the SVG mask cutout
       const timelineEl = document.querySelector('[data-group-id="timeline-group"]');
       if (timelineEl) {
         setPanelRect(timelineEl.getBoundingClientRect());
       } else {
         setPanelRect(null);
       }
-      // Measure the specific element for the highlight ring
       const targetEl = document.querySelector((step as TimelineStep).selector);
       if (targetEl) {
         setHighlightRect(targetEl.getBoundingClientRect());
@@ -212,7 +217,6 @@ export function TutorialOverlay({ onClose, part = 1 }: Props) {
         setHighlightRect(null);
       }
     } else {
-      // Part 1: Measure the panel group
       const el = document.querySelector(`[data-group-id="${(step as PanelStep).groupId}"]`);
       if (el) {
         setPanelRect(el.getBoundingClientRect());
@@ -221,14 +225,13 @@ export function TutorialOverlay({ onClose, part = 1 }: Props) {
       }
       setHighlightRect(null);
     }
-  }, [isPart2, step]);
+  }, [isPart2, isWelcome, step]);
 
   // Activate the correct tab and measure on step change
   useEffect(() => {
-    if (!isPart2) {
+    if (!isPart2 && step) {
       activatePanelType((step as PanelStep).panelType);
     }
-    // Small delay to let tab switch render before measuring
     const timer = setTimeout(measureTargets, 50);
     return () => clearTimeout(timer);
   }, [step, isPart2, activatePanelType, measureTargets]);
@@ -243,18 +246,17 @@ export function TutorialOverlay({ onClose, part = 1 }: Props) {
     if (closingRef.current) return;
     closingRef.current = true;
     setIsClosing(true);
-    // Wait for clippy outro animation (~1.7s), then close
     setTimeout(onClose, 1800);
   }, [onClose]);
 
   const advance = useCallback(() => {
-    if (isClosing) return;
+    if (isClosing || isWelcome) return;
     if (stepIndex < steps.length - 1) {
       setStepIndex(stepIndex + 1);
     } else {
       close();
     }
-  }, [stepIndex, steps.length, isClosing, close]);
+  }, [stepIndex, steps.length, isClosing, isWelcome, close]);
 
   // Escape to close
   useEffect(() => {
@@ -265,15 +267,24 @@ export function TutorialOverlay({ onClose, part = 1 }: Props) {
     return () => window.removeEventListener('keydown', handleKey);
   }, [close]);
 
-  // Compute tooltip position clamped to viewport
-  // For Part 2, position relative to the highlight ring; for Part 1, relative to the panel
+  // Compute tooltip position: centered for welcome, anchored to panel for steps
   const getTooltipStyle = (): React.CSSProperties => {
+    if (isWelcome) {
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const tooltipW = 480;
+      const tooltipH = 220;
+      return {
+        left: vw / 2 - tooltipW / 2,
+        top: vh / 2 - tooltipH / 2,
+      };
+    }
     const anchorRect = isPart2 ? highlightRect : panelRect;
     if (!anchorRect) return { opacity: 0 };
 
     const tooltipW = 380;
     const tooltipH = 180;
-    const pos = step.tooltipPosition;
+    const pos = step!.tooltipPosition;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
 
@@ -294,7 +305,6 @@ export function TutorialOverlay({ onClose, part = 1 }: Props) {
       top = anchorRect.top + anchorRect.height / 2 - tooltipH / 2;
     }
 
-    // Clamp to viewport
     left = Math.max(12, Math.min(left, vw - tooltipW - 12));
     top = Math.max(12, Math.min(top, vh - tooltipH - 12));
 
@@ -303,58 +313,15 @@ export function TutorialOverlay({ onClose, part = 1 }: Props) {
 
   const handleWelcomeSelect = useCallback((id: string) => {
     setUserBackground(id);
-    setWelcomePhase(false);
+    setStepIndex(0);
   }, [setUserBackground]);
 
-  // Welcome screen for Part 1 — same backdrop + tooltip style as regular steps
-  if (welcomePhase) {
-    return (
-      <div className="tutorial-backdrop">
-        {/* Full dark overlay, no cutout */}
-        <svg className="tutorial-overlay-svg" width="100%" height="100%">
-          <rect width="100%" height="100%" fill="rgba(0,0,0,0.75)" />
-        </svg>
-
-        {/* Clippy wrapper — centered above the tooltip */}
-        <div className="tutorial-clippy-wrapper tutorial-welcome-clippy-pos">
-          <ClippyMascot isClosing={false} />
-        </div>
-
-        {/* Tooltip-style dialog, centered */}
-        <div className="tutorial-tooltip tutorial-welcome-dialog">
-          <div className="tutorial-tooltip-content">
-            <div className="tutorial-tooltip-text">
-              <div className="tutorial-welcome-title">Welcome! Where are you coming from?</div>
-              <div className="tutorial-welcome-subtitle">This helps us tailor tips to your experience</div>
-              <div className="tutorial-welcome-grid">
-                {WELCOME_BUTTONS.map((btn) => (
-                  <button
-                    key={btn.id}
-                    className="tutorial-welcome-btn"
-                    onClick={() => handleWelcomeSelect(btn.id)}
-                  >
-                    <div className="tutorial-welcome-icon">
-                      {btn.logo ? (
-                        <img src={btn.logo} alt={btn.label} draggable={false} />
-                      ) : (
-                        <span className="tutorial-welcome-icon--beginner">★</span>
-                      )}
-                    </div>
-                    <div className="tutorial-welcome-label">{btn.label}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const tooltipStyle = getTooltipStyle();
 
   return (
     <div
       className={`tutorial-backdrop ${isClosing ? 'closing' : ''}`}
-      onClick={advance}
+      onClick={isWelcome ? undefined : advance}
     >
       <svg className="tutorial-overlay-svg" width="100%" height="100%">
         <defs>
@@ -377,7 +344,7 @@ export function TutorialOverlay({ onClose, part = 1 }: Props) {
           width="100%"
           height="100%"
           fill="rgba(0,0,0,0.75)"
-          mask="url(#tutorial-mask)"
+          mask={panelRect ? 'url(#tutorial-mask)' : undefined}
         />
       </svg>
 
@@ -392,28 +359,60 @@ export function TutorialOverlay({ onClose, part = 1 }: Props) {
       )}
 
       {/* Clippy in own container so it doesn't fade with tooltip */}
-      <div className="tutorial-clippy-wrapper" style={getTooltipStyle()}>
+      <div className={`tutorial-clippy-wrapper ${isWelcome ? 'tutorial-clippy-wrapper--welcome' : ''}`} style={tooltipStyle}>
         <ClippyMascot isClosing={isClosing} />
       </div>
 
-      <div className="tutorial-tooltip" style={getTooltipStyle()}>
-        <div className={`tutorial-tooltip-arrow tutorial-tooltip-arrow--${step.tooltipPosition}`} />
+      <div
+        className={`tutorial-tooltip ${isWelcome ? 'tutorial-tooltip--welcome' : ''}`}
+        style={tooltipStyle}
+      >
+        {step && (
+          <div className={`tutorial-tooltip-arrow tutorial-tooltip-arrow--${step.tooltipPosition}`} />
+        )}
         <div className="tutorial-tooltip-content">
           <div className="tutorial-tooltip-text">
-            <div className="tutorial-tooltip-step">Step {stepIndex + 1} of {steps.length}</div>
-            <div className="tutorial-tooltip-title">{step.title}</div>
-            <div className="tutorial-tooltip-desc">{step.description}</div>
-            <div className="tutorial-dots">
-              {steps.map((_: PanelStep | TimelineStep, i: number) => (
-                <span
-                  key={i}
-                  className={`tutorial-dot ${i === stepIndex ? 'active' : ''} ${i < stepIndex ? 'completed' : ''}`}
-                />
-              ))}
-            </div>
-            <div className="tutorial-tooltip-hint">
-              {stepIndex < steps.length - 1 ? 'Click anywhere to continue' : 'Click to finish'}
-            </div>
+            {isWelcome ? (
+              <>
+                <div className="tutorial-welcome-title">Welcome! Where are you coming from?</div>
+                <div className="tutorial-welcome-subtitle">This helps us tailor tips to your experience</div>
+                <div className="tutorial-welcome-grid">
+                  {WELCOME_BUTTONS.map((btn) => (
+                    <button
+                      key={btn.id}
+                      className="tutorial-welcome-btn"
+                      onClick={() => handleWelcomeSelect(btn.id)}
+                    >
+                      <div className="tutorial-welcome-icon">
+                        {btn.logo ? (
+                          <img src={btn.logo} alt={btn.label} draggable={false} />
+                        ) : (
+                          <span className="tutorial-welcome-icon--beginner">★</span>
+                        )}
+                      </div>
+                      <div className="tutorial-welcome-label">{btn.label}</div>
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="tutorial-tooltip-step">Step {stepIndex + 1} of {steps.length}</div>
+                <div className="tutorial-tooltip-title">{step!.title}</div>
+                <div className="tutorial-tooltip-desc">{step!.description}</div>
+                <div className="tutorial-dots">
+                  {steps.map((_: PanelStep | TimelineStep, i: number) => (
+                    <span
+                      key={i}
+                      className={`tutorial-dot ${i === stepIndex ? 'active' : ''} ${i < stepIndex ? 'completed' : ''}`}
+                    />
+                  ))}
+                </div>
+                <div className="tutorial-tooltip-hint">
+                  {stepIndex < steps.length - 1 ? 'Click anywhere to continue' : 'Click to finish'}
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
