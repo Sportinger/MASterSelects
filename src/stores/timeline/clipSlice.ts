@@ -918,7 +918,7 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
   // ========== EFFECT ACTIONS ==========
 
   addClipEffect: (clipId, effectType) => {
-    const { clips, invalidateCache, thumbnailsEnabled } = get();
+    const { clips, invalidateCache } = get();
     const effect: Effect = {
       id: generateEffectId(),
       name: effectType,
@@ -928,34 +928,19 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
     };
     set({ clips: clips.map(c => c.id === clipId ? { ...c, effects: [...(c.effects || []), effect] } : c) });
     invalidateCache();
-
-    // Regenerate thumbnails with new effect (debounced)
-    if (thumbnailsEnabled) {
-      regenerateClipThumbnails(
-        clipId,
-        () => get().clips.find(c => c.id === clipId),
-        (updater) => set({ clips: updater(get().clips) })
-      );
-    }
+    // NOTE: No thumbnail regeneration for effect changes - effects are applied live by the GPU
+    // pipeline and don't change the underlying video frames. Regenerating thumbnails here would
+    // seek the preview video element to 10 different positions, causing preview flickering.
   },
 
   removeClipEffect: (clipId, effectId) => {
-    const { clips, invalidateCache, thumbnailsEnabled } = get();
+    const { clips, invalidateCache } = get();
     set({ clips: clips.map(c => c.id === clipId ? { ...c, effects: c.effects.filter(e => e.id !== effectId) } : c) });
     invalidateCache();
-
-    // Regenerate thumbnails without the effect (debounced)
-    if (thumbnailsEnabled) {
-      regenerateClipThumbnails(
-        clipId,
-        () => get().clips.find(c => c.id === clipId),
-        (updater) => set({ clips: updater(get().clips) })
-      );
-    }
   },
 
   updateClipEffect: (clipId, effectId, params) => {
-    const { clips, invalidateCache, thumbnailsEnabled } = get();
+    const { clips, invalidateCache } = get();
     set({
       clips: clips.map(c =>
         c.id === clipId
@@ -964,19 +949,10 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
       ),
     });
     invalidateCache();
-
-    // Regenerate thumbnails with updated effect (debounced)
-    if (thumbnailsEnabled) {
-      regenerateClipThumbnails(
-        clipId,
-        () => get().clips.find(c => c.id === clipId),
-        (updater) => set({ clips: updater(get().clips) })
-      );
-    }
   },
 
   setClipEffectEnabled: (clipId, effectId, enabled) => {
-    const { clips, invalidateCache, thumbnailsEnabled } = get();
+    const { clips, invalidateCache } = get();
     set({
       clips: clips.map(c =>
         c.id === clipId
@@ -985,15 +961,6 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
       ),
     });
     invalidateCache();
-
-    // Regenerate thumbnails with effect toggled (debounced)
-    if (thumbnailsEnabled) {
-      regenerateClipThumbnails(
-        clipId,
-        () => get().clips.find(c => c.id === clipId),
-        (updater) => set({ clips: updater(get().clips) })
-      );
-    }
   },
 
   // ========== MULTICAM / LINKED GROUP ACTIONS ==========
