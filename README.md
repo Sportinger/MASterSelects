@@ -18,15 +18,15 @@
 
 Most browser-based video editors, especially AI-generated ones, share a pattern: Canvas 2D compositing, heavyweight dependency trees, and CPU-bound rendering that falls apart at scale. This project takes a fundamentally different approach.
 
-**GPU-first architecture.** Preview, scrubbing, and export all run through the same WebGPU ping-pong compositor. Video textures are imported as `texture_external` (zero-copy, no CPU roundtrip). 37 blend modes, 3D rotation, and inline color effects all execute in a single WGSL composite shader per layer. No THREE.js, no GSAP, no Canvas 2D fallback in the hot path.
+**GPU-first architecture.** Preview, scrubbing, and export all run through the same **WebGPU ping-pong compositor**. Video textures are imported as `texture_external` (**zero-copy**, no CPU roundtrip). **37 blend modes**, 3D rotation, and inline color effects all execute in a **single WGSL composite shader** per layer. No THREE.js, no GSAP, no Canvas 2D fallback in the hot path.
 
-**Zero-copy export pipeline.** Frames are captured as `new VideoFrame(offscreenCanvas)` directly from the GPU canvas. No `readPixels()`, no `getImageData()`, no staging buffers in the default path. The GPU renders, WebCodecs encodes. That's it.
+**Zero-copy export pipeline.** Frames are captured as `new VideoFrame(offscreenCanvas)` directly from the GPU canvas. **No `readPixels()`**, no `getImageData()`, no staging buffers in the default path. The GPU renders, **WebCodecs encodes**. That's it.
 
-**3-tier scrubbing cache.** 300 GPU textures in VRAM for instant scrub (Tier 1), per-video last-frame cache for seek transitions (Tier 2), and a 900-frame RAM Preview with CPU/GPU promotion (Tier 3). When the cache is warm, scrubbing doesn't decode at all.
+**3-tier scrubbing cache.** **300 GPU textures in VRAM** for instant scrub (Tier 1), per-video last-frame cache for seek transitions (Tier 2), and a **900-frame RAM Preview** with CPU/GPU promotion (Tier 3). When the cache is warm, **scrubbing doesn't decode at all**.
 
-**11 production dependencies.** React, Zustand, FFmpeg WASM, mp4/webm muxers, HuggingFace Transformers, SoundTouch, WebGPU types. Everything else is built from scratch: compositor, effects pipeline, keyframe system, export engine, audio mixer, text renderer, mask engine, scope renderers. No UI component library, no animation framework, no CSS-in-JS.
+**11 production dependencies.** React, Zustand, FFmpeg WASM, mp4/webm muxers, HuggingFace Transformers, SoundTouch, WebGPU types. **Everything else is built from scratch**: compositor, effects pipeline, keyframe system, export engine, audio mixer, text renderer, mask engine, scope renderers. No UI component library, no animation framework, no CSS-in-JS.
 
-**Nested composition rendering.** Compositions within compositions, each with their own resolution. Rendered to pooled GPU textures with frame-level caching, composited in the parent's ping-pong pass, all in a single `device.queue.submit()`.
+**Nested composition rendering.** Compositions within compositions, each with their own resolution. Rendered to **pooled GPU textures** with frame-level caching, composited in the parent's ping-pong pass, all in a **single `device.queue.submit()`**.
 
 ---
 
