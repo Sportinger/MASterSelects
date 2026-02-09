@@ -3,6 +3,7 @@
 import type { Composition, MediaSliceCreator, MediaState } from '../types';
 import { generateId } from '../helpers/importPipeline';
 import { useTimelineStore } from '../../timeline';
+import { useSettingsStore } from '../../settingsStore';
 import { compositionRenderer } from '../../../services/compositionRenderer';
 
 export interface CompositionActions {
@@ -20,14 +21,15 @@ export interface CompositionActions {
 
 export const createCompositionSlice: MediaSliceCreator<CompositionActions> = (set, get) => ({
   createComposition: (name: string, settings?: Partial<Composition>) => {
+    const { outputResolution } = useSettingsStore.getState();
     const comp: Composition = {
       id: generateId(),
       name,
       type: 'composition',
       parentId: null,
       createdAt: Date.now(),
-      width: settings?.width ?? 1920,
-      height: settings?.height ?? 1080,
+      width: settings?.width ?? outputResolution.width,
+      height: settings?.height ?? outputResolution.height,
       frameRate: settings?.frameRate ?? 30,
       duration: settings?.duration ?? 60,
       backgroundColor: settings?.backgroundColor ?? '#000000',
@@ -62,6 +64,14 @@ export const createCompositionSlice: MediaSliceCreator<CompositionActions> = (se
   },
 
   updateComposition: (id: string, updates: Partial<Composition>) => {
+    const oldComp = get().compositions.find((c) => c.id === id);
+    if (oldComp && (updates.width !== undefined || updates.height !== undefined)) {
+      const newW = updates.width ?? oldComp.width;
+      const newH = updates.height ?? oldComp.height;
+      if (newW !== oldComp.width || newH !== oldComp.height) {
+        adjustClipTransformsOnResize(get, id, oldComp.width, oldComp.height, newW, newH, updates);
+      }
+    }
     set((state) => ({
       compositions: state.compositions.map((c) =>
         c.id === id ? { ...c, ...updates } : c
@@ -121,6 +131,92 @@ export const createCompositionSlice: MediaSliceCreator<CompositionActions> = (se
     set({ openCompositionIds: newOrder });
   },
 });
+
+/**
+ * Adjust clip transforms when a composition is resized so content stays at
+ * the same pixel position (more canvas space around it, no scaling).
+ *
+ * Position is in normalized space (1.0 = full canvas). When canvas grows,
+ * the same normalized position maps to a different pixel location.
+ * Rescale position by oldRes/newRes to keep pixel coords stable.
+ */
+function adjustClipTransformsOnResize(
+  get: () => MediaState,
+  compId: string,
+  oldW: number,
+  oldH: number,
+  newW: number,
+  newH: number,
+  updates: Partial<Composition>
+): void {
+  const scaleX = oldW / newW;
+  const scaleY = oldH / newH;
+
+  const { activeCompositionId } = get();
+
+  if (compId === activeCompositionId) {
+    // Active comp: modify live timeline store
+    const timelineStore = useTimelineStore.getState();
+    const { clips, clipKeyframes } = timelineStore;
+
+    const updatedClips = clips.map(clip => ({
+      ...clip,
+      transform: {
+        ...clip.transform,
+        position: {
+          x: clip.transform.position.x * scaleX,
+          y: clip.transform.position.y * scaleY,
+          z: clip.transform.position.z,
+        },
+      },
+    }));
+
+    // Adjust keyframes for position properties
+    const updatedKeyframes = new Map<string, import('../../../types').Keyframe[]>();
+    clipKeyframes.forEach((keyframes: import('../../../types').Keyframe[], clipId: string) => {
+      updatedKeyframes.set(clipId, keyframes.map(kf => {
+        if (kf.property === 'position.x') {
+          return { ...kf, value: kf.value * scaleX };
+        }
+        if (kf.property === 'position.y') {
+          return { ...kf, value: kf.value * scaleY };
+        }
+        return kf;
+      }));
+    });
+
+    useTimelineStore.setState({ clips: updatedClips, clipKeyframes: updatedKeyframes });
+  } else {
+    // Non-active comp: modify serialized timelineData via the updates object
+    // so the subsequent set() in updateComposition picks it up
+    const comp = get().compositions.find(c => c.id === compId);
+    if (!comp?.timelineData) return;
+
+    const updatedClips = comp.timelineData.clips.map(clip => ({
+      ...clip,
+      transform: {
+        ...clip.transform,
+        position: {
+          x: clip.transform.position.x * scaleX,
+          y: clip.transform.position.y * scaleY,
+          z: clip.transform.position.z,
+        },
+      },
+      keyframes: clip.keyframes?.map(kf => {
+        if (kf.property === 'position.x') {
+          return { ...kf, value: kf.value * scaleX };
+        }
+        if (kf.property === 'position.y') {
+          return { ...kf, value: kf.value * scaleY };
+        }
+        return kf;
+      }),
+    }));
+
+    // Fold adjusted timelineData into the updates object
+    updates.timelineData = { ...comp.timelineData, clips: updatedClips };
+  }
+}
 
 /**
  * Calculate synced playhead for nested composition navigation.

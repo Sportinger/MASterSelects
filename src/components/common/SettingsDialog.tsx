@@ -323,7 +323,10 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
             <h2>Output</h2>
 
             <div className="settings-group">
-              <div className="settings-group-title">Composition Settings</div>
+              <div className="settings-group-title">Default Resolution (New Compositions)</div>
+              <p className="settings-hint">
+                Applies only to newly created compositions. Active composition resolution is set per composition in the Media Panel.
+              </p>
 
               <label className="settings-row">
                 <span className="settings-label">Width</span>

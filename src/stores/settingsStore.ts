@@ -70,6 +70,7 @@ interface SettingsState {
 
   // Output settings (moved from mixerStore)
   outputWindows: OutputWindow[];
+  // Default resolution for new compositions (active composition drives the engine)
   outputResolution: { width: number; height: number };
   fps: number;
 
