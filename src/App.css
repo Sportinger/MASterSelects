@@ -9193,3 +9193,154 @@ input[type="checkbox"] {
   background: rgba(0, 0, 0, 0.4);
   border-color: rgba(255, 255, 255, 0.4);
 }
+
+/* ============================================
+   Tutorial Overlay
+   ============================================ */
+
+.tutorial-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10001;
+  cursor: pointer;
+  animation: tutorial-fade-in 300ms ease forwards;
+}
+
+.tutorial-backdrop.closing {
+  animation: tutorial-fade-out 200ms ease forwards;
+}
+
+@keyframes tutorial-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes tutorial-fade-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+.tutorial-overlay-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.tutorial-tooltip {
+  position: fixed;
+  width: 300px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 20px;
+  z-index: 10002;
+  pointer-events: none;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  animation: tutorial-tooltip-in 300ms ease forwards;
+}
+
+@keyframes tutorial-tooltip-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.tutorial-tooltip-arrow {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  transform: rotate(45deg);
+}
+
+/* Arrow positions — points toward the highlighted panel */
+.tutorial-tooltip-arrow--top {
+  bottom: -7px;
+  left: 50%;
+  margin-left: -6px;
+  border-top: none;
+  border-left: none;
+}
+
+.tutorial-tooltip-arrow--bottom {
+  top: -7px;
+  left: 50%;
+  margin-left: -6px;
+  border-bottom: none;
+  border-right: none;
+}
+
+.tutorial-tooltip-arrow--left {
+  right: -7px;
+  top: 50%;
+  margin-top: -6px;
+  border-bottom: none;
+  border-left: none;
+}
+
+.tutorial-tooltip-arrow--right {
+  left: -7px;
+  top: 50%;
+  margin-top: -6px;
+  border-top: none;
+  border-right: none;
+}
+
+.tutorial-tooltip-step {
+  font-size: 11px;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.tutorial-tooltip-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.tutorial-tooltip-desc {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+
+.tutorial-dots {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+
+.tutorial-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  transition: background 300ms ease;
+}
+
+.tutorial-dot.active {
+  background: var(--accent);
+}
+
+.tutorial-dot.completed {
+  background: rgba(45, 140, 235, 0.4);
+}
+
+.tutorial-tooltip-hint {
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-secondary);
+  opacity: 0.7;
+}

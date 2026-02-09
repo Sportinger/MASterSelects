@@ -393,6 +393,7 @@ export function DockTabPane({ group }: DockTabPaneProps) {
     <div
       ref={containerRef}
       className={`dock-tab-pane ${isDropTarget ? 'drop-target' : ''}`}
+      data-group-id={group.id}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
     >

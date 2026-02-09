@@ -644,6 +644,10 @@ export function Toolbar() {
               <button className="menu-option" onClick={() => { resetLayout(); closeMenu(); }}>
                 <span>Reset Layout</span>
               </button>
+              <div className="menu-separator" />
+              <button className="menu-option" onClick={() => { window.dispatchEvent(new CustomEvent('start-tutorial')); closeMenu(); }}>
+                <span>Tutorial</span>
+              </button>
             </div>
           )}
         </div>

@@ -14,6 +14,7 @@ import { WelcomeOverlay } from './components/common/WelcomeOverlay';
 import { WhatsNewDialog } from './components/common/WhatsNewDialog';
 import { IndexedDBErrorDialog } from './components/common/IndexedDBErrorDialog';
 import { LinuxVulkanWarning } from './components/common/LinuxVulkanWarning';
+import { TutorialOverlay } from './components/common/TutorialOverlay';
 import { MobileApp } from './components/mobile';
 import { useGlobalHistory } from './hooks/useGlobalHistory';
 import { useClipPanelSync } from './hooks/useClipPanelSync';
@@ -54,6 +55,11 @@ function App() {
 
   // What's New dialog state - show on every refresh after welcome (if any)
   const [showWhatsNew, setShowWhatsNew] = useState(false);
+
+  // Tutorial state
+  const [showTutorial, setShowTutorial] = useState(false);
+  const hasSeenTutorial = useSettingsStore((s) => s.hasSeenTutorial);
+  const setHasSeenTutorial = useSettingsStore((s) => s.setHasSeenTutorial);
 
   // IndexedDB error dialog state
   const [showIndexedDBError, setShowIndexedDBError] = useState(false);
@@ -138,11 +144,29 @@ function App() {
     // After welcome, show What's New with small delay for animation
     if (!!SHOW_CHANGELOG) {
       setTimeout(() => setShowWhatsNew(true), 300);
+    } else if (!hasSeenTutorial) {
+      // No changelog → start tutorial directly
+      setTimeout(() => setShowTutorial(true), 200);
     }
-  }, []);
+  }, [hasSeenTutorial]);
 
   const handleWhatsNewClose = useCallback(() => {
     setShowWhatsNew(false);
+    if (!hasSeenTutorial) {
+      setTimeout(() => setShowTutorial(true), 200);
+    }
+  }, [hasSeenTutorial]);
+
+  const handleTutorialClose = useCallback(() => {
+    setShowTutorial(false);
+    setHasSeenTutorial(true);
+  }, [setHasSeenTutorial]);
+
+  // Listen for manual tutorial trigger from View menu
+  useEffect(() => {
+    const handleStartTutorial = () => setShowTutorial(true);
+    window.addEventListener('start-tutorial', handleStartTutorial);
+    return () => window.removeEventListener('start-tutorial', handleStartTutorial);
   }, []);
 
   const handleIndexedDBErrorClose = useCallback(() => {
@@ -179,6 +203,9 @@ function App() {
       )}
       {showIndexedDBError && (
         <IndexedDBErrorDialog onClose={handleIndexedDBErrorClose} />
+      )}
+      {showTutorial && (
+        <TutorialOverlay onClose={handleTutorialClose} />
       )}
     </div>
   );

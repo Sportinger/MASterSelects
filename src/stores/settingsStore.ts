@@ -64,6 +64,7 @@ interface SettingsState {
 
   // First-run state
   hasCompletedSetup: boolean;
+  hasSeenTutorial: boolean;
 
   // UI state
   isSettingsOpen: boolean;
@@ -88,6 +89,7 @@ interface SettingsState {
   setGpuPowerPreference: (preference: GPUPowerPreference) => void;
   setCopyMediaToProject: (enabled: boolean) => void;
   setHasCompletedSetup: (completed: boolean) => void;
+  setHasSeenTutorial: (seen: boolean) => void;
   openSettings: () => void;
   closeSettings: () => void;
   toggleSettings: () => void;
@@ -131,6 +133,7 @@ export const useSettingsStore = create<SettingsState>()(
       gpuPowerPreference: 'high-performance', // Prefer dGPU by default
       copyMediaToProject: true, // Copy imported files to Raw/ folder by default
       hasCompletedSetup: false, // Show welcome overlay on first run
+      hasSeenTutorial: false, // Show tutorial on first run
       isSettingsOpen: false,
 
       // Output settings (moved from mixerStore)
@@ -200,6 +203,10 @@ export const useSettingsStore = create<SettingsState>()(
         set({ hasCompletedSetup: completed });
       },
 
+      setHasSeenTutorial: (seen) => {
+        set({ hasSeenTutorial: seen });
+      },
+
       openSettings: () => set({ isSettingsOpen: true }),
       closeSettings: () => set({ isSettingsOpen: false }),
       toggleSettings: () => set((state) => ({ isSettingsOpen: !state.isSettingsOpen })),
@@ -253,6 +260,7 @@ export const useSettingsStore = create<SettingsState>()(
         gpuPowerPreference: state.gpuPowerPreference,
         copyMediaToProject: state.copyMediaToProject,
         hasCompletedSetup: state.hasCompletedSetup,
+        hasSeenTutorial: state.hasSeenTutorial,
         outputResolution: state.outputResolution,
         fps: state.fps,
       }),
