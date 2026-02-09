@@ -4,13 +4,20 @@ import type { PanelType } from '../../types/dock';
 
 function ClippyMascot() {
   const [useWebP, setUseWebP] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const [phase, setPhase] = useState<'intro' | 'loop'>('intro');
+  const introRef = useRef<HTMLVideoElement>(null);
+  const loopRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    const source = videoRef.current?.querySelector('source');
+    const intro = introRef.current;
+    if (!intro) return;
+    const source = intro.querySelector('source');
     if (source) {
       source.addEventListener('error', () => setUseWebP(true), { once: true });
     }
+    const onEnded = () => setPhase('loop');
+    intro.addEventListener('ended', onEnded);
+    return () => intro.removeEventListener('ended', onEnded);
   }, []);
 
   if (useWebP) {
@@ -18,17 +25,31 @@ function ClippyMascot() {
   }
 
   return (
-    <video
-      ref={videoRef}
-      className="tutorial-clippy"
-      autoPlay
-      loop
-      muted
-      playsInline
-      disablePictureInPicture
-    >
-      <source src="/clippy.webm" type="video/webm" />
-    </video>
+    <>
+      <video
+        ref={introRef}
+        className="tutorial-clippy"
+        autoPlay
+        muted
+        playsInline
+        disablePictureInPicture
+        style={{ display: phase === 'intro' ? undefined : 'none' }}
+      >
+        <source src="/clippy-intro.webm" type="video/webm" />
+      </video>
+      <video
+        ref={loopRef}
+        className="tutorial-clippy"
+        autoPlay
+        loop
+        muted
+        playsInline
+        disablePictureInPicture
+        style={{ display: phase === 'loop' ? undefined : 'none' }}
+      >
+        <source src="/clippy.webm" type="video/webm" />
+      </video>
+    </>
   );
 }
 
