@@ -4,9 +4,23 @@
 
 ### Browser-based Video Compositor
 
-[![Version](https://img.shields.io/badge/version-1.2.2-blue.svg)](https://github.com/Sportinger/MASterSelects/releases)
+[![Version](https://img.shields.io/badge/version-1.2.3-blue.svg)](https://github.com/Sportinger/MASterSelects/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![WebGPU](https://img.shields.io/badge/WebGPU-Powered-orange.svg)](#)
+
+[![WebGPU](https://img.shields.io/badge/WebGPU-Powered-990000?style=flat-square&logo=webgpu&logoColor=white)](#)
+[![React 19](https://img.shields.io/badge/React_19-61DAFB?style=flat-square&logo=react&logoColor=black)](#)
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](#)
+[![Vite](https://img.shields.io/badge/Vite-646CFF?style=flat-square&logo=vite&logoColor=white)](#)
+
+<table>
+<tr>
+<td align="center"><b>39</b><br><sub>GPU Effects</sub></td>
+<td align="center"><b>37</b><br><sub>Blend Modes</sub></td>
+<td align="center"><b>2,300+</b><br><sub>Lines WGSL</sub></td>
+<td align="center"><b>35</b><br><sub>AI Tools</sub></td>
+<td align="center"><b>13</b><br><sub>Dependencies</sub></td>
+</tr>
+</table>
 
 ![MASterSelects Screenshot](docs/images/screenshot-main.png)
 
