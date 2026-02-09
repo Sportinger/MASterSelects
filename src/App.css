@@ -9210,7 +9210,7 @@ input[type="checkbox"] {
 }
 
 .tutorial-backdrop.closing {
-  animation: tutorial-fade-out 200ms ease forwards;
+  animation: tutorial-fade-out 5s ease forwards;
 }
 
 @keyframes tutorial-fade-in {
@@ -9219,8 +9219,9 @@ input[type="checkbox"] {
 }
 
 @keyframes tutorial-fade-out {
-  from { opacity: 1; }
-  to   { opacity: 0; }
+  0%   { opacity: 1; }
+  70%  { opacity: 1; }
+  100% { opacity: 0; }
 }
 
 .tutorial-overlay-svg {

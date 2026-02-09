@@ -2,11 +2,12 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useDockStore } from '../../stores/dockStore';
 import type { PanelType } from '../../types/dock';
 
-function ClippyMascot() {
+function ClippyMascot({ isClosing }: { isClosing: boolean }) {
   const [useWebP, setUseWebP] = useState(false);
-  const [phase, setPhase] = useState<'intro' | 'loop'>('intro');
+  const [phase, setPhase] = useState<'intro' | 'loop' | 'outro'>('intro');
   const introRef = useRef<HTMLVideoElement>(null);
   const loopRef = useRef<HTMLVideoElement>(null);
+  const outroRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     const intro = introRef.current;
@@ -19,6 +20,13 @@ function ClippyMascot() {
     intro.addEventListener('ended', onEnded);
     return () => intro.removeEventListener('ended', onEnded);
   }, []);
+
+  // Switch to outro when tutorial is closing
+  useEffect(() => {
+    if (isClosing && phase !== 'outro') {
+      setPhase('outro');
+    }
+  }, [isClosing, phase]);
 
   if (useWebP) {
     return <img src="/clippy.webp" alt="" className="tutorial-clippy" draggable={false} />;
@@ -48,6 +56,17 @@ function ClippyMascot() {
         style={{ display: phase === 'loop' ? undefined : 'none' }}
       >
         <source src="/clippy.webm" type="video/webm" />
+      </video>
+      <video
+        ref={outroRef}
+        className="tutorial-clippy"
+        autoPlay
+        muted
+        playsInline
+        disablePictureInPicture
+        style={{ display: phase === 'outro' ? undefined : 'none' }}
+      >
+        <source src="/clippy-outro.webm" type="video/webm" />
       </video>
     </>
   );
@@ -208,7 +227,8 @@ export function TutorialOverlay({ onClose, part = 1 }: Props) {
     if (closingRef.current) return;
     closingRef.current = true;
     setIsClosing(true);
-    setTimeout(onClose, 200);
+    // Wait for clippy outro animation (~5s), then close
+    setTimeout(onClose, 5000);
   }, [onClose]);
 
   const advance = useCallback(() => {
@@ -307,7 +327,7 @@ export function TutorialOverlay({ onClose, part = 1 }: Props) {
 
       <div className="tutorial-tooltip" style={getTooltipStyle()}>
         <div className={`tutorial-tooltip-arrow tutorial-tooltip-arrow--${step.tooltipPosition}`} />
-        <ClippyMascot />
+        <ClippyMascot isClosing={isClosing} />
         <div className="tutorial-tooltip-content">
           <div className="tutorial-tooltip-text">
             <div className="tutorial-tooltip-step">Step {stepIndex + 1} of {steps.length}</div>
