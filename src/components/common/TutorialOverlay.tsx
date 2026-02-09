@@ -4,11 +4,11 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import type { PanelType } from '../../types/dock';
 
 const WELCOME_BUTTONS = [
-  { id: 'premiere', label: 'Premiere Pro', abbr: 'Pr', className: 'tutorial-welcome-icon--premiere' },
-  { id: 'davinci', label: 'DaVinci Resolve', abbr: 'Da', className: 'tutorial-welcome-icon--davinci' },
-  { id: 'finalcut', label: 'Final Cut Pro', abbr: 'Fc', className: 'tutorial-welcome-icon--finalcut' },
-  { id: 'aftereffects', label: 'After Effects', abbr: 'Ae', className: 'tutorial-welcome-icon--aftereffects' },
-  { id: 'beginner', label: 'Beginner', abbr: '★', className: 'tutorial-welcome-icon--beginner' },
+  { id: 'premiere', label: 'Premiere Pro', logo: '/logo-premiere.svg' },
+  { id: 'davinci', label: 'DaVinci Resolve', logo: '/logo-davinci.svg' },
+  { id: 'finalcut', label: 'Final Cut Pro', logo: '/logo-finalcut.png' },
+  { id: 'aftereffects', label: 'After Effects', logo: '/logo-aftereffects.svg' },
+  { id: 'beginner', label: 'Beginner', logo: null },
 ] as const;
 
 function ClippyMascot({ isClosing }: { isClosing: boolean }) {
@@ -333,7 +333,13 @@ export function TutorialOverlay({ onClose, part = 1 }: Props) {
                     className="tutorial-welcome-btn"
                     onClick={() => handleWelcomeSelect(btn.id)}
                   >
-                    <div className={`tutorial-welcome-icon ${btn.className}`}>{btn.abbr}</div>
+                    <div className="tutorial-welcome-icon">
+                      {btn.logo ? (
+                        <img src={btn.logo} alt={btn.label} draggable={false} />
+                      ) : (
+                        <span className="tutorial-welcome-icon--beginner">★</span>
+                      )}
+                    </div>
                     <div className="tutorial-welcome-label">{btn.label}</div>
                   </button>
                 ))}

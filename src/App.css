@@ -9454,35 +9454,27 @@ input[type="checkbox"] {
 .tutorial-welcome-icon {
   width: 44px;
   height: 44px;
-  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
-  font-weight: 700;
-  color: #fff;
-  letter-spacing: -0.5px;
 }
 
-.tutorial-welcome-icon--premiere {
-  background: linear-gradient(135deg, #9999FF 0%, #00005B 100%);
-}
-
-.tutorial-welcome-icon--davinci {
-  background: linear-gradient(135deg, #FF6B35 0%, #CC2200 100%);
-}
-
-.tutorial-welcome-icon--finalcut {
-  background: linear-gradient(135deg, #9B59B6 0%, #3B0A9E 100%);
-}
-
-.tutorial-welcome-icon--aftereffects {
-  background: linear-gradient(135deg, #9999FF 0%, #00005B 100%);
+.tutorial-welcome-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .tutorial-welcome-icon--beginner {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
   background: linear-gradient(135deg, #2ECC71 0%, #1A8A4A 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-size: 22px;
+  color: #fff;
 }
 
 .tutorial-welcome-label {
