@@ -111,11 +111,11 @@ export function useTimelineZoom({
         e.preventDefault();
         const store = useTimelineStore.getState();
         const delta = e.deltaY > 0 ? 0.04 : -0.04;
-        let target = Math.max(0, Math.min(1, store.slotGridProgress + delta));
+        let newProgress = Math.max(0, Math.min(1, store.slotGridProgress + delta));
         // Snap thresholds
-        if (target < 0.05) target = 0;
-        if (target > 0.95) target = 1;
-        store.setSlotGridProgress(target);
+        if (newProgress < 0.05) newProgress = 0;
+        if (newProgress > 0.95) newProgress = 1;
+        store.setSlotGridProgress(newProgress);
         return;
       }
 

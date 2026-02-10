@@ -42,6 +42,27 @@ export function SlotGrid({ opacity }: SlotGridProps) {
     return () => observer.disconnect();
   }, []);
 
+  // Handle Ctrl+Shift+Scroll on the SlotGrid itself (to allow scrolling back to timeline)
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      if (e.ctrlKey && e.shiftKey) {
+        e.preventDefault();
+        const store = useTimelineStore.getState();
+        const delta = e.deltaY > 0 ? 0.04 : -0.04;
+        let newProgress = Math.max(0, Math.min(1, store.slotGridProgress + delta));
+        if (newProgress < 0.05) newProgress = 0;
+        if (newProgress > 0.95) newProgress = 1;
+        store.setSlotGridProgress(newProgress);
+      }
+    };
+
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    return () => container.removeEventListener('wheel', handleWheel);
+  }, []);
+
   // Handle slot click: switch composition and animate back to timeline
   const handleSlotClick = useCallback((comp: Composition) => {
     openCompositionTab(comp.id);
@@ -105,7 +126,7 @@ export function SlotGrid({ opacity }: SlotGridProps) {
 // Smooth animation helper: animate slotGridProgress from current value to target
 function animateSlotGridProgress(
   setter: (progress: number) => void,
-  target: number,
+  targetValue: number,
 ) {
   const start = useTimelineStore.getState().slotGridProgress;
   const duration = 300; // ms
@@ -116,13 +137,13 @@ function animateSlotGridProgress(
     const t = Math.min(1, elapsed / duration);
     // Ease out cubic
     const eased = 1 - Math.pow(1 - t, 3);
-    const value = start + (target - start) * eased;
+    const value = start + (targetValue - start) * eased;
     setter(value);
 
     if (t < 1) {
       requestAnimationFrame(tick);
     } else {
-      setter(target);
+      setter(targetValue);
     }
   }
 

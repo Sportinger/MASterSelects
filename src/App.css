@@ -9491,6 +9491,7 @@ input[type="checkbox"] {
   overflow-x: hidden;
   padding: 12px;
   background: #111;
+  pointer-events: auto;
 }
 
 .slot-grid {
