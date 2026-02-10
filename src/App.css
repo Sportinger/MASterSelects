@@ -9521,6 +9521,18 @@ input[type="checkbox"] {
   box-shadow: 0 0 12px rgba(74, 158, 255, 0.3);
 }
 
+.slot-grid-item.empty {
+  background: #151515;
+  border-color: rgba(255, 255, 255, 0.04);
+  cursor: default;
+}
+
+.slot-grid-item.empty:hover {
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+  transform: none;
+}
+
 .slot-grid-empty {
   display: flex;
   align-items: center;

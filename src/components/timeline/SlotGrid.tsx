@@ -17,12 +17,13 @@ const SLOT_MAX_SIZE = 180;
 export function SlotGrid({ opacity }: SlotGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [slotSize, setSlotSize] = useState(140);
+  const [gridDimensions, setGridDimensions] = useState({ cols: 4, rows: 3 });
 
   const compositions = useMediaStore(state => state.compositions);
   const activeCompositionId = useMediaStore(state => state.activeCompositionId);
   const openCompositionTab = useMediaStore(state => state.openCompositionTab);
 
-  // Auto-calculate slot size based on container width
+  // Auto-calculate slot size and grid dimensions based on container size
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -30,9 +31,14 @@ export function SlotGrid({ opacity }: SlotGridProps) {
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const containerWidth = entry.contentRect.width;
+        const containerHeight = entry.contentRect.height;
         const cols = Math.max(1, Math.floor(containerWidth / SLOT_MIN_SIZE));
         const size = Math.min(SLOT_MAX_SIZE, Math.floor((containerWidth - (cols - 1) * 8 - 16) / cols));
-        setSlotSize(Math.max(SLOT_MIN_SIZE, size));
+        const finalSize = Math.max(SLOT_MIN_SIZE, size);
+        setSlotSize(finalSize);
+        // Calculate rows that fit in container height (slot + 8px gap)
+        const rows = Math.max(1, Math.floor((containerHeight - 12) / (finalSize + 8)));
+        setGridDimensions({ cols, rows });
       }
     });
 
@@ -66,19 +72,9 @@ export function SlotGrid({ opacity }: SlotGridProps) {
     return [...compositions].sort((a, b) => a.name.localeCompare(b.name));
   }, [compositions]);
 
-  if (sortedCompositions.length === 0) {
-    return (
-      <div
-        ref={containerRef}
-        className="slot-grid-container"
-        style={{ opacity }}
-      >
-        <div className="slot-grid-empty">
-          No compositions
-        </div>
-      </div>
-    );
-  }
+  // Total slots to fill the grid
+  const totalSlots = gridDimensions.cols * gridDimensions.rows;
+  const emptySlotCount = Math.max(0, totalSlots - sortedCompositions.length);
 
   return (
     <div
@@ -89,7 +85,7 @@ export function SlotGrid({ opacity }: SlotGridProps) {
       <div
         className="slot-grid"
         style={{
-          gridTemplateColumns: `repeat(auto-fill, ${slotSize}px)`,
+          gridTemplateColumns: `repeat(${gridDimensions.cols}, ${slotSize}px)`,
         }}
       >
         {sortedCompositions.map((comp) => {
@@ -112,6 +108,9 @@ export function SlotGrid({ opacity }: SlotGridProps) {
             </div>
           );
         })}
+        {Array.from({ length: emptySlotCount }, (_, i) => (
+          <div key={`empty-${i}`} className="slot-grid-item empty" />
+        ))}
       </div>
     </div>
   );
