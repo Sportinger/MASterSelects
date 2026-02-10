@@ -1,5 +1,5 @@
 // SlotGrid - CSS Grid container showing composition slots with MiniTimeline canvases
-// Resolume-style grid view that appears when Ctrl+Shift+Scrolling the timeline
+// Appears behind the timeline as user zooms out — the timeline shrinks into its slot
 
 import { useCallback, useMemo, useRef, useEffect, useState } from 'react';
 import { useMediaStore } from '../../stores/mediaStore';
@@ -32,7 +32,6 @@ export function SlotGrid({ opacity, progress }: SlotGridProps) {
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const containerWidth = entry.contentRect.width;
-        // Calculate columns that fit, aiming for slot sizes between min and max
         const cols = Math.max(1, Math.floor(containerWidth / SLOT_MIN_SIZE));
         const size = Math.min(SLOT_MAX_SIZE, Math.floor((containerWidth - (cols - 1) * 8 - 16) / cols));
         setSlotSize(Math.max(SLOT_MIN_SIZE, size));
@@ -52,7 +51,7 @@ export function SlotGrid({ opacity, progress }: SlotGridProps) {
       if (e.ctrlKey && e.shiftKey) {
         e.preventDefault();
         const store = useTimelineStore.getState();
-        const delta = e.deltaY > 0 ? 0.04 : -0.04;
+        const delta = e.deltaY > 0 ? 0.08 : -0.08;
         let newProgress = Math.max(0, Math.min(1, store.slotGridProgress + delta));
         if (newProgress < 0.05) newProgress = 0;
         if (newProgress > 0.95) newProgress = 1;
@@ -64,14 +63,13 @@ export function SlotGrid({ opacity, progress }: SlotGridProps) {
     return () => container.removeEventListener('wheel', handleWheel);
   }, []);
 
-  // Handle slot click: switch composition and animate back to timeline
+  // Handle slot click: switch composition and animate zoom-in
   const handleSlotClick = useCallback((comp: Composition) => {
     openCompositionTab(comp.id);
-    // Animate back to full timeline
+    // Animate back to full timeline (zoom in)
     animateSlotGridProgress(setSlotGridProgress, 0);
   }, [openCompositionTab, setSlotGridProgress]);
 
-  // Filter to show only compositions (not other media items)
   const sortedCompositions = useMemo(() => {
     return [...compositions].sort((a, b) => a.name.localeCompare(b.name));
   }, [compositions]);
@@ -81,11 +79,7 @@ export function SlotGrid({ opacity, progress }: SlotGridProps) {
       <div
         ref={containerRef}
         className="slot-grid-container"
-        style={{
-          opacity,
-          transform: `rotateX(${(1 - progress) * -25}deg) scale(${0.7 + progress * 0.3}) translateY(${(1 - progress) * 30}px)`,
-          transformOrigin: 'center top',
-        }}
+        style={{ opacity }}
       >
         <div className="slot-grid-empty">
           No compositions
@@ -98,11 +92,7 @@ export function SlotGrid({ opacity, progress }: SlotGridProps) {
     <div
       ref={containerRef}
       className="slot-grid-container"
-      style={{
-        opacity,
-        transform: `rotateX(${(1 - progress) * -25}deg) scale(${0.7 + progress * 0.3}) translateY(${(1 - progress) * 30}px)`,
-        transformOrigin: 'center top',
-      }}
+      style={{ opacity }}
     >
       <div
         className="slot-grid"
@@ -110,23 +100,30 @@ export function SlotGrid({ opacity, progress }: SlotGridProps) {
           gridTemplateColumns: `repeat(auto-fill, ${slotSize}px)`,
         }}
       >
-        {sortedCompositions.map((comp) => (
-          <div
-            key={comp.id}
-            className={`slot-grid-item ${comp.id === activeCompositionId ? 'active' : ''}`}
-            onClick={() => handleSlotClick(comp)}
-            title={comp.name}
-          >
-            <MiniTimeline
-              timelineData={comp.timelineData}
-              compositionName={comp.name}
-              compositionDuration={comp.duration}
-              isActive={comp.id === activeCompositionId}
-              width={slotSize - 4}
-              height={slotSize - 4}
-            />
-          </div>
-        ))}
+        {sortedCompositions.map((comp) => {
+          const isActive = comp.id === activeCompositionId;
+          return (
+            <div
+              key={comp.id}
+              className={`slot-grid-item ${isActive ? 'active' : ''}`}
+              onClick={() => handleSlotClick(comp)}
+              title={comp.name}
+              style={{
+                // Active slot is "empty" — the shrinking timeline is visually on top of it
+                opacity: isActive && progress < 0.8 ? 1 - progress : 1,
+              }}
+            >
+              <MiniTimeline
+                timelineData={comp.timelineData}
+                compositionName={comp.name}
+                compositionDuration={comp.duration}
+                isActive={isActive}
+                width={slotSize - 4}
+                height={slotSize - 4}
+              />
+            </div>
+          );
+        })}
       </div>
     </div>
   );

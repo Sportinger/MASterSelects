@@ -802,25 +802,25 @@ export function Timeline() {
         parseTime={parseTime}
       />
 
-      <div className="timeline-body" ref={timelineBodyRef} style={{
-        perspective: slotGridProgress > 0 ? '1200px' : undefined,
-        perspectiveOrigin: '50% 50%',
-      }}>
-        {/* SlotGrid overlay - fades in during transition */}
-        {slotGridProgress > 0.3 && (
+      <div className="timeline-body" ref={timelineBodyRef}>
+        {/* SlotGrid behind - visible as timeline zooms out */}
+        {slotGridProgress > 0.1 && (
           <SlotGrid
-            opacity={Math.min(1, (slotGridProgress - 0.3) / 0.5)}
+            opacity={Math.min(1, (slotGridProgress - 0.1) / 0.4)}
             progress={slotGridProgress}
           />
         )}
+        {/* Timeline content zooms out and shrinks into its slot */}
         <div className="timeline-body-content" style={{
-          opacity: slotGridProgress >= 1 ? 0 : 1 - slotGridProgress * 0.8,
+          opacity: slotGridProgress >= 1 ? 0 : 1,
           pointerEvents: slotGridProgress >= 0.5 ? 'none' : 'auto',
           display: slotGridProgress >= 1 ? 'none' : undefined,
           transform: slotGridProgress > 0
-            ? `rotateX(${slotGridProgress * 35}deg) scale(${1 - slotGridProgress * 0.3}) translateY(${slotGridProgress * 20}px)`
+            ? `scale(${1 - slotGridProgress * 0.85})`
             : undefined,
-          transformOrigin: 'center bottom',
+          transformOrigin: 'center center',
+          zIndex: slotGridProgress > 0 ? 10 : undefined,
+          position: slotGridProgress > 0 ? 'relative' : undefined,
         }}>
           <div className="timeline-header-row">
             <div className="ruler-header">
