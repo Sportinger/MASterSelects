@@ -3,7 +3,7 @@
 
 import { useEffect, useCallback, useRef } from 'react';
 import { MIN_ZOOM, MAX_ZOOM } from '../../../stores/timeline/constants';
-import { useTimelineStore } from '../../../stores/timeline';
+import { animateSlotGrid } from '../slotGridAnimation';
 
 interface UseTimelineZoomProps {
   // Refs
@@ -106,16 +106,10 @@ export function useTimelineZoom({
       const target = e.target as HTMLElement;
       const isOverTrackHeaders = target.closest('.track-headers') !== null;
 
-      // Ctrl+Shift+Scroll: toggle slot grid view
+      // Ctrl+Shift+Scroll: toggle slot grid view (single trigger, 250ms animation)
       if (e.ctrlKey && e.shiftKey) {
         e.preventDefault();
-        const store = useTimelineStore.getState();
-        const delta = e.deltaY > 0 ? 0.08 : -0.08;
-        let newProgress = Math.max(0, Math.min(1, store.slotGridProgress + delta));
-        // Snap thresholds
-        if (newProgress < 0.05) newProgress = 0;
-        if (newProgress > 0.95) newProgress = 1;
-        store.setSlotGridProgress(newProgress);
+        animateSlotGrid(e.deltaY > 0 ? 1 : 0);
         return;
       }
 
