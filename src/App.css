@@ -9486,7 +9486,7 @@ input[type="checkbox"] {
 .slot-grid-container {
   position: absolute;
   inset: 0;
-  z-index: 50;
+  z-index: 1;
   overflow-y: auto;
   overflow-x: hidden;
   padding: 12px;

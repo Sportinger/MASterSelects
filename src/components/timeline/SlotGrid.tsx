@@ -1,5 +1,5 @@
 // SlotGrid - CSS Grid container showing composition slots with MiniTimeline canvases
-// Appears behind the timeline as user zooms out — the timeline shrinks into its slot
+// Appears behind the timeline as a Figma-like canvas — timeline zooms into/out of its slot
 
 import { useCallback, useMemo, useRef, useEffect, useState } from 'react';
 import { useMediaStore } from '../../stores/mediaStore';
@@ -7,16 +7,24 @@ import { useTimelineStore } from '../../stores/timeline';
 import { MiniTimeline } from './MiniTimeline';
 import type { Composition } from '../../stores/mediaStore';
 
+export interface SlotRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 interface SlotGridProps {
-  opacity: number;
   progress: number;
+  onActiveSlotRect?: (rect: SlotRect | null) => void;
 }
 
 const SLOT_MIN_SIZE = 120;
 const SLOT_MAX_SIZE = 180;
 
-export function SlotGrid({ opacity, progress }: SlotGridProps) {
+export function SlotGrid({ progress, onActiveSlotRect }: SlotGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const activeSlotRef = useRef<HTMLDivElement>(null);
   const [slotSize, setSlotSize] = useState(140);
 
   const compositions = useMediaStore(state => state.compositions);
@@ -63,6 +71,25 @@ export function SlotGrid({ opacity, progress }: SlotGridProps) {
     return () => container.removeEventListener('wheel', handleWheel);
   }, []);
 
+  // Report active slot position relative to container
+  useEffect(() => {
+    if (!onActiveSlotRect) return;
+    const activeSlot = activeSlotRef.current;
+    const container = containerRef.current;
+    if (!activeSlot || !container) {
+      onActiveSlotRect(null);
+      return;
+    }
+    const slotRect = activeSlot.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    onActiveSlotRect({
+      x: slotRect.left - containerRect.left,
+      y: slotRect.top - containerRect.top,
+      width: slotRect.width,
+      height: slotRect.height,
+    });
+  }, [activeCompositionId, slotSize, compositions.length, onActiveSlotRect]);
+
   // Handle slot click: switch composition and animate zoom-in
   const handleSlotClick = useCallback((comp: Composition) => {
     openCompositionTab(comp.id);
@@ -79,7 +106,6 @@ export function SlotGrid({ opacity, progress }: SlotGridProps) {
       <div
         ref={containerRef}
         className="slot-grid-container"
-        style={{ opacity }}
       >
         <div className="slot-grid-empty">
           No compositions
@@ -92,7 +118,7 @@ export function SlotGrid({ opacity, progress }: SlotGridProps) {
     <div
       ref={containerRef}
       className="slot-grid-container"
-      style={{ opacity }}
+      style={{ opacity: Math.min(1, progress * 3) }}
     >
       <div
         className="slot-grid"
@@ -105,13 +131,10 @@ export function SlotGrid({ opacity, progress }: SlotGridProps) {
           return (
             <div
               key={comp.id}
+              ref={isActive ? activeSlotRef : undefined}
               className={`slot-grid-item ${isActive ? 'active' : ''}`}
               onClick={() => handleSlotClick(comp)}
               title={comp.name}
-              style={{
-                // Active slot is "empty" — the shrinking timeline is visually on top of it
-                opacity: isActive && progress < 0.8 ? 1 - progress : 1,
-              }}
             >
               <MiniTimeline
                 timelineData={comp.timelineData}

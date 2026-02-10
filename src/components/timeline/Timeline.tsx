@@ -160,6 +160,12 @@ export function Timeline() {
   // Composition switch animation phase for tracks/ruler
   const clipAnimationPhase = useTimelineStore(s => s.clipAnimationPhase);
 
+  // Active slot rect for Figma-like zoom (reported by SlotGrid)
+  const [activeSlotRect, setActiveSlotRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const handleActiveSlotRect = useCallback((rect: { x: number; y: number; width: number; height: number } | null) => {
+    setActiveSlotRect(rect);
+  }, []);
+
   // Cut tool hover state (shared across linked clips)
   const [cutHoverInfo, setCutHoverInfo] = useState<{ clipId: string; time: number } | null>(null);
   const handleCutHover = useCallback((clipId: string | null, time: number | null) => {
@@ -803,25 +809,34 @@ export function Timeline() {
       />
 
       <div className="timeline-body" ref={timelineBodyRef}>
-        {/* SlotGrid behind - visible as timeline zooms out */}
-        {slotGridProgress > 0.1 && (
+        {/* SlotGrid canvas behind — Figma-like zoom */}
+        {slotGridProgress > 0 && (
           <SlotGrid
-            opacity={Math.min(1, (slotGridProgress - 0.1) / 0.4)}
             progress={slotGridProgress}
+            onActiveSlotRect={handleActiveSlotRect}
           />
         )}
-        {/* Timeline content zooms out and shrinks into its slot */}
-        <div className="timeline-body-content" style={{
-          opacity: slotGridProgress >= 1 ? 0 : 1,
-          pointerEvents: slotGridProgress >= 0.5 ? 'none' : 'auto',
-          display: slotGridProgress >= 1 ? 'none' : undefined,
-          transform: slotGridProgress > 0
-            ? `scale(${1 - slotGridProgress * 0.85})`
-            : undefined,
-          transformOrigin: 'center center',
-          zIndex: slotGridProgress > 0 ? 10 : undefined,
-          position: slotGridProgress > 0 ? 'relative' : undefined,
-        }}>
+        {/* Timeline content zooms toward active slot */}
+        <div className="timeline-body-content" style={(() => {
+          if (slotGridProgress <= 0 || !activeSlotRect) return undefined;
+          const body = timelineBodyRef.current;
+          if (!body) return undefined;
+          const viewportWidth = body.clientWidth;
+          const targetScale = activeSlotRect.width / viewportWidth;
+          const scale = 1 - slotGridProgress * (1 - targetScale);
+          const originX = activeSlotRect.x + activeSlotRect.width / 2;
+          const originY = activeSlotRect.y + activeSlotRect.height / 2;
+          return {
+            transform: `scale(${scale})`,
+            transformOrigin: `${originX}px ${originY}px`,
+            borderRadius: `${slotGridProgress * 6}px`,
+            overflow: 'hidden' as const,
+            pointerEvents: (slotGridProgress >= 0.5 ? 'none' : 'auto') as React.CSSProperties['pointerEvents'],
+            display: slotGridProgress >= 1 ? 'none' as const : undefined,
+            position: 'relative' as const,
+            zIndex: 10,
+          };
+        })()}>
           <div className="timeline-header-row">
             <div className="ruler-header">
               <span>Time</span>
