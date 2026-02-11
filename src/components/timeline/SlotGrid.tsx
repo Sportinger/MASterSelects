@@ -66,38 +66,39 @@ export function SlotGrid({ opacity }: SlotGridProps) {
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; compId: string } | null>(null);
 
-  // Sync LayerPlaybackManager when activeLayerSlots changes
+  // Track previous layer slots to diff — only process layers that actually changed
+  const prevLayerSlotsRef = useRef<Record<number, string | null>>({});
+
+  // Sync LayerPlaybackManager when activeLayerSlots changes — only process CHANGED layers
   useEffect(() => {
-    const { activeCompositionId } = useMediaStore.getState();
+    const { activeCompositionId, compositions } = useMediaStore.getState();
+    const prev = prevLayerSlotsRef.current;
 
-    // Determine which layers need activation/deactivation in the playback manager
-    const currentManagerLayers = new Set(layerPlaybackManager.getActiveLayerIndices());
-    const desiredLayers = new Map<number, string>();
+    // Collect all layer indices that exist in either prev or current
+    const allLayerIndices = new Set([
+      ...Object.keys(prev).map(Number),
+      ...Object.keys(activeLayerSlots).map(Number),
+    ]);
 
-    for (const [key, compId] of Object.entries(activeLayerSlots)) {
-      if (compId && compId !== activeCompositionId) {
-        desiredLayers.set(Number(key), compId);
-      }
-    }
+    for (const layerIndex of allLayerIndices) {
+      const prevCompId = prev[layerIndex] ?? null;
+      const newCompId = activeLayerSlots[layerIndex] ?? null;
+      if (prevCompId === newCompId) continue; // unchanged — skip
 
-    // Deactivate layers no longer needed
-    for (const layerIndex of currentManagerLayers) {
-      if (!desiredLayers.has(layerIndex)) {
+      // Deactivate old (unless it's the editor comp — editor handles its own playback)
+      if (prevCompId && prevCompId !== activeCompositionId) {
         layerPlaybackManager.deactivateLayer(layerIndex);
       }
-    }
 
-    // Activate new layers
-    const { compositions } = useMediaStore.getState();
-    for (const [layerIndex, compId] of desiredLayers) {
-      const existing = layerPlaybackManager.getLayerState(layerIndex);
-      if (!existing || existing.compositionId !== compId) {
-        // Resume from saved playhead position so background layers don't restart
-        const comp = compositions.find(c => c.id === compId);
+      // Activate new (unless it's the editor comp)
+      if (newCompId && newCompId !== activeCompositionId) {
+        const comp = compositions.find(c => c.id === newCompId);
         const savedPosition = comp?.timelineData?.playheadPosition ?? 0;
-        layerPlaybackManager.activateLayer(layerIndex, compId, savedPosition);
+        layerPlaybackManager.activateLayer(layerIndex, newCompId, savedPosition);
       }
     }
+
+    prevLayerSlotsRef.current = { ...activeLayerSlots };
   }, [activeLayerSlots]);
 
   // Dismiss context menu on click-outside
@@ -142,12 +143,13 @@ export function SlotGrid({ opacity }: SlotGridProps) {
   }, []);
 
   // Click = activate on layer + open in editor + play from start
+  // Order matters: set editor comp FIRST so sync effect sees correct activeCompositionId
   const handleSlotClick = useCallback((comp: Composition, slotIndex: number) => {
     const layerIndex = Math.floor(slotIndex / GRID_COLS);
-    useMediaStore.getState().activateOnLayer(comp.id, layerIndex);
-
-    // Open in timeline editor and play from start
+    // Set editor comp first so sync effect sees correct activeCompositionId
     openCompositionTab(comp.id, { skipAnimation: true, playFromStart: true });
+    // Then update layer assignment
+    useMediaStore.getState().activateOnLayer(comp.id, layerIndex);
   }, [openCompositionTab]);
 
   // Click empty slot = fully deactivate that layer
@@ -376,6 +378,7 @@ export function SlotGrid({ opacity }: SlotGridProps) {
                       isActive={isEditorActive || isLayerActive}
                       layerIndex={rowIndex}
                       slotSize={SLOT_SIZE - 4}
+                      initialPosition={comp.timelineData?.playheadPosition ?? 0}
                     />
                   </div>
                 );
@@ -425,23 +428,35 @@ const SlotTimeOverlay = memo(function SlotTimeOverlay({
   isActive,
   layerIndex,
   slotSize,
+  initialPosition,
 }: {
   compId: string;
   duration: number;
   isActive: boolean;
   layerIndex: number;
   slotSize: number;
+  initialPosition: number;
 }) {
   const lineRef = useRef<HTMLDivElement>(null);
   const timeRef = useRef<HTMLDivElement>(null);
-  const lastPosRef = useRef(0);
+  // Local wall-clock anchor for background layers — completely independent of global state
+  const startedAtRef = useRef<number>(0);
+  const wasActiveRef = useRef(false);
+
+  // When slot becomes active, anchor the wall-clock
+  useEffect(() => {
+    if (isActive && !wasActiveRef.current) {
+      // Newly activated → set anchor so local time starts at initialPosition
+      startedAtRef.current = performance.now() - initialPosition * 1000;
+    }
+    wasActiveRef.current = isActive;
+  }, [isActive, initialPosition]);
 
   useEffect(() => {
     const line = lineRef.current;
     const timeEl = timeRef.current;
     if (!line || !timeEl || duration <= 0) return;
 
-    // Always show duration
     const durationStr = fmtTime(duration);
 
     if (!isActive) {
@@ -456,19 +471,18 @@ const SlotTimeOverlay = memo(function SlotTimeOverlay({
     const trackWidth = slotSize - padding * 2;
 
     const update = () => {
-      // Dynamically check if this comp is the editor comp (no prop dependency)
       const isEditor = useMediaStore.getState().activeCompositionId === compId;
       let pos: number;
       if (isEditor) {
+        // Editor comp: must reflect pause/scrub/seek — read from global playhead
         pos = playheadState.isUsingInternalPosition
           ? playheadState.position
           : useTimelineStore.getState().playheadPosition;
       } else {
-        const layerState = layerPlaybackManager.getLayerState(layerIndex);
-        // Fall back to last known position if playback manager isn't ready yet
-        pos = layerState ? layerPlaybackManager.getLayerTime(layerState) : lastPosRef.current;
+        // Background layer: pure local wall-clock, never reads from any shared state
+        const elapsed = (performance.now() - startedAtRef.current) / 1000;
+        pos = duration > 0 ? elapsed % duration : 0;
       }
-      lastPosRef.current = pos;
       const pct = Math.max(0, Math.min(1, pos / duration));
       line.style.left = `${padding + pct * trackWidth}px`;
       timeEl.textContent = `${fmtTime(pos)} / ${durationStr}`;

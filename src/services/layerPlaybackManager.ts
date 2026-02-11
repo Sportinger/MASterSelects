@@ -112,11 +112,11 @@ class LayerPlaybackManager {
       clips: hydratedClips,
       tracks: timelineData.tracks,
       duration: comp.duration,
-      activatedAt: performance.now(),
+      activatedAt: performance.now() - (initialElapsed ?? 0) * 1000,
       pausedAt: null,
     });
 
-    log.info(`Activated layer ${layerIndex} with composition "${comp.name}" (${hydratedClips.length} clips)`);
+    log.info(`Activated layer ${layerIndex} with composition "${comp.name}" (${hydratedClips.length} clips, initialElapsed=${initialElapsed ?? 0}s)`);
   }
 
   /**
