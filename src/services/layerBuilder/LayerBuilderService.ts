@@ -172,28 +172,35 @@ export class LayerBuilderService {
         // Insert primary layers at this position, applying layer opacity
         const layerOpacity = layerOpacities[layerIndex] ?? 1;
         if (layerOpacity < 1 && primaryLayers.length > 0) {
-          // Wrap all primary clips into a nested composition so opacity
-          // applies to the flattened result, not per-clip
-          const comp = useMediaStore.getState().compositions.find(c => c.id === activeCompositionId);
-          const nestedData: import('../../types').NestedCompositionData = {
-            compositionId: `__layer-opacity-${layerIndex}__`,
-            layers: primaryLayers,
-            width: comp?.width ?? 1920,
-            height: comp?.height ?? 1080,
-            currentTime: playheadPosition,
-          };
-          merged.push({
-            id: `primary-layer-wrapper-${layerIndex}`,
-            name: `Layer ${String.fromCharCode(65 + layerIndex)}: Primary`,
-            visible: true,
-            opacity: layerOpacity,
-            blendMode: 'normal',
-            source: { type: 'image', nestedComposition: nestedData },
-            effects: [],
-            position: { x: 0, y: 0, z: 0 },
-            scale: { x: 1, y: 1 },
-            rotation: { x: 0, y: 0, z: 0 },
-          });
+          if (primaryLayers.length === 1) {
+            // Single clip: apply opacity directly — avoids NestedCompRenderer
+            // which may not support all decoder types (nativeDecoder, etc.)
+            const layer = primaryLayers[0];
+            merged.push({ ...layer, opacity: layer.opacity * layerOpacity });
+          } else {
+            // Multiple clips: wrap as nested composition so opacity
+            // applies to the flattened result, not per-clip
+            const comp = useMediaStore.getState().compositions.find(c => c.id === activeCompositionId);
+            const nestedData: import('../../types').NestedCompositionData = {
+              compositionId: `__layer-opacity-${layerIndex}__`,
+              layers: primaryLayers,
+              width: comp?.width ?? 1920,
+              height: comp?.height ?? 1080,
+              currentTime: playheadPosition,
+            };
+            merged.push({
+              id: `primary-layer-wrapper-${layerIndex}`,
+              name: `Layer ${String.fromCharCode(65 + layerIndex)}: Primary`,
+              visible: true,
+              opacity: layerOpacity,
+              blendMode: 'normal',
+              source: { type: 'image', nestedComposition: nestedData },
+              effects: [],
+              position: { x: 0, y: 0, z: 0 },
+              scale: { x: 1, y: 1 },
+              rotation: { x: 0, y: 0, z: 0 },
+            });
+          }
         } else {
           merged.push(...primaryLayers);
         }

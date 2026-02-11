@@ -283,6 +283,22 @@ export class NestedCompRenderer {
       const layer = layers[i];
       if (!layer?.visible || !layer.source || layer.opacity === 0) continue;
 
+      // NativeDecoder (turbo mode — ImageBitmap-based)
+      if (layer.source.nativeDecoder) {
+        const bitmap = layer.source.nativeDecoder.getCurrentFrame();
+        if (bitmap) {
+          const texture = this.textureManager.createImageBitmapTexture(bitmap, layer.id);
+          if (texture) {
+            result.push({
+              layer, isVideo: false, externalTexture: null,
+              textureView: this.textureManager.getDynamicTextureView(layer.id) ?? texture.createView(),
+              sourceWidth: bitmap.width, sourceHeight: bitmap.height,
+            });
+            continue;
+          }
+        }
+      }
+
       // VideoFrame
       if (layer.source.videoFrame) {
         const frame = layer.source.videoFrame;
