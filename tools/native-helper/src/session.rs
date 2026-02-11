@@ -104,7 +104,9 @@ impl Session {
                 compression,
             } => {
                 info!("Decode request: file={} frame={}", file_id, frame);
-                let result = self.handle_decode(&id, &file_id, frame, format, scale, compression);
+                // Default to JPEG compression — ~50x smaller than raw RGBA
+                let effective_compression = compression.or(Some(Compression::Jpeg));
+                let result = self.handle_decode(&id, &file_id, frame, format, scale, effective_compression);
                 match result {
                     Ok(binary) => {
                         info!("Decode OK: frame={} size={} bytes", frame, binary.len());

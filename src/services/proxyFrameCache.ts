@@ -523,6 +523,7 @@ class ProxyFrameCache {
 
       if (!arrayBuffer) {
         log.warn(`No audio source found for ${mediaFileId}`);
+        this.audioBufferFailed.add(mediaFileId);
         this.audioBufferLoading.delete(mediaFileId);
         return null;
       }

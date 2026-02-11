@@ -19,6 +19,7 @@ export const FRAME_FLAGS = {
   COMPRESSED: 0x01,
   SCALED: 0x02,
   DELTA: 0x04,
+  JPEG: 0x08,
 } as const;
 
 // Magic bytes
@@ -311,6 +312,13 @@ export function isCompressed(flags: number): boolean {
  */
 export function isScaled(flags: number): boolean {
   return (flags & FRAME_FLAGS.SCALED) !== 0;
+}
+
+/**
+ * Check if frame payload is JPEG-encoded
+ */
+export function isJpeg(flags: number): boolean {
+  return (flags & FRAME_FLAGS.JPEG) !== 0;
 }
 
 // Error codes

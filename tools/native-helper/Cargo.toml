@@ -38,6 +38,7 @@ rand = "0.8"
 uuid = { version = "1", features = ["v4"] }
 parking_lot = "0.12"
 base64 = "0.22"
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
 
 # HTTP for headers parsing and file serving
 http = "1"

@@ -153,6 +153,7 @@ pub enum PixelFormat {
 #[serde(rename_all = "lowercase")]
 pub enum Compression {
     Lz4,
+    Jpeg,
 }
 
 /// Priority for decode requests

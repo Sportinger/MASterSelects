@@ -198,6 +198,12 @@ export function getMediaFileForClip(ctx: FrameContext, clip: TimelineClip): any 
     if (byId) return byId;
   }
 
+  // Try source.mediaFileId (survives project reload even when top-level mediaFileId doesn't)
+  if (clip.source?.mediaFileId && clip.source.mediaFileId !== clip.mediaFileId) {
+    const bySourceId = ctx.mediaFileById.get(clip.source.mediaFileId);
+    if (bySourceId) return bySourceId;
+  }
+
   // Fall back to name
   if (clip.name) {
     return ctx.mediaFileByName.get(clip.name);

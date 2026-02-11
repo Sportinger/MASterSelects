@@ -286,6 +286,13 @@ export class NativeDecoder {
       scale,
     });
 
+    if (decoded.isJpeg) {
+      // JPEG path: browser decodes natively — much faster than manual ImageData
+      const blob = new Blob([new Uint8Array(decoded.data)], { type: 'image/jpeg' });
+      return createImageBitmap(blob);
+    }
+
+    // Raw RGBA fallback
     const pixelData = new Uint8ClampedArray(decoded.data);
     const imageData = new ImageData(pixelData, decoded.width, decoded.height);
     return createImageBitmap(imageData);

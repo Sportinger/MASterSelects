@@ -18,6 +18,7 @@ import type {
 import {
   parseFrameHeader,
   isCompressed,
+  isJpeg,
 } from './protocol';
 
 // LZ4 decompression (we'll use a simple implementation or skip for now)
@@ -40,6 +41,8 @@ export interface DecodedFrame {
   frameNum: number;
   data: Uint8ClampedArray;
   requestId: number;
+  /** If true, data contains JPEG bytes — use createImageBitmap(Blob) instead of ImageData */
+  isJpeg?: boolean;
 }
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
@@ -688,9 +691,10 @@ class NativeHelperClientImpl {
       const payloadStart = 16;
       const payload = new Uint8Array(data, payloadStart);
 
-      // Decompress if needed
-      if (isCompressed(header.flags)) {
-        // TODO: Use proper LZ4 decompression
+      const jpegFrame = isJpeg(header.flags);
+
+      // Decompress if needed (LZ4 — not used when JPEG is active)
+      if (!jpegFrame && isCompressed(header.flags)) {
         log.warn('LZ4 decompression not implemented, using raw data');
       }
 
@@ -700,6 +704,7 @@ class NativeHelperClientImpl {
         frameNum: header.frameNum,
         data: new Uint8ClampedArray(payload),
         requestId: header.requestId,
+        isJpeg: jpegFrame,
       };
 
       // Find callback by request ID pattern

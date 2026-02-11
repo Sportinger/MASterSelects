@@ -38,4 +38,6 @@ pub mod flags {
     pub const COMPRESSED: u8 = 0x01;
     pub const SCALED: u8 = 0x02;
     pub const DELTA: u8 = 0x04;
+    /// Payload is JPEG-encoded (not raw RGBA)
+    pub const JPEG: u8 = 0x08;
 }

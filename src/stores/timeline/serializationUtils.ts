@@ -663,6 +663,7 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
           mediaFileId: serializedClip.mediaFileId, // Preserve mediaFileId for cache lookups
           naturalDuration: serializedClip.naturalDuration,
         },
+        mediaFileId: serializedClip.mediaFileId, // Restore top-level mediaFileId for audio/proxy lookup
         needsReload: needsReload, // Flag for UI to show reload indicator
         thumbnails: serializedClip.thumbnails,
         linkedClipId: serializedClip.linkedClipId,
