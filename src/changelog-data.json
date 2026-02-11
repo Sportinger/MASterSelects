@@ -1,0 +1,4029 @@
+[
+  {
+    "date": "2026-02-11",
+    "type": "new",
+    "title": "Output Manager Slice System with Corner Pin Warp",
+    "description": "Full slice system for output targets with corner pin warping, inline rename, mask layers, drag-drop reordering, and auto-save/load of configurations.",
+    "section": "Output Manager",
+    "commits": [
+      "d5db21b",
+      "4914457",
+      "c04228f",
+      "b76a916",
+      "9195abc",
+      "c392236",
+      "c81bb4b",
+      "96cb790",
+      "ba5fe4b",
+      "efb1ddc",
+      "e1280ae",
+      "8edc293",
+      "52c16a9",
+      "705799e"
+    ]
+  },
+  {
+    "date": "2026-02-11",
+    "type": "new",
+    "title": "Output Manager with RenderTarget Routing",
+    "description": "New Output Manager UI with per-target source routing, unified RenderTarget system, independent render scheduling, and window restore on close.",
+    "commits": [
+      "e44bde4",
+      "04e63d3",
+      "9819d98",
+      "d9edc16",
+      "b60dcee",
+      "d43dd4d",
+      "c5f2bf3"
+    ]
+  },
+  {
+    "date": "2026-02-11",
+    "type": "fix",
+    "title": "Output window stability fixes",
+    "description": "Fix tab jumping on refresh, window geometry persistence, drag activation, and reconnection issues for output windows.",
+    "commits": [
+      "07f3ed9",
+      "efdcf42",
+      "8964157",
+      "707b39c"
+    ]
+  },
+  {
+    "date": "2026-02-11",
+    "type": "fix",
+    "title": "Fix scrubbing and slice rendering issues",
+    "description": "Fix scrubbing showing nothing after page reload, WGSL uniformity errors in slice shader, and black screen when sliced targets share active composition.",
+    "commits": [
+      "2c7e093",
+      "22258aa",
+      "48ff9c9",
+      "5b1b07c"
+    ]
+  },
+  {
+    "date": "2026-02-11",
+    "type": "new",
+    "title": "Resolume-style slot grid with multi-layer playback",
+    "description": "New slot grid view with click-to-play, drag reorder, live playhead, row labels, column headers, and multi-layer composition playback with independent wall-clock time per layer.",
+    "section": "Slot Grid",
+    "commits": [
+      "129ce48",
+      "b4e1923",
+      "6716cc8",
+      "a7cbf58",
+      "19028ca",
+      "21de892",
+      "f99b61d",
+      "0d7a6b9",
+      "4639afb",
+      "c2616e9",
+      "dc566e2",
+      "6a3676e",
+      "65659de",
+      "bde5ab0",
+      "adff73a",
+      "f9579e9",
+      "3f1ca03",
+      "ff6c8ad",
+      "29cba3f",
+      "242c67c",
+      "1dc24a3",
+      "dddc773"
+    ]
+  },
+  {
+    "date": "2026-02-11",
+    "type": "new",
+    "title": "Tutorial system with Clippy mascot",
+    "description": "Spotlight-based tutorial mode with panel introduction, timeline deep-dive, Clippy mascot with intro/outro animations, welcome screen with program selection, and skip button.",
+    "commits": [
+      "1b72632",
+      "341e27c",
+      "c2c5f79",
+      "2059248",
+      "6b8d787",
+      "92fc77a",
+      "4dea89e",
+      "5e98f18",
+      "7d17060",
+      "4eb9b44",
+      "9ca294c",
+      "afb6c57",
+      "78397d3",
+      "ed50e90",
+      "315128f",
+      "9b97b62",
+      "6bc92d0",
+      "97a5df1",
+      "7995462"
+    ]
+  },
+  {
+    "date": "2026-02-11",
+    "type": "new",
+    "title": "Multi-platform video download support",
+    "description": "Download videos from TikTok, Instagram, Twitter/X and more. YouTube panel renamed to Download panel with platform-specific subfolders.",
+    "commits": [
+      "db47a99",
+      "30f8898"
+    ]
+  },
+  {
+    "date": "2026-02-11",
+    "type": "improve",
+    "title": "Unified native-helper and platform cleanup",
+    "description": "Removed old platform-specific helpers and finalized the unified cross-platform native-helper.",
+    "commits": [
+      "d852005"
+    ]
+  },
+  {
+    "date": "2026-02-11",
+    "type": "improve",
+    "title": "Preview updates on tab switch",
+    "description": "Request render on tab switch so the preview updates without needing to play.",
+    "commits": [
+      "994a4e2"
+    ]
+  },
+  {
+    "date": "2026-02-11",
+    "type": "fix",
+    "title": "Fix loading clip Y-axis offset",
+    "description": "Fixed loading clip offset caused by a global .loading CSS class conflict.",
+    "commits": [
+      "90bb778"
+    ]
+  },
+  {
+    "date": "2026-02-10",
+    "type": "new",
+    "title": "Slot grid zoom transition and view toggle",
+    "description": "Ctrl+Shift+Scroll collapses the timeline into a slot grid with a semantic zoom-out transition.",
+    "commits": [
+      "4d40ff6",
+      "c4fe251",
+      "74afcec",
+      "f323c31",
+      "f6665bd"
+    ]
+  },
+  {
+    "date": "2026-02-09",
+    "type": "new",
+    "title": "SAM 2 AI Segmentation",
+    "description": "AI-powered video segmentation with model download, inference worker, panel UI, and preview overlay for interactive object selection.",
+    "commits": [
+      "abd2c9a",
+      "e41efad",
+      "7c28463",
+      "cdc6391",
+      "ff738bd",
+      "086f5ea"
+    ]
+  },
+  {
+    "date": "2026-02-09",
+    "type": "new",
+    "title": "GPU-accelerated Video Scopes",
+    "description": "Professional video scopes with histogram, vectorscope, and waveform monitor in DaVinci Resolve style, fully GPU-accelerated with zero readPixels overhead.",
+    "section": "Scopes",
+    "commits": [
+      "2e92898",
+      "eb6dbfc",
+      "d3e76de",
+      "8c735e8",
+      "cf05b82",
+      "1cf164e",
+      "fa4b944",
+      "3f016e9",
+      "fe201c0",
+      "69581a5",
+      "69c6589",
+      "36b190f",
+      "e986a50",
+      "d6cae47",
+      "731ad5a",
+      "7833918",
+      "09d62ec",
+      "cc1bf39"
+    ]
+  },
+  {
+    "date": "2026-02-09",
+    "type": "new",
+    "title": "Vitest test suite",
+    "description": "Added 182 tests across unit and store layers for improved code quality and regression prevention.",
+    "commits": [
+      "f74f65a"
+    ]
+  },
+  {
+    "date": "2026-02-09",
+    "type": "new",
+    "title": "Composition resolution drives render pipeline",
+    "description": "Compositions now control render resolution directly, with native pixel scale for new clips and scale adjustment on resize.",
+    "commits": [
+      "80bece4",
+      "744d9eb",
+      "3a0eb52",
+      "1f47ce8"
+    ]
+  },
+  {
+    "date": "2026-02-09",
+    "type": "fix",
+    "title": "Fix preview flickering after effect changes",
+    "description": "Resolved preview flickering caused by thumbnail regeneration and random frame display after effect or clip changes.",
+    "commits": [
+      "590c906",
+      "3032205"
+    ]
+  },
+  {
+    "date": "2026-02-09",
+    "type": "fix",
+    "title": "Fix multiple effects not stacking",
+    "description": "Fixed bind group cache returning stale texture views when multiple effects were applied.",
+    "commits": [
+      "d7c3266"
+    ]
+  },
+  {
+    "date": "2026-02-09",
+    "type": "new",
+    "title": "Render loop watchdog and crash protection",
+    "description": "Added watchdog to detect and recover from render loop crashes, preventing permanent preview freezes.",
+    "commits": [
+      "b3db5cd"
+    ]
+  },
+  {
+    "date": "2026-02-09",
+    "type": "fix",
+    "title": "Fix solid clip persistence and trimming",
+    "description": "Solid clips now persist across project save/load and can be trimmed beyond their initial duration, with live visual preview during trim.",
+    "commits": [
+      "cf01d17",
+      "7d37e19",
+      "f2c5442"
+    ]
+  },
+  {
+    "date": "2026-02-09",
+    "type": "fix",
+    "title": "Fix tutorial stuck after part transition",
+    "description": "Fixed tutorial getting stuck when transitioning from Part 1 to Part 2.",
+    "commits": [
+      "e3b7fc3"
+    ]
+  },
+  {
+    "date": "2026-02-09",
+    "type": "fix",
+    "title": "Fix clip overlap and audio desync on move",
+    "description": "Fixed clips overlapping and audio desyncing when moving clips on the same track.",
+    "commits": [
+      "c5c29f5"
+    ]
+  },
+  {
+    "date": "2026-02-09",
+    "type": "fix",
+    "title": "Fix timeline duration edit not persisting",
+    "description": "Timeline duration edit now properly syncs to the composition.",
+    "commits": [
+      "6b48cf8"
+    ]
+  },
+  {
+    "date": "2026-02-09",
+    "type": "improve",
+    "title": "Menu reorganization",
+    "description": "AI panels grouped as submenu, tutorials moved to Info menu, scopes moved to hover submenu in View menu, removed duplicate Preview Quality entry.",
+    "commits": [
+      "2122520",
+      "784f6de",
+      "04f0351",
+      "2d2575a"
+    ]
+  },
+  {
+    "date": "2026-02-09",
+    "type": "improve",
+    "title": "Timeline clip entrance animation",
+    "description": "Clips now animate in with a staggered 20ms delay per clip and inherit label color from media files.",
+    "commits": [
+      "c3efc3e",
+      "8ead363"
+    ]
+  },
+  {
+    "date": "2026-02-09",
+    "type": "improve",
+    "title": "NativeHelper dialog improvements",
+    "description": "Auto-check connection on dialog open, updated messaging to focus on YouTube downloading.",
+    "commits": [
+      "1441015",
+      "51b980e"
+    ]
+  },
+  {
+    "date": "2026-02-09",
+    "type": "improve",
+    "title": "WIP bug badges on incomplete features",
+    "description": "Added WIP bug badges to Edit Mode, AI Segment, Multi-Cam, and certain transform properties to indicate work-in-progress status.",
+    "commits": [
+      "5c228fe",
+      "5b0f029",
+      "2d66fa3",
+      "9607f88"
+    ]
+  },
+  {
+    "date": "2026-02-09",
+    "type": "improve",
+    "title": "Smooth composition switch transitions",
+    "description": "200ms crossfade on composition switch with per-track slide and fade animations.",
+    "commits": [
+      "4266604",
+      "527b0ad",
+      "56b38d3"
+    ]
+  },
+  {
+    "date": "2026-02-09",
+    "type": "improve",
+    "title": "Audio tracks always expanded by default",
+    "description": "Audio tracks now always show the expand arrow and start expanded.",
+    "commits": [
+      "e194550"
+    ]
+  },
+  {
+    "date": "2026-02-09",
+    "type": "improve",
+    "title": "Label color column with sortable headers",
+    "description": "Added proper label color column to media panel with sortable column headers.",
+    "commits": [
+      "865c45d"
+    ]
+  },
+  {
+    "date": "2026-02-09",
+    "type": "fix",
+    "title": "Prevent clips dragged to wrong track types",
+    "description": "Clips can no longer be accidentally dragged to incompatible track types in the preview.",
+    "commits": [
+      "03aa49a"
+    ]
+  },
+  {
+    "date": "2026-02-08",
+    "type": "improve",
+    "title": "Timeline clip dragging improvements",
+    "description": "Added vertical distance resistance for track changes, free movement on same track, proper cross-track overlap prevention, and find-or-create track when target is full.",
+    "section": "Timeline",
+    "commits": [
+      "ee5df39",
+      "6a47f4e",
+      "1f0f700",
+      "3983300",
+      "3755db4",
+      "847e601",
+      "4e4562d"
+    ]
+  },
+  {
+    "date": "2026-02-08",
+    "type": "new",
+    "title": "Keyframe copy/paste and graph improvements",
+    "description": "Copy/paste keyframes with Ctrl+C/V, auto-scale Y-axis in graph editor, toggle off saves value and deletes keyframes, and keyframe tick marks on clip bars.",
+    "commits": [
+      "604e20f",
+      "4ccbcbc",
+      "0e19f8b",
+      "9a65a52"
+    ]
+  },
+  {
+    "date": "2026-02-08",
+    "type": "improve",
+    "title": "Timeline zoom and scroll improvements",
+    "description": "Exponential zoom scaling, finer 8% zoom steps, vertical scroll snaps to track boundaries, and smooth track height resizing with reduced minimum from 30px to 20px.",
+    "commits": [
+      "1642bb9",
+      "723b76c",
+      "24a02a7",
+      "6f3e97f",
+      "a62e57a",
+      "45071a1",
+      "37ee94b",
+      "080b9fc"
+    ]
+  },
+  {
+    "date": "2026-02-08",
+    "type": "fix",
+    "title": "Fix curve editor layout issues",
+    "description": "Fixed curve editor overlapping property rows and scroll snap positions. Only one curve editor can be open at a time.",
+    "commits": [
+      "48af4ac",
+      "ff8a74c"
+    ]
+  },
+  {
+    "date": "2026-02-08",
+    "type": "improve",
+    "title": "View toggles and settings",
+    "description": "View toggles persist in project file, thumbnails and waveforms toggles work correctly, and checkboxes update visually.",
+    "commits": [
+      "49dc4cd",
+      "01715bf",
+      "1c9ec1d"
+    ]
+  },
+  {
+    "date": "2026-02-08",
+    "type": "improve",
+    "title": "Green video/audio separator and mask edge dragging",
+    "description": "Visual separator between video and audio tracks with optimized mask drag performance.",
+    "commits": [
+      "3f16953",
+      "867d843",
+      "d4df302"
+    ]
+  },
+  {
+    "date": "2026-02-08",
+    "type": "fix",
+    "title": "Fix Ctrl+Z crash with undefined layers",
+    "description": "Filter undefined layers in history snapshots to prevent crash on undo.",
+    "commits": [
+      "7559e0b"
+    ]
+  },
+  {
+    "date": "2026-02-08",
+    "type": "improve",
+    "title": "Compact Settings dialog with unified API keys",
+    "description": "Consolidated all API keys into a compact settings dialog.",
+    "commits": [
+      "716747f"
+    ]
+  },
+  {
+    "date": "2026-02-08",
+    "type": "improve",
+    "title": "Updated default layout",
+    "description": "Scopes and properties on right side, media on left. Multi-Cam removed from default layout with WIP panels grayed out.",
+    "commits": [
+      "628690a",
+      "f36e82a"
+    ]
+  },
+  {
+    "date": "2026-02-08",
+    "type": "improve",
+    "title": "Disable marquee and pick whip in timeline",
+    "description": "Disabled lasso/marquee selection and pick whip parenting in timeline clips and tracks.",
+    "commits": [
+      "6a0b69b",
+      "2ebc1a8"
+    ]
+  },
+  {
+    "date": "2026-02-07",
+    "type": "fix",
+    "title": "Fix parallel decode seeking",
+    "description": "Fixed keyframe validation for seeking, CTS-based keyframe search, and back-seek not triggering when decoder passes the target frame.",
+    "commits": [
+      "3affc8a",
+      "ec718f5",
+      "85316c8"
+    ]
+  },
+  {
+    "date": "2026-02-07",
+    "type": "new",
+    "title": "Linked clip selection",
+    "description": "Select linked audio/video clips together with independent Shift+click override. Properties panel shows the clicked clip immediately.",
+    "commits": [
+      "e51ce42",
+      "45e2472",
+      "e4c9b4b"
+    ]
+  },
+  {
+    "date": "2026-02-07",
+    "type": "new",
+    "title": "Rewritten proxy system with WebCodecs",
+    "description": "Proxy generation rewritten to use WebCodecs decode with WebP frames and MP4 output. Supports resume from disk after interruption, parallel JPEG encoding, and fixes for DPB deadlock and slow start.",
+    "commits": [
+      "2046db4",
+      "6224538",
+      "8c52429",
+      "bd4259d"
+    ]
+  },
+  {
+    "date": "2026-02-07",
+    "type": "improve",
+    "title": "Instant media import and faster MOV loading",
+    "description": "Media import is now instant with fast MOV duration extraction via MP4Box container parsing.",
+    "commits": [
+      "88f3344",
+      "2014e15"
+    ]
+  },
+  {
+    "date": "2026-02-07",
+    "type": "fix",
+    "title": "Fix undo/redo reliability",
+    "description": "Flush pending captures, shallow equality checks, and batch safety improvements for reliable undo/redo.",
+    "commits": [
+      "9e8c220"
+    ]
+  },
+  {
+    "date": "2026-02-07",
+    "type": "fix",
+    "title": "Fix split clips sharing properties",
+    "description": "Split clips are now fully independent with deep cloned properties.",
+    "commits": [
+      "ef8d208"
+    ]
+  },
+  {
+    "date": "2026-02-07",
+    "type": "fix",
+    "title": "Fix first-time save losing project data",
+    "description": "First-time save no longer loses all project data.",
+    "commits": [
+      "ef62d34"
+    ]
+  },
+  {
+    "date": "2026-02-07",
+    "type": "fix",
+    "title": "Fix keyframe interaction issues",
+    "description": "Clicking new keyframe no longer drags the previously selected one. Position and Rotation stopwatch now keyframes all axes.",
+    "commits": [
+      "e87fd67",
+      "1b669ac"
+    ]
+  },
+  {
+    "date": "2026-02-07",
+    "type": "fix",
+    "title": "Fix transparency grid rendering",
+    "description": "Transparency checkerboard now renders in GPU shader with increased square size from 8px to 24px.",
+    "commits": [
+      "238cec8",
+      "9c6012a",
+      "2c403d2"
+    ]
+  },
+  {
+    "date": "2026-02-07",
+    "type": "improve",
+    "title": "Blend mode cycling with German keyboard layout",
+    "description": "Blend mode cycling works with direct key press on German keyboard layout.",
+    "commits": [
+      "173fc8d"
+    ]
+  },
+  {
+    "date": "2026-02-07",
+    "type": "improve",
+    "title": "Decouple playhead from clip re-renders",
+    "description": "PlayheadPosition decoupled from TimelineClip props to prevent unnecessary re-renders during playback.",
+    "commits": [
+      "f9f996c"
+    ]
+  },
+  {
+    "date": "2026-02-07",
+    "type": "fix",
+    "title": "Fix loading clip visual appearance",
+    "description": "Loading clips now show opaque background with centered content, proper border styling not overridden by proxy states.",
+    "commits": [
+      "0f8cd97",
+      "fb6ff5a"
+    ]
+  },
+  {
+    "date": "2026-02-07",
+    "type": "fix",
+    "title": "Fix New Project not resetting state",
+    "description": "New Project now properly resets state instead of saving current state.",
+    "commits": [
+      "7977d12"
+    ]
+  },
+  {
+    "date": "2026-02-07",
+    "type": "fix",
+    "title": "Fix React hook ordering error",
+    "description": "Moved useTimelineStore hook before early returns to fix React error #300.",
+    "commits": [
+      "78748ac"
+    ]
+  },
+  {
+    "date": "2026-02-06",
+    "type": "fix",
+    "title": "Fix undo/redo history system",
+    "description": "Fixed race conditions, missing state, and batch grouping issues in the undo/redo history system.",
+    "commits": [
+      "804ce7f"
+    ]
+  },
+  {
+    "date": "2026-02-06",
+    "type": "new",
+    "title": "Solid color clips",
+    "description": "Create solid color clips in the media panel with color picker, composition dimensions, and visual styling that fills the entire timeline bar.",
+    "commits": [
+      "248996f",
+      "b090840",
+      "6502a7f",
+      "655b8c2",
+      "0ee25e8"
+    ]
+  },
+  {
+    "date": "2026-02-06",
+    "type": "improve",
+    "title": "After Effects-style Properties panel",
+    "description": "Unnormalized values, compact transform panel with inline X/Y/Z, left-aligned labels with right-aligned values, AE-style color label column, and solid color picker inline.",
+    "commits": [
+      "5902d6a",
+      "866dbb2",
+      "00c0169",
+      "284ef0f",
+      "109266c",
+      "b8065b8",
+      "0c3b70e",
+      "efbd2e6"
+    ]
+  },
+  {
+    "date": "2026-02-06",
+    "type": "improve",
+    "title": "After Effects visual redesign",
+    "description": "Complete visual overhaul with darker color palette, updated typography, and refined proportions matching After Effects aesthetics.",
+    "commits": [
+      "290d15e",
+      "18178ba",
+      "06e3fa8"
+    ]
+  },
+  {
+    "date": "2026-02-06",
+    "type": "fix",
+    "title": "Fix text layer live preview",
+    "description": "Text layers now update live during property editing with proper font weight dropdown and composite cache clearing.",
+    "commits": [
+      "261fd28",
+      "02f63f9",
+      "79020a7",
+      "83ed366"
+    ]
+  },
+  {
+    "date": "2026-02-06",
+    "type": "improve",
+    "title": "AE-style file type icons in Media Panel",
+    "description": "Media panel shows file type icons instead of thumbnails, with folder expand disclosure triangles for a cleaner After Effects-style look.",
+    "commits": [
+      "d6c72a2",
+      "b359dde"
+    ]
+  },
+  {
+    "date": "2026-02-06",
+    "type": "fix",
+    "title": "Fix proxy generation issues",
+    "description": "Fixed proxy decode loop, DPB deadlock on NVIDIA GPUs, slow start, and stuck at 100% issues.",
+    "commits": [
+      "bc4aa65",
+      "345c3f3",
+      "1c79b19"
+    ]
+  },
+  {
+    "date": "2026-02-06",
+    "type": "fix",
+    "title": "Fix media panel persistence",
+    "description": "Text items and solid items now persist across page reloads.",
+    "commits": [
+      "fe35ecf",
+      "345a6fe"
+    ]
+  },
+  {
+    "date": "2026-02-06",
+    "type": "fix",
+    "title": "Fix audio detection for camera MOV files",
+    "description": "Fixed audio detection for camera MOV files like Canon DK7A.",
+    "commits": [
+      "540a3e6"
+    ]
+  },
+  {
+    "date": "2026-02-06",
+    "type": "improve",
+    "title": "Panel resize handle improvements",
+    "description": "Wider grab area for panel resize handles with only the dragged handle highlighted.",
+    "commits": [
+      "22858cd",
+      "93b6675",
+      "55b7935"
+    ]
+  },
+  {
+    "date": "2026-02-06",
+    "type": "fix",
+    "title": "Fix instant clip placeholder on drop",
+    "description": "Clips now show an instant placeholder on drop with loading indicator between tracks.",
+    "commits": [
+      "cf465aa"
+    ]
+  },
+  {
+    "date": "2026-02-06",
+    "type": "improve",
+    "title": "Inline simple effects in composite shader",
+    "description": "Brightness, contrast, saturation, and invert effects are inlined in the composite shader, eliminating extra render passes.",
+    "commits": [
+      "58178e8",
+      "51ca92f"
+    ]
+  },
+  {
+    "date": "2026-02-06",
+    "type": "improve",
+    "title": "Performance: lazy-load panels and bundle optimization",
+    "description": "Lazy-loaded panels and split heavy dependencies reducing main chunk by 19%. Bundled timeline selectors from 29 to 6 subscriptions.",
+    "commits": [
+      "eb8b569",
+      "96ff2aa",
+      "07f5ffb",
+      "e352aa5"
+    ]
+  },
+  {
+    "date": "2026-02-06",
+    "type": "fix",
+    "title": "Fix memory leak and RAM preview cache",
+    "description": "Added memory leak prevention and RAM preview cache limits.",
+    "commits": [
+      "dc62e03"
+    ]
+  },
+  {
+    "date": "2026-02-06",
+    "type": "fix",
+    "title": "Fix project rename error",
+    "description": "Fixed project rename failing with 'Folder already exists' error by preventing double-call with error feedback.",
+    "commits": [
+      "446bba3",
+      "2a351e4"
+    ]
+  },
+  {
+    "date": "2026-02-06",
+    "type": "improve",
+    "title": "Dev server mode without changelog dialog",
+    "description": "Added dev server mode that skips the changelog dialog for faster development iteration.",
+    "commits": [
+      "ffc46ea"
+    ]
+  },
+  {
+    "date": "2026-02-04",
+    "type": "improve",
+    "title": "React performance optimization",
+    "description": "Optimized Zustand store subscriptions, split PropertiesPanel into lazy-loaded tabs, stabilized callbacks with useCallback, and reduced unnecessary re-renders across the app.",
+    "commits": [
+      "0352751",
+      "f839fb2",
+      "a739556",
+      "93d5ab9",
+      "e1752ed",
+      "828b090",
+      "dbd9a0f",
+      "c09635d"
+    ]
+  },
+  {
+    "date": "2026-02-04",
+    "type": "fix",
+    "title": "RenderLoop stability fixes",
+    "description": "Fixed memory leak from RenderLoop being recreated on every play/pause, fixed playback hanging when engine was idle, and ensured the loop restarts correctly.",
+    "commits": [
+      "dab0e6d",
+      "6bf9e0e",
+      "4394a70",
+      "1149b0b",
+      "581a4e3"
+    ]
+  },
+  {
+    "date": "2026-02-04",
+    "type": "fix",
+    "title": "RAM Preview and proxy caching fixes",
+    "description": "Fixed RAM Preview cache checks being skipped, added support for nested compositions in RAM Preview, and used WebCodecsPlayer for faster cache generation.",
+    "commits": [
+      "24c531b",
+      "52d922d",
+      "5e618fc",
+      "b9cba69"
+    ]
+  },
+  {
+    "date": "2026-02-04",
+    "type": "fix",
+    "title": "Proxy generation hanging at 103%",
+    "description": "Fixed proxy generation getting stuck by clamping progress values and ensuring proper completion signaling.",
+    "commits": [
+      "25cfbf4"
+    ]
+  },
+  {
+    "date": "2026-02-04",
+    "type": "fix",
+    "title": "Audio clip fades control volume instead of opacity",
+    "description": "Audio clip fade handles now correctly adjust volume rather than opacity.",
+    "commits": [
+      "63d2214"
+    ]
+  },
+  {
+    "date": "2026-02-04",
+    "type": "improve",
+    "title": "Draggable Settings dialog",
+    "description": "Settings dialog can now be dragged and no longer shows a dark overlay blocking the background.",
+    "commits": [
+      "977aefc"
+    ]
+  },
+  {
+    "date": "2026-02-04",
+    "type": "improve",
+    "title": "Changelog UI improvements",
+    "description": "Added refactor category with icon, improved grid layout with expand/collapse animation and fixed two-column layout.",
+    "commits": [
+      "f5d1db7",
+      "58d37ce",
+      "eee1503",
+      "7af2c15",
+      "f589d7d",
+      "7bed115",
+      "52b9c85",
+      "cbbfdae"
+    ]
+  },
+  {
+    "date": "2026-02-03",
+    "type": "new",
+    "title": "Transitions system with crossfade support",
+    "description": "Added a modular Transitions Panel with drag-drop support and crossfade rendering between clips.",
+    "commits": [
+      "a98c2ad",
+      "455a99d"
+    ]
+  },
+  {
+    "date": "2026-02-03",
+    "type": "improve",
+    "title": "Redesigned Settings dialog",
+    "description": "Settings now uses an After Effects-style sidebar navigation with a dedicated Transcription category.",
+    "commits": [
+      "1c8cbeb",
+      "c9aca45"
+    ]
+  },
+  {
+    "date": "2026-02-03",
+    "type": "new",
+    "title": "Video Warmup (proxy frame preloading)",
+    "description": "Added a cache/warmup button for manual proxy frame preloading with a yellow cache indicator on the timeline ruler.",
+    "commits": [
+      "0f1a902",
+      "b3ae482",
+      "fb19843"
+    ]
+  },
+  {
+    "date": "2026-02-03",
+    "type": "new",
+    "title": "Corner and edge handle scaling in edit mode",
+    "description": "Added corner and edge handles for scaling layers directly on canvas, with Shift held for aspect ratio lock.",
+    "commits": [
+      "633b842"
+    ]
+  },
+  {
+    "date": "2026-02-03",
+    "type": "new",
+    "title": "JKL keyboard shortcuts for playback",
+    "description": "Added J/K/L playback control shortcuts with reverse playback support and automatic speed reset on pause.",
+    "commits": [
+      "c0f882f",
+      "b19a5cb",
+      "cb33627"
+    ]
+  },
+  {
+    "date": "2026-02-03",
+    "type": "new",
+    "title": "Multi-select clip movement",
+    "description": "Select and drag multiple clips at once with visual preview, collision detection, linked audio/video sync, and snapping support.",
+    "commits": [
+      "6f3eaa3",
+      "0223a56",
+      "7c71257",
+      "14137b8",
+      "e938874",
+      "eb9340e",
+      "5ea8b0f",
+      "f3bb637",
+      "8fa0694"
+    ]
+  },
+  {
+    "date": "2026-02-03",
+    "type": "new",
+    "title": "FCP XML export",
+    "description": "Export your timeline as Final Cut Pro XML for interchange with other editing software.",
+    "commits": [
+      "901843e"
+    ]
+  },
+  {
+    "date": "2026-02-03",
+    "type": "fix",
+    "title": "Snapping and clip animation fixes",
+    "description": "Fixed snapping not working when enabled without Alt key, and clip entrance animation now only triggers on composition switch.",
+    "commits": [
+      "9dba94e",
+      "ce1e782"
+    ]
+  },
+  {
+    "date": "2026-02-03",
+    "type": "fix",
+    "title": "Audio detection for OBS video formats",
+    "description": "Fixed audio stream detection failing for OBS recordings and similar video formats.",
+    "commits": [
+      "52e76b9"
+    ]
+  },
+  {
+    "date": "2026-02-03",
+    "type": "fix",
+    "title": "Audio effect warnings in GPU pipeline",
+    "description": "Suppressed spurious audio effect warnings that appeared in the GPU rendering pipeline.",
+    "commits": [
+      "a6ff1dc"
+    ]
+  },
+  {
+    "date": "2026-02-03",
+    "type": "improve",
+    "title": "Linux Vulkan warning banner",
+    "description": "Added a banner warning Linux users to enable Vulkan for better performance.",
+    "commits": [
+      "6a60eb5"
+    ]
+  },
+  {
+    "date": "2026-02-03",
+    "type": "new",
+    "section": "Media Panel",
+    "title": "Text items with drag-to-timeline support",
+    "description": "Text items now appear in the Media Panel and can be dragged onto the timeline.",
+    "commits": [
+      "481a55e",
+      "d822843",
+      "13d89e5"
+    ]
+  },
+  {
+    "date": "2026-02-02",
+    "type": "fix",
+    "title": "Export stability improvements",
+    "description": "Fixed export crashes at time 0, VideoFrame garbage collection causing device loss, frame tolerance issues, and added HTMLVideoElement fallback for decode failures.",
+    "commits": [
+      "24445ab",
+      "6b0c7e0",
+      "72dffc3",
+      "c3fc31b"
+    ]
+  },
+  {
+    "date": "2026-02-02",
+    "type": "fix",
+    "title": "Nested composition rendering and export fixes",
+    "description": "Fixed nested comp effects/keyframes not loading, transform/effects missing when paused, layer order issues, and opacity animations not applying during export.",
+    "commits": [
+      "209f632",
+      "427e12b",
+      "b41c8c0",
+      "9e4d7fd",
+      "2266990",
+      "c769499",
+      "78f7bb9"
+    ]
+  },
+  {
+    "date": "2026-02-02",
+    "type": "fix",
+    "title": "Proxy and nested comp visibility fixes",
+    "description": "Fixed proxy getting stuck at 100% and nested composition visibility issues.",
+    "commits": [
+      "ce2b09f",
+      "8f67351"
+    ]
+  },
+  {
+    "date": "2026-02-02",
+    "type": "improve",
+    "title": "Simplified keyframe UI for Scale and EQ",
+    "description": "Scale keyframes now use a single X/Y toggle, and EQ keyframes use a single toggle for all bands.",
+    "commits": [
+      "15af792",
+      "89647b1"
+    ]
+  },
+  {
+    "date": "2026-02-02",
+    "type": "new",
+    "title": "Live EQ with Web Audio API",
+    "description": "Added real-time equalizer support powered by the Web Audio API.",
+    "commits": [
+      "b232022"
+    ]
+  },
+  {
+    "date": "2026-02-02",
+    "type": "new",
+    "title": "Audio tab for video clips",
+    "description": "Video clips now have a dedicated Audio tab with improved volume keyframe UX and audio track overlap detection.",
+    "commits": [
+      "e1c1d15",
+      "77a4eeb",
+      "9fcf9ad"
+    ]
+  },
+  {
+    "date": "2026-02-02",
+    "type": "fix",
+    "title": "Audio playback fixes",
+    "description": "Fixed audio volume out of range causing preview freeze, split clip audio for audio-only clips, and stopped spamming decode errors for videos without audio.",
+    "commits": [
+      "4dc9790",
+      "8c5ace5",
+      "75f1f91"
+    ]
+  },
+  {
+    "date": "2026-02-02",
+    "type": "fix",
+    "title": "Mask display fixes",
+    "description": "Fixed masks not showing when switching compositions or after page refresh.",
+    "commits": [
+      "8e83391",
+      "7331a9f"
+    ]
+  },
+  {
+    "date": "2026-02-02",
+    "type": "fix",
+    "title": "Texture lifecycle and GPU conflict fixes",
+    "description": "Fixed GPU conflicts by letting garbage collection handle texture cleanup instead of immediate destruction.",
+    "commits": [
+      "0774b58",
+      "7438389",
+      "f69d0c7"
+    ]
+  },
+  {
+    "date": "2026-02-02",
+    "type": "fix",
+    "title": "Effect parameter fallback values",
+    "description": "Fixed effect parameters using incorrect fallback when value is 0 or empty string by switching from || to ?? operator.",
+    "commits": [
+      "11cd621"
+    ]
+  },
+  {
+    "date": "2026-02-02",
+    "type": "improve",
+    "title": "GitHub commit links in changelog",
+    "description": "Changelog entries now link directly to their GitHub commits.",
+    "commits": [
+      "3dba2c9",
+      "d6af7e6"
+    ]
+  },
+  {
+    "date": "2026-02-02",
+    "type": "fix",
+    "title": "Scrubbing and preview fixes",
+    "description": "Fixed scrubbing being broken by seeking-cache checks, black preview on reload, video frame jumping during effect changes, and frame rate limiting now only applies during playback.",
+    "commits": [
+      "6c16cbb",
+      "d1e7f05",
+      "333d3f6",
+      "31d205d"
+    ]
+  },
+  {
+    "date": "2026-02-02",
+    "type": "fix",
+    "title": "Effects bleeding through to layers below",
+    "description": "Fixed a rendering bug where effects from one layer would visually bleed into layers underneath.",
+    "commits": [
+      "889448a"
+    ]
+  },
+  {
+    "date": "2026-02-02",
+    "type": "improve",
+    "title": "FPS stats accuracy and display",
+    "description": "Fixed inflated FPS from multiple RAF loops, increased measurement frequency to 4x/second with per-frame precision, and added render time to the compact stats overlay.",
+    "commits": [
+      "001256c",
+      "8d76428",
+      "c22b380",
+      "9c61956"
+    ]
+  },
+  {
+    "date": "2026-02-02",
+    "type": "fix",
+    "title": "Clip split playback fix",
+    "description": "Fixed split clips not playing correctly by creating new video/audio elements on split.",
+    "commits": [
+      "51c1c86"
+    ]
+  },
+  {
+    "date": "2026-02-02",
+    "type": "improve",
+    "title": "GitHub link and Native Helper download URL",
+    "description": "Added a GitHub link to the Info dialog and fixed the Native Helper download URL.",
+    "commits": [
+      "8773596"
+    ]
+  },
+  {
+    "date": "2026-02-01",
+    "type": "new",
+    "title": "Bezier fade curves on timeline clips",
+    "description": "Opacity fades now display real-time bezier curves directly on timeline clips, with preserved easing when adjusting fade duration.",
+    "commits": [
+      "db70328",
+      "9df0e29",
+      "b199576",
+      "37b11dd",
+      "192af91",
+      "d1b7781",
+      "a0fa1ee",
+      "23c0f73",
+      "1da295b"
+    ]
+  },
+  {
+    "date": "2026-02-01",
+    "type": "new",
+    "title": "WYSIWYG thumbnails with effects",
+    "description": "Clip thumbnails now show applied effects, and nested composition thumbnails are content-aware showing clip boundaries.",
+    "commits": [
+      "86dbd4a",
+      "a80c1c5",
+      "1d52322",
+      "f8c1754",
+      "6c0251c",
+      "668162f",
+      "c7ba529",
+      "0b6cfe6",
+      "f3dc999",
+      "5a29d67"
+    ]
+  },
+  {
+    "date": "2026-02-01",
+    "type": "new",
+    "title": "Visual boundary markers for nested compositions",
+    "description": "Nested composition clips now show visual boundary markers indicating where inner clips start and end.",
+    "commits": [
+      "16db2a9"
+    ]
+  },
+  {
+    "date": "2026-02-01",
+    "type": "new",
+    "title": "Copy/paste for timeline clips",
+    "description": "Use Ctrl+C/V to copy and paste clips on the timeline, with thumbnail/waveform reuse and undo support.",
+    "commits": [
+      "c84ed3a",
+      "b3fda6f"
+    ]
+  },
+  {
+    "date": "2026-02-01",
+    "type": "improve",
+    "title": "Track header scroll isolation",
+    "description": "Disabled Shift+Wheel horizontal scroll and Alt+Wheel zoom when hovering over track headers to prevent accidental timeline changes.",
+    "commits": [
+      "3115228",
+      "c7835e6"
+    ]
+  },
+  {
+    "date": "2026-02-01",
+    "type": "fix",
+    "title": "Export decode and keyframe fixes",
+    "description": "Fixed export decoding seeking to wrong keyframes and removed unreliable HTMLVideoElement fallback from export pipeline.",
+    "commits": [
+      "fa425f0",
+      "75c6e0f"
+    ]
+  },
+  {
+    "date": "2026-02-01",
+    "type": "improve",
+    "title": "Nested composition UX improvements",
+    "description": "Media Panel now activates when clicking composition tabs, and right-click on compositions opens the Media Panel with correct layer numbering.",
+    "commits": [
+      "e701c7a",
+      "0b15827"
+    ]
+  },
+  {
+    "date": "2026-02-01",
+    "type": "fix",
+    "title": "Clip segments generated on project load",
+    "description": "Fixed clip segments not being available after loading a project, which caused playback issues.",
+    "commits": [
+      "b80e078"
+    ]
+  },
+  {
+    "date": "2026-02-01",
+    "type": "refactor",
+    "title": "Code cleanup and ESLint config",
+    "description": "Phase 1 code cleanup with ESLint configuration and refactor plan.",
+    "commits": [
+      "98ff569"
+    ]
+  },
+  {
+    "date": "2026-01-28",
+    "type": "new",
+    "title": "Shared Decoder Architecture V2 for exports",
+    "description": "New hybrid export system with SharedDecoderPool, FrameCacheManager, ExportPlanner, and V2ExportBridge for more reliable and efficient video exports.",
+    "commits": [
+      "3c02646",
+      "71b37e9",
+      "e0e9830",
+      "4b2b5e5",
+      "eea425c",
+      "6355e58",
+      "f297fee",
+      "995ac8c",
+      "9a20a0c"
+    ],
+    "section": "Engine"
+  },
+  {
+    "date": "2026-01-28",
+    "type": "fix",
+    "title": "Backward seek and decode reliability",
+    "description": "Fixed backward seek detection and decode batch logic in ParallelDecodeManager for accurate frame retrieval.",
+    "commits": [
+      "834c16e",
+      "0749c40",
+      "a9ad4f5",
+      "34173a8",
+      "3c862a8",
+      "448713d",
+      "f2384d8",
+      "2b71e89"
+    ]
+  },
+  {
+    "date": "2026-01-27",
+    "type": "fix",
+    "title": "Linux/Vulkan black preview and GPU compatibility",
+    "description": "Fixed black preview on Linux/Vulkan by using preferred canvas format, removing device limits, and adding proper texture creation delays.",
+    "commits": [
+      "80a70e4",
+      "77e5072",
+      "0a572ab",
+      "1dbdd51",
+      "0b3c1f5"
+    ]
+  },
+  {
+    "date": "2026-01-26",
+    "type": "new",
+    "title": "Clip entrance animations on composition switch",
+    "description": "Clips now animate in sequentially when switching compositions, with smooth CSS-based entrance animations.",
+    "commits": [
+      "17fee24",
+      "d7926fd",
+      "0e9cfdf",
+      "de949ef",
+      "8f03f6f",
+      "14781ac",
+      "4d81a78"
+    ]
+  },
+  {
+    "date": "2026-01-26",
+    "type": "new",
+    "title": "IndexedDB corruption error dialog",
+    "description": "Shows a helpful error dialog when browser storage is corrupted, guiding users to recover.",
+    "commits": [
+      "55e4266"
+    ]
+  },
+  {
+    "date": "2026-01-26",
+    "type": "fix",
+    "title": "Nested clip state updates and missing files",
+    "description": "Fixed nested clips not updating immutably when media loads, and handles missing files gracefully with a needsReload flag.",
+    "commits": [
+      "2197074",
+      "1c1da56"
+    ]
+  },
+  {
+    "date": "2026-01-25",
+    "type": "fix",
+    "title": "Project loading and auto-relink reliability",
+    "description": "Improved project restore reliability with auto-relink from Raw folder, IndexedDB file handle fallback, and proper nested composition refresh.",
+    "commits": [
+      "bee1143",
+      "b4a24da",
+      "dc92bed",
+      "a15e3e4",
+      "ec99050",
+      "162ca75",
+      "0e3d7ed",
+      "b078096",
+      "e03605d",
+      "51664a8",
+      "283d494"
+    ]
+  },
+  {
+    "date": "2026-01-25",
+    "type": "fix",
+    "title": "Nested composition rendering and export",
+    "description": "Fixed nested compositions not rendering in preview and export by correcting texture flags, source types, video seeking, and frame caching.",
+    "commits": [
+      "4abbe78",
+      "87fb368",
+      "04346d2",
+      "1703f44",
+      "95d7389",
+      "9f1cea4",
+      "9036474",
+      "7a01cbc",
+      "51849ed",
+      "9a29a41",
+      "522df2f",
+      "4f86c3f"
+    ]
+  },
+  {
+    "date": "2026-01-25",
+    "type": "fix",
+    "title": "Blend mode not updating in realtime",
+    "description": "Fixed blend mode changes not reflecting immediately in preview by clearing transform cache and properly invalidating layers.",
+    "commits": [
+      "e134e01",
+      "b197216",
+      "f91ca4c",
+      "28c0ce1"
+    ]
+  },
+  {
+    "date": "2026-01-25",
+    "type": "new",
+    "title": "Cut tool for timeline clips",
+    "description": "Press C to toggle cut mode and click clips to split them. Cut indicator extends across linked video+audio clips, with snapping support.",
+    "commits": [
+      "989dbb8",
+      "fa65080",
+      "4e19381",
+      "1b04016"
+    ],
+    "section": "Timeline"
+  },
+  {
+    "date": "2026-01-25",
+    "type": "fix",
+    "title": "Playhead and cut tool snapping",
+    "description": "Fixed snapping to work without holding Alt key and playhead snapping to respect the snapping toggle.",
+    "commits": [
+      "7a074c8",
+      "11daa98"
+    ]
+  },
+  {
+    "date": "2026-01-25",
+    "type": "new",
+    "title": "Marker drag-to-create with ghost preview",
+    "description": "Improved markers with drag-to-create, ghost marker preview, drop animations, and markers that extend into the time ruler.",
+    "commits": [
+      "277cca2",
+      "b332617",
+      "e6f2a62",
+      "aa17987",
+      "6a713fb",
+      "07b9f68"
+    ]
+  },
+  {
+    "date": "2026-01-25",
+    "type": "new",
+    "title": "Professional Logger service",
+    "description": "Centralized logging with debug/info/warn/error levels, module filtering, search, and console commands. Migrated entire codebase from console.log.",
+    "commits": [
+      "d4da813",
+      "4c5b555",
+      "42bc53e",
+      "af82147",
+      "a3b0112",
+      "32fc11b",
+      "2757c07",
+      "3d62bf1",
+      "de68b5c"
+    ]
+  },
+  {
+    "date": "2026-01-25",
+    "type": "new",
+    "title": "Full project persistence",
+    "description": "Encrypted API keys, global settings, per-project UI state (dock layout, timeline view), autosave enabled by default, and nested comp persistence.",
+    "commits": [
+      "c4e4195",
+      "805a4bf",
+      "847a386"
+    ]
+  },
+  {
+    "date": "2026-01-25",
+    "type": "new",
+    "title": "Frame caching during playback for instant scrubbing",
+    "description": "Frames are automatically cached during playback so scrubbing back is instant without re-decoding.",
+    "commits": [
+      "4da7c21"
+    ]
+  },
+  {
+    "date": "2026-01-25",
+    "type": "fix",
+    "title": "B-frame decoding and export frame accuracy",
+    "description": "Fixed B-frame reordering, added frame buffering, half-frame tolerance for sample lookup, and proper keyframe tracking for accurate exports.",
+    "commits": [
+      "bfca3a5",
+      "82fb875",
+      "00af4ef",
+      "dcf7ee2",
+      "b3e454a",
+      "c745e01",
+      "6d84843",
+      "2675120",
+      "9b1db10",
+      "0e1b74f",
+      "6cde95e",
+      "2f0c5aa",
+      "41fdbad"
+    ]
+  },
+  {
+    "date": "2026-01-25",
+    "type": "improve",
+    "title": "Changelog dialog redesign",
+    "description": "Redesigned changelog with 2-column layout, grey version badge, transparent background, and removed known issues section.",
+    "commits": [
+      "a58a2e2",
+      "9cd42ec",
+      "9ecc965",
+      "6b1dfb5",
+      "09c869e",
+      "c100c4c"
+    ]
+  },
+  {
+    "date": "2026-01-25",
+    "type": "refactor",
+    "title": "Major codebase modularization",
+    "description": "Split WebGPUEngine (57% smaller), FrameExporter (1510 to 8 files), clipSlice (66% reduction), Timeline hooks, projectFileService, and aiTools into focused modules.",
+    "commits": [
+      "9f8062e",
+      "1745c14",
+      "254124b",
+      "056230c",
+      "5f100bc",
+      "0eb47cc",
+      "77a1a0e",
+      "ef9e3c0",
+      "37ca2d2",
+      "a75fcf9",
+      "3250169"
+    ]
+  },
+  {
+    "date": "2026-01-25",
+    "type": "new",
+    "title": "Auto-copy imported media to project Raw folder",
+    "description": "Imported media files are automatically copied to the project's Raw folder, with duplicate detection by name and size.",
+    "commits": [
+      "d42f45c",
+      "86adf52"
+    ]
+  },
+  {
+    "date": "2026-01-25",
+    "type": "improve",
+    "title": "Batch updates, unique IDs, and blob URL manager",
+    "description": "Added efficiency improvements including batch state updates, unique ID generation, and centralized blob URL management.",
+    "commits": [
+      "9720914"
+    ]
+  },
+  {
+    "date": "2026-01-25",
+    "type": "fix",
+    "title": "Timeline zoom/scroll reset on composition switch",
+    "description": "Fixed timeline zoom and scroll position resetting when switching between compositions.",
+    "commits": [
+      "36f7a49"
+    ]
+  },
+  {
+    "date": "2026-01-25",
+    "type": "fix",
+    "title": "Auto-play on page reload removed",
+    "description": "Fixed unwanted auto-play behavior when the page reloads or engine becomes ready.",
+    "commits": [
+      "bd545d0",
+      "1a76e3c"
+    ]
+  },
+  {
+    "date": "2026-01-25",
+    "type": "improve",
+    "title": "Numpad +/- for blend mode cycling",
+    "description": "Use numpad plus and minus keys to quickly cycle through blend modes on selected clips.",
+    "commits": [
+      "92d2d42"
+    ]
+  },
+  {
+    "date": "2026-01-25",
+    "type": "fix",
+    "title": "WebCodecsPlayer keyframe and decoder crashes",
+    "description": "Fixed null decoder crashes, keyframe decoding issues, and needsKeyframe tracking after flush in WebCodecsPlayer.",
+    "commits": [
+      "3fad1a0",
+      "7338630",
+      "ab3ca71",
+      "9262a83",
+      "7a241e2"
+    ]
+  },
+  {
+    "date": "2026-01-25",
+    "type": "fix",
+    "title": "Audio clip creation for videos without audio",
+    "description": "Skip audio clip creation for videos without audio tracks and handle empty audio elements in nested compositions.",
+    "commits": [
+      "a4eb28c",
+      "f7c86e0"
+    ]
+  },
+  {
+    "date": "2026-01-25",
+    "type": "improve",
+    "title": "Linked audio preview when dragging video",
+    "description": "Shows a preview of the linked audio track when dragging a video clip to a new track zone.",
+    "commits": [
+      "ddd15c1"
+    ]
+  },
+  {
+    "date": "2026-01-25",
+    "type": "refactor",
+    "title": "Remove VJ/Mixer mode completely",
+    "description": "Removed the VJ/Mixer mode and dissolved the mixerStore for a cleaner codebase.",
+    "commits": [
+      "4c605ac"
+    ]
+  },
+  {
+    "date": "2026-01-25",
+    "type": "fix",
+    "title": "YouTube auto-place downloads in YouTube folder",
+    "description": "YouTube downloads are now automatically placed in a dedicated YouTube folder in the media panel.",
+    "commits": [
+      "47bcc7b"
+    ]
+  },
+  {
+    "date": "2026-01-25",
+    "type": "fix",
+    "title": "Work area overlay visual improvements",
+    "description": "Extended work area overlay to top of ruler and increased transparency for better visibility.",
+    "commits": [
+      "03ac685"
+    ]
+  },
+  {
+    "date": "2026-01-25",
+    "type": "fix",
+    "title": "Rename StatsTracker to avoid ad blockers",
+    "description": "Renamed StatsTracker to PerformanceStats to prevent ad blockers from blocking the performance overlay.",
+    "commits": [
+      "d140c57"
+    ]
+  },
+  {
+    "date": "2026-01-25",
+    "type": "fix",
+    "title": "Export startup speed improvement",
+    "description": "Fixed slow export startup by only decoding 30 frames ahead instead of all frames, with lazy sample loading.",
+    "commits": [
+      "5e7c53f",
+      "777506f"
+    ]
+  },
+  {
+    "date": "2026-01-25",
+    "type": "improve",
+    "title": "Remove platform performance warning",
+    "description": "Removed the platform performance warning from the welcome overlay for a cleaner first-run experience.",
+    "commits": [
+      "f05f2a1"
+    ]
+  },
+  {
+    "date": "2026-01-25",
+    "type": "fix",
+    "title": "NativeHelperDialog crash with lite helper",
+    "description": "Fixed a crash in the NativeHelperDialog when using the lite helper variant.",
+    "commits": [
+      "a9e82cf"
+    ]
+  },
+  {
+    "date": "2026-01-25",
+    "type": "fix",
+    "title": "Video thumbnail generation detection",
+    "description": "Fixed video clip detection for thumbnail generation to work correctly with all clip types.",
+    "commits": [
+      "3a908b3"
+    ]
+  },
+  {
+    "date": "2026-01-25",
+    "type": "fix",
+    "title": "DragDurationCache typo in external drop",
+    "description": "Fixed dragDurationCacheRef typo to dragMetadataCacheRef in useExternalDrop hook.",
+    "commits": [
+      "19306f4"
+    ]
+  },
+  {
+    "date": "2026-01-23",
+    "type": "improve",
+    "title": "Parallel decode optimization for exports",
+    "description": "Optimized parallel decoding with 60-frame buffer, batch decode, smart flush, and better synchronization for multi-layer exports.",
+    "commits": [
+      "1f708e4",
+      "4af3dcf",
+      "d1c24ea"
+    ]
+  },
+  {
+    "date": "2026-01-23",
+    "type": "fix",
+    "title": "Nested composition invalidation",
+    "description": "Parent compositions are now properly invalidated when nested composition content changes.",
+    "commits": [
+      "a180acf"
+    ]
+  },
+  {
+    "date": "2026-01-23",
+    "type": "improve",
+    "title": "Proxy scrubbing with larger cache",
+    "description": "Optimized proxy scrubbing with a larger cache and smarter preloading for smoother timeline navigation.",
+    "commits": [
+      "c9cc815"
+    ]
+  },
+  {
+    "date": "2026-01-23",
+    "type": "new",
+    "title": "Lite helper for Windows (YouTube only)",
+    "description": "Added a lightweight native helper for Windows that supports YouTube downloads without requiring FFmpeg.",
+    "commits": [
+      "374a147",
+      "bdbc3a5",
+      "9e19a42",
+      "6a51335"
+    ]
+  },
+  {
+    "date": "2026-01-23",
+    "type": "fix",
+    "title": "WebGPU device loss recovery and Vulkan OOM",
+    "description": "Graceful handling of GPU device loss with automatic recovery, smaller initial textures, and guards against memory exhaustion.",
+    "commits": [
+      "13cba3d",
+      "5d68416",
+      "2841f1f",
+      "c3fd1fe",
+      "ee922ea"
+    ]
+  },
+  {
+    "date": "2026-01-23",
+    "type": "new",
+    "title": "YouTube format selection and quality options",
+    "description": "Added format selection dialog, list_formats command, H.264 preference over AV1/VP9, persistent searches per project, and downloads saved to project YT folder.",
+    "commits": [
+      "7a6be26",
+      "8040a75",
+      "fe74c56",
+      "194e768",
+      "1af642a",
+      "0c02007",
+      "04b4291"
+    ]
+  },
+  {
+    "date": "2026-01-23",
+    "type": "new",
+    "title": "Show GPU vendor in header",
+    "description": "Displays the GPU vendor (Nvidia, AMD, Intel, etc.) in the application header for quick identification.",
+    "commits": [
+      "1675636"
+    ]
+  },
+  {
+    "date": "2026-01-22",
+    "type": "fix",
+    "title": "Export compatibility and error handling",
+    "description": "Better error handling for WebGPU device loss during export, auto-fallback to PRECISE mode for unsupported codecs like AV1, and improved MOV error messages.",
+    "commits": [
+      "fc40d06",
+      "28b8089",
+      "13b0d09",
+      "e5dcc2c"
+    ]
+  },
+  {
+    "date": "2026-01-22",
+    "type": "improve",
+    "title": "YouTube download transfer via WebSocket",
+    "description": "Replaced file picker with WebSocket transfer for YouTube downloads, with optimized base64 decoding for large files.",
+    "commits": [
+      "362cb93",
+      "5a12fd8",
+      "94af12c",
+      "cb07fa7"
+    ]
+  },
+  {
+    "date": "2026-01-22",
+    "type": "improve",
+    "title": "Instant clip display with background thumbnails",
+    "description": "Clips appear instantly on the timeline while thumbnails generate in the background.",
+    "commits": [
+      "4950d62"
+    ]
+  },
+  {
+    "date": "2026-01-22",
+    "type": "fix",
+    "title": "WebGPU device recovery and HMR stability",
+    "description": "Added WebGPU device recovery, cleared video cache on HMR, disabled React StrictMode for WebGPU compatibility.",
+    "commits": [
+      "8ea2591",
+      "73d9fc7",
+      "e3c972f"
+    ]
+  },
+  {
+    "date": "2026-01-22",
+    "type": "fix",
+    "title": "YouTube download clips missing audio",
+    "description": "Fixed YouTube download clips having no audio and white preview by creating proper audio tracks and using WebCodecs.",
+    "commits": [
+      "ab94f81",
+      "3673899"
+    ]
+  },
+  {
+    "date": "2026-01-20",
+    "type": "fix",
+    "title": "WebCodecs export freeze and decoder state",
+    "description": "Fixed export freezing on first frame by properly handling flush(), keyframe requirements, and decoder readiness in WebCodecs export.",
+    "commits": [
+      "e1a225f",
+      "3ba65b1",
+      "a95b19c",
+      "936a870",
+      "20a3de0",
+      "0a60eb7"
+    ]
+  },
+  {
+    "date": "2026-01-20",
+    "type": "new",
+    "title": "YouTube quality selection panel",
+    "description": "Added quality selection for YouTube downloads with format options.",
+    "commits": [
+      "978308e",
+      "44754e5"
+    ]
+  },
+  {
+    "date": "2026-01-20",
+    "type": "improve",
+    "title": "Mask editing performance",
+    "description": "Throttled mask texture and vertex updates during drag operations for smoother editing, with proper texture regeneration on drag end.",
+    "commits": [
+      "4766f3a",
+      "23d5ee6",
+      "f0db343",
+      "9fea7c1"
+    ]
+  },
+  {
+    "date": "2026-01-20",
+    "type": "new",
+    "title": "macOS menubar app with tray icon",
+    "description": "Added a macOS menubar app with tray icon and platform-specific download instructions for the native helper.",
+    "commits": [
+      "aac6c45"
+    ]
+  },
+  {
+    "date": "2026-01-20",
+    "type": "new",
+    "title": "Node.js native helper for YouTube downloads",
+    "description": "Added a Node.js-based native helper as an alternative for YouTube download support.",
+    "commits": [
+      "5c51760",
+      "532e5ef"
+    ]
+  },
+  {
+    "date": "2026-01-20",
+    "type": "new",
+    "title": "Parallel video decoding for multi-clip exports",
+    "description": "Added parallel decoding support for regular and nested composition clips, enabling faster multi-clip exports with timestamp-based frame tracking.",
+    "commits": [
+      "083591b",
+      "f28172a",
+      "6714f9e",
+      "927bc73"
+    ]
+  },
+  {
+    "date": "2026-01-20",
+    "type": "new",
+    "title": "Export mode selection (Fast vs Precise)",
+    "description": "Choose between Fast (WebCodecs sequential) and Precise (HTMLVideo seeking) export modes. Fast mode uses dedicated WebCodecs players with MP4Box parsing.",
+    "commits": [
+      "5cf985f",
+      "003fab5",
+      "b94321f",
+      "1dcf0e3",
+      "42022ca",
+      "06c9d9f"
+    ],
+    "section": "Engine"
+  },
+  {
+    "date": "2026-01-20",
+    "type": "new",
+    "title": "Changelog dialog with time-based categories",
+    "description": "Redesigned changelog dialog with fixed height and time-based category grouping.",
+    "commits": [
+      "ac9e145",
+      "aadbe8f"
+    ]
+  },
+  {
+    "date": "2026-01-20",
+    "type": "fix",
+    "title": "Case-insensitive file extension detection",
+    "description": "File extension detection is now case-insensitive for all container formats, preventing import issues with uppercase extensions.",
+    "commits": [
+      "bfaaf83",
+      "47b2b25",
+      "b55bbb9"
+    ]
+  },
+  {
+    "date": "2026-01-20",
+    "type": "new",
+    "title": "Varispeed audio scrubbing",
+    "description": "Audio scrubbing plays at variable speed like Premiere/Resolve, with audio master clock so playhead follows audio timing.",
+    "commits": [
+      "f2a698e",
+      "5b9cf0b",
+      "bc70ccd",
+      "cf44c3e"
+    ]
+  },
+  {
+    "date": "2026-01-20",
+    "type": "improve",
+    "title": "Layer caching for pause and scrubbing",
+    "description": "Added layer caching to improve performance when paused or scrubbing through the timeline.",
+    "commits": [
+      "b9549dd"
+    ]
+  },
+  {
+    "date": "2026-01-20",
+    "type": "fix",
+    "title": "RAM Preview defensive checks",
+    "description": "Added defensive checks for clip transform data in RAM Preview to prevent crashes.",
+    "commits": [
+      "347e966"
+    ]
+  },
+  {
+    "date": "2026-01-14",
+    "type": "improve",
+    "title": "Fast export with WebCodecs sequential decoding",
+    "description": "Export uses dedicated MP4Box players and sequential decoding for significantly faster rendering. Improved H.264 codec configuration and frame synchronization.",
+    "commits": [
+      "40ac94b",
+      "30538d8",
+      "9a7c73a",
+      "eebe6f1",
+      "faee811",
+      "7a731e1",
+      "34066fd",
+      "dac3870",
+      "c3fd39a",
+      "6ec9389",
+      "a855cf6"
+    ],
+    "section": "Export"
+  },
+  {
+    "date": "2026-01-13",
+    "type": "new",
+    "title": "Native Helper for hardware-accelerated codecs",
+    "description": "Rust-based Native Helper application enables hardware-accelerated decoding of ProRes, DNxHD and other professional codecs via WebSocket. Includes auto-detection, status indicator, and download UI.",
+    "commits": [
+      "6e15c56",
+      "9955f62",
+      "8043393",
+      "a6bb408",
+      "2d64a26",
+      "3a2d787",
+      "532bf4c",
+      "06e8855",
+      "13cb7fd",
+      "3f40266",
+      "22310e1",
+      "ec386d0",
+      "8cfda98",
+      "c54e128"
+    ],
+    "section": "Native Helper"
+  },
+  {
+    "date": "2026-01-13",
+    "type": "new",
+    "title": "YouTube download via Native Helper + yt-dlp",
+    "description": "Download YouTube videos directly into your project using the Native Helper and yt-dlp. Includes URL paste support, download button overlay, and multiple fallback APIs.",
+    "commits": [
+      "367e341",
+      "a9a1130",
+      "b5e1fa4",
+      "b898918",
+      "73c519e",
+      "3b77b7c",
+      "1180f90",
+      "c32f889"
+    ]
+  },
+  {
+    "date": "2026-01-13",
+    "type": "new",
+    "title": "What's New dialog on startup",
+    "description": "Shows latest changes after updates with a smooth fade-in/fade-out animation.",
+    "commits": [
+      "1d0b6dd",
+      "590f07a",
+      "dc6c199"
+    ]
+  },
+  {
+    "date": "2026-01-13",
+    "type": "new",
+    "title": "FFmpeg WASM export with professional codecs",
+    "description": "Custom FFmpeg WASM build supports ProRes, DNxHD, and other professional codecs for export. Includes audio support, progress overlay, and frame-accurate seeking.",
+    "commits": [
+      "a397e64",
+      "653bdd3",
+      "feef60f",
+      "11bfd4f",
+      "2cc964f"
+    ],
+    "section": "Export"
+  },
+  {
+    "date": "2026-01-13",
+    "type": "improve",
+    "title": "Relink dialog with multi-select and auto-open",
+    "description": "Relink missing media files more easily with multi-file selection and automatic folder picker after single file relink.",
+    "commits": [
+      "dd64e5b",
+      "ce1ff74"
+    ]
+  },
+  {
+    "date": "2026-01-13",
+    "type": "new",
+    "title": "Desktop mode option for mobile devices",
+    "description": "Mobile users can now opt into desktop mode to access the full editor interface.",
+    "commits": [
+      "6c098f5"
+    ]
+  },
+  {
+    "date": "2026-01-13",
+    "type": "fix",
+    "title": "Turbo button styling and export progress",
+    "description": "Turbo button is now icon-only with proper styling. Export progress bar weighting adjusted to 95% video / 5% audio.",
+    "commits": [
+      "d214460",
+      "efc1244",
+      "69f9da8",
+      "aa1a3e7",
+      "1875aa9"
+    ]
+  },
+  {
+    "date": "2026-01-13",
+    "type": "fix",
+    "title": "Accept .mov and .mxf files in drag and drop",
+    "description": "Professional video formats MOV and MXF are now accepted when importing via drag and drop.",
+    "commits": [
+      "516aec6"
+    ]
+  },
+  {
+    "date": "2026-01-12",
+    "type": "new",
+    "title": "Mobile UI with touch gestures and warning",
+    "description": "Initial mobile UI support with touch gestures, visible menu buttons, and a warning overlay informing users about limited mobile functionality.",
+    "commits": [
+      "c78c050",
+      "9f33826",
+      "3190e8b",
+      "0b44e04",
+      "782202a",
+      "158e7e8",
+      "6da7f49"
+    ]
+  },
+  {
+    "date": "2026-01-12",
+    "type": "fix",
+    "title": "Keyframes saved and restored in project files",
+    "description": "Keyframe data is now properly serialized and restored when saving and loading projects.",
+    "commits": [
+      "204d678"
+    ]
+  },
+  {
+    "date": "2026-01-12",
+    "type": "fix",
+    "title": "Proxy streaming decode for Windows NVIDIA GPUs",
+    "description": "Fixed proxy generation compatibility with Windows NVIDIA GPUs by using streaming decode.",
+    "commits": [
+      "74643bb",
+      "37eec0d",
+      "5e7b02e"
+    ]
+  },
+  {
+    "date": "2026-01-12",
+    "type": "new",
+    "title": "Relink dialog, Info menu, and media management",
+    "description": "New Relink dialog to reconnect missing media files. Smart relink scans folders to auto-match files. Auto-reconnect to saved media source folder on project open.",
+    "commits": [
+      "ce0346f",
+      "8346ff6",
+      "ebae279",
+      "3886754",
+      "d2f47a7",
+      "c802717"
+    ],
+    "section": "Media"
+  },
+  {
+    "date": "2026-01-12",
+    "type": "new",
+    "title": "FFmpeg WASM export with more format options",
+    "description": "New FFmpeg-based export pipeline with support for additional professional codecs and format options.",
+    "commits": [
+      "71d77b3",
+      "ca7887d",
+      "546aa34"
+    ]
+  },
+  {
+    "date": "2026-01-12",
+    "title": "Project file persistence and reload",
+    "type": "improve",
+    "description": "File handles from drag-and-drop are persisted for reuse. Visual indicators for clips needing reload. Reload All button and Save As option added.",
+    "commits": [
+      "d634496",
+      "3db5717",
+      "9d91ff4",
+      "fd51e63",
+      "c4b73df",
+      "16d4f5d",
+      "9dc75fa",
+      "0be68bd",
+      "9020298",
+      "2fac7d1",
+      "25111bd"
+    ],
+    "section": "Project"
+  },
+  {
+    "date": "2026-01-12",
+    "type": "refactor",
+    "title": "Store thumbnails and proxies in local project folder",
+    "description": "Thumbnails and proxy frames are stored in the local project folder instead of IndexedDB. Uses file hashes for deduplication.",
+    "commits": [
+      "96f724a",
+      "950ea72",
+      "946fb96",
+      "9549fda",
+      "da15ea3",
+      "9dc7d4f",
+      "5467f57",
+      "f04a9ba",
+      "4008a41",
+      "31d0370",
+      "ee45b25",
+      "0e5442b"
+    ]
+  },
+  {
+    "date": "2026-01-12",
+    "type": "new",
+    "title": "Version display and branding",
+    "description": "App title updated to MASterSelects with custom favicon, social sharing preview, and version display with auto cache-busting.",
+    "commits": [
+      "5dc772c",
+      "99583ca",
+      "d9b4b89",
+      "c79aec0",
+      "4997dbe",
+      "3212fc7"
+    ]
+  },
+  {
+    "date": "2026-01-12",
+    "type": "improve",
+    "title": "Timeline navigation and scrollbar improvements",
+    "description": "New custom vertical scrollbar, better zoom clamping, scrollbar handles follow mouse 1:1, and padding to see end marker when zoomed out.",
+    "commits": [
+      "8ff1f99",
+      "251c9ff",
+      "1b8ebc2",
+      "c674459",
+      "59686de",
+      "a647d43",
+      "2ecaeb4",
+      "0200fe3",
+      "b80e772",
+      "20961ef"
+    ],
+    "section": "Timeline"
+  },
+  {
+    "date": "2026-01-12",
+    "type": "new",
+    "title": "Idle mode for GPU resource savings",
+    "description": "Engine enters idle mode when nothing changes on screen, saving GPU resources. Stats overlay shows idle status.",
+    "commits": [
+      "da4e7b4",
+      "315e77a",
+      "e6c1887",
+      "758729e"
+    ]
+  },
+  {
+    "date": "2026-01-12",
+    "type": "improve",
+    "title": "Media Panel with columns and composition settings",
+    "description": "Media Panel now shows FPS, Container, Codec, and Size columns. Draggable column reordering and resizable name column. Improved Composition Settings dialog.",
+    "commits": [
+      "20f6e82",
+      "f497e13",
+      "67c7f1e",
+      "3387e42",
+      "79a52fa",
+      "b7d5331",
+      "db27474"
+    ],
+    "section": "Media"
+  },
+  {
+    "date": "2026-01-12",
+    "type": "fix",
+    "title": "Clip serialization and project restore",
+    "description": "Fixed clip serialization for project save/restore. Auto-recreate default project if deleted. Show WelcomeOverlay when restore fails.",
+    "commits": [
+      "98a59c5",
+      "9c62fd9",
+      "da911d1",
+      "ec44088",
+      "c0a8ceb",
+      "def8153",
+      "babb0e4"
+    ]
+  },
+  {
+    "date": "2026-01-12",
+    "type": "improve",
+    "title": "Composition sync and duration handling",
+    "description": "Duration changes from Composition Settings now sync to timeline. Auto zoom out when opening compositions.",
+    "commits": [
+      "2382286",
+      "b635021",
+      "c70ee73",
+      "3ad523c"
+    ]
+  },
+  {
+    "date": "2026-01-12",
+    "type": "new",
+    "title": "Pause playback when dragging playhead",
+    "description": "Dragging the playhead now pauses playback automatically, matching the behavior of Premiere Pro and DaVinci Resolve.",
+    "commits": [
+      "43f8e1f"
+    ]
+  },
+  {
+    "date": "2026-01-12",
+    "type": "fix",
+    "title": "Ctrl+S saves project instead of browser dialog",
+    "description": "Ctrl+S now triggers project save instead of the browser's default save dialog.",
+    "commits": [
+      "f590818"
+    ]
+  },
+  {
+    "date": "2026-01-12",
+    "type": "fix",
+    "title": "Proxy worker error handling and pixel validation",
+    "description": "Improved proxy worker robustness with better error handling and pixel validation to prevent corrupt frames.",
+    "commits": [
+      "ed3d194"
+    ]
+  },
+  {
+    "date": "2026-01-11",
+    "type": "new",
+    "title": "Multi-preview with texture sharing",
+    "description": "Multiple preview panels can now share GPU textures for nested compositions, with independent rendering and bidirectional playhead sync.",
+    "commits": [
+      "349e4b6",
+      "6ad1b37",
+      "00c26f8",
+      "2042492",
+      "ed21347",
+      "7792868",
+      "e0e8467",
+      "1c9d5d2",
+      "b474929",
+      "7234e65",
+      "f53ab6c"
+    ],
+    "section": "Preview"
+  },
+  {
+    "date": "2026-01-11",
+    "type": "new",
+    "title": "Text clips with typography controls",
+    "description": "Add text clips to the timeline with full typography support and draggable font size control. Text, image, and color clips can now be extended infinitely.",
+    "commits": [
+      "34ecec3",
+      "cac70d7",
+      "4acefa1",
+      "258c4bd",
+      "748c9fd",
+      "08311c5",
+      "89ada32"
+    ],
+    "section": "Timeline"
+  },
+  {
+    "date": "2026-01-11",
+    "type": "new",
+    "title": "Transparency grid toggle in preview",
+    "description": "Toggle a checkerboard transparency grid per preview panel to see transparent areas in your composition.",
+    "commits": [
+      "58a2739",
+      "7c55015",
+      "1fd7d2f",
+      "e34ff58",
+      "7e4620b",
+      "6704f00",
+      "52f3ed9"
+    ]
+  },
+  {
+    "date": "2026-01-11",
+    "type": "fix",
+    "title": "Mask support for nested compositions",
+    "description": "Masks now work correctly on clips inside nested compositions, with proper sync when switching between compositions.",
+    "commits": [
+      "3498974",
+      "462ef9b",
+      "c00a7c2",
+      "8d9e213",
+      "31450fb",
+      "75e3fb5",
+      "de4bd66",
+      "9e40d67",
+      "be9694d",
+      "667c2ce",
+      "40faa5e"
+    ]
+  },
+  {
+    "date": "2026-01-11",
+    "type": "improve",
+    "title": "Mask feather quality and blur improvements",
+    "description": "Mask feather now uses CPU-based Canvas2D blur for smooth, high-quality results with a 10-step quality control.",
+    "commits": [
+      "f64da71",
+      "7b368ce",
+      "f320009",
+      "1aca789",
+      "094f640",
+      "20539dc",
+      "2fdd236",
+      "cdf98a4",
+      "1c4c96d"
+    ],
+    "section": "Effects"
+  },
+  {
+    "date": "2026-01-11",
+    "type": "new",
+    "title": "GPU-accelerated proxy generation",
+    "description": "Proxy frames are now generated on the GPU with batch processing, replacing the old software decoding pipeline.",
+    "commits": [
+      "6f5a144",
+      "e75d4c6",
+      "dd47457",
+      "9b3893f",
+      "3a9803f",
+      "72c840f",
+      "193cad7"
+    ],
+    "section": "Engine"
+  },
+  {
+    "date": "2026-01-11",
+    "type": "fix",
+    "title": "H.264 WebCodecs decoding improvements",
+    "description": "Fixed H.264 decoding with proper AVC description extraction, two-pass MP4Box parsing, and codec fallback for better compatibility.",
+    "commits": [
+      "c6125af",
+      "a84d5fc",
+      "7805dfc",
+      "4ebc7a0",
+      "e7fc00f",
+      "ae39062",
+      "fc3d104"
+    ]
+  },
+  {
+    "date": "2026-01-11",
+    "type": "improve",
+    "title": "Playback performance optimizations",
+    "description": "Significant playback improvements: removed 30fps cap, reduced frame drops with high-frequency playhead updates, video decoder warm-up, and throttled preloading.",
+    "commits": [
+      "e96a64e",
+      "b2ca576",
+      "cfde720",
+      "ece436a",
+      "025b4c3",
+      "b72c8df",
+      "02985d7",
+      "a074a33",
+      "bef1cb1",
+      "c73973f"
+    ],
+    "section": "Engine"
+  },
+  {
+    "date": "2026-01-11",
+    "type": "fix",
+    "title": "Smoother audio sync during playback",
+    "description": "Audio drift correction is now gentler to avoid clicks and pops, with improved sync at playback start.",
+    "commits": [
+      "0d7caab",
+      "7146e49",
+      "b7fc029"
+    ]
+  },
+  {
+    "date": "2026-01-11",
+    "type": "new",
+    "title": "Bidirectional playhead sync for nested compositions",
+    "description": "Playhead position now syncs bidirectionally between parent and nested composition timelines.",
+    "commits": [
+      "0d44e17",
+      "3826b2c"
+    ]
+  },
+  {
+    "date": "2026-01-11",
+    "type": "new",
+    "title": "Proxy support for nested compositions",
+    "description": "Clips inside nested compositions now support proxy playback for smoother editing of complex projects.",
+    "commits": [
+      "d25863d"
+    ]
+  },
+  {
+    "date": "2026-01-11",
+    "type": "refactor",
+    "title": "Extract Timeline hooks into separate modules",
+    "description": "Timeline.tsx refactored into focused hooks: clip drag, clip trim, marquee selection, playhead drag, zoom, keyboard shortcuts, layer sync, and context menu.",
+    "commits": [
+      "eb429e5",
+      "bc946b8",
+      "47eeff4",
+      "d3f3a44",
+      "bb25ff9",
+      "c6c4816",
+      "f0cd61e",
+      "9c3254c"
+    ]
+  },
+  {
+    "date": "2026-01-11",
+    "type": "new",
+    "title": "Proxy fill indicator with percentage badge",
+    "description": "Proxy generation progress is now shown as a fill-from-bottom badge with percentage instead of an hourglass icon.",
+    "commits": [
+      "f646725"
+    ]
+  },
+  {
+    "date": "2026-01-11",
+    "type": "improve",
+    "title": "Proxy generation with auto-save and GPU acceleration",
+    "description": "Proxies auto-save to the project's Proxy/ folder. GPU-accelerated proxy frame generation with batch processing. Improved error handling and retry mechanism.",
+    "commits": [
+      "feb08f1",
+      "50d444c",
+      "cc06435",
+      "6f5a144",
+      "e75d4c6",
+      "3a9803f",
+      "9b3893f",
+      "dd47457",
+      "72c840f",
+      "ae39062"
+    ],
+    "section": "Proxy"
+  },
+  {
+    "date": "2026-01-11",
+    "type": "new",
+    "title": "Autosave with backup system",
+    "description": "Configurable autosave interval with saved toast notification. Keeps last 20 backups for safety. Accessible via flyout submenu in File menu.",
+    "commits": [
+      "b4be16e",
+      "83e06ee",
+      "06147f6",
+      "f5822ce"
+    ],
+    "section": "Project"
+  },
+  {
+    "date": "2026-01-11",
+    "type": "improve",
+    "title": "Welcome overlay redesign",
+    "description": "Modern minimal welcome overlay with entrance/exit animations, backdrop blur, and colored tagline. Auto-closes after folder selection.",
+    "commits": [
+      "46ede3f",
+      "1d665e6",
+      "b16d6ab",
+      "fac5ed7",
+      "c14d1e4",
+      "d76eb31",
+      "3a34fd6",
+      "ee4a3d6",
+      "f0da469",
+      "97399b1",
+      "2c1be13",
+      "803d0aa",
+      "32e33d3",
+      "258ff3a",
+      "3429fc7",
+      "0be43c3",
+      "5016549"
+    ]
+  },
+  {
+    "date": "2026-01-11",
+    "type": "new",
+    "title": "Modular effects system with 30+ GPU effects",
+    "description": "New modular GPU effects system with over 30 effects including color, blur, distort, stylize, and keying. Includes bypass toggle, draggable values, and quality parameters.",
+    "commits": [
+      "0c03ee4",
+      "847fb06",
+      "2911b6e",
+      "a6a6ba1"
+    ],
+    "section": "Effects"
+  },
+  {
+    "date": "2026-01-11",
+    "type": "improve",
+    "title": "Multi-preview with texture sharing",
+    "description": "Modular multi-preview system shares textures between previews for nested compositions. Tab shortcut toggles edit mode. Per-preview transparency grid toggle.",
+    "commits": [
+      "349e4b6",
+      "3826b2c",
+      "6ad1b37",
+      "00c26f8",
+      "2042492",
+      "ed21347",
+      "1c9d5d2",
+      "b474929",
+      "58a2739",
+      "7c55015"
+    ],
+    "section": "Preview"
+  },
+  {
+    "date": "2026-01-11",
+    "type": "fix",
+    "title": "Transparency grid rendering",
+    "description": "Transparency checkerboard now uses CSS rendering for consistent pixel size. Proper canvas background handling with dark grey surround.",
+    "commits": [
+      "1fd7d2f",
+      "e34ff58",
+      "7e4620b",
+      "6704f00",
+      "52f3ed9",
+      "7234e65",
+      "be9694d"
+    ]
+  },
+  {
+    "date": "2026-01-11",
+    "type": "fix",
+    "title": "Nested composition rendering and stability",
+    "description": "Fixed flickering, texture format mismatches, and transparent backgrounds in nested compositions. Proper bidirectional playhead sync and cache invalidation.",
+    "commits": [
+      "9446a6e",
+      "81c9113",
+      "cb9000f",
+      "c2388b4",
+      "4b4852f",
+      "f09cc02",
+      "131f7ca",
+      "07c8597",
+      "1a27cd8",
+      "04717f6",
+      "a907d60",
+      "667c2ce",
+      "40faa5e",
+      "b5dbb14",
+      "9e40d67",
+      "0d44e17",
+      "f53ab6c",
+      "3983885"
+    ]
+  },
+  {
+    "date": "2026-01-11",
+    "type": "improve",
+    "title": "Mask support for nested compositions",
+    "description": "Masks now work on clips inside nested compositions. Improved mask feather with Gaussian blur, 10-step quality control, and real-time updates.",
+    "commits": [
+      "3498974",
+      "462ef9b",
+      "d25863d",
+      "31450fb",
+      "75e3fb5",
+      "de4bd66",
+      "c00a7c2",
+      "8d9e213",
+      "cdf98a4",
+      "1c4c96d",
+      "2fdd236",
+      "20539dc",
+      "094f640",
+      "1aca789"
+    ],
+    "section": "Masks"
+  },
+  {
+    "date": "2026-01-11",
+    "type": "improve",
+    "title": "Playback performance optimization",
+    "description": "Fixed 30fps cap, reduced frame drops with throttled preloading, high-frequency playhead updates bypassing React, and video decoder warm-up for faster first play.",
+    "commits": [
+      "e96a64e",
+      "b2ca576",
+      "ece436a",
+      "025b4c3",
+      "b72c8df",
+      "02985d7",
+      "7146e49",
+      "c73973f",
+      "cfde720",
+      "0d7caab",
+      "bef1cb1",
+      "a074a33"
+    ],
+    "section": "Engine"
+  },
+  {
+    "date": "2026-01-11",
+    "type": "fix",
+    "title": "Audio drift correction and sync",
+    "description": "Gentler audio drift correction using playback rate adjustments to avoid clips and pops. Throttled sync prevents glitches.",
+    "commits": [
+      "b7fc029",
+      "0a9f7da",
+      "8623595",
+      "55191ca"
+    ]
+  },
+  {
+    "date": "2026-01-11",
+    "type": "fix",
+    "title": "Export stability for all layer types",
+    "description": "Export now correctly renders nested compositions, text clips, and effects. Isolated export from preview rendering to prevent video conflicts.",
+    "commits": [
+      "7e3033c",
+      "e8c395e",
+      "ff554a1",
+      "8aaf4c5",
+      "a2805ad",
+      "4e4b1ae"
+    ]
+  },
+  {
+    "date": "2026-01-11",
+    "type": "fix",
+    "title": "WebCodecs H.264 decoding improvements",
+    "description": "Proper AVC description (SPS/PPS) extraction, two-pass MP4Box parsing, and codec fallback for better H.264 decoding across platforms.",
+    "commits": [
+      "c6125af",
+      "a84d5fc",
+      "e7fc00f",
+      "7805dfc",
+      "4ebc7a0",
+      "193cad7",
+      "fc3d104"
+    ]
+  },
+  {
+    "date": "2026-01-11",
+    "type": "fix",
+    "title": "Text preview updates in real-time",
+    "description": "Text clips now update in the preview immediately when editing while paused. Canvas textures are cached for performance.",
+    "commits": [
+      "03d3f7d",
+      "89ada32",
+      "08311c5",
+      "748c9fd",
+      "e0e8467",
+      "7792868"
+    ]
+  },
+  {
+    "date": "2026-01-11",
+    "type": "new",
+    "title": "Draggable font size for text clips",
+    "description": "Font size can now be adjusted by dragging, and text/image/color clips can be extended infinitely.",
+    "commits": [
+      "4acefa1",
+      "258c4bd"
+    ]
+  },
+  {
+    "date": "2026-01-11",
+    "type": "fix",
+    "title": "WGSL uniform control flow errors",
+    "description": "Fixed shader compilation errors in bulge and twirl effects caused by non-uniform control flow.",
+    "commits": [
+      "13d1e84"
+    ]
+  },
+  {
+    "date": "2026-01-11",
+    "type": "improve",
+    "title": "Drag and drop visual indicator for Media Panel",
+    "description": "Improved visual feedback when dragging files into the Media Panel.",
+    "commits": [
+      "f4ba70d"
+    ]
+  },
+  {
+    "date": "2026-01-11",
+    "type": "refactor",
+    "title": "Timeline component modularization",
+    "description": "Extracted 8 hooks and components from Timeline.tsx for better maintainability: keyboard, zoom, playhead drag, context menu, marquee selection, clip trim, clip drag, and layer sync.",
+    "commits": [
+      "9c3254c",
+      "f0cd61e",
+      "c6c4816",
+      "bb25ff9",
+      "d3f3a44",
+      "47eeff4",
+      "bc946b8",
+      "eb429e5"
+    ],
+    "section": "Timeline"
+  },
+  {
+    "date": "2026-01-10",
+    "type": "new",
+    "title": "Nested composition rendering and audio",
+    "description": "Nested compositions now render properly with transforms, include audio mixdown with waveform display, and support speed changes on audio playback.",
+    "commits": [
+      "c6639bf",
+      "eac9491",
+      "a71105e",
+      "eb0b8ea",
+      "c8c7e63",
+      "0ab0add",
+      "ddaf67c",
+      "5ba21dd",
+      "f4a7dfb",
+      "df60b93",
+      "2cb138c",
+      "8d1e3e7",
+      "8035320",
+      "e8716d1",
+      "2966bff"
+    ],
+    "section": "Timeline"
+  },
+  {
+    "date": "2026-01-10",
+    "type": "new",
+    "title": "AI Video panel with PiAPI integration",
+    "description": "Generate AI videos from images using multiple AI models (Kling, Runway, Luma) through PiAPI, with image cropping, balance display, and timeline integration.",
+    "commits": [
+      "7ce97ea",
+      "0d6506f",
+      "5e66e6f",
+      "8370666",
+      "75630e3",
+      "4356d70",
+      "945daab",
+      "d501798",
+      "b2ba12c",
+      "5eaa199",
+      "5e7ab69",
+      "f054e8e",
+      "51ce47f",
+      "74246be",
+      "55191ca"
+    ]
+  },
+  {
+    "date": "2026-01-10",
+    "type": "new",
+    "title": "Audio export pipeline",
+    "description": "Export audio separately with configurable settings. Includes Opus codec fallback for Linux compatibility.",
+    "commits": [
+      "28c9e1c",
+      "f1907bd",
+      "6036d1d",
+      "1ae0274",
+      "9aebffc"
+    ],
+    "section": "Export"
+  },
+  {
+    "date": "2026-01-10",
+    "type": "new",
+    "title": "Keyframeable clip speed control",
+    "description": "Clip playback speed is now a keyframeable property. Speed changes automatically adjust clip duration and audio pitch is preserved.",
+    "commits": [
+      "10c9ae8",
+      "f896c8e",
+      "b33348c",
+      "cd48271",
+      "08eccc7",
+      "4d2fc97",
+      "2e891ad",
+      "8f8877f",
+      "c5bc7ac"
+    ]
+  },
+  {
+    "date": "2026-01-10",
+    "type": "new",
+    "title": "Layer parenting with physics cable animation",
+    "description": "Parent layers to each other using After Effects-style pick whip for transform inheritance, with Reason-style physics cable animations.",
+    "commits": [
+      "eaa6dc6",
+      "cb6fb17",
+      "2728422",
+      "aa56259",
+      "8873416",
+      "37c222e",
+      "159c6b5",
+      "44b28fd",
+      "82a511d",
+      "34911c2",
+      "fef94c1",
+      "7720019",
+      "33be054",
+      "35ebb05"
+    ]
+  },
+  {
+    "date": "2026-01-10",
+    "type": "new",
+    "title": "Preview quality setting",
+    "description": "Reduce preview resolution for better performance during editing. Choose from Full, Half, or Quarter resolution.",
+    "commits": [
+      "05d7981",
+      "8823a9b",
+      "b95a0ec"
+    ]
+  },
+  {
+    "date": "2026-01-10",
+    "type": "new",
+    "title": "Timeline navigator with zoom handles",
+    "description": "A minimap-style navigator at the bottom of the timeline with draggable zoom handles for quick navigation.",
+    "commits": [
+      "a221960"
+    ]
+  },
+  {
+    "date": "2026-01-10",
+    "type": "new",
+    "title": "Drag and drop files from OS file explorer",
+    "description": "Import media files by dragging them directly from your operating system's file explorer into the Media panel.",
+    "commits": [
+      "a17b1af"
+    ]
+  },
+  {
+    "date": "2026-01-10",
+    "type": "improve",
+    "title": "Video preloading for stutter-free playback",
+    "description": "Upcoming video clips are preloaded to prevent stuttering during playback, with video readiness checks before starting.",
+    "commits": [
+      "99770de",
+      "8769397",
+      "9508c15"
+    ]
+  },
+  {
+    "date": "2026-01-10",
+    "type": "fix",
+    "title": "Composition info and export panel cleanup",
+    "description": "Composition resolution moved to Export panel with info tooltip. Removed confusing duplicate sections from the export interface.",
+    "commits": [
+      "ee93aaf",
+      "772dbcc",
+      "3f74330",
+      "f0fca62",
+      "ded144d"
+    ]
+  },
+  {
+    "date": "2026-01-10",
+    "type": "fix",
+    "title": "Preview shows black when no clips at playhead",
+    "description": "Preview now correctly displays black instead of stale frames when the playhead is over empty timeline space.",
+    "commits": [
+      "1f3eaaa",
+      "d611e91",
+      "8de3a9a"
+    ]
+  },
+  {
+    "date": "2026-01-10",
+    "type": "fix",
+    "title": "Restored clips work after page refresh",
+    "description": "WebCodecsPlayer is now properly initialized for restored clips, and waveforms/thumbnails are correctly cropped when trimming.",
+    "commits": [
+      "36fafdd",
+      "a38a988"
+    ]
+  },
+  {
+    "date": "2026-01-10",
+    "type": "fix",
+    "title": "Spacebar plays timeline when slider is focused",
+    "description": "Spacebar now correctly triggers playback even when a UI slider has focus.",
+    "commits": [
+      "2409b60"
+    ]
+  },
+  {
+    "date": "2026-01-10",
+    "type": "improve",
+    "title": "Playback audio sync improvements",
+    "description": "Audio sync now only triggers on start and significant drift to prevent glitches, using requestAnimationFrame for smoother playback.",
+    "commits": [
+      "0a9f7da",
+      "8623595",
+      "55191ca",
+      "4355b9b"
+    ]
+  },
+  {
+    "date": "2026-01-10",
+    "type": "new",
+    "title": "Text clips with full typography support",
+    "description": "Add text clips to the timeline with customizable font, size, color, and alignment. Full typography rendering on the GPU canvas.",
+    "commits": [
+      "34ecec3",
+      "cac70d7"
+    ],
+    "section": "Timeline"
+  },
+  {
+    "date": "2026-01-10",
+    "type": "new",
+    "title": "Nested composition rendering and transforms",
+    "description": "Nested compositions now properly pre-render with transforms applied. Includes bidirectional playhead sync between parent and child compositions.",
+    "commits": [
+      "c6639bf",
+      "eac9491",
+      "a71105e"
+    ]
+  },
+  {
+    "date": "2026-01-10",
+    "type": "new",
+    "title": "Nested composition audio mixdown",
+    "description": "Audio from nested compositions is mixed down with waveform display. Supports speed changes and proper export. Opus codec fallback for Linux.",
+    "commits": [
+      "eb0b8ea",
+      "c8c7e63",
+      "8d1e3e7",
+      "0ab0add",
+      "ddaf67c",
+      "5ba21dd",
+      "f4a7dfb",
+      "df60b93",
+      "2cb138c",
+      "1ae0274"
+    ],
+    "section": "Audio"
+  },
+  {
+    "date": "2026-01-10",
+    "type": "new",
+    "title": "Drag and drop files from OS file explorer",
+    "description": "Import media files by dragging them directly from the OS file explorer into the Media panel.",
+    "commits": [
+      "a17b1af"
+    ]
+  },
+  {
+    "date": "2026-01-10",
+    "type": "new",
+    "title": "PiAPI multi-model AI video generation",
+    "description": "Replaced Kling API with PiAPI for AI video generation. Supports multiple models with balance display and credit cost estimates.",
+    "commits": [
+      "5e7ab69",
+      "f054e8e",
+      "74246be",
+      "5eaa199",
+      "b2ba12c"
+    ],
+    "section": "AI"
+  },
+  {
+    "date": "2026-01-10",
+    "type": "improve",
+    "title": "Export panel with audio settings",
+    "description": "Export panel redesigned with audio settings, Export Audio option, and cleaner layout with buttons at top.",
+    "commits": [
+      "f1907bd",
+      "6036d1d",
+      "f0fca62",
+      "ded144d",
+      "51ce47f"
+    ],
+    "section": "Export"
+  },
+  {
+    "date": "2026-01-10",
+    "type": "fix",
+    "title": "Spacebar plays timeline when slider focused",
+    "description": "Spacebar now correctly triggers timeline playback even when a UI slider has focus.",
+    "commits": [
+      "2409b60"
+    ]
+  },
+  {
+    "date": "2026-01-09",
+    "type": "new",
+    "title": "Premiere-style transcript with word highlighting",
+    "description": "In-browser transcription using Whisper AI with word-level timestamps, real-time highlighting during playback, language selection, and persistent data across refreshes.",
+    "commits": [
+      "d01019f",
+      "32b2e33",
+      "77c692d",
+      "b5736ff",
+      "75ee089",
+      "89743e8",
+      "ef20168",
+      "37a9c72",
+      "e715b48",
+      "5fb46da",
+      "1de18cc",
+      "129fae7",
+      "da62501",
+      "405c26e",
+      "afb195d",
+      "65ca0a1",
+      "a2de0a9",
+      "d7acbd1",
+      "47ad72d",
+      "417ab56",
+      "9deda52",
+      "5f77d77",
+      "48eb8ce",
+      "ddb3471"
+    ],
+    "section": "AI"
+  },
+  {
+    "date": "2026-01-09",
+    "type": "new",
+    "title": "Clip analysis panel",
+    "description": "Analyze clips for focus, motion, brightness, and face detection with real-time graphs, gradient coloring, cached results in IndexedDB, and cancel support.",
+    "commits": [
+      "815aaaf",
+      "ede6ad4",
+      "abbf99b",
+      "88135e7",
+      "b77b009",
+      "86e07c0",
+      "f15c2bc",
+      "29aae09",
+      "e534dba",
+      "71ddb4f",
+      "94c6b87",
+      "3dd42e4",
+      "8b58917"
+    ]
+  },
+  {
+    "date": "2026-01-09",
+    "type": "new",
+    "title": "AI Chat with timeline editing tools",
+    "description": "Chat with GPT models to edit your timeline using natural language. AI can cut clips, analyze footage, manage media, and all edits are undoable with Ctrl+Z.",
+    "commits": [
+      "86789b3",
+      "3175ae9",
+      "bfabc59",
+      "cb0c22e",
+      "e970b26",
+      "5e6c19e",
+      "309ed94",
+      "3c6aa7e",
+      "c22aa16",
+      "7bcc691",
+      "4d01050",
+      "e149c87",
+      "c34defe",
+      "d536d80",
+      "a46891f",
+      "7ec89a3",
+      "9fbbedb"
+    ]
+  },
+  {
+    "date": "2026-01-09",
+    "type": "new",
+    "title": "Multicam audio sync",
+    "description": "Synchronize multiple camera angles automatically by analyzing audio cross-correlation, with transcript-based sync as an alternative option.",
+    "commits": [
+      "71e2895",
+      "021c8bc",
+      "e1037db",
+      "9ba1bb6",
+      "261aa5d",
+      "277ab89",
+      "6579880",
+      "71b9cb6",
+      "5d2ba89"
+    ]
+  },
+  {
+    "date": "2026-01-09",
+    "type": "new",
+    "title": "Bezier curve editor for keyframes",
+    "description": "Edit keyframe animation curves with a visual bezier editor. Supports shift+drag horizontal snapping and right-click to reset handles.",
+    "commits": [
+      "23145f5",
+      "c1ebd30",
+      "e748b88",
+      "f406a07"
+    ]
+  },
+  {
+    "date": "2026-01-09",
+    "type": "new",
+    "title": "Per-clip audio controls with 10-band EQ",
+    "description": "Full audio panel with per-clip volume, 10-band equalizer, and keyframeable audio properties displayed in the timeline.",
+    "commits": [
+      "f39d78a",
+      "8f41e58",
+      "b14d16f",
+      "16b38d0",
+      "e748b88",
+      "7cffa51",
+      "bf822d5",
+      "c7c3799",
+      "9cb2757"
+    ]
+  },
+  {
+    "date": "2026-01-09",
+    "type": "new",
+    "title": "Keyframe editing improvements",
+    "description": "Drag keyframes to move them, change easing via context menu, marquee-select keyframes, visual easing mode indicators, and right-click property values to reset to default.",
+    "commits": [
+      "8dbf201",
+      "c8961d0",
+      "c4749a8",
+      "9a39ac1",
+      "61f7de0",
+      "730064e",
+      "efe318d",
+      "7bca403",
+      "d226b86",
+      "0532112",
+      "ff1f29e",
+      "c5db058",
+      "ace2d8c",
+      "415e678",
+      "a74d896",
+      "b89fbec",
+      "fa2cfb1"
+    ],
+    "section": "Timeline"
+  },
+  {
+    "date": "2026-01-09",
+    "type": "new",
+    "title": "Unified Properties Panel",
+    "description": "Transform, Effects, Masks, Audio, Transcript, and Analysis consolidated into a single tabbed Properties panel with clip name in the title.",
+    "commits": [
+      "9cb2757",
+      "c7c3799",
+      "a601078",
+      "cfa073c",
+      "0d37be3",
+      "7b5ea76",
+      "50e9c59",
+      "c1cda1d"
+    ]
+  },
+  {
+    "date": "2026-01-09",
+    "type": "new",
+    "title": "Multiple preview panels with composition selector",
+    "description": "Open multiple preview panels side-by-side, each showing a different composition. Layout is saved and restored.",
+    "commits": [
+      "4f73d98",
+      "4709804",
+      "2ab0b88",
+      "618a189",
+      "95ae75a",
+      "04d6c11",
+      "51970c5",
+      "69c94b7",
+      "e965492",
+      "5e25150",
+      "9e4a6c2",
+      "7dbde0d",
+      "0300dcd",
+      "b5e99be"
+    ]
+  },
+  {
+    "date": "2026-01-09",
+    "type": "new",
+    "title": "Position Z depth for 3D clip positioning",
+    "description": "Clips now have a position Z property for depth-based layering and 3D-style positioning.",
+    "commits": [
+      "d5a3133",
+      "ae7898b",
+      "f2d698c",
+      "750a44a"
+    ]
+  },
+  {
+    "date": "2026-01-09",
+    "type": "new",
+    "title": "After Effects-style menu bar",
+    "description": "Professional menu bar with File, Edit, View, and panel visibility toggles. Project name displayed at the left.",
+    "commits": [
+      "5d141c4",
+      "512de72",
+      "e46fa45",
+      "8057e09",
+      "4b70708",
+      "d63e381"
+    ]
+  },
+  {
+    "date": "2026-01-09",
+    "type": "new",
+    "title": "Dock panel reordering with tab indicators",
+    "description": "Resolume-style slot indicators when dragging panels to reorder tabs in the dock system.",
+    "commits": [
+      "bf82a14",
+      "eac1ef2"
+    ]
+  },
+  {
+    "date": "2026-01-09",
+    "type": "new",
+    "title": "Marquee rectangle selection in timeline",
+    "description": "Draw a rectangle to select multiple clips at once with live visual feedback during the drag.",
+    "commits": [
+      "9b6d2c9",
+      "8994c71"
+    ]
+  },
+  {
+    "date": "2026-01-09",
+    "type": "new",
+    "title": "Overlap resistance for clip dragging",
+    "description": "Magnetic resistance when dragging clips over other clips prevents accidental overlaps, including linked audio clips.",
+    "commits": [
+      "b1d9f59",
+      "97e9320",
+      "2c61410",
+      "cfd5499",
+      "21b874d",
+      "c5eb5a4"
+    ]
+  },
+  {
+    "date": "2026-01-09",
+    "type": "new",
+    "title": "Editable composition duration",
+    "description": "Manually set the duration of compositions instead of relying on automatic calculation.",
+    "commits": [
+      "9d1f887"
+    ]
+  },
+  {
+    "date": "2026-01-09",
+    "type": "new",
+    "title": "Fit button and playhead scrolling",
+    "description": "Fit the entire timeline to the visible area and improved playhead auto-scrolling behavior.",
+    "commits": [
+      "45480b5",
+      "cc9c0b0",
+      "4cd600b",
+      "5c5b069",
+      "c9ff2fb"
+    ]
+  },
+  {
+    "date": "2026-01-09",
+    "type": "new",
+    "title": "Snap toggle button in timeline",
+    "description": "Quick toggle for snapping behavior directly in the timeline toolbar.",
+    "commits": [
+      "4b87795",
+      "e8250c7"
+    ]
+  },
+  {
+    "date": "2026-01-09",
+    "type": "new",
+    "title": "Waveform and thumbnail toggles",
+    "description": "Enable or disable waveform and thumbnail generation for clips to save resources on large projects.",
+    "commits": [
+      "eca7a08",
+      "bf5edb6"
+    ]
+  },
+  {
+    "date": "2026-01-09",
+    "type": "improve",
+    "title": "Waveform rendering and audio clip detection",
+    "description": "Waveforms now render on canvas for better performance with improved resolution, proper downsampling, and reliable audio file type detection.",
+    "commits": [
+      "3362842",
+      "391c5ae",
+      "fea9ec1",
+      "c89a350",
+      "da21400",
+      "056c98b",
+      "94e8c99",
+      "2eed3a9",
+      "13fbe14",
+      "e82f464",
+      "48060a3"
+    ],
+    "section": "Timeline"
+  },
+  {
+    "date": "2026-01-09",
+    "type": "fix",
+    "title": "Timeline drag and drop improvements",
+    "description": "Audio files restricted to audio tracks, strict track type enforcement, proper drop zones, and null checks prevent crashes.",
+    "commits": [
+      "3460af2",
+      "a26ab5e",
+      "0232f5a",
+      "5813f6d",
+      "7dc2dfc",
+      "bb20ea0",
+      "b8d79ff",
+      "73b1dcf",
+      "277ab89"
+    ]
+  },
+  {
+    "date": "2026-01-09",
+    "type": "fix",
+    "title": "Real-time effect changes during playback",
+    "description": "Effect and property changes now update in real-time during playback instead of requiring a pause.",
+    "commits": [
+      "d844fd1",
+      "b50050b"
+    ]
+  },
+  {
+    "date": "2026-01-09",
+    "type": "fix",
+    "title": "Playhead rendering fixes",
+    "description": "Playhead extends into the header row, moved to proper z-index level, and sticky header when scrolling.",
+    "commits": [
+      "df68334",
+      "efd0251",
+      "8696c13",
+      "afb195d"
+    ]
+  },
+  {
+    "date": "2026-01-09",
+    "type": "fix",
+    "title": "Split all clips at playhead with C key",
+    "description": "The C key shortcut now correctly splits all clips at the playhead position, including linked audio clips.",
+    "commits": [
+      "a7e140c"
+    ]
+  },
+  {
+    "date": "2026-01-09",
+    "type": "fix",
+    "title": "Export current frame reads from GPU",
+    "description": "Frame export now properly reads pixel data from the GPU instead of producing blank images.",
+    "commits": [
+      "fed85cb"
+    ]
+  },
+  {
+    "date": "2026-01-09",
+    "type": "fix",
+    "title": "Context menus stay within viewport",
+    "description": "Right-click context menus and dropdown menus no longer overflow outside the screen edges.",
+    "commits": [
+      "b5e8e76",
+      "b5e99be"
+    ]
+  },
+  {
+    "date": "2026-01-09",
+    "type": "fix",
+    "title": "Zoom with Alt+scroll centers on playhead",
+    "description": "Zooming the timeline with Alt+scroll now centers on the playhead position for more intuitive navigation.",
+    "commits": [
+      "923017e",
+      "df07ad4"
+    ]
+  },
+  {
+    "date": "2026-01-09",
+    "type": "new",
+    "title": "Vertical scrolling in timeline",
+    "description": "Use the mouse wheel to scroll the timeline vertically, with Shift+scroll for horizontal scrolling.",
+    "commits": [
+      "a213542",
+      "8057e09"
+    ]
+  },
+  {
+    "date": "2026-01-09",
+    "type": "improve",
+    "title": "Grey accent color and style refresh",
+    "description": "Accent color changed from blue to grey across the app, keeping blue highlights only in the timeline.",
+    "commits": [
+      "54fad9a",
+      "4675ca4",
+      "3beaeb4"
+    ]
+  },
+  {
+    "date": "2026-01-09",
+    "type": "improve",
+    "title": "Timeline and engine performance optimizations",
+    "description": "Optimized Zustand store selectors, timeline keyframe lookups with memoized sets, and WebGPU engine hooks for smoother editing.",
+    "commits": [
+      "552a218",
+      "7dde3a8",
+      "0e5a449",
+      "97795d6",
+      "4d31081",
+      "bee520b"
+    ]
+  },
+  {
+    "date": "2026-01-09",
+    "type": "refactor",
+    "title": "Split stores and engine into focused modules",
+    "description": "timelineStore split into focused Zustand slices and WebGPUEngine split into focused modules for better maintainability.",
+    "commits": [
+      "1fbf90b",
+      "9b73e75",
+      "4a3dcbd",
+      "5d80af3",
+      "4ff3652"
+    ]
+  },
+  {
+    "date": "2026-01-09",
+    "type": "fix",
+    "title": "Right-click waveform generation for audio clips",
+    "description": "Generate waveforms on demand by right-clicking audio clips in the timeline.",
+    "commits": [
+      "f6f9817"
+    ]
+  },
+  {
+    "date": "2026-01-08",
+    "type": "new",
+    "title": "GPU-based mask feather with quality slider",
+    "description": "Mask feather now uses GPU blur with a 1-100 quality slider for smooth, real-time feathering.",
+    "commits": [
+      "f64da71",
+      "7b368ce",
+      "f320009"
+    ]
+  },
+  {
+    "date": "2026-01-08",
+    "type": "new",
+    "title": "Effect keyframes and interpolation",
+    "description": "Effect parameters now support keyframe animation with interpolation during playback and display in the timeline.",
+    "section": "Effects",
+    "commits": [
+      "8a1bdbf",
+      "282e888",
+      "30b2ba9",
+      "9e9f1f2",
+      "8158840"
+    ]
+  },
+  {
+    "date": "2026-01-07",
+    "type": "new",
+    "title": "GPU-based effects rendering pipeline",
+    "description": "Effects are now rendered on the GPU via WebGPU, with per-clip effects arrays and proper layer propagation.",
+    "section": "Effects",
+    "commits": [
+      "8002fd7",
+      "8e63a0c",
+      "388428a",
+      "ef856b4",
+      "8643bbe"
+    ]
+  },
+  {
+    "date": "2026-01-07",
+    "type": "improve",
+    "title": "Right-click reset to default for sliders",
+    "description": "Right-click any slider or effect parameter to instantly reset it to its default value.",
+    "commits": [
+      "51dcf99",
+      "01ac2c6"
+    ]
+  },
+  {
+    "date": "2026-01-07",
+    "type": "new",
+    "title": "After Effects-style mask system",
+    "description": "Add, subtract, and edit shape masks on clips with drag-to-draw tools, vertex editing, Shift+drag handle scaling, and feather support.",
+    "section": "Timeline",
+    "commits": [
+      "eeac396",
+      "f075a54",
+      "153237f",
+      "e8eccca",
+      "742bd87",
+      "8466fa0",
+      "06b8c36",
+      "5243f63",
+      "32ddab7",
+      "f15efac",
+      "e76fbb5",
+      "cf50a5b",
+      "404fc56",
+      "ca7d4d3",
+      "0970a61"
+    ]
+  },
+  {
+    "date": "2026-01-07",
+    "type": "fix",
+    "title": "Mask vertex and bezier handle editing",
+    "description": "Fixed Shift+drag for bezier handles, vertex position reads, and dynamic Shift key detection during drags.",
+    "commits": [
+      "92b964c",
+      "572135b",
+      "d41e98c",
+      "e967dbc",
+      "03f7630"
+    ]
+  },
+  {
+    "date": "2026-01-07",
+    "type": "new",
+    "title": "Full 3D rotation with perspective",
+    "description": "Clips now support X, Y, and Z axis rotation with perspective projection and correct aspect ratio.",
+    "commits": [
+      "da172ac",
+      "3545ae5"
+    ]
+  },
+  {
+    "date": "2026-01-07",
+    "type": "fix",
+    "title": "Edit mode drag and bounding box calculation",
+    "description": "Fixed inverted drag axes, position scaling, and bounding box calculations in the canvas edit mode.",
+    "commits": [
+      "9a9a7c4",
+      "a08dfed",
+      "6e1c1c1",
+      "5683bd9",
+      "4a8f862",
+      "b983bc6",
+      "a338795",
+      "f03c242",
+      "142873b"
+    ]
+  },
+  {
+    "date": "2026-01-07",
+    "type": "new",
+    "title": "Persist project state across page refresh",
+    "description": "Your project is automatically saved to IndexedDB and restored when you reload the page.",
+    "commits": [
+      "d504a98",
+      "a5b96c9"
+    ]
+  },
+  {
+    "date": "2026-01-07",
+    "type": "new",
+    "title": "Composition settings dialog",
+    "description": "Configure composition resolution and settings directly from the Media panel.",
+    "commits": [
+      "9670b65"
+    ]
+  },
+  {
+    "date": "2026-01-07",
+    "type": "new",
+    "title": "Export current frame and custom resolution",
+    "description": "Export a single frame or choose a custom resolution in the export panel.",
+    "commits": [
+      "5b16bb1"
+    ]
+  },
+  {
+    "date": "2026-01-07",
+    "type": "improve",
+    "title": "Real-time preview while dragging clips",
+    "description": "The preview now updates live as you drag clips across the timeline.",
+    "commits": [
+      "617ac6a",
+      "dafda70"
+    ]
+  },
+  {
+    "date": "2026-01-07",
+    "type": "fix",
+    "title": "Clip drag and trim mouse handling",
+    "description": "Fixed mouseup not releasing clips during drag/trim operations.",
+    "commits": [
+      "e2bf925",
+      "2b558c8",
+      "29cab12",
+      "3cd80e8"
+    ]
+  },
+  {
+    "date": "2026-01-07",
+    "type": "improve",
+    "title": "Playhead snap to clip edges and keyframes",
+    "description": "Playhead now snaps to clip start/end positions in addition to keyframes.",
+    "commits": [
+      "2d02eac"
+    ]
+  },
+  {
+    "date": "2026-01-07",
+    "type": "fix",
+    "title": "Keyframe track alignment in timeline",
+    "description": "Fixed vertical alignment of keyframe diamonds, property labels, and track rows in the timeline.",
+    "commits": [
+      "a6f651f",
+      "96ab35f",
+      "d036c17",
+      "f1c2cb5",
+      "2b09eb1",
+      "fa9ab6a",
+      "01b61a8",
+      "5bb8082",
+      "94be0a1",
+      "c153e11",
+      "3c30459",
+      "4d65337",
+      "06c4f95",
+      "434c16d"
+    ]
+  },
+  {
+    "date": "2026-01-07",
+    "type": "new",
+    "title": "Reverse playback for video clips",
+    "description": "Play video clips in reverse with frame-by-frame seeking and mirrored keyframes.",
+    "commits": [
+      "6e86afe",
+      "6c82135"
+    ]
+  },
+  {
+    "date": "2026-01-07",
+    "type": "fix",
+    "title": "Timeline zoom sync effect",
+    "description": "Fixed zoom calculation using direct zoom value instead of pixelToTime conversion.",
+    "commits": [
+      "2675165"
+    ]
+  },
+  {
+    "date": "2026-01-06",
+    "type": "new",
+    "title": "Composition tabs in timeline toolbar",
+    "description": "Switch between compositions via After Effects-style tabs in the timeline, with drag-to-reorder and hold-to-drag support.",
+    "section": "Timeline",
+    "commits": [
+      "355da9e",
+      "7b4d6a8",
+      "bc9c9d4",
+      "b21bc70",
+      "c699d93",
+      "7d07b1b",
+      "19afa78",
+      "e5e4e3e",
+      "3f1b6af",
+      "c1b1d50",
+      "82d951a",
+      "7653225",
+      "5261728",
+      "4d9a1d0"
+    ]
+  },
+  {
+    "date": "2026-01-06",
+    "type": "new",
+    "title": "Playhead snap to keyframes with Shift",
+    "description": "Hold Shift while dragging the playhead to snap it to nearby keyframes.",
+    "commits": [
+      "56547e6"
+    ]
+  },
+  {
+    "date": "2026-01-06",
+    "type": "new",
+    "title": "Keyframe animation system for clip properties",
+    "description": "Animate position, scale, rotation, and opacity over time with keyframes on the timeline.",
+    "section": "Timeline",
+    "commits": [
+      "dca5e09"
+    ]
+  },
+  {
+    "date": "2026-01-06",
+    "type": "new",
+    "title": "All 37 After Effects blend modes",
+    "description": "Complete set of blend modes matching After Effects. Cycle through them with Shift+/- on the selected clip.",
+    "commits": [
+      "7713e9e",
+      "c74abe7"
+    ]
+  },
+  {
+    "date": "2026-01-06",
+    "type": "new",
+    "title": "Proxy storage with File System Access API",
+    "description": "Choose a local folder for proxy file storage with a folder picker on first proxy generation.",
+    "commits": [
+      "d47f4b7",
+      "5a8e5b3",
+      "ffeda76"
+    ]
+  },
+  {
+    "date": "2026-01-06",
+    "type": "new",
+    "title": "Clip cutter and right-click context menu",
+    "description": "Press C to cut clips at the playhead and use right-click for clip actions.",
+    "commits": [
+      "435e9d5"
+    ]
+  },
+  {
+    "date": "2026-01-05",
+    "type": "new",
+    "title": "GPU-accelerated proxy generation and playback",
+    "description": "Generate proxy frames using GPU acceleration with partial playback during generation and seamless timeline integration.",
+    "section": "Engine",
+    "commits": [
+      "3629103",
+      "84c2653",
+      "c786b41",
+      "6c20320",
+      "b795af3",
+      "52d9f53",
+      "5bb098d",
+      "2033e28",
+      "d634c5c",
+      "fbec38b",
+      "cc823d2",
+      "00890ad",
+      "6202dfc",
+      "d2960be",
+      "2563c9c",
+      "82db433"
+    ]
+  },
+  {
+    "date": "2026-01-04",
+    "type": "new",
+    "title": "Nested composition playback",
+    "description": "Play nested compositions with thumbnails, proper clip storage, and layer updates.",
+    "commits": [
+      "61d15c5",
+      "d6dcd30",
+      "718b3ae",
+      "7d742cc"
+    ]
+  },
+  {
+    "date": "2026-01-04",
+    "type": "new",
+    "title": "Composition-based timeline workflow",
+    "description": "Each composition has its own timeline data. Double-click a comp to open it, with drag support from Media panel.",
+    "section": "Timeline",
+    "commits": [
+      "1a4a42f",
+      "9929763",
+      "b8e3052",
+      "258e227",
+      "c924664",
+      "74db735"
+    ]
+  },
+  {
+    "date": "2026-01-04",
+    "type": "new",
+    "title": "RAM Preview for instant scrubbing",
+    "description": "After Effects-style RAM Preview caches rendered frames to GPU textures for instant scrubbing, rendering outward from the playhead.",
+    "section": "Engine",
+    "commits": [
+      "7f2d3c9",
+      "95b4fbd",
+      "10d7091",
+      "376fcbc",
+      "2e7b970",
+      "8ceb7a2",
+      "91c1722",
+      "095811c",
+      "98cb3d5",
+      "adb8d35",
+      "da73d89",
+      "041de0b",
+      "66c869c",
+      "815f62f",
+      "8a179c6",
+      "48c8bc9",
+      "fd65e7f",
+      "016325f",
+      "d59d6d0",
+      "08ebec9"
+    ]
+  },
+  {
+    "date": "2026-01-04",
+    "type": "improve",
+    "title": "Optimized video playback performance",
+    "description": "Video playback uses requestVideoFrameCallback, early return fast paths, and capped render rate for smoother performance.",
+    "commits": [
+      "f35c659",
+      "eccde04",
+      "eaf6b14",
+      "40e2d71"
+    ]
+  },
+  {
+    "date": "2026-01-04",
+    "type": "new",
+    "title": "Drag preview with actual video duration",
+    "description": "Dragging clips onto the timeline shows a dashed preview with the real video duration, loading in background.",
+    "commits": [
+      "8d53810",
+      "0535ca3",
+      "c86aa11",
+      "847f789",
+      "d8b2bf5"
+    ]
+  },
+  {
+    "date": "2026-01-04",
+    "type": "new",
+    "title": "Solo and mute buttons for tracks",
+    "description": "Solo or mute individual video and audio tracks, with non-solo tracks visually dimmed.",
+    "commits": [
+      "9ac6367",
+      "3d3b4fb"
+    ]
+  },
+  {
+    "date": "2026-01-04",
+    "type": "new",
+    "title": "Export panel with In/Out markers and loop playback",
+    "description": "Full export panel with In/Out range markers, loop playback toggle, loading preview, and video encoding.",
+    "commits": [
+      "c51236f",
+      "fa36b80",
+      "7fafa39"
+    ]
+  },
+  {
+    "date": "2026-01-04",
+    "type": "new",
+    "title": "Global undo/redo system",
+    "description": "Undo and redo any action with Ctrl+Z and Ctrl+Shift+Z.",
+    "commits": [
+      "2e64d40"
+    ]
+  },
+  {
+    "date": "2026-01-04",
+    "type": "new",
+    "title": "Edit mode with bounding boxes and layer dragging",
+    "description": "Visual bounding boxes in the preview with drag-to-move layer positioning.",
+    "commits": [
+      "9ed4a9c",
+      "becce64",
+      "48efe72",
+      "0b2a365"
+    ]
+  },
+  {
+    "date": "2026-01-04",
+    "type": "new",
+    "title": "Hold-to-drag dock tab system",
+    "description": "Hold mouse 500ms on a dock tab to initiate drag with glow animation.",
+    "commits": [
+      "9ce8bc1",
+      "7d007e3",
+      "18e127c",
+      "a630b2a",
+      "b224910"
+    ]
+  },
+  {
+    "date": "2026-01-04",
+    "type": "new",
+    "title": "Clip properties panel with transforms",
+    "description": "Individual transform controls (position, scale, rotation, opacity) for each clip.",
+    "commits": [
+      "3bf027b",
+      "a201889"
+    ]
+  },
+  {
+    "date": "2026-01-04",
+    "type": "new",
+    "title": "Audio track support and playback sync",
+    "description": "Dedicated audio tracks with automatic creation, media type restrictions, and synced audio playback.",
+    "commits": [
+      "5ed4da7",
+      "8348b84",
+      "bf04af1",
+      "def3fd4"
+    ]
+  },
+  {
+    "date": "2026-01-04",
+    "type": "new",
+    "title": "Frame caching for smooth scrubbing",
+    "description": "Decoded video frames are cached for instant scrubbing without re-decode delays.",
+    "commits": [
+      "0f6e6da"
+    ]
+  },
+  {
+    "date": "2026-01-04",
+    "type": "fix",
+    "title": "Blend modes shader type mismatch",
+    "description": "Fixed blend modes not working due to u32 vs float type mismatch in shaders.",
+    "commits": [
+      "d33c5b1"
+    ]
+  },
+  {
+    "date": "2026-01-04",
+    "type": "fix",
+    "title": "Track ordering for new clips",
+    "description": "New video tracks are created at the top and audio tracks at the bottom.",
+    "commits": [
+      "db8cb30"
+    ]
+  },
+  {
+    "date": "2026-01-04",
+    "type": "fix",
+    "title": "Video aspect ratio in preview",
+    "description": "Preview now maintains correct video aspect ratio with minimum panel sizes.",
+    "commits": [
+      "6075ac5"
+    ]
+  },
+  {
+    "date": "2026-01-04",
+    "type": "new",
+    "title": "Delete key removes selected clip",
+    "description": "Press Delete to remove the currently selected clip from the timeline.",
+    "commits": [
+      "023a278"
+    ]
+  },
+  {
+    "date": "2026-01-04",
+    "type": "new",
+    "title": "Initial project setup",
+    "description": "WebVJ Mixer application with WebGPU rendering engine, timeline editor, and dock panel system.",
+    "commits": [
+      "d6e130c"
+    ]
+  }
+]

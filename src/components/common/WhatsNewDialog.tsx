@@ -52,7 +52,8 @@ function GitHubIcon() {
 function ChangeItem({ change }: { change: ChangeEntry }) {
   const [expanded, setExpanded] = useState(false);
   const hasDescription = !!change.description;
-  const hasExpandableContent = hasDescription || change.commit;
+  const hasCommits = change.commits && change.commits.length > 0;
+  const hasExpandableContent = hasDescription || hasCommits;
 
   const handleCommitClick = (e: React.MouseEvent) => {
     e.stopPropagation(); // Don't toggle expand when clicking link
@@ -71,6 +72,9 @@ function ChangeItem({ change }: { change: ChangeEntry }) {
           {change.type === 'refactor' && <RefactorIcon />}
         </span>
         <span className="changelog-title">{change.title}</span>
+        {hasCommits && (
+          <span className="changelog-commit-count">{change.commits!.length}</span>
+        )}
         {hasExpandableContent && (
           <span className="changelog-expand">
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
@@ -83,17 +87,22 @@ function ChangeItem({ change }: { change: ChangeEntry }) {
         <div className="changelog-description-wrapper">
           <div className="changelog-description">
             {change.description && <span>{change.description}</span>}
-            {change.commit && (
-              <a
-                href={`https://github.com/Sportinger/MASterSelects/commit/${change.commit}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="changelog-commit-link"
-                onClick={handleCommitClick}
-              >
-                <GitHubIcon />
-                <span>{change.commit.substring(0, 7)}</span>
-              </a>
+            {hasCommits && (
+              <div className="changelog-commits">
+                {change.commits!.map((hash) => (
+                  <a
+                    key={hash}
+                    href={`https://github.com/Sportinger/MASterSelects/commit/${hash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="changelog-commit-link"
+                    onClick={handleCommitClick}
+                  >
+                    <GitHubIcon />
+                    <span>{hash.substring(0, 7)}</span>
+                  </a>
+                ))}
+              </div>
             )}
           </div>
         </div>

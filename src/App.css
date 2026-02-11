@@ -8934,6 +8934,29 @@ input[type="checkbox"] {
   flex-shrink: 0;
 }
 
+.changelog-commits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-top: 4px;
+}
+
+.changelog-commit-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 500;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
 /* Known issues */
 .changelog-issues {
   margin: 0 24px 16px;
