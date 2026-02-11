@@ -1,11 +1,11 @@
 // Playback-related actions slice
 
 import type { PlaybackActions, RamPreviewActions, SliceCreator } from './types';
-import type { Layer, NestedCompositionData } from '../../types';
-import { RAM_PREVIEW_FPS, FRAME_TOLERANCE, MIN_ZOOM, MAX_ZOOM } from './constants';
+import { RAM_PREVIEW_FPS, MIN_ZOOM, MAX_ZOOM } from './constants';
 import { quantizeTime } from './utils';
 import { Logger } from '../../services/logger';
 import { engine } from '../../engine/WebGPUEngine';
+import { RamPreviewEngine } from '../../services/ramPreviewEngine';
 import { layerBuilder } from '../../services/layerBuilder';
 import { proxyFrameCache } from '../../services/proxyFrameCache';
 import { useMediaStore } from '../mediaStore';
@@ -256,376 +256,41 @@ export const createPlaybackSlice: SliceCreator<PlaybackAndRamPreviewActions> = (
 
   startRamPreview: async () => {
     const { inPoint, outPoint, duration, clips, tracks, isRamPreviewing, playheadPosition, addCachedFrame, ramPreviewEnabled } = get();
-    // Don't start if RAM Preview is disabled or already running
     if (!ramPreviewEnabled || isRamPreviewing) return;
 
     log.debug('RAM Preview starting generation');
 
-    // Determine range to preview (use In/Out or clips extent)
     const start = inPoint ?? 0;
     const end = outPoint ?? (clips.length > 0
       ? Math.max(...clips.map(c => c.startTime + c.duration))
       : duration);
-
     if (end <= start) return;
 
-    // Import engine dynamically to avoid circular dependency
     const { engine } = await import('../../engine/WebGPUEngine');
-
-    // Tell engine to skip preview updates for efficiency
     engine.setGeneratingRamPreview(true);
-
-    set({
-      isRamPreviewing: true,
-      ramPreviewProgress: 0,
-      ramPreviewRange: null
-    });
-
-    const fps = RAM_PREVIEW_FPS;
-    const frameInterval = 1 / fps;
-
-    // Helper: check if there's a video/image/composition clip at a given time
-    const hasVideoAt = (time: number) => {
-      return clips.some(c =>
-        time >= c.startTime &&
-        time < c.startTime + c.duration &&
-        (c.source?.type === 'video' || c.source?.type === 'image' || c.isComposition)
-      );
-    };
-
-    // Generate frame times spreading outward from playhead
-    // Only include times where there are video clips
-    const centerTime = Math.max(start, Math.min(end, playheadPosition));
-    const frameTimes: number[] = [];
-
-    // Add center frame if it has video
-    if (hasVideoAt(centerTime)) {
-      frameTimes.push(centerTime);
-    }
-
-    // Alternate left and right from center, only adding frames with video
-    let offset = frameInterval;
-    while (offset <= (end - start)) {
-      const rightTime = centerTime + offset;
-      const leftTime = centerTime - offset;
-
-      if (rightTime <= end && hasVideoAt(rightTime)) {
-        frameTimes.push(rightTime);
-      }
-      if (leftTime >= start && hasVideoAt(leftTime)) {
-        frameTimes.push(leftTime);
-      }
-
-      offset += frameInterval;
-    }
-
-    // No frames to render
-    if (frameTimes.length === 0) {
-      engine.setGeneratingRamPreview(false);
-      set({ isRamPreviewing: false, ramPreviewProgress: null });
-      return;
-    }
-
-    const totalFrames = frameTimes.length;
-    let cancelled = false;
-
-    // Store cancel function
-    const checkCancelled = () => !get().isRamPreviewing;
+    set({ isRamPreviewing: true, ramPreviewProgress: 0, ramPreviewRange: null });
 
     try {
-      for (let frame = 0; frame < totalFrames; frame++) {
-        if (checkCancelled()) {
-          cancelled = true;
-          break;
+      const preview = new RamPreviewEngine(engine);
+      const result = await preview.generate(
+        { start, end, centerTime: playheadPosition, clips, tracks },
+        {
+          isCancelled: () => !get().isRamPreviewing,
+          isFrameCached: (qt) => get().cachedFrameTimes.has(qt),
+          getSourceTimeForClip: (id, t) => get().getSourceTimeForClip(id, t),
+          getInterpolatedSpeed: (id, t) => get().getInterpolatedSpeed(id, t),
+          getCompositionDimensions: (compId) => {
+            const comp = useMediaStore.getState().compositions.find(c => c.id === compId);
+            return { width: comp?.width || 1920, height: comp?.height || 1080 };
+          },
+          onFrameCached: (time) => addCachedFrame(time),
+          onProgress: (percent) => set({ ramPreviewProgress: percent }),
         }
+      );
 
-        const time = frameTimes[frame];
-
-        // Skip frames that are already cached (reuse existing work)
-        const quantizedTime = quantizeTime(time);
-        if (get().cachedFrameTimes.has(quantizedTime)) {
-          // Update progress even for skipped frames
-          const progress = ((frame + 1) / totalFrames) * 100;
-          set({ ramPreviewProgress: progress });
-          continue;
-        }
-
-        // Get clips at this time
-        const clipsAtTime = clips.filter(c =>
-          time >= c.startTime && time < c.startTime + c.duration
-        );
-
-        // Build layers for this frame
-        const videoTracks = tracks.filter(t => t.type === 'video');
-        const layers: Layer[] = [];
-
-        // Seek all videos and build layers
-        for (const clip of clipsAtTime) {
-          const track = tracks.find(t => t.id === clip.trackId);
-          if (!track?.visible || track.type !== 'video') continue;
-
-          if (clip.source?.type === 'video' && clip.source.videoElement) {
-            const video = clip.source.videoElement;
-            const webCodecsPlayer = clip.source.webCodecsPlayer;
-            const clipLocalTime = time - clip.startTime;
-            // Calculate source time using speed integration (handles keyframes)
-            const sourceTime = get().getSourceTimeForClip(clip.id, clipLocalTime);
-            // Determine start point based on INITIAL speed (speed at t=0), not clip.speed
-            // This is important when keyframes change speed throughout the clip
-            const initialSpeed = get().getInterpolatedSpeed(clip.id, 0);
-            const startPoint = initialSpeed >= 0 ? clip.inPoint : clip.outPoint;
-            const clipTime = Math.max(clip.inPoint, Math.min(clip.outPoint, startPoint + sourceTime));
-
-            // Use WebCodecsPlayer for fast seeking if available
-            if (webCodecsPlayer) {
-              if (checkCancelled()) continue;
-              try {
-                await webCodecsPlayer.seekAsync(clipTime);
-              } catch {
-                // Fallback to video element on error
-                video.currentTime = clipTime;
-                await new Promise(r => setTimeout(r, 50));
-              }
-            } else {
-              // Fallback: HTMLVideoElement seek (slower)
-              if (checkCancelled()) continue;
-              await new Promise<void>((resolve) => {
-                const timeout = setTimeout(() => {
-                  video.removeEventListener('seeked', onSeeked);
-                  resolve();
-                }, 200);
-
-                const onSeeked = () => {
-                  clearTimeout(timeout);
-                  video.removeEventListener('seeked', onSeeked);
-                  resolve();
-                };
-
-                video.addEventListener('seeked', onSeeked);
-                video.currentTime = clipTime;
-              });
-            }
-
-            if (checkCancelled()) continue;
-
-            // Add to layers (with defensive defaults for transform properties)
-            const pos = clip.transform?.position ?? { x: 0, y: 0, z: 0 };
-            const scl = clip.transform?.scale ?? { x: 1, y: 1 };
-            const rot = clip.transform?.rotation ?? { x: 0, y: 0, z: 0 };
-            layers.push({
-              id: clip.id,
-              name: clip.name,
-              visible: true,
-              opacity: clip.transform?.opacity ?? 1,
-              blendMode: clip.transform?.blendMode ?? 'normal',
-              source: { type: 'video', videoElement: video, webCodecsPlayer },
-              effects: [],
-              position: { x: pos.x, y: pos.y, z: pos.z },
-              scale: { x: scl.x, y: scl.y },
-              rotation: { x: rot.x * (Math.PI / 180), y: rot.y * (Math.PI / 180), z: rot.z * (Math.PI / 180) },
-            });
-          } else if (clip.source?.type === 'image' && clip.source.imageElement) {
-            const imgPos = clip.transform?.position ?? { x: 0, y: 0, z: 0 };
-            const imgScl = clip.transform?.scale ?? { x: 1, y: 1 };
-            const imgRot = clip.transform?.rotation ?? { x: 0, y: 0, z: 0 };
-            layers.push({
-              id: clip.id,
-              name: clip.name,
-              visible: true,
-              opacity: clip.transform?.opacity ?? 1,
-              blendMode: clip.transform?.blendMode ?? 'normal',
-              source: { type: 'image', imageElement: clip.source.imageElement },
-              effects: [],
-              position: { x: imgPos.x, y: imgPos.y, z: imgPos.z },
-              scale: { x: imgScl.x, y: imgScl.y },
-              rotation: { x: imgRot.x * (Math.PI / 180), y: imgRot.y * (Math.PI / 180), z: imgRot.z * (Math.PI / 180) },
-            });
-          } else if (clip.isComposition && clip.nestedClips && clip.nestedClips.length > 0) {
-            // Handle nested compositions
-            const clipLocalTime = time - clip.startTime;
-            const clipTime = clipLocalTime + clip.inPoint;
-
-            // Get nested video tracks
-            const nestedVideoTracks = clip.nestedTracks?.filter(t => t.type === 'video' && t.visible) || [];
-            const nestedLayers: Layer[] = [];
-
-            // Seek all nested videos and build nested layers
-            for (const nestedTrack of nestedVideoTracks) {
-              const nestedClip = clip.nestedClips.find(nc =>
-                nc.trackId === nestedTrack.id &&
-                clipTime >= nc.startTime &&
-                clipTime < nc.startTime + nc.duration
-              );
-
-              if (!nestedClip) continue;
-
-              const nestedLocalTime = clipTime - nestedClip.startTime;
-              const nestedClipTime = nestedClip.reversed
-                ? nestedClip.outPoint - nestedLocalTime
-                : nestedLocalTime + nestedClip.inPoint;
-
-              if (nestedClip.source?.videoElement) {
-                const nestedVideo = nestedClip.source.videoElement;
-                const nestedWebCodecs = nestedClip.source.webCodecsPlayer;
-
-                // Use WebCodecsPlayer for fast seeking if available
-                if (nestedWebCodecs) {
-                  try {
-                    await nestedWebCodecs.seekAsync(nestedClipTime);
-                  } catch {
-                    nestedVideo.currentTime = nestedClipTime;
-                    await new Promise(r => setTimeout(r, 50));
-                  }
-                } else {
-                  // Fallback: HTMLVideoElement seek
-                  await new Promise<void>((resolve) => {
-                    const timeout = setTimeout(() => {
-                      nestedVideo.removeEventListener('seeked', onSeeked);
-                      resolve();
-                    }, 150);
-
-                    const onSeeked = () => {
-                      clearTimeout(timeout);
-                      nestedVideo.removeEventListener('seeked', onSeeked);
-                      resolve();
-                    };
-
-                    nestedVideo.addEventListener('seeked', onSeeked);
-                    nestedVideo.currentTime = nestedClipTime;
-                  });
-                }
-
-                const nestedPos = nestedClip.transform?.position ?? { x: 0, y: 0, z: 0 };
-                const nestedScl = nestedClip.transform?.scale ?? { x: 1, y: 1 };
-                const nestedRot = nestedClip.transform?.rotation ?? { x: 0, y: 0, z: 0 };
-
-                nestedLayers.push({
-                  id: `nested-${nestedClip.id}`,
-                  name: nestedClip.name,
-                  visible: true,
-                  opacity: nestedClip.transform?.opacity ?? 1,
-                  blendMode: nestedClip.transform?.blendMode ?? 'normal',
-                  source: { type: 'video', videoElement: nestedVideo, webCodecsPlayer: nestedWebCodecs },
-                  effects: nestedClip.effects || [],
-                  position: { x: nestedPos.x, y: nestedPos.y, z: nestedPos.z },
-                  scale: { x: nestedScl.x, y: nestedScl.y },
-                  rotation: { x: nestedRot.x * (Math.PI / 180), y: nestedRot.y * (Math.PI / 180), z: nestedRot.z * (Math.PI / 180) },
-                });
-              } else if (nestedClip.source?.imageElement) {
-                const nestedPos = nestedClip.transform?.position ?? { x: 0, y: 0, z: 0 };
-                const nestedScl = nestedClip.transform?.scale ?? { x: 1, y: 1 };
-                const nestedRot = nestedClip.transform?.rotation ?? { x: 0, y: 0, z: 0 };
-
-                nestedLayers.push({
-                  id: `nested-${nestedClip.id}`,
-                  name: nestedClip.name,
-                  visible: true,
-                  opacity: nestedClip.transform?.opacity ?? 1,
-                  blendMode: nestedClip.transform?.blendMode ?? 'normal',
-                  source: { type: 'image', imageElement: nestedClip.source.imageElement },
-                  effects: nestedClip.effects || [],
-                  position: { x: nestedPos.x, y: nestedPos.y, z: nestedPos.z },
-                  scale: { x: nestedScl.x, y: nestedScl.y },
-                  rotation: { x: nestedRot.x * (Math.PI / 180), y: nestedRot.y * (Math.PI / 180), z: nestedRot.z * (Math.PI / 180) },
-                });
-              }
-            }
-
-            if (nestedLayers.length > 0) {
-              // Get composition dimensions
-              const mediaStore = useMediaStore.getState();
-              const composition = mediaStore.compositions.find(c => c.id === clip.compositionId);
-              const compWidth = composition?.width || 1920;
-              const compHeight = composition?.height || 1080;
-
-              const nestedCompData: NestedCompositionData = {
-                compositionId: clip.compositionId || clip.id,
-                layers: nestedLayers,
-                width: compWidth,
-                height: compHeight,
-              };
-
-              const compPos = clip.transform?.position ?? { x: 0, y: 0, z: 0 };
-              const compScl = clip.transform?.scale ?? { x: 1, y: 1 };
-              const compRot = clip.transform?.rotation ?? { x: 0, y: 0, z: 0 };
-
-              layers.push({
-                id: clip.id,
-                name: clip.name,
-                visible: true,
-                opacity: clip.transform?.opacity ?? 1,
-                blendMode: clip.transform?.blendMode ?? 'normal',
-                source: { type: 'image', nestedComposition: nestedCompData },
-                effects: clip.effects || [],
-                position: { x: compPos.x, y: compPos.y, z: compPos.z },
-                scale: { x: compScl.x, y: compScl.y },
-                rotation: { x: compRot.x * (Math.PI / 180), y: compRot.y * (Math.PI / 180), z: compRot.z * (Math.PI / 180) },
-              });
-            }
-          }
-        }
-
-        // Sort layers by track order
-        const trackOrder = new Map(videoTracks.map((t, i) => [t.id, i]));
-        layers.sort((a, b) => {
-          const clipA = clipsAtTime.find(c => c.id === a.id);
-          const clipB = clipsAtTime.find(c => c.id === b.id);
-          const orderA = clipA ? (trackOrder.get(clipA.trackId) ?? 0) : 0;
-          const orderB = clipB ? (trackOrder.get(clipB.trackId) ?? 0) : 0;
-          return orderA - orderB;
-        });
-
-        // Final verification: ensure all videos are still at correct position before rendering
-        // This catches cases where user interaction changed position between seek and render
-        let allPositionsCorrect = true;
-        for (const clip of clipsAtTime) {
-          if (clip.source?.type === 'video' && clip.source.videoElement) {
-            const video = clip.source.videoElement;
-            const localTime = time - clip.startTime;
-            // Use speed integration for expected time (must match seek logic above)
-            const sourceTime = get().getSourceTimeForClip(clip.id, localTime);
-            // Must match seek logic: use initial speed for start point
-            const initialSpeed = get().getInterpolatedSpeed(clip.id, 0);
-            const startPoint = initialSpeed >= 0 ? clip.inPoint : clip.outPoint;
-            const expectedTime = Math.max(clip.inPoint, Math.min(clip.outPoint, startPoint + sourceTime));
-            if (Math.abs(video.currentTime - expectedTime) > FRAME_TOLERANCE) {
-              allPositionsCorrect = false;
-              break;
-            }
-          }
-        }
-
-        // Skip this frame if positions are wrong (user scrubbed) or cancelled
-        if (!allPositionsCorrect || checkCancelled()) {
-          continue;
-        }
-
-        // Render and cache this frame
-        if (layers.length > 0) {
-          engine.render(layers);
-        }
-        await engine.cacheCompositeFrame(time);
-
-        // Add to cached frames set (shows green indicator immediately)
-        addCachedFrame(time);
-
-        // Update progress percentage
-        const progress = ((frame + 1) / totalFrames) * 100;
-        set({ ramPreviewProgress: progress });
-
-        // Yield to allow UI updates (every frame for smooth green dot updates)
-        if (frame % 3 === 0) {
-          await new Promise(resolve => setTimeout(resolve, 0));
-        }
-      }
-
-      if (!cancelled) {
-        // Set the preview range for cache hit detection
-        set({
-          ramPreviewRange: { start, end },
-          ramPreviewProgress: null
-        });
-        log.debug('RAM Preview complete', { totalFrames, start: start.toFixed(1), end: end.toFixed(1) });
+      if (result.completed) {
+        set({ ramPreviewRange: { start, end }, ramPreviewProgress: null });
+        log.debug('RAM Preview complete', { totalFrames: result.frameCount, start: start.toFixed(1), end: end.toFixed(1) });
       } else {
         log.debug('RAM Preview cancelled');
       }
