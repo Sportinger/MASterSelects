@@ -132,7 +132,10 @@ export class LayerCollector {
       }
 
       // 3. Try WebCodecs VideoFrame
-      if (source.webCodecsPlayer) {
+      // Skip for videos that haven't been played yet — after page reload,
+      // VideoFrame from a never-played video produces black/empty frames.
+      // Fall through to tryHTMLVideo which has a canvas-based fallback.
+      if (source.webCodecsPlayer && (!source.videoElement || this.videoGpuReady.has(source.videoElement))) {
         const frame = source.webCodecsPlayer.getCurrentFrame();
         if (frame) {
           const extTex = deps.textureManager.importVideoTexture(frame);
