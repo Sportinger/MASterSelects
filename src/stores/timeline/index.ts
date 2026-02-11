@@ -14,6 +14,8 @@ import { createClipEffectSlice } from './clipEffectSlice';
 import { createLinkedGroupSlice } from './linkedGroupSlice';
 import { createDownloadClipSlice } from './downloadClipSlice';
 import { createPlaybackSlice } from './playbackSlice';
+import { createRamPreviewSlice } from './ramPreviewSlice';
+import { createProxyCacheSlice } from './proxyCacheSlice';
 import { createSelectionSlice } from './selectionSlice';
 import { createKeyframeSlice } from './keyframeSlice';
 import { createMaskSlice } from './maskSlice';
@@ -45,6 +47,8 @@ export const useTimelineStore = create<TimelineStore>()(
     const linkedGroupActions = createLinkedGroupSlice(set, get);
     const downloadClipActions = createDownloadClipSlice(set, get);
     const playbackActions = createPlaybackSlice(set, get);
+    const ramPreviewActions = createRamPreviewSlice(set, get);
+    const proxyCacheActions = createProxyCacheSlice(set, get);
     const selectionActions = createSelectionSlice(set, get);
     const keyframeActions = createKeyframeSlice(set, get);
     const maskActions = createMaskSlice(set, get);
@@ -238,6 +242,8 @@ export const useTimelineStore = create<TimelineStore>()(
       ...linkedGroupActions,
       ...downloadClipActions,
       ...playbackActions,
+      ...ramPreviewActions,
+      ...proxyCacheActions,
       ...exportActions,
       ...selectionActions,
       ...keyframeActions,

@@ -234,6 +234,13 @@ export interface PlaybackActions {
   setClipAnimationPhase: (phase: 'idle' | 'exiting' | 'entering') => void;
   // Slot grid view
   setSlotGridProgress: (progress: number) => void;
+  // Performance toggles
+  toggleThumbnailsEnabled: () => void;
+  toggleWaveformsEnabled: () => void;
+  setThumbnailsEnabled: (enabled: boolean) => void;
+  setWaveformsEnabled: (enabled: boolean) => void;
+  toggleTranscriptMarkers: () => void;
+  setShowTranscriptMarkers: (enabled: boolean) => void;
 }
 
 // RAM Preview actions interface
@@ -244,18 +251,14 @@ export interface RamPreviewActions {
   clearRamPreview: () => void;
   addCachedFrame: (time: number) => void;
   getCachedRanges: () => Array<{ start: number; end: number }>;
+}
+
+// Proxy cache actions interface
+export interface ProxyCacheActions {
   getProxyCachedRanges: () => Array<{ start: number; end: number }>;
   invalidateCache: () => void;
-  // Proxy cache preloading
   startProxyCachePreload: () => Promise<void>;
   cancelProxyCachePreload: () => void;
-  // Performance toggles
-  toggleThumbnailsEnabled: () => void;
-  toggleWaveformsEnabled: () => void;
-  setThumbnailsEnabled: (enabled: boolean) => void;
-  setWaveformsEnabled: (enabled: boolean) => void;
-  toggleTranscriptMarkers: () => void;
-  setShowTranscriptMarkers: (enabled: boolean) => void;
 }
 
 // Export progress actions interface
@@ -439,6 +442,7 @@ export interface TimelineStore extends
   ClipActions,
   PlaybackActions,
   RamPreviewActions,
+  ProxyCacheActions,
   ExportActions,
   SelectionActions,
   KeyframeActions,
