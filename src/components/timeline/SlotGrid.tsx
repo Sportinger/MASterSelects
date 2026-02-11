@@ -359,9 +359,9 @@ export function SlotGrid({ opacity }: SlotGridProps) {
                     />
                     <div className="slot-grid-name">{comp.name}</div>
                     <SlotTimeOverlay
+                      compId={comp.id}
                       duration={comp.duration}
                       isActive={isEditorActive || isLayerActive}
-                      isEditorComp={isEditorActive}
                       layerIndex={rowIndex}
                       slotSize={SLOT_SIZE - 4}
                     />
@@ -408,20 +408,21 @@ function fmtTime(seconds: number): string {
 
 /** Slot overlay — playhead line + live time / duration display via rAF */
 const SlotTimeOverlay = memo(function SlotTimeOverlay({
+  compId,
   duration,
   isActive,
-  isEditorComp,
   layerIndex,
   slotSize,
 }: {
+  compId: string;
   duration: number;
   isActive: boolean;
-  isEditorComp: boolean;
   layerIndex: number;
   slotSize: number;
 }) {
   const lineRef = useRef<HTMLDivElement>(null);
   const timeRef = useRef<HTMLDivElement>(null);
+  const lastPosRef = useRef(0);
 
   useEffect(() => {
     const line = lineRef.current;
@@ -434,6 +435,7 @@ const SlotTimeOverlay = memo(function SlotTimeOverlay({
     if (!isActive) {
       line.style.display = 'none';
       timeEl.textContent = `00:00.00 / ${durationStr}`;
+      lastPosRef.current = 0;
       return;
     }
 
@@ -443,17 +445,19 @@ const SlotTimeOverlay = memo(function SlotTimeOverlay({
     const trackWidth = slotSize - padding * 2;
 
     const update = () => {
+      // Dynamically check if this comp is the editor comp (no prop dependency)
+      const isEditor = useMediaStore.getState().activeCompositionId === compId;
       let pos: number;
-      if (isEditorComp) {
-        // Editor composition: read from global playhead
+      if (isEditor) {
         pos = playheadState.isUsingInternalPosition
           ? playheadState.position
           : useTimelineStore.getState().playheadPosition;
       } else {
-        // Background layer: read from layerPlaybackManager's independent wall-clock time
         const layerState = layerPlaybackManager.getLayerState(layerIndex);
-        pos = layerState ? layerPlaybackManager.getLayerTime(layerState) : 0;
+        // Fall back to last known position if playback manager isn't ready yet
+        pos = layerState ? layerPlaybackManager.getLayerTime(layerState) : lastPosRef.current;
       }
+      lastPosRef.current = pos;
       const pct = Math.max(0, Math.min(1, pos / duration));
       line.style.left = `${padding + pct * trackWidth}px`;
       timeEl.textContent = `${fmtTime(pos)} / ${durationStr}`;
@@ -462,7 +466,7 @@ const SlotTimeOverlay = memo(function SlotTimeOverlay({
 
     rafId = requestAnimationFrame(update);
     return () => cancelAnimationFrame(rafId);
-  }, [duration, isActive, isEditorComp, layerIndex, slotSize]);
+  }, [compId, duration, isActive, layerIndex, slotSize]);
 
   return (
     <>
