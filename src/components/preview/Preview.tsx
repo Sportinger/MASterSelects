@@ -13,6 +13,7 @@ import { useSettingsStore, type PreviewQuality } from '../../stores/settingsStor
 import { useRenderTargetStore } from '../../stores/renderTargetStore';
 import { MaskOverlay } from './MaskOverlay';
 import { SAM2Overlay } from './SAM2Overlay';
+import { SourceMonitor } from './SourceMonitor';
 import { useSAM2Store } from '../../stores/sam2Store';
 import { renderScheduler } from '../../services/renderScheduler';
 import { engine } from '../../engine/WebGPUEngine';
@@ -240,6 +241,24 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
   const [, setCompReady] = useState(false);
 
   const previewCompositionId = useMediaStore(state => state.previewCompositionId);
+  const sourceMonitorFileId = useMediaStore(state => state.sourceMonitorFileId);
+  const sourceMonitorFile = useMediaStore(state =>
+    state.sourceMonitorFileId ? state.files.find(f => f.id === state.sourceMonitorFileId) ?? null : null
+  );
+
+  // Source monitor: show raw media file instead of composition
+  const sourceMonitorActive = compositionId === null && sourceMonitorFile !== null;
+
+  const closeSourceMonitor = useCallback(() => {
+    useMediaStore.getState().setSourceMonitorFile(null);
+  }, []);
+
+  // Clear source monitor when active composition changes
+  useEffect(() => {
+    if (activeCompositionId && sourceMonitorFileId) {
+      useMediaStore.getState().setSourceMonitorFile(null);
+    }
+  }, [activeCompositionId]);
 
   // Determine which composition this preview is showing
   // When in "Active" mode (compositionId === null) but a slot preview is active,
@@ -1062,63 +1081,80 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
     >
       {/* Controls bar */}
       <div className="preview-controls">
-        <button
-          className={`preview-edit-btn ${editMode ? 'active' : ''}`}
-          onClick={() => setEditMode(!editMode)}
-          title="Toggle Edit Mode [Tab]"
-        >
-          {editMode ? '✓ Edit' : 'Edit'} <span className="menu-wip-badge">🐛</span>
-        </button>
-        {editMode && (
+        {sourceMonitorActive ? (
           <>
-            <span className="preview-zoom-label">{Math.round(viewZoom * 100)}%</span>
+            <span className="preview-source-label" title={sourceMonitorFile!.name}>
+              {sourceMonitorFile!.name}
+            </span>
             <button
-              className="preview-reset-btn"
-              onClick={resetView}
-              title="Reset View"
+              className="preview-close-source-btn"
+              onClick={closeSourceMonitor}
+              title="Close source monitor [Esc]"
             >
-              Reset
+              ✕
             </button>
           </>
-        )}
-        <div className="preview-comp-dropdown-wrapper">
-          <button
-            className="preview-comp-dropdown-btn"
-            onClick={() => setSelectorOpen(!selectorOpen)}
-            title="Select composition to display"
-          >
-            <span className="preview-comp-name">
-              {compositionId === null ? 'Active' : displayedComp?.name || 'Unknown'}
-            </span>
-            <span className="preview-comp-arrow">▼</span>
-          </button>
-          {selectorOpen && (
-            <div className="preview-comp-dropdown" ref={dropdownRef} style={dropdownStyle}>
-              <button
-                className={`preview-comp-option ${compositionId === null ? 'active' : ''}`}
-                onClick={() => {
-                  updatePanelData(panelId, { compositionId: null });
-                  setSelectorOpen(false);
-                }}
-              >
-                Active Composition
-              </button>
-              <div className="preview-comp-separator" />
-              {compositions.map((comp) => (
+        ) : (
+          <>
+            <button
+              className={`preview-edit-btn ${editMode ? 'active' : ''}`}
+              onClick={() => setEditMode(!editMode)}
+              title="Toggle Edit Mode [Tab]"
+            >
+              {editMode ? '✓ Edit' : 'Edit'} <span className="menu-wip-badge">🐛</span>
+            </button>
+            {editMode && (
+              <>
+                <span className="preview-zoom-label">{Math.round(viewZoom * 100)}%</span>
                 <button
-                  key={comp.id}
-                  className={`preview-comp-option ${compositionId === comp.id ? 'active' : ''}`}
-                  onClick={() => {
-                    updatePanelData(panelId, { compositionId: comp.id });
-                    setSelectorOpen(false);
-                  }}
+                  className="preview-reset-btn"
+                  onClick={resetView}
+                  title="Reset View"
                 >
-                  {comp.name}
+                  Reset
                 </button>
-              ))}
+              </>
+            )}
+            <div className="preview-comp-dropdown-wrapper">
+              <button
+                className="preview-comp-dropdown-btn"
+                onClick={() => setSelectorOpen(!selectorOpen)}
+                title="Select composition to display"
+              >
+                <span className="preview-comp-name">
+                  {compositionId === null ? 'Active' : displayedComp?.name || 'Unknown'}
+                </span>
+                <span className="preview-comp-arrow">▼</span>
+              </button>
+              {selectorOpen && (
+                <div className="preview-comp-dropdown" ref={dropdownRef} style={dropdownStyle}>
+                  <button
+                    className={`preview-comp-option ${compositionId === null ? 'active' : ''}`}
+                    onClick={() => {
+                      updatePanelData(panelId, { compositionId: null });
+                      setSelectorOpen(false);
+                    }}
+                  >
+                    Active Composition
+                  </button>
+                  <div className="preview-comp-separator" />
+                  {compositions.map((comp) => (
+                    <button
+                      key={comp.id}
+                      className={`preview-comp-option ${compositionId === comp.id ? 'active' : ''}`}
+                      onClick={() => {
+                        updatePanelData(panelId, { compositionId: comp.id });
+                        setSelectorOpen(false);
+                      }}
+                    >
+                      {comp.name}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </>
+        )}
         <button
           className="preview-add-btn"
           onClick={() => addPreviewPanel(null)}
@@ -1135,133 +1171,139 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
         </button>
       </div>
 
-      <StatsOverlay
-        stats={engineStats}
-        resolution={effectiveResolution}
-        expanded={statsExpanded}
-        onToggle={() => setStatsExpanded(!statsExpanded)}
-      />
+      {sourceMonitorActive ? (
+        <SourceMonitor file={sourceMonitorFile!} onClose={closeSourceMonitor} />
+      ) : (
+        <>
+          <StatsOverlay
+            stats={engineStats}
+            resolution={effectiveResolution}
+            expanded={statsExpanded}
+            onToggle={() => setStatsExpanded(!statsExpanded)}
+          />
 
-      <div className={`preview-canvas-wrapper ${showTransparencyGrid ? 'show-transparency-grid' : ''}`} style={viewTransform}>
-        {!isEngineReady ? (
-          <div className="loading">
-            <div className="loading-spinner" />
-            <p>Initializing WebGPU...</p>
+          <div className={`preview-canvas-wrapper ${showTransparencyGrid ? 'show-transparency-grid' : ''}`} style={viewTransform}>
+            {!isEngineReady ? (
+              <div className="loading">
+                <div className="loading-spinner" />
+                <p>Initializing WebGPU...</p>
+              </div>
+            ) : (
+              <>
+                <canvas
+                  ref={canvasRef}
+                  width={effectiveResolution.width}
+                  height={effectiveResolution.height}
+                  className="preview-canvas"
+                  style={{
+                    width: canvasSize.width,
+                    height: canvasSize.height,
+                  }}
+                />
+                {maskEditMode !== 'none' && (
+                  <MaskOverlay
+                    canvasWidth={effectiveResolution.width}
+                    canvasHeight={effectiveResolution.height}
+                  />
+                )}
+                {sam2Active && (
+                  <SAM2Overlay
+                    canvasWidth={effectiveResolution.width}
+                    canvasHeight={effectiveResolution.height}
+                    displayWidth={canvasSize.width}
+                    displayHeight={canvasSize.height}
+                  />
+                )}
+              </>
+            )}
           </div>
-        ) : (
-          <>
+
+          {/* Edit mode overlay - covers full container for pasteboard support */}
+          {editMode && isEngineReady && (
             <canvas
-              ref={canvasRef}
-              width={effectiveResolution.width}
-              height={effectiveResolution.height}
-              className="preview-canvas"
+              ref={overlayRef}
+              width={containerSize.width || 100}
+              height={containerSize.height || 100}
+              className="preview-overlay-fullscreen"
+              onMouseDown={handleOverlayMouseDown}
+              onMouseMove={handleOverlayMouseMove}
+              onMouseUp={handleOverlayMouseUp}
+              onMouseLeave={handleOverlayMouseUp}
               style={{
-                width: canvasSize.width,
-                height: canvasSize.height,
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: containerSize.width || '100%',
+                height: containerSize.height || '100%',
+                cursor: isDragging
+                  ? (dragMode === 'scale' ? getCursorForHandle(dragHandle) : 'grabbing')
+                  : getCursorForHandle(hoverHandle),
+                pointerEvents: 'auto',
               }}
             />
-            {maskEditMode !== 'none' && (
-              <MaskOverlay
-                canvasWidth={effectiveResolution.width}
-                canvasHeight={effectiveResolution.height}
-              />
-            )}
-            {sam2Active && (
-              <SAM2Overlay
-                canvasWidth={effectiveResolution.width}
-                canvasHeight={effectiveResolution.height}
-                displayWidth={canvasSize.width}
-                displayHeight={canvasSize.height}
-              />
-            )}
-          </>
-        )}
-      </div>
+          )}
 
-      {/* Edit mode overlay - covers full container for pasteboard support */}
-      {editMode && isEngineReady && (
-        <canvas
-          ref={overlayRef}
-          width={containerSize.width || 100}
-          height={containerSize.height || 100}
-          className="preview-overlay-fullscreen"
-          onMouseDown={handleOverlayMouseDown}
-          onMouseMove={handleOverlayMouseMove}
-          onMouseUp={handleOverlayMouseUp}
-          onMouseLeave={handleOverlayMouseUp}
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: containerSize.width || '100%',
-            height: containerSize.height || '100%',
-            cursor: isDragging
-              ? (dragMode === 'scale' ? getCursorForHandle(dragHandle) : 'grabbing')
-              : getCursorForHandle(hoverHandle),
-            pointerEvents: 'auto',
-          }}
-        />
-      )}
-
-      {editMode && (
-        <div className="preview-edit-hint">
-          Drag: Move | Handles: Scale (Shift: Lock Ratio) | Scroll: Zoom | Alt+Drag: Pan
-        </div>
-      )}
-
-      {/* Bottom-left controls */}
-      <div className="preview-controls-bottom">
-        {/* Transparency grid toggle */}
-        <button
-          className={`preview-transparency-toggle ${showTransparencyGrid ? 'active' : ''}`}
-          onClick={() => setShowTransparencyGrid(!showTransparencyGrid)}
-          title="Toggle transparency grid (checkerboard)"
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <rect x="0" y="0" width="4" height="4" opacity="0.6" />
-            <rect x="8" y="0" width="4" height="4" opacity="0.6" />
-            <rect x="4" y="4" width="4" height="4" opacity="0.6" />
-            <rect x="12" y="4" width="4" height="4" opacity="0.6" />
-            <rect x="0" y="8" width="4" height="4" opacity="0.6" />
-            <rect x="8" y="8" width="4" height="4" opacity="0.6" />
-            <rect x="4" y="12" width="4" height="4" opacity="0.6" />
-            <rect x="12" y="12" width="4" height="4" opacity="0.6" />
-          </svg>
-        </button>
-
-        <div className="preview-quality-dropdown-wrapper" ref={qualityDropdownRef}>
-          <button
-            className="preview-quality-dropdown-btn"
-            onClick={() => setQualityOpen(!qualityOpen)}
-            title="Preview quality (affects performance)"
-          >
-            <span className="preview-quality-label">
-              {previewQuality === 1 ? 'Full' : previewQuality === 0.5 ? 'Half' : 'Quarter'}
-            </span>
-            <span className="preview-comp-arrow">▼</span>
-          </button>
-          {qualityOpen && (
-            <div className="preview-quality-dropdown">
-              {([
-                { value: 1 as PreviewQuality, label: 'Full', desc: '100%' },
-                { value: 0.5 as PreviewQuality, label: 'Half', desc: '50%' },
-                { value: 0.25 as PreviewQuality, label: 'Quarter', desc: '25%' },
-              ]).map(({ value, label, desc }) => (
-                <button
-                  key={value}
-                  className={`preview-quality-option ${previewQuality === value ? 'active' : ''}`}
-                  onClick={() => {
-                    setPreviewQuality(value);
-                    setQualityOpen(false);
-                  }}
-                >
-                  {label} <span className="preview-quality-desc">{desc}</span>
-                </button>
-              ))}
+          {editMode && (
+            <div className="preview-edit-hint">
+              Drag: Move | Handles: Scale (Shift: Lock Ratio) | Scroll: Zoom | Alt+Drag: Pan
             </div>
           )}
-        </div>
-      </div>
+
+          {/* Bottom-left controls */}
+          <div className="preview-controls-bottom">
+            {/* Transparency grid toggle */}
+            <button
+              className={`preview-transparency-toggle ${showTransparencyGrid ? 'active' : ''}`}
+              onClick={() => setShowTransparencyGrid(!showTransparencyGrid)}
+              title="Toggle transparency grid (checkerboard)"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <rect x="0" y="0" width="4" height="4" opacity="0.6" />
+                <rect x="8" y="0" width="4" height="4" opacity="0.6" />
+                <rect x="4" y="4" width="4" height="4" opacity="0.6" />
+                <rect x="12" y="4" width="4" height="4" opacity="0.6" />
+                <rect x="0" y="8" width="4" height="4" opacity="0.6" />
+                <rect x="8" y="8" width="4" height="4" opacity="0.6" />
+                <rect x="4" y="12" width="4" height="4" opacity="0.6" />
+                <rect x="12" y="12" width="4" height="4" opacity="0.6" />
+              </svg>
+            </button>
+
+            <div className="preview-quality-dropdown-wrapper" ref={qualityDropdownRef}>
+              <button
+                className="preview-quality-dropdown-btn"
+                onClick={() => setQualityOpen(!qualityOpen)}
+                title="Preview quality (affects performance)"
+              >
+                <span className="preview-quality-label">
+                  {previewQuality === 1 ? 'Full' : previewQuality === 0.5 ? 'Half' : 'Quarter'}
+                </span>
+                <span className="preview-comp-arrow">▼</span>
+              </button>
+              {qualityOpen && (
+                <div className="preview-quality-dropdown">
+                  {([
+                    { value: 1 as PreviewQuality, label: 'Full', desc: '100%' },
+                    { value: 0.5 as PreviewQuality, label: 'Half', desc: '50%' },
+                    { value: 0.25 as PreviewQuality, label: 'Quarter', desc: '25%' },
+                  ]).map(({ value, label, desc }) => (
+                    <button
+                      key={value}
+                      className={`preview-quality-option ${previewQuality === value ? 'active' : ''}`}
+                      onClick={() => {
+                        setPreviewQuality(value);
+                        setQualityOpen(false);
+                      }}
+                    >
+                      {label} <span className="preview-quality-desc">{desc}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

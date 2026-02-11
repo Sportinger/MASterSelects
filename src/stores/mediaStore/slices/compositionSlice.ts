@@ -27,6 +27,7 @@ export interface CompositionActions {
   unassignSlot: (compId: string) => void;
   assignMediaFileToSlot: (mediaFileId: string, slotIndex: number) => void;
   setPreviewComposition: (id: string | null) => void;
+  setSourceMonitorFile: (id: string | null) => void;
   getSlotMap: (totalSlots: number) => (Composition | null)[];
   // Multi-layer playback (Resolume-style)
   activateOnLayer: (compositionId: string, layerIndex: number) => void;
@@ -270,6 +271,10 @@ export const createCompositionSlice: MediaSliceCreator<CompositionActions> = (se
 
   setPreviewComposition: (id: string | null) => {
     set({ previewCompositionId: id });
+  },
+
+  setSourceMonitorFile: (id: string | null) => {
+    set({ sourceMonitorFileId: id });
   },
 
   getSlotMap: (totalSlots: number) => {

@@ -756,7 +756,14 @@ export function Timeline() {
   // anyVideoSolo and anyAudioSolo are already memoized at the top of the component
 
   return (
-    <div className={`timeline-container ${clipDrag || clipTrim ? 'is-dragging' : ''}`}>
+    <div
+      className={`timeline-container ${clipDrag || clipTrim ? 'is-dragging' : ''}`}
+      onMouseDown={() => {
+        if (useMediaStore.getState().sourceMonitorFileId) {
+          useMediaStore.getState().setSourceMonitorFile(null);
+        }
+      }}
+    >
       {slotGridProgress < 1 && <TimelineControls
         isPlaying={isPlaying}
         loopPlayback={loopPlayback}

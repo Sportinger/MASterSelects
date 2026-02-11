@@ -7072,6 +7072,126 @@ input[type="checkbox"] {
   margin-left: 4px;
 }
 
+/* ========== SOURCE MONITOR ========== */
+.source-monitor {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  background: #111;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.source-monitor-media {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.source-monitor-video,
+.source-monitor-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.source-monitor-video {
+  cursor: pointer;
+}
+
+.source-monitor-scrub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  padding: 0 8px;
+  background: rgba(0, 0, 0, 0.7);
+  flex-shrink: 0;
+  cursor: pointer;
+  user-select: none;
+}
+
+.source-monitor-time {
+  font-size: 10px;
+  color: #999;
+  font-family: monospace;
+  white-space: nowrap;
+  min-width: 52px;
+}
+
+.source-monitor-scrub-track {
+  flex: 1;
+  height: 4px;
+  background: #333;
+  border-radius: 2px;
+  position: relative;
+}
+
+.source-monitor-scrub-fill {
+  height: 100%;
+  background: #4a90e2;
+  border-radius: 2px;
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.source-monitor-scrub-handle {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #fff;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.source-monitor-play-btn {
+  background: none;
+  border: none;
+  color: #ccc;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.source-monitor-play-btn:hover {
+  color: #fff;
+}
+
+.preview-source-label {
+  font-size: 11px;
+  color: #e0e0e0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+  padding: 0 4px;
+}
+
+.preview-close-source-btn {
+  background: none;
+  border: none;
+  color: #999;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 3px;
+  line-height: 1;
+}
+
+.preview-close-source-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
 /* ========== CONTEXT MENU ========== */
 .timeline-context-menu,
 .media-context-menu {

@@ -399,6 +399,9 @@ export function MediaPanel() {
     } else if (item.type === 'composition') {
       // Open composition in timeline (as a tab)
       openCompositionTab(item.id);
+    } else if ((item.type === 'video' || item.type === 'image') && 'file' in item && (item as MediaFile).file) {
+      // Open in source monitor
+      useMediaStore.getState().setSourceMonitorFile(item.id);
     } else if ('file' in item && !item.file) {
       // Media file needs reload - request permission
       const success = await reloadFile(item.id);
