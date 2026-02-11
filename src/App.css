@@ -3582,6 +3582,9 @@ input[type="checkbox"] {
   background: rgba(40, 60, 90, 0.85) !important;
   border: 2px dashed #3b82f6 !important;
   box-shadow: none !important;
+  /* Override global .loading class which sets transform/display for centered spinners */
+  transform: none !important;
+  display: block;
 }
 
 .timeline-clip.loading.audio {
