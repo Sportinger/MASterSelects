@@ -631,9 +631,14 @@ class ProxyFrameCache {
       this.scrubCurrentMediaId = mediaFileId;
       this.scrubIsActive = true;
 
-      this.scrubSource.onended = () => {
-        this.scrubIsActive = false;
-        this.scrubSource = null;
+      // Guard: only deactivate if THIS source is still the current one
+      // (onended fires asynchronously and could clobber a newer source)
+      const thisSource = this.scrubSource;
+      thisSource.onended = () => {
+        if (this.scrubSource === thisSource) {
+          this.scrubIsActive = false;
+          this.scrubSource = null;
+        }
       };
     } else if (this.scrubSource && timeDelta > 0.001) {
       // Calculate where audio SHOULD be vs where it IS
@@ -674,6 +679,7 @@ class ProxyFrameCache {
   stopScrubAudio(): void {
     if (this.scrubSource) {
       try {
+        this.scrubSource.onended = null; // Prevent async callback from clobbering new source
         this.scrubSource.stop();
         this.scrubSource.disconnect();
       } catch { /* ignore */ }
