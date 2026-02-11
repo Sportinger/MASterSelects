@@ -454,14 +454,13 @@ impl Session {
         if let Some(d) = dirs::document_dir() { search_dirs.push(d); }
         if let Some(d) = dirs::home_dir() { search_dirs.push(d); }
 
-        // Search each directory for the file
+        // Search each directory recursively (max depth 4 to avoid long scans)
         for dir in &search_dirs {
-            let candidate = dir.join(filename);
-            if candidate.is_file() {
-                info!("Located file '{}' at {}", filename, candidate.display());
+            if let Some(path) = Self::find_file_recursive(dir, filename, 0, 4) {
+                info!("Located file '{}' at {}", filename, path.display());
                 return Response::ok(id, serde_json::json!({
                     "found": true,
-                    "path": candidate.to_string_lossy()
+                    "path": path.to_string_lossy()
                 }));
             }
         }
@@ -471,6 +470,42 @@ impl Session {
             "found": false,
             "searched": search_dirs.iter().map(|d| d.to_string_lossy().to_string()).collect::<Vec<_>>()
         }))
+    }
+
+    /// Recursively search for a file by name, up to max_depth levels deep.
+    fn find_file_recursive(dir: &std::path::Path, filename: &str, depth: u32, max_depth: u32) -> Option<PathBuf> {
+        // Check direct child first
+        let candidate = dir.join(filename);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+
+        // Recurse into subdirectories
+        if depth >= max_depth {
+            return None;
+        }
+
+        let entries = match std::fs::read_dir(dir) {
+            Ok(e) => e,
+            Err(_) => return None,
+        };
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                // Skip hidden directories and system directories
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    if name.starts_with('.') || name == "node_modules" || name == "$RECYCLE.BIN" || name == "System Volume Information" {
+                        continue;
+                    }
+                }
+                if let Some(found) = Self::find_file_recursive(&path, filename, depth + 1, max_depth) {
+                    return Some(found);
+                }
+            }
+        }
+
+        None
     }
 
     fn handle_get_file(&self, id: &str, path: &str) -> Response {

@@ -8,7 +8,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { NativeHelperClient, isNativeHelperAvailable } from '../../services/nativeHelper';
 import type { SystemInfo, ConnectionStatus } from '../../services/nativeHelper';
 import { useSettingsStore } from '../../stores/settingsStore';
-import { upgradeAllClipsToNativeDecoder, downgradeAllClipsFromNativeDecoder } from '../../stores/timeline/clip/upgradeToNativeDecoder';
+import { upgradeAllClipsToNativeDecoder, downgradeAllClipsFromNativeDecoder, startClipWatcher, stopClipWatcher } from '../../stores/timeline/clip/upgradeToNativeDecoder';
 
 // Detect platform
 function detectPlatform(): 'mac' | 'windows' | 'linux' | 'unknown' {
@@ -79,10 +79,12 @@ export function NativeHelperStatus() {
     prevConnectedRef.current = isNowConnected;
 
     if (isNowConnected && !wasConnected) {
-      // Helper just connected — upgrade all clips to NativeDecoder
+      // Helper just connected — upgrade all clips + watch for new ones
       void upgradeAllClipsToNativeDecoder();
+      startClipWatcher();
     } else if (!isNowConnected && wasConnected) {
-      // Helper disconnected or turbo off — downgrade to WC/HTML fallback
+      // Helper disconnected or turbo off — downgrade + stop watching
+      stopClipWatcher();
       downgradeAllClipsFromNativeDecoder();
     }
   }, [status, turboModeEnabled]);

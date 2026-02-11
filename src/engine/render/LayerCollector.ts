@@ -211,28 +211,28 @@ export class LayerCollector {
 
       // After page reload, importExternalTexture returns a valid GPUExternalTexture
       // but the frame data is black/empty because the GPU decoder hasn't presented a frame.
-      // Use canvas.drawImage as primary path until the video has been properly played.
-      // canvas.drawImage reads CPU-decoded frames which are always available at readyState >= 2.
+      // Use pre-cached frame (from createImageBitmap during restore) until video has been played.
       if (!this.videoGpuReady.has(video) && !deps.isExporting) {
         // Check if the video is actively playing — that means the GPU decoder is active
         if (!video.paused && !video.seeking) {
           this.videoGpuReady.add(video);
         } else {
-          // Use canvas path
-          deps.scrubbingCache?.captureVideoFrameViaCanvas(video);
-          const canvasFrame = deps.scrubbingCache?.getLastFrame(video);
-          if (canvasFrame) {
+          // Use pre-cached frame (populated by engine.preCacheVideoFrame during restore)
+          const cachedFrame = deps.scrubbingCache?.getLastFrame(video);
+          if (cachedFrame) {
             deps.setLastVideoTime(videoKey, currentTime);
-            this.currentDecoder = 'HTMLVideo(canvas)';
+            this.currentDecoder = 'HTMLVideo(cached)';
             return {
               layer,
               isVideo: false,
               externalTexture: null,
-              textureView: canvasFrame.view,
-              sourceWidth: canvasFrame.width,
-              sourceHeight: canvasFrame.height,
+              textureView: cachedFrame.view,
+              sourceWidth: cachedFrame.width,
+              sourceHeight: cachedFrame.height,
             };
           }
+          // No cached frame yet — createImageBitmap still pending, skip for now
+          return null;
         }
       }
 
@@ -286,23 +286,6 @@ export class LayerCollector {
           textureView: lastFrame.view,
           sourceWidth: lastFrame.width,
           sourceHeight: lastFrame.height,
-        };
-      }
-    }
-
-    // Final fallback: canvas capture
-    if (video.readyState >= 2 && !deps.isExporting) {
-      deps.scrubbingCache?.captureVideoFrameViaCanvas(video);
-      const canvasFrame = deps.scrubbingCache?.getLastFrame(video);
-      if (canvasFrame) {
-        this.currentDecoder = 'HTMLVideo(canvas)';
-        return {
-          layer,
-          isVideo: false,
-          externalTexture: null,
-          textureView: canvasFrame.view,
-          sourceWidth: canvasFrame.width,
-          sourceHeight: canvasFrame.height,
         };
       }
     }
