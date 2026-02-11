@@ -5,6 +5,7 @@ import type { CompositorPipeline } from '../pipeline/CompositorPipeline';
 import type { EffectsPipeline } from '../../effects/EffectsPipeline';
 import type { TextureManager } from '../texture/TextureManager';
 import type { MaskTextureManager } from '../texture/MaskTextureManager';
+import type { ScrubbingCache } from '../texture/ScrubbingCache';
 import { Logger } from '../../services/logger';
 
 const log = Logger.create('NestedCompRenderer');
@@ -30,6 +31,7 @@ export class NestedCompRenderer {
   private effectsPipeline: EffectsPipeline;
   private textureManager: TextureManager;
   private maskTextureManager: MaskTextureManager;
+  private scrubbingCache: ScrubbingCache | null;
   private nestedCompTextures: Map<string, NestedCompTexture> = new Map();
 
   // Texture pool for ping-pong buffers, keyed by "widthxheight"
@@ -44,13 +46,15 @@ export class NestedCompRenderer {
     compositorPipeline: CompositorPipeline,
     effectsPipeline: EffectsPipeline,
     textureManager: TextureManager,
-    maskTextureManager: MaskTextureManager
+    maskTextureManager: MaskTextureManager,
+    scrubbingCache: ScrubbingCache | null = null
   ) {
     this.device = device;
     this.compositorPipeline = compositorPipeline;
     this.effectsPipeline = effectsPipeline;
     this.textureManager = textureManager;
     this.maskTextureManager = maskTextureManager;
+    this.scrubbingCache = scrubbingCache;
   }
 
   // Acquire a ping-pong texture pair from pool or create new
@@ -161,12 +165,20 @@ export class NestedCompRenderer {
       })),
     });
 
-    // Handle empty composition (expected during video loading)
+    // Handle empty composition
     if (nestedLayerData.length === 0) {
-      log.debug('No nested layers collected - rendering transparent', {
-        compositionId,
-        inputLayers: nestedLayers.length,
-      });
+      if (nestedLayers.length > 0) {
+        // Input layers exist but none could be collected (transient decode gap)
+        // Retain the existing texture which holds the last good frame
+        log.debug('Transient decode gap - retaining previous frame', {
+          compositionId,
+          inputLayers: nestedLayers.length,
+        });
+        this.releaseTexturePair(texturePair);
+        return compTexture.view;
+      }
+      // Genuinely empty composition - clear to transparent
+      log.debug('No nested layers - rendering transparent', { compositionId });
       const clearPass = commandEncoder.beginRenderPass({
         colorAttachments: [{
           view: compTexture.view,
@@ -307,6 +319,15 @@ export class NestedCompRenderer {
         if (video.readyState >= 2) {
           const extTex = this.textureManager.importVideoTexture(video);
           if (extTex) {
+            // Opportunistically keep scrubbing cache warm (throttled to ~20fps)
+            if (this.scrubbingCache) {
+              const now = performance.now();
+              const lastCapture = this.scrubbingCache.getLastCaptureTime(video);
+              if (now - lastCapture > 50) {
+                this.scrubbingCache.captureVideoFrame(video);
+                this.scrubbingCache.setLastCaptureTime(video, now);
+              }
+            }
             result.push({
               layer, isVideo: true, externalTexture: extTex, textureView: null,
               sourceWidth: video.videoWidth, sourceHeight: video.videoHeight,
@@ -318,6 +339,17 @@ export class NestedCompRenderer {
         } else {
           // Expected during initial load - don't spam console
           log.debug('Nested video not ready', { layerId: layer.id, readyState: video.readyState });
+        }
+
+        // Fallback: use last cached frame when video not ready or import failed
+        const lastFrame = this.scrubbingCache?.getLastFrame(video);
+        if (lastFrame) {
+          log.debug('Using cached frame fallback for nested video', { layerId: layer.id });
+          result.push({
+            layer, isVideo: false, externalTexture: null, textureView: lastFrame.view,
+            sourceWidth: lastFrame.width, sourceHeight: lastFrame.height,
+          });
+          continue;
         }
       }
 

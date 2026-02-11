@@ -169,7 +169,8 @@ export class WebGPUEngine {
       this.compositorPipeline,
       this.effectsPipeline,
       this.textureManager,
-      this.maskTextureManager
+      this.maskTextureManager,
+      this.scrubbingCache
     );
 
     this.renderLoop = new RenderLoop(this.performanceStats, {
