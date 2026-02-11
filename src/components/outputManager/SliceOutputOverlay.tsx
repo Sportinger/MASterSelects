@@ -1,5 +1,5 @@
 // SliceOutputOverlay - SVG overlay for dragging corner pin warp points
-// Uses setPointerCapture for reliable drag across popup window boundaries
+// Uses setPointerCapture + SVG getScreenCTM for correct coordinate mapping
 
 import { useCallback, useRef } from 'react';
 import { useSliceStore } from '../../stores/sliceStore';
@@ -15,12 +15,42 @@ const SLICE_COLORS = ['#2D8CEB', '#EB8C2D', '#2DEB8C', '#EB2D8C', '#8C2DEB', '#8
 const CORNER_LABELS = ['TL', 'TR', 'BR', 'BL'];
 const POINT_RADIUS = 6;
 
+/** Convert client (screen) coords to normalized 0-1 coords via SVG's CTM.
+ *  Correctly handles preserveAspectRatio letterboxing. */
+function clientToNormalized(
+  svg: SVGSVGElement,
+  clientX: number,
+  clientY: number,
+  vbWidth: number,
+  vbHeight: number
+): Point2D | null {
+  const ctm = svg.getScreenCTM();
+  if (!ctm) return null;
+  const inv = ctm.inverse();
+  // Transform client → SVG viewBox coords
+  const svgX = inv.a * clientX + inv.c * clientY + inv.e;
+  const svgY = inv.b * clientX + inv.d * clientY + inv.f;
+  return {
+    x: Math.max(0, Math.min(1, svgX / vbWidth)),
+    y: Math.max(0, Math.min(1, svgY / vbHeight)),
+  };
+}
+
+interface DragState {
+  sliceId: string;
+  cornerIndex: number;
+  pointerId: number;
+  // Offset between pointer position and corner center (in normalized coords)
+  offsetX: number;
+  offsetY: number;
+}
+
 export function SliceOutputOverlay({ targetId, width, height }: SliceOutputOverlayProps) {
   const config = useSliceStore((s) => s.configs.get(targetId));
   const selectSlice = useSliceStore((s) => s.selectSlice);
   const setCornerPinCorner = useSliceStore((s) => s.setCornerPinCorner);
   const svgRef = useRef<SVGSVGElement>(null);
-  const dragRef = useRef<{ sliceId: string; cornerIndex: number; pointerId: number } | null>(null);
+  const dragRef = useRef<DragState | null>(null);
 
   const handlePointerDown = useCallback((
     e: React.PointerEvent,
@@ -32,13 +62,28 @@ export function SliceOutputOverlay({ targetId, width, height }: SliceOutputOverl
 
     selectSlice(targetId, sliceId);
 
-    // Capture pointer on the SVG element for reliable cross-element drag
     const svg = svgRef.current;
     if (!svg) return;
 
-    dragRef.current = { sliceId, cornerIndex, pointerId: e.pointerId };
+    // Get the current corner position to calculate click offset
+    const currentConfig = useSliceStore.getState().configs.get(targetId);
+    const slice = currentConfig?.slices.find((s) => s.id === sliceId);
+    if (!slice || slice.warp.mode !== 'cornerPin') return;
+
+    const cornerPos = slice.warp.corners[cornerIndex];
+    const clickPos = clientToNormalized(svg, e.clientX, e.clientY, width, height);
+    if (!clickPos) return;
+
+    // Store offset so the corner doesn't jump to the pointer
+    dragRef.current = {
+      sliceId,
+      cornerIndex,
+      pointerId: e.pointerId,
+      offsetX: cornerPos.x - clickPos.x,
+      offsetY: cornerPos.y - clickPos.y,
+    };
     svg.setPointerCapture(e.pointerId);
-  }, [targetId, selectSlice]);
+  }, [targetId, width, height, selectSlice]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
     const drag = dragRef.current;
@@ -47,12 +92,15 @@ export function SliceOutputOverlay({ targetId, width, height }: SliceOutputOverl
     const svg = svgRef.current;
     if (!svg) return;
 
-    const rect = svg.getBoundingClientRect();
-    const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+    const pos = clientToNormalized(svg, e.clientX, e.clientY, width, height);
+    if (!pos) return;
+
+    // Apply offset so corner stays under the pointer where it was grabbed
+    const x = Math.max(0, Math.min(1, pos.x + drag.offsetX));
+    const y = Math.max(0, Math.min(1, pos.y + drag.offsetY));
 
     setCornerPinCorner(targetId, drag.sliceId, drag.cornerIndex, { x, y });
-  }, [targetId, setCornerPinCorner]);
+  }, [targetId, width, height, setCornerPinCorner]);
 
   const handlePointerUp = useCallback((e: React.PointerEvent) => {
     const drag = dragRef.current;
@@ -84,7 +132,7 @@ export function SliceOutputOverlay({ targetId, width, height }: SliceOutputOverl
         const isSelected = slice.id === selectedSliceId;
         const corners = slice.warp.corners;
 
-        // Convert normalized coords to SVG coords
+        // Convert normalized coords to SVG viewBox coords
         const pts = corners.map((c: Point2D) => ({
           x: c.x * width,
           y: c.y * height,
