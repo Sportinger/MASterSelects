@@ -175,20 +175,39 @@ async function resolveFilePath(
     return fromFile;
   }
 
-  log.info(`[${clip.name}] no local path — trying locate (recursive search)...`);
-
   // 4. Ask native helper to locate by filename (searches recursively in user dirs)
-  try {
-    const located = await NativeHelperClient.locateFile(clip.name);
-    if (located) {
-      log.info(`[${clip.name}] located via helper: ${located}`);
-      return located;
+  // Try multiple name candidates: mediaFile.filePath, mediaFile.name, clip.name (with extensions)
+  const candidates = new Set<string>();
+  if (mediaFile?.filePath) candidates.add(mediaFile.filePath);
+  if (mediaFile?.name) candidates.add(mediaFile.name);
+  if (clip.name) candidates.add(clip.name);
+  // Also try with common video extensions if name has no extension
+  for (const name of [...candidates]) {
+    if (!name.includes('.')) {
+      candidates.add(`${name}.mp4`);
+      candidates.add(`${name}.webm`);
+      candidates.add(`${name}.mkv`);
+      candidates.add(`${name}.mov`);
     }
-    log.warn(`[${clip.name}] file not found by helper`);
-  } catch (e) {
-    log.warn(`[${clip.name}] locate failed:`, e);
   }
 
+  log.info(`[${clip.name}] no local path — trying locate with candidates: ${[...candidates].join(', ')}`);
+
+  for (const filename of candidates) {
+    // locateFile rejects filenames with path separators
+    if (filename.includes('/') || filename.includes('\\')) continue;
+    try {
+      const located = await NativeHelperClient.locateFile(filename);
+      if (located) {
+        log.info(`[${clip.name}] located via helper as "${filename}": ${located}`);
+        return located;
+      }
+    } catch {
+      // try next candidate
+    }
+  }
+
+  log.warn(`[${clip.name}] file not found by helper (tried ${candidates.size} names)`);
   return undefined;
 }
 
