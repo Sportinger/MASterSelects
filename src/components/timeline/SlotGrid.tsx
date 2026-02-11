@@ -9,6 +9,7 @@ import { useTimelineStore } from '../../stores/timeline';
 import { playheadState } from '../../services/layerBuilder';
 import { layerPlaybackManager } from '../../services/layerPlaybackManager';
 import { animateSlotGrid } from './slotGridAnimation';
+import { MiniTimeline } from './MiniTimeline';
 import type { Composition } from '../../stores/mediaStore';
 
 interface SlotGridProps {
@@ -346,6 +347,14 @@ export function SlotGrid({ opacity }: SlotGridProps) {
                     onDrop={(e) => handleDrop(e, slotIndex)}
                     onDragEnd={handleDragEnd}
                   >
+                    <MiniTimeline
+                      timelineData={comp.timelineData}
+                      compositionName={comp.name}
+                      compositionDuration={comp.duration}
+                      isActive={isEditorActive}
+                      width={SLOT_SIZE - 4}
+                      height={SLOT_SIZE - 4}
+                    />
                     <div className="slot-grid-name">{comp.name}</div>
                     <SlotTimeOverlay
                       duration={comp.duration}

@@ -24,7 +24,6 @@ const CLIP_COLORS: Record<string, string> = {
 
 function MiniTimelineInner({
   timelineData,
-  compositionName,
   compositionDuration,
   isActive,
   width,
@@ -44,13 +43,10 @@ function MiniTimelineInner({
     canvas.height = height * dpr;
     ctx.scale(dpr, dpr);
 
-    // Background
-    ctx.fillStyle = '#1a1a1a';
-    ctx.fillRect(0, 0, width, height);
+    // Transparent background (thumbnail shows through)
+    ctx.clearRect(0, 0, width, height);
 
     if (!timelineData || !timelineData.tracks || !timelineData.clips) {
-      // Empty composition - just show name
-      drawLabel(ctx, compositionName, width);
       return;
     }
 
@@ -64,7 +60,6 @@ function MiniTimelineInner({
     const trackAreaHeight = height - trackAreaTop - padding;
 
     if (tracks.length === 0 || trackAreaHeight <= 0) {
-      drawLabel(ctx, compositionName, width);
       return;
     }
 
@@ -76,8 +71,8 @@ function MiniTimelineInner({
     tracks.forEach((track, i) => {
       const y = trackAreaTop + i * (trackHeight + trackGap);
 
-      // Track lane background
-      ctx.fillStyle = track.type === 'video' ? '#222' : '#1e1e1e';
+      // Track lane background (semi-transparent over thumbnail)
+      ctx.fillStyle = track.type === 'video' ? 'rgba(34,34,34,0.5)' : 'rgba(30,30,30,0.5)';
       ctx.fillRect(padding, y, width - padding * 2, trackHeight);
     });
 
@@ -106,32 +101,14 @@ function MiniTimelineInner({
       }
     });
 
-    // Draw composition name label
-    drawLabel(ctx, compositionName, width);
-  }, [timelineData, compositionName, compositionDuration, isActive, width, height]);
+  }, [timelineData, compositionDuration, isActive, width, height]);
 
   return (
     <canvas
       ref={canvasRef}
-      style={{ width, height, display: 'block' }}
+      style={{ width, height, display: 'block', position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}
     />
   );
-}
-
-function drawLabel(ctx: CanvasRenderingContext2D, name: string, width: number) {
-  ctx.fillStyle = '#ccc';
-  ctx.font = '10px system-ui, -apple-system, sans-serif';
-  ctx.textBaseline = 'top';
-
-  // Truncate if too long
-  let displayName = name;
-  const maxWidth = width - 8;
-  while (ctx.measureText(displayName).width > maxWidth && displayName.length > 3) {
-    displayName = displayName.slice(0, -1);
-  }
-  if (displayName !== name) displayName += '…';
-
-  ctx.fillText(displayName, 4, 3);
 }
 
 function drawWaveform(
