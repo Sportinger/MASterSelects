@@ -7,5 +7,5 @@ export { TranscriptPanel } from './TranscriptPanel';
 export { AnalysisPanel } from './AnalysisPanel';
 export { AIChatPanel } from './AIChatPanel';
 export { AIVideoPanel } from './AIVideoPanel';
-export { YouTubePanel } from './YouTubePanel';
+export { DownloadPanel } from './DownloadPanel';
 export { TransitionsPanel } from './TransitionsPanel';

@@ -229,36 +229,59 @@ export class RawMediaService {
   }
 
   // ============================================
-  // YOUTUBE DOWNLOADS
+  // VIDEO DOWNLOADS
   // ============================================
 
+  /** Map platform string to subfolder name */
+  private static readonly PLATFORM_FOLDERS: Record<string, string> = {
+    youtube: 'YT',
+    tiktok: 'TikTok',
+    instagram: 'Instagram',
+    twitter: 'Twitter',
+    facebook: 'Facebook',
+    reddit: 'Reddit',
+    vimeo: 'Vimeo',
+    twitch: 'Twitch',
+  };
+
   /**
-   * Save a YouTube download to the project's YT folder
+   * Save a downloaded video to the project's Downloads/<platform> folder
    * Returns the File object with correct name for timeline use
    */
-  async saveYouTubeDownload(
+  async saveDownload(
     projectHandle: FileSystemDirectoryHandle,
     blob: Blob,
-    title: string
+    title: string,
+    platform: string
   ): Promise<File | null> {
     try {
       // Sanitize filename
       const sanitizedTitle = title.replace(/[^a-zA-Z0-9\s\-_]/g, '').substring(0, 100).trim();
       const fileName = `${sanitizedTitle}.mp4`;
 
-      // Write to YT folder
-      const success = await this.fileStorage.writeFile(projectHandle, 'YT', fileName, blob);
-      if (!success) {
-        log.error('Failed to write YouTube file');
+      // Determine subfolder from platform
+      const subfolder = RawMediaService.PLATFORM_FOLDERS[platform] || 'Other';
+      const folderPath = `Downloads/${subfolder}`;
+
+      // Navigate to (and create) the nested folder
+      const folder = await this.fileStorage.navigateToFolder(projectHandle, folderPath, true);
+      if (!folder) {
+        log.error('Failed to create download subfolder:', folderPath);
         return null;
       }
 
+      // Write the file
+      const fileHandle = await folder.getFileHandle(fileName, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+
       // Return as File object
       const file = new File([blob], fileName, { type: 'video/mp4' });
-      log.debug(`Saved YouTube download: YT/${fileName}`);
+      log.debug(`Saved download: ${folderPath}/${fileName}`);
       return file;
     } catch (e) {
-      log.error('Failed to save YouTube download:', e);
+      log.error('Failed to save download:', e);
       return null;
     }
   }

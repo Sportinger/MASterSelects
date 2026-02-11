@@ -10,7 +10,7 @@ export const PROJECT_FOLDERS = {
   CACHE_WAVEFORMS: 'Cache/waveforms',
   RENDERS: 'Renders',
   BACKUPS: 'Backups',
-  YT: 'YT',
+  DOWNLOADS: 'Downloads',
 } as const;
 
 export type ProjectFolderKey = keyof typeof PROJECT_FOLDERS;
@@ -28,4 +28,5 @@ export const PROJECT_FOLDER_PATHS = [
   PROJECT_FOLDERS.CACHE_WAVEFORMS,
   PROJECT_FOLDERS.RENDERS,
   PROJECT_FOLDERS.BACKUPS,
+  PROJECT_FOLDERS.DOWNLOADS,
 ] as const;

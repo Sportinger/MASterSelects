@@ -8,7 +8,7 @@ import { useYouTubeStore, type YouTubeVideo as StoreYouTubeVideo } from '../../s
 import { downloadYouTubeVideo, downloadVideo, subscribeToDownload, isDownloadAvailable, type DownloadProgress } from '../../services/youtubeDownloader';
 import { NativeHelperClient } from '../../services/nativeHelper';
 import type { VideoInfo } from '../../services/nativeHelper';
-import './YouTubePanel.css';
+import './DownloadPanel.css';
 
 interface YouTubeVideo {
   id: string;
@@ -168,7 +168,7 @@ function FormatDialog({
   );
 }
 
-export function YouTubePanel() {
+export function DownloadPanel() {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -460,7 +460,7 @@ export function YouTubePanel() {
     try {
       const videoUrl = getVideoUrl(video);
       const file = video.sourceUrl && video.platform !== 'youtube'
-        ? await downloadVideo(videoUrl, video.id, video.title, video.thumbnail, formatId)
+        ? await downloadVideo(videoUrl, video.id, video.title, video.thumbnail, formatId, undefined, video.platform)
         : await downloadYouTubeVideo(video.id, video.title, video.thumbnail, formatId);
       // Trigger browser download
       const blobUrl = URL.createObjectURL(file);
@@ -524,7 +524,7 @@ export function YouTubePanel() {
     try {
       const videoUrl = getVideoUrl(video);
       const file = video.sourceUrl && video.platform !== 'youtube'
-        ? await downloadVideo(videoUrl, video.id, video.title, video.thumbnail, formatId)
+        ? await downloadVideo(videoUrl, video.id, video.title, video.thumbnail, formatId, undefined, video.platform)
         : await downloadYouTubeVideo(video.id, video.title, video.thumbnail, formatId);
       await completeDownload(clipId, file);
     } catch (err) {

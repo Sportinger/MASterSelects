@@ -65,7 +65,8 @@ export async function downloadVideo(
   title: string,
   thumbnail: string,
   formatId?: string,
-  onProgress?: DownloadCallback
+  onProgress?: DownloadCallback,
+  platform?: string
 ): Promise<File> {
   // Check if already downloading
   const existing = activeDownloads.get(videoId);
@@ -121,11 +122,11 @@ export async function downloadVideo(
       throw new Error('Failed to read downloaded file from helper');
     }
 
-    // Try to save to project's YT folder if a project is open
+    // Try to save to project's Downloads folder if a project is open
     let file: File;
     const blob = new Blob([fileResponse], { type: 'video/mp4' });
     if (projectFileService.isProjectOpen()) {
-      const savedFile = await projectFileService.saveYouTubeDownload(blob, title);
+      const savedFile = await projectFileService.saveDownload(blob, title, platform || 'youtube');
       if (savedFile) {
         file = savedFile;
         log.info('Saved to project downloads folder');
@@ -164,7 +165,7 @@ export async function downloadYouTubeVideo(
   onProgress?: DownloadCallback
 ): Promise<File> {
   const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
-  return downloadVideo(youtubeUrl, videoId, title, thumbnail, formatId, onProgress);
+  return downloadVideo(youtubeUrl, videoId, title, thumbnail, formatId, onProgress, 'youtube');
 }
 
 // Cancel a download

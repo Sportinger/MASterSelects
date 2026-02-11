@@ -228,13 +228,13 @@ class ProjectFileService {
     return mediaFile;
   }
 
-  async saveYouTubeDownload(blob: Blob, title: string): Promise<File | null> {
+  async saveDownload(blob: Blob, title: string, platform: string): Promise<File | null> {
     const handle = this.coreService.getProjectHandle();
     if (!handle) {
-      log.warn('No project open, cannot save YouTube download to project');
+      log.warn('No project open, cannot save download to project');
       return null;
     }
-    return this.rawMediaService.saveYouTubeDownload(handle, blob, title);
+    return this.rawMediaService.saveDownload(handle, blob, title, platform);
   }
 
   // ============================================
