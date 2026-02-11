@@ -1,6 +1,5 @@
 // TargetPreview - live preview canvas for the selected output target
-// In Input tab: renders source without slicing (default)
-// In Output tab: renders sliced output when slices exist
+// Sliced output rendering is handled by the main render loop via previewingTargetId
 
 import { useEffect, useRef } from 'react';
 import { useRenderTargetStore } from '../../stores/renderTargetStore';
@@ -22,11 +21,13 @@ export function TargetPreview({ targetId }: TargetPreviewProps) {
   const selectedTarget = useRenderTargetStore((s) => targetId ? s.targets.get(targetId) ?? null : null);
   const source = selectedTarget?.source ?? null;
 
-  // Get slice config for the selected target (for output tab rendering)
-  const activeTab = useSliceStore((s) => s.activeTab);
-  const sliceConfig = useSliceStore((s) => targetId ? s.configs.get(targetId) : undefined);
-  const enabledSlices = sliceConfig?.slices.filter((s) => s.enabled) ?? [];
-  const hasSlices = enabledSlices.length > 0 && activeTab === 'output';
+  // Tell the slice store which target we're previewing (so the engine can look up its slices)
+  useEffect(() => {
+    useSliceStore.getState().setPreviewingTargetId(targetId);
+    return () => {
+      useSliceStore.getState().setPreviewingTargetId(null);
+    };
+  }, [targetId]);
 
   useEffect(() => {
     if (!canvasRef.current || !source) {
@@ -73,22 +74,6 @@ export function TargetPreview({ targetId }: TargetPreviewProps) {
       registeredRef.current = false;
     };
   }, [source]);
-
-  // When in output tab with slices, render sliced output on each animation frame
-  useEffect(() => {
-    if (!hasSlices || !registeredRef.current) return;
-
-    let rafId: number;
-    const renderFrame = () => {
-      if (enabledSlices.length > 0) {
-        engine.renderSlicedToCanvas(PREVIEW_ID, enabledSlices);
-      }
-      rafId = requestAnimationFrame(renderFrame);
-    };
-    rafId = requestAnimationFrame(renderFrame);
-
-    return () => cancelAnimationFrame(rafId);
-  }, [hasSlices, enabledSlices]);
 
   if (!targetId || !source) {
     return (

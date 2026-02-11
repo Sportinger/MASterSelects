@@ -676,13 +676,21 @@ export class WebGPUEngine {
       }
       // Output to all activeComp render targets (from unified store)
       const activeTargets = useRenderTargetStore.getState().getActiveCompTargets();
-      const sliceConfigs = useSliceStore.getState().configs;
+      const sliceState = useSliceStore.getState();
+      const sliceConfigs = sliceState.configs;
       for (const target of activeTargets) {
         const ctx = this.targetCanvases.get(target.id)?.context;
         if (!ctx) continue;
 
-        // Check for slice configuration on this target
-        const config = sliceConfigs.get(target.id);
+        // For the OM preview canvas, use the previewed target's slices (if in output mode)
+        let sliceLookupId = target.id;
+        if (target.id === '__om_preview__' && sliceState.previewingTargetId) {
+          if (sliceState.activeTab === 'output') {
+            sliceLookupId = sliceState.previewingTargetId;
+          }
+        }
+
+        const config = sliceConfigs.get(sliceLookupId);
         const enabledSlices = config?.slices.filter((s) => s.enabled) ?? [];
 
         if (enabledSlices.length > 0 && this.slicePipeline) {

@@ -15,10 +15,12 @@ import { createDefaultSlice } from '../types/outputSlice';
 interface SliceState {
   configs: Map<string, TargetSliceConfig>;
   activeTab: 'input' | 'output';
+  previewingTargetId: string | null; // which target the OM preview canvas mirrors
 }
 
 interface SliceActions {
   setActiveTab: (tab: 'input' | 'output') => void;
+  setPreviewingTargetId: (id: string | null) => void;
   getOrCreateConfig: (targetId: string) => TargetSliceConfig;
   removeConfig: (targetId: string) => void;
   addSlice: (targetId: string, name?: string) => string;
@@ -45,8 +47,10 @@ function updateSliceInConfig(
 export const useSliceStore = create<SliceState & SliceActions>()((set, get) => ({
   configs: new Map(),
   activeTab: 'output',
+  previewingTargetId: null,
 
   setActiveTab: (tab) => set({ activeTab: tab }),
+  setPreviewingTargetId: (id) => set({ previewingTargetId: id }),
 
   getOrCreateConfig: (targetId) => {
     const { configs } = get();

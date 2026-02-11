@@ -5,7 +5,6 @@ import { useState } from 'react';
 import { TargetList } from './TargetList';
 import { TargetPreview } from './TargetPreview';
 import { TabBar } from './TabBar';
-import { SliceList } from './SliceList';
 import { SliceInputOverlay } from './SliceInputOverlay';
 import { SliceOutputOverlay } from './SliceOutputOverlay';
 import { useSliceStore } from '../../stores/sliceStore';
@@ -37,7 +36,6 @@ export function OutputManager() {
             selectedTargetId={selectedTargetId}
             onSelect={setSelectedTargetId}
           />
-          <SliceList targetId={selectedTargetId} />
         </div>
       </div>
     </div>

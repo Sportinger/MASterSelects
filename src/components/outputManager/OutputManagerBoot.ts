@@ -125,6 +125,10 @@ function getOutputManagerStyles(): string {
       letter-spacing: 0.5px;
       color: #888;
     }
+    .om-header-buttons {
+      display: flex;
+      gap: 4px;
+    }
     .om-add-btn {
       background: #2D8CEB;
       color: white;
@@ -137,6 +141,18 @@ function getOutputManagerStyles(): string {
     }
     .om-add-btn:hover {
       background: #4DA3F0;
+    }
+    .om-add-btn:disabled {
+      background: #333;
+      color: #666;
+      cursor: default;
+    }
+    .om-add-slice-btn {
+      background: #3a3a3a;
+      color: #ccc;
+    }
+    .om-add-slice-btn:hover:not(:disabled) {
+      background: #4a4a4a;
     }
     .om-target-items {
       flex: 1;
@@ -411,37 +427,20 @@ function getOutputManagerStyles(): string {
       border-bottom-color: #2D8CEB;
     }
 
-    /* Slice List */
-    .om-slice-list {
-      display: flex;
-      flex-direction: column;
-      border-top: 1px solid #2a2a2a;
-    }
-    .om-slice-list-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 10px 12px;
-      border-bottom: 1px solid #2a2a2a;
-    }
-    .om-slice-list-title {
-      font-weight: 600;
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: #888;
-    }
-    .om-slice-items {
-      overflow-y: auto;
-      padding: 4px;
-      max-height: 300px;
+    /* Nested Slice Items (under each target) */
+    .om-slice-items-nested {
+      padding-left: 16px;
+      border-left: 2px solid #2a2a2a;
+      margin-left: 14px;
+      margin-bottom: 4px;
     }
     .om-slice-item {
-      padding: 8px 10px;
-      margin-bottom: 2px;
+      padding: 6px 10px;
+      margin-bottom: 1px;
       border-radius: 4px;
       cursor: pointer;
       border: 1px solid transparent;
+      font-size: 12px;
     }
     .om-slice-item:hover {
       background: #1e1e1e;
@@ -456,7 +455,11 @@ function getOutputManagerStyles(): string {
     .om-slice-row {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
+    }
+    .om-target-status.small {
+      width: 6px;
+      height: 6px;
     }
     .om-slice-name {
       font-weight: 500;
@@ -465,6 +468,7 @@ function getOutputManagerStyles(): string {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      font-size: 11px;
     }
     .om-slice-mode {
       font-size: 10px;
@@ -473,7 +477,7 @@ function getOutputManagerStyles(): string {
     .om-slice-controls {
       display: flex;
       gap: 4px;
-      margin-top: 6px;
+      margin-top: 4px;
     }
 
     /* Slice SVG Overlay */
