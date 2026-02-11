@@ -322,15 +322,19 @@ export function getSavedTargetMeta(): Array<{ id: string; name: string; source: 
   }
 }
 
-// Cleanup subscription: remove orphaned configs when targets are removed
+// Cleanup subscription: remove orphaned configs only when a target is explicitly removed
+// (not when targets simply don't exist yet, e.g. after page refresh)
+let knownTargetIds = new Set<string>();
 useRenderTargetStore.subscribe(
   (state) => state.targets,
   (targets) => {
-    const { configs } = useSliceStore.getState();
-    for (const targetId of configs.keys()) {
-      if (!targets.has(targetId)) {
-        useSliceStore.getState().removeConfig(targetId);
+    // Find targets that were known before but are now gone
+    for (const prevId of knownTargetIds) {
+      if (!targets.has(prevId)) {
+        useSliceStore.getState().removeConfig(prevId);
       }
     }
+    // Update known set
+    knownTargetIds = new Set(targets.keys());
   }
 );
