@@ -3,11 +3,14 @@
 
 import { Logger } from '../../logger';
 import { projectDB } from '../../projectDB';
+import { apiKeyManager } from '../../apiKeyManager';
 
 const log = Logger.create('ProjectCore');
 import { FileStorageService } from './FileStorageService';
 import { MAX_BACKUPS, PROJECT_FOLDERS } from './constants';
 import type { ProjectFile, ProjectMediaFile, ProjectComposition, ProjectFolder } from '../types';
+
+const KEYS_FILE_NAME = '.keys.enc';
 
 export class ProjectCoreService {
   private projectHandle: FileSystemDirectoryHandle | null = null;
@@ -172,6 +175,9 @@ export class ProjectCoreService {
       await this.storeLastProject(projectFolder);
       this.startAutoSave();
 
+      // Save any existing API keys to the new project
+      await this.saveKeysFile();
+
       log.info(`Created project: ${name}`);
       return true;
     } catch (e) {
@@ -221,6 +227,17 @@ export class ProjectCoreService {
       await this.storeLastProject(handle);
       this.startAutoSave();
 
+      // Try to restore API keys from file if IndexedDB keys are empty
+      try {
+        const existingKeys = await apiKeyManager.getAllKeys();
+        const hasAnyKey = Object.values(existingKeys).some((v: string) => v !== '');
+        if (!hasAnyKey) {
+          await this.loadKeysFile();
+        }
+      } catch (e) {
+        log.warn('Failed to check/restore API keys:', e);
+      }
+
       log.info(`Opened project: ${projectData.name}`);
       return true;
     } catch (e) {
@@ -239,6 +256,10 @@ export class ProjectCoreService {
       this.projectData.updatedAt = new Date().toISOString();
       await this.writeProjectJson(this.projectHandle, this.projectData);
       this.isDirty = false;
+
+      // Also update the keys file
+      await this.saveKeysFile();
+
       log.debug('Project saved');
       return true;
     } catch (e) {
@@ -572,6 +593,52 @@ export class ProjectCoreService {
     if (this.autoSaveInterval !== null) {
       clearInterval(this.autoSaveInterval);
       this.autoSaveInterval = null;
+    }
+  }
+
+  // ============================================
+  // API KEYS FILE (.keys.enc)
+  // ============================================
+
+  async saveKeysFile(): Promise<void> {
+    if (!this.projectHandle) return;
+
+    try {
+      const content = await apiKeyManager.exportKeysForFile();
+      if (!content) {
+        log.debug('No API keys to save to file');
+        return;
+      }
+
+      const fileHandle = await this.projectHandle.getFileHandle(KEYS_FILE_NAME, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(content);
+      await writable.close();
+
+      log.debug('API keys saved to project file');
+    } catch (e) {
+      log.warn('Failed to save keys file:', e);
+    }
+  }
+
+  async loadKeysFile(): Promise<boolean> {
+    if (!this.projectHandle) return false;
+
+    try {
+      const fileHandle = await this.projectHandle.getFileHandle(KEYS_FILE_NAME);
+      const file = await fileHandle.getFile();
+      const content = await file.text();
+
+      if (!content) return false;
+
+      const restored = await apiKeyManager.importKeysFromFile(content);
+      if (restored) {
+        log.info('API keys restored from project file');
+      }
+      return restored;
+    } catch {
+      // File doesn't exist — that's fine
+      return false;
     }
   }
 

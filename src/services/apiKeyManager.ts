@@ -148,8 +148,47 @@ async function dbDelete(id: string): Promise<void> {
   });
 }
 
+// File encryption constants — deterministic key derived via PBKDF2
+// Security model: obfuscation on local disk, not secure against source code access
+const FILE_KEY_SALT = 'MasterSelects-FileKeys-v1-2024';
+const FILE_KEY_PASSPHRASE = 'ms-local-encryption-key-v1';
+const FILE_KEY_ITERATIONS = 100000;
+
+interface FileKeyEntry {
+  iv: number[];
+  data: number[];
+}
+
+interface KeysFileData {
+  v: 1;
+  keys: Record<string, FileKeyEntry>;
+}
+
+async function deriveFileEncryptionKey(): Promise<CryptoKey> {
+  const baseKey = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(FILE_KEY_PASSPHRASE),
+    'PBKDF2',
+    false,
+    ['deriveKey']
+  );
+  return crypto.subtle.deriveKey(
+    {
+      name: 'PBKDF2',
+      hash: 'SHA-256',
+      salt: new TextEncoder().encode(FILE_KEY_SALT),
+      iterations: FILE_KEY_ITERATIONS,
+    },
+    baseKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
 class ApiKeyManager {
   private encryptionKey: CryptoKey | null = null;
+  private fileKey: CryptoKey | null = null;
 
   /**
    * Get or create the encryption key
@@ -268,6 +307,87 @@ class ApiKeyManager {
       if (value !== undefined) {
         await this.storeKeyByType(keyType as ApiKeyType, value);
       }
+    }
+  }
+
+  // ============================================
+  // File-based key export/import (.keys.enc)
+  // ============================================
+
+  private async getFileKey(): Promise<CryptoKey> {
+    if (this.fileKey) return this.fileKey;
+    this.fileKey = await deriveFileEncryptionKey();
+    return this.fileKey;
+  }
+
+  /**
+   * Export all stored keys as an encrypted JSON string for file storage.
+   * Returns null if no keys are stored.
+   */
+  async exportKeysForFile(): Promise<string | null> {
+    try {
+      const allKeys = await this.getAllKeys();
+
+      // Filter out empty keys
+      const nonEmpty = Object.entries(allKeys).filter(([, v]) => v !== '');
+      if (nonEmpty.length === 0) return null;
+
+      const fileKey = await this.getFileKey();
+      const fileKeys: Record<string, FileKeyEntry> = {};
+
+      for (const [keyType, value] of nonEmpty) {
+        const { iv, data } = await encrypt(value, fileKey);
+        fileKeys[keyType] = {
+          iv: Array.from(iv),
+          data: Array.from(new Uint8Array(data)),
+        };
+      }
+
+      const payload: KeysFileData = { v: 1, keys: fileKeys };
+      return JSON.stringify(payload, null, 2);
+    } catch (error) {
+      log.error('Failed to export keys for file:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Import keys from an encrypted file string and store them in IndexedDB.
+   * Returns true if at least one key was restored.
+   */
+  async importKeysFromFile(fileContent: string): Promise<boolean> {
+    try {
+      const payload = JSON.parse(fileContent) as KeysFileData;
+      if (payload.v !== 1 || !payload.keys) {
+        log.warn('Unknown keys file format');
+        return false;
+      }
+
+      const fileKey = await this.getFileKey();
+      let restored = 0;
+
+      for (const [keyType, entry] of Object.entries(payload.keys)) {
+        if (!KEY_IDS[keyType as ApiKeyType]) continue;
+
+        try {
+          const iv = new Uint8Array(entry.iv);
+          const data = new Uint8Array(entry.data).buffer;
+          const plaintext = await decrypt(data, iv, fileKey);
+
+          if (plaintext) {
+            await this.storeKeyByType(keyType as ApiKeyType, plaintext);
+            restored++;
+          }
+        } catch (err) {
+          log.warn(`Failed to decrypt file key: ${keyType}`, err);
+        }
+      }
+
+      log.info(`Restored ${restored} keys from file`);
+      return restored > 0;
+    } catch (error) {
+      log.error('Failed to import keys from file:', error);
+      return false;
     }
   }
 

@@ -5,6 +5,7 @@
 import { create } from 'zustand';
 import { subscribeWithSelector, persist } from 'zustand/middleware';
 import { apiKeyManager, type ApiKeyType } from '../services/apiKeyManager';
+import { projectFileService } from '../services/project/ProjectFileService';
 import { Logger } from '../services/logger';
 const log = Logger.create('SettingsStore');
 
@@ -159,10 +160,17 @@ export const useSettingsStore = create<SettingsState>()(
             [provider]: key,
           },
         }));
-        // Also save to encrypted IndexedDB
-        apiKeyManager.storeKeyByType(provider as ApiKeyType, key).catch((err) => {
-          log.error('Failed to save API key:', err);
-        });
+        // Save to encrypted IndexedDB + project file
+        apiKeyManager.storeKeyByType(provider as ApiKeyType, key)
+          .then(() => {
+            // Also update .keys.enc in the project folder if a project is open
+            if (projectFileService.isProjectOpen()) {
+              return projectFileService.saveKeysFile();
+            }
+          })
+          .catch((err) => {
+            log.error('Failed to save API key:', err);
+          });
       },
 
       setTranscriptionProvider: (provider) => {
@@ -257,9 +265,23 @@ export const useSettingsStore = create<SettingsState>()(
       },
 
       // Load API keys from encrypted IndexedDB (call on app startup)
+      // Falls back to .keys.enc in the project folder if IndexedDB is empty
       loadApiKeys: async () => {
         try {
           const keys = await apiKeyManager.getAllKeys();
+          const hasAnyKey = Object.values(keys).some((v) => v !== '');
+
+          if (!hasAnyKey && projectFileService.isProjectOpen()) {
+            // IndexedDB empty — try restoring from project file
+            const restored = await projectFileService.loadKeysFile();
+            if (restored) {
+              const restoredKeys = await apiKeyManager.getAllKeys();
+              set({ apiKeys: restoredKeys });
+              log.info('API keys restored from project file');
+              return;
+            }
+          }
+
           set({ apiKeys: keys });
           log.info('API keys loaded from encrypted storage');
         } catch (err) {

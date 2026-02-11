@@ -169,23 +169,6 @@ export function collapseSingleChildSplits(node: DockNode): DockNode {
   };
 }
 
-// Get all panel IDs in the layout
-export function getAllPanelIds(layout: DockLayout): string[] {
-  const ids: string[] = [];
-  collectPanelIds(layout.root, ids);
-  layout.floatingPanels.forEach((f) => ids.push(f.panel.id));
-  return ids;
-}
-
-function collectPanelIds(node: DockNode, ids: string[]): void {
-  if (node.kind === 'tab-group') {
-    node.panels.forEach((p) => ids.push(p.id));
-  } else {
-    collectPanelIds(node.children[0], ids);
-    collectPanelIds(node.children[1], ids);
-  }
-}
-
 // Calculate drop position from mouse coordinates
 export function calculateDropPosition(
   rect: DOMRect,
@@ -206,13 +189,3 @@ export function calculateDropPosition(
   return 'center';
 }
 
-// Get all tab groups in the layout (for hit testing)
-export function getAllTabGroups(node: DockNode): DockTabGroup[] {
-  if (node.kind === 'tab-group') {
-    return [node];
-  }
-  return [
-    ...getAllTabGroups(node.children[0]),
-    ...getAllTabGroups(node.children[1]),
-  ];
-}
