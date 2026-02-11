@@ -193,8 +193,23 @@ export class LayerCollector {
         }
       }
 
-      // If video is seeking, prefer cached frame to avoid frame jumps
+      // If video is seeking, try per-time scrubbing cache first (exact frame for this position),
+      // then fall back to generic last-frame cache
       if (video.seeking && !deps.isExporting) {
+        // Try per-time cache: if we've visited this position before, show the exact frame
+        const cachedView = deps.scrubbingCache?.getCachedFrame(video.src, currentTime);
+        if (cachedView) {
+          this.currentDecoder = 'HTMLVideo(scrub-cache)';
+          return {
+            layer,
+            isVideo: false,
+            externalTexture: null,
+            textureView: cachedView,
+            sourceWidth: video.videoWidth,
+            sourceHeight: video.videoHeight,
+          };
+        }
+        // Fall back to generic last-frame cache
         const lastFrame = deps.scrubbingCache?.getLastFrame(video);
         if (lastFrame) {
           this.currentDecoder = 'HTMLVideo(seeking-cache)';

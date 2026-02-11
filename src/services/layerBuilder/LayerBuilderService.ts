@@ -1079,15 +1079,14 @@ export class LayerBuilderService {
     if (isReversePlayback) {
       // For reverse: pause video and seek to each frame
       if (!video.paused) video.pause();
-      // Use tighter threshold for smoother reverse playback
-      const seekThreshold = ctx.isDraggingPlayhead ? 0.1 : 0.02;
+      const seekThreshold = ctx.isDraggingPlayhead ? 0.04 : 0.02;
       if (timeDiff > seekThreshold) {
         this.throttledSeek(clip.id, video, timeInfo.clipTime, ctx);
       }
     } else if (ctx.playbackSpeed !== 1) {
       // Non-standard forward speed (2x, 4x, etc.): seek frame-by-frame for accuracy
       if (!video.paused) video.pause();
-      const seekThreshold = ctx.isDraggingPlayhead ? 0.1 : 0.03;
+      const seekThreshold = ctx.isDraggingPlayhead ? 0.04 : 0.03;
       if (timeDiff > seekThreshold) {
         this.throttledSeek(clip.id, video, timeInfo.clipTime, ctx);
       }
@@ -1100,7 +1099,9 @@ export class LayerBuilderService {
       }
 
       if (!ctx.isPlaying) {
-        const seekThreshold = ctx.isDraggingPlayhead ? 0.1 : 0.05;
+        // 0.04s ≈ slightly more than 1 frame at 30fps.
+        // Previous 0.1s threshold skipped up to 3 frames during slow scrubbing.
+        const seekThreshold = ctx.isDraggingPlayhead ? 0.04 : 0.04;
         if (timeDiff > seekThreshold) {
           this.throttledSeek(clip.id, video, timeInfo.clipTime, ctx);
         }
