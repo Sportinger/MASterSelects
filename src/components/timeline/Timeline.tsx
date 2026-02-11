@@ -1415,26 +1415,30 @@ export function Timeline() {
           )}
         </div>{/* timeline-body-content */}
 
-        {/* Vertical Scrollbar */}
-        <VerticalScrollbar
-          scrollY={scrollY}
-          contentHeight={contentHeight}
-          viewportHeight={viewportHeight}
-          onScrollChange={setScrollY}
-        />
+        {/* Vertical Scrollbar — hide when slot grid is active */}
+        {slotGridProgress < 1 && (
+          <VerticalScrollbar
+            scrollY={scrollY}
+            contentHeight={contentHeight}
+            viewportHeight={viewportHeight}
+            onScrollChange={setScrollY}
+          />
+        )}
       </div>{/* timeline-body */}
 
-      {/* Timeline Navigator - horizontal scrollbar with zoom handles */}
-      <TimelineNavigator
-        duration={duration}
-        scrollX={scrollX}
-        zoom={zoom}
-        viewportWidth={timelineBodyRef.current?.querySelector('.track-lanes-scroll')?.parentElement?.clientWidth ?? 800}
-        minZoom={MIN_ZOOM}
-        maxZoom={MAX_ZOOM}
-        onScrollChange={setScrollX}
-        onZoomChange={handleSetZoom}
-      />
+      {/* Timeline Navigator - horizontal scrollbar with zoom handles — hide when slot grid is active */}
+      {slotGridProgress < 1 && (
+        <TimelineNavigator
+          duration={duration}
+          scrollX={scrollX}
+          zoom={zoom}
+          viewportWidth={timelineBodyRef.current?.querySelector('.track-lanes-scroll')?.parentElement?.clientWidth ?? 800}
+          minZoom={MIN_ZOOM}
+          maxZoom={MAX_ZOOM}
+          onScrollChange={setScrollX}
+          onZoomChange={handleSetZoom}
+        />
+      )}
 
       {/* Pick whip drag line - physics cable (clip parenting) */}
       {pickWhipDrag && (

@@ -42,6 +42,10 @@ export function SlotGrid({ opacity }: SlotGridProps) {
       if (e.ctrlKey && e.shiftKey) {
         e.preventDefault();
         animateSlotGrid(e.deltaY > 0 ? 1 : 0);
+      } else {
+        // Stop propagation so timeline's wheel handler doesn't preventDefault
+        // This lets the container scroll natively
+        e.stopPropagation();
       }
     };
 
