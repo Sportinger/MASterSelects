@@ -14,6 +14,23 @@
     <meta property="og:url" content="https://www.masterselects.com" />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+
+    <!-- Prevent theme flash on load -->
+    <script>
+      (function() {
+        try {
+          var settings = JSON.parse(localStorage.getItem('masterselects-settings') || '{}');
+          var s = settings.state || settings;
+          var theme = s.theme || 'dark';
+          if (theme === 'system') {
+            theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          }
+          if (theme !== 'dark') {
+            document.documentElement.dataset.theme = theme;
+          }
+        } catch(e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

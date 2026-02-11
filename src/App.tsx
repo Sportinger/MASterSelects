@@ -19,6 +19,7 @@ import { TutorialCampaignDialog } from './components/common/TutorialCampaignDial
 import { getCampaignById } from './components/common/tutorialCampaigns';
 import type { CampaignStep } from './components/common/tutorialCampaigns';
 import { MobileApp } from './components/mobile';
+import { useTheme } from './hooks/useTheme';
 import { useGlobalHistory } from './hooks/useGlobalHistory';
 import { useClipPanelSync } from './hooks/useClipPanelSync';
 import { useIsMobile, useForceMobile } from './hooks/useIsMobile';
@@ -44,6 +45,9 @@ function App() {
   const isMobile = useIsMobile();
   const forceMobile = useForceMobile();
   const forceDesktopMode = useSettingsStore((s) => s.forceDesktopMode);
+
+  // Apply theme to document root
+  useTheme();
 
   // Initialize global undo/redo system
   useGlobalHistory();

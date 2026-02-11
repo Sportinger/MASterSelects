@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useDraggableDialog } from './settings/useDraggableDialog';
+import { AppearanceSettings } from './settings/AppearanceSettings';
 import { GeneralSettings } from './settings/GeneralSettings';
 import { PreviewsSettings } from './settings/PreviewsSettings';
 import { ImportSettings } from './settings/ImportSettings';
@@ -17,6 +18,7 @@ interface SettingsDialogProps {
 }
 
 type SettingsCategory =
+  | 'appearance'
   | 'general'
   | 'previews'
   | 'import'
@@ -32,6 +34,7 @@ interface CategoryConfig {
 }
 
 const categories: CategoryConfig[] = [
+  { id: 'appearance', label: 'Appearance', icon: '\uD83C\uDFA8' },
   { id: 'general', label: 'General', icon: '\u2699' },
   { id: 'previews', label: 'Previews', icon: '\u25B6' },
   { id: 'import', label: 'Import', icon: '\uD83D\uDCE5' },
@@ -42,7 +45,7 @@ const categories: CategoryConfig[] = [
 ];
 
 export function SettingsDialog({ onClose }: SettingsDialogProps) {
-  const [activeCategory, setActiveCategory] = useState<SettingsCategory>('general');
+  const [activeCategory, setActiveCategory] = useState<SettingsCategory>('appearance');
   const dialogRef = useRef<HTMLDivElement>(null);
   const { position, isDragging, handleMouseDown } = useDraggableDialog(dialogRef);
 
@@ -64,6 +67,7 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
 
   const renderCategoryContent = () => {
     switch (activeCategory) {
+      case 'appearance': return <AppearanceSettings />;
       case 'general': return <GeneralSettings />;
       case 'previews': return <PreviewsSettings />;
       case 'import': return <ImportSettings />;

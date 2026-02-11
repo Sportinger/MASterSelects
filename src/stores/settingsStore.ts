@@ -9,6 +9,9 @@ import { projectFileService } from '../services/project/ProjectFileService';
 import { Logger } from '../services/logger';
 const log = Logger.create('SettingsStore');
 
+// Theme mode options
+export type ThemeMode = 'dark' | 'light' | 'midnight' | 'system';
+
 // Transcription provider options
 export type TranscriptionProvider = 'local' | 'openai' | 'assemblyai' | 'deepgram';
 
@@ -33,6 +36,9 @@ interface APIKeys {
 export type AutosaveInterval = 1 | 2 | 5 | 10;
 
 interface SettingsState {
+  // Theme
+  theme: ThemeMode;
+
   // API Keys
   apiKeys: APIKeys;
 
@@ -82,6 +88,7 @@ interface SettingsState {
   fps: number;
 
   // Actions
+  setTheme: (theme: ThemeMode) => void;
   setApiKey: (provider: keyof APIKeys, key: string) => void;
   setTranscriptionProvider: (provider: TranscriptionProvider) => void;
   setPreviewQuality: (quality: PreviewQuality) => void;
@@ -120,6 +127,7 @@ export const useSettingsStore = create<SettingsState>()(
     persist(
       (set, get) => ({
       // Initial state
+      theme: 'dark' as ThemeMode,
       apiKeys: {
         openai: '',
         assemblyai: '',
@@ -153,6 +161,8 @@ export const useSettingsStore = create<SettingsState>()(
       fps: 60,
 
       // Actions
+      setTheme: (theme) => set({ theme }),
+
       setApiKey: (provider, key) => {
         set((state) => ({
           apiKeys: {
@@ -294,6 +304,7 @@ export const useSettingsStore = create<SettingsState>()(
       // Don't persist API keys in localStorage - they go to encrypted IndexedDB
       // Don't persist transient UI state like isSettingsOpen
       partialize: (state) => ({
+        theme: state.theme,
         transcriptionProvider: state.transcriptionProvider,
         previewQuality: state.previewQuality,
         showTransparencyGrid: state.showTransparencyGrid,
