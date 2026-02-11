@@ -2,15 +2,10 @@
 // Delegates to specialized modules in ./clip/ and ./helpers/
 // Reduced from ~2031 LOC to ~650 LOC (68% reduction)
 
-import type { TimelineClip, TimelineTrack, Effect, EffectType, TextClipProperties } from '../../types';
-import type { ClipActions, SliceCreator, Composition } from './types';
-import { DEFAULT_TRANSFORM, DEFAULT_TEXT_PROPERTIES, DEFAULT_TEXT_DURATION } from './constants';
-import { getDefaultEffectParams } from './utils';
+import type { TimelineClip, TimelineTrack } from '../../types';
+import type { CoreClipActions, SliceCreator, Composition } from './types';
+import { DEFAULT_TRANSFORM } from './constants';
 import { generateWaveform, generateWaveformFromBuffer } from './helpers/waveformHelpers';
-import { textRenderer } from '../../services/textRenderer';
-import { googleFontsService } from '../../services/googleFontsService';
-import { engine } from '../../engine/WebGPUEngine';
-import { layerBuilder } from '../../services/layerBuilder';
 import { Logger } from '../../services/logger';
 
 const log = Logger.create('ClipSlice');
@@ -42,19 +37,12 @@ import {
   calculateNestedClipBoundaries,
   buildClipSegments,
 } from './clip/addCompClip';
-import { completeDownload as completeDownloadImpl } from './clip/completeDownload';
 import {
-  generateTextClipId,
-  generateSolidClipId,
-  generateYouTubeClipId,
-  generateEffectId,
-  generateLinkedGroupId,
   generateLinkedClipIds,
 } from './helpers/idGenerator';
 import { blobUrlManager } from './helpers/blobUrlManager';
 import { updateClipById } from './helpers/clipStateHelpers';
 import { thumbnailRenderer } from '../../services/thumbnailRenderer';
-import { useMediaStore } from '../mediaStore';
 
 // Debounce map for thumbnail regeneration per clip
 const thumbnailDebounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -110,7 +98,7 @@ async function regenerateClipThumbnails(
   thumbnailDebounceTimers.set(clipId, timer);
 }
 
-export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
+export const createClipSlice: SliceCreator<CoreClipActions> = (set, get) => ({
   addClip: async (trackId, file, startTime, providedDuration, mediaFileId) => {
     const mediaType = detectMediaType(file);
     const estimatedDuration = providedDuration ?? 5;
@@ -685,222 +673,6 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
     }
   },
 
-  // ========== TEXT CLIP ACTIONS ==========
-
-  addTextClip: async (trackId, startTime, duration = DEFAULT_TEXT_DURATION, skipMediaItem = false) => {
-    const { clips, tracks, updateDuration, invalidateCache } = get();
-    const track = tracks.find(t => t.id === trackId);
-
-    if (!track || track.type !== 'video') {
-      log.warn('Text clips can only be added to video tracks');
-      return null;
-    }
-
-    const clipId = generateTextClipId();
-    await googleFontsService.loadFont(DEFAULT_TEXT_PROPERTIES.fontFamily, DEFAULT_TEXT_PROPERTIES.fontWeight);
-
-    const canvas = textRenderer.createCanvas(1920, 1080);
-    textRenderer.render(DEFAULT_TEXT_PROPERTIES, canvas);
-
-    const textClip: TimelineClip = {
-      id: clipId,
-      trackId,
-      name: 'Text',
-      file: new File([], 'text-clip.txt', { type: 'text/plain' }),
-      startTime,
-      duration,
-      inPoint: 0,
-      outPoint: duration,
-      source: { type: 'text', textCanvas: canvas, naturalDuration: duration },
-      transform: { ...DEFAULT_TRANSFORM },
-      effects: [],
-      textProperties: { ...DEFAULT_TEXT_PROPERTIES },
-      isLoading: false,
-    };
-
-    set({ clips: [...clips, textClip] });
-    updateDuration();
-    invalidateCache();
-
-    // Also create a media item in the Text folder (unless dragged from media panel)
-    if (!skipMediaItem) {
-      const mediaStore = useMediaStore.getState();
-      const textFolderId = mediaStore.getOrCreateTextFolder();
-      mediaStore.createTextItem('Text', textFolderId);
-    }
-
-    log.debug('Created text clip', { clipId });
-    return clipId;
-  },
-
-  updateTextProperties: (clipId, props) => {
-    const { clips, invalidateCache } = get();
-    const clip = clips.find(c => c.id === clipId);
-    if (!clip?.textProperties) return;
-
-    const newProps: TextClipProperties = { ...clip.textProperties, ...props };
-
-    // Reuse existing canvas - re-render text content in place
-    // This avoids creating new textures/references on every keystroke
-    const canvas = clip.source?.textCanvas || textRenderer.createCanvas(1920, 1080);
-    textRenderer.render(newProps, canvas);
-
-    // Re-upload canvas pixels to existing GPU texture (instant, no new allocation)
-    const texMgr = engine.getTextureManager();
-    if (texMgr) {
-      if (!texMgr.updateCanvasTexture(canvas)) {
-        // First time or canvas not cached yet - will be created on next render
-        log.debug('Canvas texture not cached yet, will create on render');
-      }
-    }
-
-    // Update store with new text properties
-    set({
-      clips: clips.map(c => c.id !== clipId ? c : {
-        ...c,
-        textProperties: newProps,
-        source: { ...c.source!, textCanvas: canvas },
-        name: newProps.text.substring(0, 20) || 'Text',
-      }),
-    });
-    invalidateCache();
-
-    // Force immediate render to show text changes live in preview
-    try {
-      layerBuilder.invalidateCache();
-      const layers = layerBuilder.buildLayersFromStore();
-      engine.render(layers);
-    } catch (e) {
-      log.debug('Direct render after text update failed', e);
-    }
-
-    // Handle async font loading - re-render when font is ready
-    if (props.fontFamily || props.fontWeight) {
-      const fontFamily = props.fontFamily || newProps.fontFamily;
-      const fontWeight = props.fontWeight || newProps.fontWeight;
-      googleFontsService.loadFont(fontFamily, fontWeight).then(() => {
-        const { clips: currentClips, invalidateCache: inv } = get();
-        const currentClip = currentClips.find(cl => cl.id === clipId);
-        if (!currentClip?.textProperties) return;
-
-        // Re-render with loaded font to same canvas
-        const currentCanvas = currentClip.source?.textCanvas;
-        if (currentCanvas) {
-          textRenderer.render(currentClip.textProperties, currentCanvas);
-          engine.getTextureManager()?.updateCanvasTexture(currentCanvas);
-        }
-        inv();
-
-        // Force immediate render after font load
-        try {
-          layerBuilder.invalidateCache();
-          const layers = layerBuilder.buildLayersFromStore();
-          engine.render(layers);
-        } catch (e) {
-          log.debug('Direct render after font load failed', e);
-        }
-      });
-    }
-  },
-
-  // ========== SOLID CLIP ACTIONS ==========
-
-  addSolidClip: (trackId, startTime, color = '#ffffff', duration = 5, skipMediaItem = false) => {
-    const { clips, tracks, updateDuration, invalidateCache } = get();
-    const track = tracks.find(t => t.id === trackId);
-
-    if (!track || track.type !== 'video') {
-      log.warn('Solid clips can only be added to video tracks');
-      return null;
-    }
-
-    const clipId = generateSolidClipId();
-
-    // Use active composition dimensions, fallback to 1920x1080
-    const activeComp = useMediaStore.getState().getActiveComposition();
-    const compWidth = activeComp?.width || 1920;
-    const compHeight = activeComp?.height || 1080;
-
-    const canvas = document.createElement('canvas');
-    canvas.width = compWidth;
-    canvas.height = compHeight;
-    const ctx = canvas.getContext('2d')!;
-    ctx.fillStyle = color;
-    ctx.fillRect(0, 0, compWidth, compHeight);
-
-    const solidClip: TimelineClip = {
-      id: clipId,
-      trackId,
-      name: `Solid ${color}`,
-      file: new File([], 'solid-clip.dat', { type: 'application/octet-stream' }),
-      startTime,
-      duration,
-      inPoint: 0,
-      outPoint: duration,
-      source: { type: 'solid', textCanvas: canvas, naturalDuration: duration },
-      transform: { ...DEFAULT_TRANSFORM },
-      effects: [],
-      solidColor: color,
-      isLoading: false,
-    };
-
-    set({ clips: [...clips, solidClip] });
-    updateDuration();
-    invalidateCache();
-
-    // Also create a media item in the Solids folder (unless dragged from media panel)
-    if (!skipMediaItem) {
-      const mediaStore = useMediaStore.getState();
-      const solidFolderId = mediaStore.getOrCreateSolidFolder();
-      mediaStore.createSolidItem(`Solid ${color}`, color, solidFolderId);
-    }
-
-    log.debug('Created solid clip', { clipId, color });
-    return clipId;
-  },
-
-  updateSolidColor: (clipId, color) => {
-    const { clips, invalidateCache } = get();
-    const clip = clips.find(c => c.id === clipId);
-    if (!clip || clip.source?.type !== 'solid') return;
-
-    // Re-fill the existing canvas with new color
-    const canvas = clip.source.textCanvas;
-    if (canvas) {
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.fillStyle = color;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-      }
-
-      // Re-upload canvas pixels to existing GPU texture
-      const texMgr = engine.getTextureManager();
-      if (texMgr) {
-        texMgr.updateCanvasTexture(canvas);
-      }
-    }
-
-    // Update clip in store
-    set({
-      clips: clips.map(c => c.id !== clipId ? c : {
-        ...c,
-        solidColor: color,
-        name: `Solid ${color}`,
-        source: { ...c.source!, textCanvas: canvas },
-      }),
-    });
-    invalidateCache();
-
-    // Force immediate render for live preview
-    try {
-      layerBuilder.invalidateCache();
-      const layers = layerBuilder.buildLayersFromStore();
-      engine.render(layers);
-    } catch (e) {
-      log.debug('Direct render after solid color update failed', e);
-    }
-  },
-
   toggleClipReverse: (id) => {
     const { clips, invalidateCache } = get();
     set({
@@ -914,91 +686,6 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
       }),
     });
     invalidateCache();
-  },
-
-  // ========== EFFECT ACTIONS ==========
-
-  addClipEffect: (clipId, effectType) => {
-    const { clips, invalidateCache } = get();
-    const effect: Effect = {
-      id: generateEffectId(),
-      name: effectType,
-      type: effectType as EffectType,
-      enabled: true,
-      params: getDefaultEffectParams(effectType),
-    };
-    set({ clips: clips.map(c => c.id === clipId ? { ...c, effects: [...(c.effects || []), effect] } : c) });
-    invalidateCache();
-    // NOTE: No thumbnail regeneration for effect changes - effects are applied live by the GPU
-    // pipeline and don't change the underlying video frames. Regenerating thumbnails here would
-    // seek the preview video element to 10 different positions, causing preview flickering.
-  },
-
-  removeClipEffect: (clipId, effectId) => {
-    const { clips, invalidateCache } = get();
-    set({ clips: clips.map(c => c.id === clipId ? { ...c, effects: c.effects.filter(e => e.id !== effectId) } : c) });
-    invalidateCache();
-  },
-
-  updateClipEffect: (clipId, effectId, params) => {
-    const { clips, invalidateCache } = get();
-    set({
-      clips: clips.map(c =>
-        c.id === clipId
-          ? { ...c, effects: c.effects.map(e => e.id === effectId ? { ...e, params: { ...e.params, ...params } as Effect['params'] } : e) }
-          : c
-      ),
-    });
-    invalidateCache();
-  },
-
-  setClipEffectEnabled: (clipId, effectId, enabled) => {
-    const { clips, invalidateCache } = get();
-    set({
-      clips: clips.map(c =>
-        c.id === clipId
-          ? { ...c, effects: c.effects.map(e => e.id === effectId ? { ...e, enabled } : e) }
-          : c
-      ),
-    });
-    invalidateCache();
-  },
-
-  // ========== MULTICAM / LINKED GROUP ACTIONS ==========
-
-  createLinkedGroup: (clipIds, offsets) => {
-    const { clips, invalidateCache } = get();
-    const groupId = generateLinkedGroupId();
-    const selectedClips = clips.filter(c => clipIds.includes(c.id));
-    if (selectedClips.length === 0) return;
-
-    let masterStartTime = selectedClips[0].startTime;
-    for (const clipId of clipIds) {
-      if (offsets.get(clipId) === 0) {
-        const masterClip = clips.find(c => c.id === clipId);
-        if (masterClip) { masterStartTime = masterClip.startTime; break; }
-      }
-    }
-
-    set({
-      clips: clips.map(c => {
-        if (!clipIds.includes(c.id)) return c;
-        const offset = offsets.get(c.id) || 0;
-        return { ...c, linkedGroupId: groupId, startTime: Math.max(0, masterStartTime - offset / 1000) };
-      }),
-    });
-    invalidateCache();
-    log.debug('Created linked group', { groupId, clipCount: clipIds.length });
-  },
-
-  unlinkGroup: (clipId) => {
-    const { clips, invalidateCache } = get();
-    const clip = clips.find(c => c.id === clipId);
-    if (!clip?.linkedGroupId) return;
-
-    set({ clips: clips.map(c => c.linkedGroupId === clip.linkedGroupId ? { ...c, linkedGroupId: undefined } : c) });
-    invalidateCache();
-    log.debug('Unlinked group', { groupId: clip.linkedGroupId });
   },
 
   // ========== WAVEFORM GENERATION ==========
@@ -1083,66 +770,6 @@ export const createClipSlice: SliceCreator<ClipActions> = (set, get) => ({
 
   setClipPreservesPitch: (clipId: string, preservesPitch: boolean) => {
     set({ clips: updateClipById(get().clips, clipId, { preservesPitch }) });
-  },
-
-  // ========== YOUTUBE PENDING DOWNLOAD ==========
-
-  addPendingDownloadClip: (trackId, startTime, videoId, title, thumbnail, estimatedDuration = 30) => {
-    const { clips, tracks, updateDuration, findNonOverlappingPosition } = get();
-    const track = tracks.find(t => t.id === trackId);
-    if (!track || track.type !== 'video') {
-      log.warn('Pending download clips can only be added to video tracks');
-      return '';
-    }
-
-    const clipId = generateYouTubeClipId();
-    const finalStartTime = findNonOverlappingPosition(clipId, startTime, trackId, estimatedDuration);
-
-    const pendingClip: TimelineClip = {
-      id: clipId,
-      trackId,
-      name: title,
-      file: new File([], `${title}.mp4`, { type: 'video/mp4' }),
-      startTime: finalStartTime,
-      duration: estimatedDuration,
-      inPoint: 0,
-      outPoint: estimatedDuration,
-      source: null,
-      transform: { ...DEFAULT_TRANSFORM },
-      effects: [],
-      isLoading: false,
-      isPendingDownload: true,
-      downloadProgress: 0,
-      youtubeVideoId: videoId,
-      youtubeThumbnail: thumbnail,
-    };
-
-    set({ clips: [...clips, pendingClip] });
-    updateDuration();
-    log.debug('Added pending download clip', { clipId });
-    return clipId;
-  },
-
-  updateDownloadProgress: (clipId, progress) => {
-    set({ clips: updateClipById(get().clips, clipId, { downloadProgress: progress }) });
-  },
-
-  completeDownload: async (clipId, file) => {
-    await completeDownloadImpl({
-      clipId,
-      file,
-      clips: get().clips,
-      waveformsEnabled: get().waveformsEnabled,
-      findAvailableAudioTrack: get().findAvailableAudioTrack,
-      updateDuration: get().updateDuration,
-      invalidateCache: get().invalidateCache,
-      set,
-      get,
-    });
-  },
-
-  setDownloadError: (clipId, error) => {
-    set({ clips: updateClipById(get().clips, clipId, { downloadError: error, isPendingDownload: false }) });
   },
 
   // Refresh nested clips when source composition changes

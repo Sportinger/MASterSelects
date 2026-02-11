@@ -8,6 +8,11 @@ import { DEFAULT_TRACKS } from './constants';
 
 import { createTrackSlice } from './trackSlice';
 import { createClipSlice } from './clipSlice';
+import { createTextClipSlice } from './textClipSlice';
+import { createSolidClipSlice } from './solidClipSlice';
+import { createClipEffectSlice } from './clipEffectSlice';
+import { createLinkedGroupSlice } from './linkedGroupSlice';
+import { createDownloadClipSlice } from './downloadClipSlice';
 import { createPlaybackSlice } from './playbackSlice';
 import { createSelectionSlice } from './selectionSlice';
 import { createKeyframeSlice } from './keyframeSlice';
@@ -34,6 +39,11 @@ export const useTimelineStore = create<TimelineStore>()(
     // Create all slices
     const trackActions = createTrackSlice(set, get);
     const clipActions = createClipSlice(set, get);
+    const textClipActions = createTextClipSlice(set, get);
+    const solidClipActions = createSolidClipSlice(set, get);
+    const clipEffectActions = createClipEffectSlice(set, get);
+    const linkedGroupActions = createLinkedGroupSlice(set, get);
+    const downloadClipActions = createDownloadClipSlice(set, get);
     const playbackActions = createPlaybackSlice(set, get);
     const selectionActions = createSelectionSlice(set, get);
     const keyframeActions = createKeyframeSlice(set, get);
@@ -222,6 +232,11 @@ export const useTimelineStore = create<TimelineStore>()(
       ...initialState,
       ...trackActions,
       ...clipActions,
+      ...textClipActions,
+      ...solidClipActions,
+      ...clipEffectActions,
+      ...linkedGroupActions,
+      ...downloadClipActions,
       ...playbackActions,
       ...exportActions,
       ...selectionActions,

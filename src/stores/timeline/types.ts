@@ -149,7 +149,42 @@ export interface TrackActions {
 }
 
 // Clip actions interface
-export interface ClipActions {
+// Text clip actions (extracted to textClipSlice)
+export interface TextClipActions {
+  addTextClip: (trackId: string, startTime: number, duration?: number, skipMediaItem?: boolean) => Promise<string | null>;
+  updateTextProperties: (clipId: string, props: Partial<TextClipProperties>) => void;
+}
+
+// Solid clip actions (extracted to solidClipSlice)
+export interface SolidClipActions {
+  addSolidClip: (trackId: string, startTime: number, color?: string, duration?: number, skipMediaItem?: boolean) => string | null;
+  updateSolidColor: (clipId: string, color: string) => void;
+}
+
+// Clip effect actions (extracted to clipEffectSlice)
+export interface ClipEffectActions {
+  addClipEffect: (clipId: string, effectType: string) => void;
+  removeClipEffect: (clipId: string, effectId: string) => void;
+  updateClipEffect: (clipId: string, effectId: string, params: Partial<Effect['params']>) => void;
+  setClipEffectEnabled: (clipId: string, effectId: string, enabled: boolean) => void;
+}
+
+// Multicam linked group actions (extracted to linkedGroupSlice)
+export interface LinkedGroupActions {
+  createLinkedGroup: (clipIds: string[], offsets: Map<string, number>) => void;
+  unlinkGroup: (clipId: string) => void;
+}
+
+// YouTube download clip actions (extracted to downloadClipSlice)
+export interface DownloadClipActions {
+  addPendingDownloadClip: (trackId: string, startTime: number, videoId: string, title: string, thumbnail: string, estimatedDuration?: number) => string;
+  updateDownloadProgress: (clipId: string, progress: number) => void;
+  completeDownload: (clipId: string, file: File) => Promise<void>;
+  setDownloadError: (clipId: string, error: string) => void;
+}
+
+// Core clip actions (remain in clipSlice)
+export interface CoreClipActions {
   addClip: (trackId: string, file: File, startTime: number, estimatedDuration?: number, mediaFileId?: string) => Promise<void>;
   addCompClip: (trackId: string, composition: Composition, startTime: number) => void;
   updateClip: (id: string, updates: Partial<TimelineClip>) => void;
@@ -160,34 +195,15 @@ export interface ClipActions {
   splitClipAtPlayhead: () => void;
   updateClipTransform: (id: string, transform: Partial<ClipTransform>) => void;
   toggleClipReverse: (id: string) => void;
-  addClipEffect: (clipId: string, effectType: string) => void;
-  removeClipEffect: (clipId: string, effectId: string) => void;
-  updateClipEffect: (clipId: string, effectId: string, params: Partial<Effect['params']>) => void;
-  setClipEffectEnabled: (clipId: string, effectId: string, enabled: boolean) => void;
-  // Multicam group linking
-  createLinkedGroup: (clipIds: string[], offsets: Map<string, number>) => void;
-  unlinkGroup: (clipId: string) => void;
-  // Waveform generation
   generateWaveformForClip: (clipId: string) => Promise<void>;
-  // Parenting (pick whip)
   setClipParent: (clipId: string, parentClipId: string | null) => void;
   getClipChildren: (clipId: string) => TimelineClip[];
-  // Audio pitch preservation
   setClipPreservesPitch: (clipId: string, preservesPitch: boolean) => void;
-  // Text clip actions
-  addTextClip: (trackId: string, startTime: number, duration?: number, skipMediaItem?: boolean) => Promise<string | null>;
-  updateTextProperties: (clipId: string, props: Partial<TextClipProperties>) => void;
-  // Solid clip actions
-  addSolidClip: (trackId: string, startTime: number, color?: string, duration?: number, skipMediaItem?: boolean) => string | null;
-  updateSolidColor: (clipId: string, color: string) => void;
-  // YouTube pending download clips
-  addPendingDownloadClip: (trackId: string, startTime: number, videoId: string, title: string, thumbnail: string, estimatedDuration?: number) => string;
-  updateDownloadProgress: (clipId: string, progress: number) => void;
-  completeDownload: (clipId: string, file: File) => Promise<void>;
-  setDownloadError: (clipId: string, error: string) => void;
-  // Refresh nested clips when source composition changes
   refreshCompClipNestedData: (sourceCompositionId: string) => Promise<void>;
 }
+
+// Combined ClipActions = all sub-interfaces
+export type ClipActions = CoreClipActions & TextClipActions & SolidClipActions & ClipEffectActions & LinkedGroupActions & DownloadClipActions;
 
 // Playback actions interface
 export interface PlaybackActions {
