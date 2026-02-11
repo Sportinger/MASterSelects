@@ -9494,9 +9494,8 @@ input[type="checkbox"] {
 }
 
 .slot-grid-resolume {
-  display: grid;
+  display: inline-grid;
   gap: 6px;
-  align-content: start;
 }
 
 .slot-grid-corner {

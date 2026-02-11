@@ -117,7 +117,7 @@ export function SlotGrid({ opacity }: SlotGridProps) {
         className="slot-grid-resolume"
         style={{
           gridTemplateColumns: `${LABEL_WIDTH}px repeat(${GRID_COLS}, ${SLOT_SIZE}px)`,
-          gridAutoRows: `${SLOT_SIZE}px`,
+          gridTemplateRows: `24px repeat(${GRID_ROWS}, ${SLOT_SIZE}px)`,
         }}
       >
         {/* Empty corner */}
