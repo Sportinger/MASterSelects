@@ -2,6 +2,7 @@
 // Synchronizes mediaStore and timelineStore with projectFileService
 
 import { Logger } from './logger';
+import { engine } from '../engine/WebGPUEngine';
 import { useMediaStore, type MediaFile, type Composition, type MediaFolder } from '../stores/mediaStore';
 import { getMediaInfo } from '../stores/mediaStore/helpers/mediaInfoHelpers';
 import { createThumbnail } from '../stores/mediaStore/helpers/thumbnailHelpers';
@@ -888,7 +889,8 @@ async function reloadNestedCompositionClips(): Promise<void> {
           const currentClips = timelineStore.clips;
           useTimelineStore.setState({ clips: [...currentClips] });
 
-          // GPU surface warmup happens lazily in syncClipVideo on first scrub
+          // Pre-cache frame via createImageBitmap for immediate scrubbing without play()
+          engine.preCacheVideoFrame(video);
         }, { once: true });
 
         video.load();

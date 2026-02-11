@@ -20,7 +20,7 @@ const SLOT_SIZE = 100; // fixed slot size in px
 const GRID_COLS = 12;
 const GRID_ROWS = 4;
 const TOTAL_SLOTS = GRID_COLS * GRID_ROWS;
-const LABEL_WIDTH = 32;
+const LABEL_WIDTH = 40;
 
 export function SlotGrid({ opacity }: SlotGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -35,6 +35,8 @@ export function SlotGrid({ opacity }: SlotGridProps) {
   const unassignSlot = useMediaStore(state => state.unassignSlot);
   const assignMediaFileToSlot = useMediaStore(state => state.assignMediaFileToSlot);
   const getSlotMap = useMediaStore(state => state.getSlotMap);
+  const layerOpacities = useMediaStore(state => state.layerOpacities);
+  const setLayerOpacity = useMediaStore(state => state.setLayerOpacity) as (layerIndex: number, opacity: number) => void;
   const compositions = useMediaStore(state => state.compositions);
   const files = useMediaStore(state => state.files);
 
@@ -311,7 +313,17 @@ export function SlotGrid({ opacity }: SlotGridProps) {
         {Array.from({ length: GRID_ROWS }, (_, rowIndex) => (
           <Fragment key={`row-${rowIndex}`}>
             <div className="slot-grid-row-label">
-              {String.fromCharCode(65 + rowIndex)}
+              <span className="slot-grid-row-letter">{String.fromCharCode(65 + rowIndex)}</span>
+              <input
+                type="range"
+                className="slot-grid-opacity-slider"
+                min={0}
+                max={1}
+                step={0.01}
+                value={layerOpacities[rowIndex] ?? 1}
+                onChange={(e) => setLayerOpacity(rowIndex, parseFloat(e.target.value))}
+                title={`Layer ${String.fromCharCode(65 + rowIndex)} opacity: ${Math.round((layerOpacities[rowIndex] ?? 1) * 100)}%`}
+              />
             </div>
             {Array.from({ length: GRID_COLS }, (_, colIndex) => {
               const slotIndex = rowIndex * GRID_COLS + colIndex;

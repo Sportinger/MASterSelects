@@ -7,6 +7,7 @@ import { fileSystemService } from '../../../services/fileSystemService';
 import { projectDB } from '../../../services/projectDB';
 import { useTimelineStore } from '../../timeline';
 import { Logger } from '../../../services/logger';
+import { engine } from '../../../engine/WebGPUEngine';
 
 const log = Logger.create('Reload');
 
@@ -227,7 +228,8 @@ export async function updateTimelineClips(mediaFileId: string, file: File): Prom
             mediaFileId,
           },
         });
-        // GPU surface warmup happens lazily in syncClipVideo on first scrub
+        // Pre-cache frame via createImageBitmap for immediate scrubbing without play()
+        engine.preCacheVideoFrame(video);
       }, { once: true });
 
       video.addEventListener('error', () => {

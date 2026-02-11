@@ -157,10 +157,19 @@ export class LayerBuilderService {
 
     const merged: Layer[] = [];
 
+    const { layerOpacities } = useMediaStore.getState();
+
     for (const layerIndex of layerIndices) {
       if (layerIndex === primaryLayerIndex) {
-        // Insert primary layers at this position
-        merged.push(...primaryLayers);
+        // Insert primary layers at this position, applying layer opacity
+        const layerOpacity = layerOpacities[layerIndex] ?? 1;
+        if (layerOpacity < 1) {
+          for (const pl of primaryLayers) {
+            merged.push({ ...pl, opacity: pl.opacity * layerOpacity });
+          }
+        } else {
+          merged.push(...primaryLayers);
+        }
       } else {
         // Build background layer from LayerPlaybackManager
         const bgLayer = layerPlaybackManager.buildLayersForLayer(layerIndex, playheadPosition);

@@ -53,6 +53,7 @@ export const useMediaStore = create<MediaStoreState>()(
     slotAssignments: {},
     previewCompositionId: null,
     activeLayerSlots: {},
+    layerOpacities: {},
     selectedIds: [],
     expandedFolderIds: [],
     currentProjectId: null,

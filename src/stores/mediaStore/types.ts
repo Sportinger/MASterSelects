@@ -122,6 +122,7 @@ export interface MediaState {
 
   // Multi-layer playback (Resolume-style)
   activeLayerSlots: Record<number, string | null>;  // layerIndex (0=A..3=D) → compositionId
+  layerOpacities: Record<number, number>;            // layerIndex (0=A..3=D) → opacity (0-1)
 
   // Selection
   selectedIds: string[];

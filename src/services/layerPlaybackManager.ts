@@ -3,6 +3,7 @@
 // and provides layers for rendering. The primary (editor) composition is handled by the timeline store.
 
 import type { TimelineClip, TimelineTrack, Layer, NestedCompositionData } from '../types';
+import { engine } from '../engine/WebGPUEngine';
 import type { Composition } from '../stores/mediaStore/types';
 import { useMediaStore } from '../stores/mediaStore';
 import { DEFAULT_TRANSFORM } from '../stores/timeline/constants';
@@ -195,12 +196,15 @@ class LayerPlaybackManager {
       currentTime: layerTime,
     };
 
+    // Read per-layer opacity from store
+    const layerOpacity = useMediaStore.getState().layerOpacities[layerIndex] ?? 1;
+
     // Wrap as a single full-screen layer
     const layer: Layer = {
       id: `bg-layer-${layerIndex}-${state.compositionId}`,
       name: `Layer ${String.fromCharCode(65 + layerIndex)}: ${state.composition.name}`,
       visible: true,
-      opacity: 1,
+      opacity: layerOpacity,
       blendMode: 'normal',
       source: { type: 'image', nestedComposition: nestedCompData },
       effects: [],
@@ -398,6 +402,8 @@ class LayerPlaybackManager {
       };
       clip.isLoading = false;
       log.debug(`Video loaded for background clip ${clip.name} on layer ${layerIndex}`);
+      // Pre-cache frame via createImageBitmap for immediate scrubbing without play()
+      engine.preCacheVideoFrame(video);
     }, { once: true });
 
     video.addEventListener('error', () => {

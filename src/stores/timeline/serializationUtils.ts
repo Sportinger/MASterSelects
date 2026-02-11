@@ -8,6 +8,7 @@ import { useMediaStore } from '../mediaStore';
 import { calculateNestedClipBoundaries, buildClipSegments } from './clip/addCompClip';
 import { projectFileService } from '../../services/projectFileService';
 import { Logger } from '../../services/logger';
+import { engine } from '../../engine/WebGPUEngine';
 
 const log = Logger.create('Timeline');
 
@@ -363,9 +364,12 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
                 // Force browser to start loading
                 video.load();
 
-                video.addEventListener('loadedmetadata', async () => {
-                  // GPU surface warmup happens lazily in syncClipVideo on first scrub
+                // Pre-cache frame for immediate scrubbing (needs readyState >= 2, so use canplaythrough)
+                video.addEventListener('canplaythrough', () => {
+                  engine.preCacheVideoFrame(video);
+                }, { once: true });
 
+                video.addEventListener('loadedmetadata', async () => {
                   // Set up basic video source first
                   const videoSource: TimelineClip['source'] = {
                     type: 'video',
@@ -751,7 +755,9 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
             ),
           }));
 
-          // GPU surface warmup happens lazily in syncClipVideo on first scrub
+          // Pre-cache frame via createImageBitmap for immediate scrubbing without play()
+          // createImageBitmap is the ONLY API that decodes a frame from a never-played video after reload
+          engine.preCacheVideoFrame(video);
 
           // Try to initialize WebCodecsPlayer for hardware-accelerated decoding
           const hasWebCodecs = 'VideoDecoder' in window && 'VideoFrame' in window;

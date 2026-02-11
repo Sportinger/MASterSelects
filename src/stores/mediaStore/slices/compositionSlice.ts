@@ -342,6 +342,11 @@ export const createCompositionSlice: MediaSliceCreator<CompositionActions> = (se
   deactivateAllLayers: () => {
     set({ activeLayerSlots: {} });
   },
+
+  setLayerOpacity: (layerIndex: number, opacity: number) => {
+    const { layerOpacities } = get();
+    set({ layerOpacities: { ...layerOpacities, [layerIndex]: Math.max(0, Math.min(1, opacity)) } });
+  },
 });
 
 /**
