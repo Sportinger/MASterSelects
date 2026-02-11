@@ -38,6 +38,7 @@ export function SlotGrid({ opacity }: SlotGridProps) {
   const assignMediaFileToSlot = useMediaStore(state => state.assignMediaFileToSlot);
   const setPreviewComposition = useMediaStore(state => state.setPreviewComposition);
   const getSlotMap = useMediaStore(state => state.getSlotMap);
+  const compositions = useMediaStore(state => state.compositions);
 
   // Build a set of active composition IDs from activeLayerSlots
   const activeLayerCompIds = useMemo(() => {
@@ -275,11 +276,11 @@ export function SlotGrid({ opacity }: SlotGridProps) {
     setIsExternalDrag(false);
   }, []);
 
-  // Build slot map from assignments (reacts to slotAssignments changes)
+  // Build slot map from assignments (reacts to slotAssignments + compositions changes)
   const slotMap = useMemo(() => {
     return getSlotMap(TOTAL_SLOTS);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [getSlotMap, slotAssignments]);
+  }, [getSlotMap, slotAssignments, compositions]);
 
   return (
     <div
