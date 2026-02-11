@@ -12,6 +12,7 @@ const log = Logger.create('ProjectSync');
 import { useTimelineStore } from '../stores/timeline';
 import { useYouTubeStore } from '../stores/youtubeStore';
 import { useDockStore } from '../stores/dockStore';
+import { useSettingsStore } from '../stores/settingsStore';
 import {
   projectFileService,
   type ProjectMediaFile,
@@ -545,6 +546,9 @@ export async function loadProjectToStores(): Promise<void> {
     if (ui.showTranscriptMarkers !== undefined) ts.setShowTranscriptMarkers(ui.showTranscriptMarkers);
     if (ui.proxyEnabled !== undefined) useMediaStore.getState().setProxyEnabled(ui.proxyEnabled);
   }
+
+  // Reload API keys (may have been restored from .keys.enc during loadProject)
+  await useSettingsStore.getState().loadApiKeys();
 
   log.info(' Loaded project to stores:', projectData.name);
 
