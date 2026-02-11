@@ -88,6 +88,10 @@ export function SlotGrid({ opacity }: SlotGridProps) {
     e.dataTransfer.setData('text/plain', comp.id);
   }, []);
 
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+  }, []);
+
   const handleDragOver = useCallback((e: React.DragEvent, slotIndex: number) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
@@ -100,7 +104,8 @@ export function SlotGrid({ opacity }: SlotGridProps) {
 
   const handleDrop = useCallback((e: React.DragEvent, toSlotIndex: number) => {
     e.preventDefault();
-    const compId = dragCompId;
+    // Read comp ID from dataTransfer (reliable across browsers, not affected by state timing)
+    const compId = e.dataTransfer.getData('text/plain') || dragCompId;
     setDragCompId(null);
     setDragOverIndex(null);
     if (compId) {
@@ -164,6 +169,7 @@ export function SlotGrid({ opacity }: SlotGridProps) {
                     title={comp.name}
                     draggable
                     onDragStart={(e) => handleDragStart(e, comp)}
+                    onDragEnter={handleDragEnter}
                     onDragOver={(e) => handleDragOver(e, slotIndex)}
                     onDragLeave={handleDragLeave}
                     onDrop={(e) => handleDrop(e, slotIndex)}
@@ -192,6 +198,7 @@ export function SlotGrid({ opacity }: SlotGridProps) {
                 <div
                   key={slotIndex}
                   className={`slot-grid-item empty${isDragOver ? ' drag-over' : ''}`}
+                  onDragEnter={handleDragEnter}
                   onDragOver={(e) => handleDragOver(e, slotIndex)}
                   onDragLeave={handleDragLeave}
                   onDrop={(e) => handleDrop(e, slotIndex)}

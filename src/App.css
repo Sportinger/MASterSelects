@@ -9571,6 +9571,11 @@ input[type="checkbox"] {
   box-shadow: none;
 }
 
+.slot-grid-item.empty.drag-over {
+  border: 2px solid #ff9800;
+  box-shadow: 0 0 12px rgba(255, 152, 0, 0.4);
+}
+
 /* Preview strip at bottom of filled slots */
 .slot-grid-preview-strip {
   position: absolute;

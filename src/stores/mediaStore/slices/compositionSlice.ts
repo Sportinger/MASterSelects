@@ -105,9 +105,10 @@ export const createCompositionSlice: MediaSliceCreator<CompositionActions> = (se
     // Same comp already active + playFromStart → just restart playback (no reload)
     if (id === activeCompositionId && options?.playFromStart) {
       const ts = useTimelineStore.getState();
-      ts.pause();
       ts.setPlayheadPosition(0);
-      ts.play();
+      if (!ts.isPlaying) {
+        ts.play();
+      }
       return;
     }
     // Inline setActiveComposition logic
