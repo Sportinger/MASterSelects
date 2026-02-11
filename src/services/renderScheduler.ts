@@ -35,6 +35,10 @@ class RenderSchedulerService {
   private nestedCompCacheTime = 0;
   private readonly CACHE_INVALIDATION_MS = 100;
 
+  // Reuse the main loop's pre-built layers for the active composition
+  // Avoids re-seeking video elements and bypasses compositionRenderer entirely
+  private activeCompLayers: Layer[] | null = null;
+
   /**
    * Register a render target for independent rendering
    */
@@ -233,6 +237,9 @@ class RenderSchedulerService {
     const activeCompId = useMediaStore.getState().activeCompositionId;
     const store = useRenderTargetStore.getState();
 
+    // Per-frame evaluation cache: evaluate each composition only once
+    const evalCache = new Map<string, Layer[]>();
+
     for (const targetId of this.registeredTargets) {
       const target = store.targets.get(targetId);
       if (!target || !target.enabled) continue;
@@ -250,6 +257,23 @@ class RenderSchedulerService {
       // Exception: layer-filtered sources need independent rendering even for active comp
       const needsIndependentRender = target.source.type === 'layer' || target.source.type === 'layer-index';
       if (compId === activeCompId && !needsIndependentRender) continue;
+
+      // For active comp with layer filtering: reuse pre-built layers from main loop
+      // This avoids re-seeking video elements and re-evaluating the same composition
+      if (compId === activeCompId && needsIndependentRender && this.activeCompLayers) {
+        let filtered: Layer[];
+        if (target.source.type === 'layer') {
+          const layerIds = target.source.layerIds;
+          filtered = this.activeCompLayers.filter(l => layerIds.includes(l.id));
+        } else if (target.source.type === 'layer-index') {
+          const idx = target.source.layerIndex;
+          filtered = idx < this.activeCompLayers.length ? [this.activeCompLayers[idx]] : [];
+        } else {
+          filtered = this.activeCompLayers;
+        }
+        engine.renderToPreviewCanvas(targetId, filtered);
+        continue;
+      }
 
       // Optimization: copy pre-rendered nested comp texture instead of re-rendering
       const nestedInfo = this.getNestedCompInfo(compId);
@@ -278,11 +302,15 @@ class RenderSchedulerService {
         continue;
       }
 
-      // Calculate playhead time for this composition
-      const { time: playheadTime } = this.calculatePlayheadTime(compId);
-
-      // Evaluate layers for the composition
-      let evalLayers = compositionRenderer.evaluateAtTime(compId, playheadTime);
+      // Get or evaluate layers (cached per composition per frame)
+      let evalLayers: Layer[];
+      if (evalCache.has(compId)) {
+        evalLayers = evalCache.get(compId)!;
+      } else {
+        const { time: playheadTime } = this.calculatePlayheadTime(compId);
+        evalLayers = compositionRenderer.evaluateAtTime(compId, playheadTime) as Layer[];
+        evalCache.set(compId, evalLayers);
+      }
 
       // Layer filtering: if source targets specific layers, filter
       if (target.source.type === 'layer') {
@@ -294,7 +322,7 @@ class RenderSchedulerService {
       }
 
       // Render to the target canvas (empty = black)
-      engine.renderToPreviewCanvas(targetId, evalLayers as Layer[]);
+      engine.renderToPreviewCanvas(targetId, evalLayers);
     }
   }
 
@@ -312,6 +340,15 @@ class RenderSchedulerService {
   invalidateNestedCache(): void {
     this.nestedCompCache.clear();
     this.nestedCompCacheTime = 0;
+  }
+
+  /**
+   * Set the active composition's pre-built layers from the main render loop.
+   * Called by useEngine after buildLayersFromStore() — avoids re-seeking videos
+   * and re-evaluating the same composition in the renderScheduler.
+   */
+  setActiveCompLayers(layers: Layer[]): void {
+    this.activeCompLayers = layers;
   }
 
   /**

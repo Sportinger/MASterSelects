@@ -13,6 +13,7 @@ import type { ClipMask, MaskVertex } from '../types';
 import { generateMaskTexture } from '../utils/maskRenderer';
 import { layerBuilder, playheadState } from '../services/layerBuilder';
 import { layerPlaybackManager } from '../services/layerPlaybackManager';
+import { renderScheduler } from '../services/renderScheduler';
 import { Logger } from '../services/logger';
 
 const log = Logger.create('Engine');
@@ -385,6 +386,10 @@ export function useEngine() {
 
         // Build layers directly from stores (single source of truth)
         const layers = layerBuilder.buildLayersFromStore();
+
+        // Share pre-built layers with renderScheduler so multi-preview
+        // can reuse them instead of re-evaluating and re-seeking videos
+        renderScheduler.setActiveCompLayers(layers);
 
         // Render FIRST, before seeking video elements
         // This ensures we always have a displayable frame even after page reload
