@@ -6,6 +6,30 @@ import { useSliceStore } from '../../stores/sliceStore';
 import { Logger } from '../../services/logger';
 
 const log = Logger.create('OutputWindowManager');
+const OPEN_WINDOWS_KEY = 'masterselects-output-windows-open';
+
+/** Track which output window IDs are currently open (survives page refresh within same tab session) */
+function markWindowOpen(id: string): void {
+  try {
+    const ids: string[] = JSON.parse(sessionStorage.getItem(OPEN_WINDOWS_KEY) || '[]');
+    if (!ids.includes(id)) ids.push(id);
+    sessionStorage.setItem(OPEN_WINDOWS_KEY, JSON.stringify(ids));
+  } catch { /* ignore */ }
+}
+
+function markWindowClosed(id: string): void {
+  try {
+    const ids: string[] = JSON.parse(sessionStorage.getItem(OPEN_WINDOWS_KEY) || '[]');
+    sessionStorage.setItem(OPEN_WINDOWS_KEY, JSON.stringify(ids.filter(i => i !== id)));
+  } catch { /* ignore */ }
+}
+
+function isWindowKnownOpen(id: string): boolean {
+  try {
+    const ids: string[] = JSON.parse(sessionStorage.getItem(OPEN_WINDOWS_KEY) || '[]');
+    return ids.includes(id);
+  } catch { return false; }
+}
 
 export class OutputWindowManager {
   private outputWidth: number;
@@ -106,8 +130,12 @@ export class OutputWindowManager {
       fullscreenBtn.style.display = outputWindow.document.fullscreenElement ? 'none' : 'block';
     });
 
+    // Track that this window is open (for reconnection guard after refresh)
+    markWindowOpen(id);
+
     // When window is closed by user, save geometry then deactivate (keep entry grayed out)
     outputWindow.onbeforeunload = () => {
+      markWindowClosed(id);
       // Trigger a save so geometry is captured with current window position/size
       try { useSliceStore.getState().saveToLocalStorage(); } catch { /* ignore */ }
       useRenderTargetStore.getState().deactivateTarget(id);
@@ -130,20 +158,31 @@ export class OutputWindowManager {
    * Returns the window + its existing canvas, or null if not found.
    */
   reconnectWindow(id: string): { window: Window; canvas: HTMLCanvasElement } | null {
-    // window.open with same name returns existing window if still open
+    // Only attempt reconnection if we know this window was open in this session.
+    // Without this guard, window.open creates a blank popup that steals focus
+    // and causes the dock tabs to jump on page refresh.
+    if (!isWindowKnownOpen(id)) {
+      return null;
+    }
+
     const existing = window.open('', `output_${id}`);
-    if (!existing || existing.closed) return null;
+    if (!existing || existing.closed) {
+      markWindowClosed(id);
+      return null;
+    }
 
     // Check if this window has our canvas (means it was previously opened by us)
     const canvas = existing.document.querySelector('canvas');
     if (!canvas) {
       // It's a freshly opened blank popup — close it
       existing.close();
+      markWindowClosed(id);
       return null;
     }
 
     // Re-setup the close handler (save geometry before deactivating)
     existing.onbeforeunload = () => {
+      markWindowClosed(id);
       try { useSliceStore.getState().saveToLocalStorage(); } catch { /* ignore */ }
       useRenderTargetStore.getState().deactivateTarget(id);
     };
