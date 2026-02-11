@@ -17,6 +17,11 @@ import { createKeyframeSlice } from '../../src/stores/timeline/keyframeSlice';
 import { createMarkerSlice } from '../../src/stores/timeline/markerSlice';
 import { createMaskSlice } from '../../src/stores/timeline/maskSlice';
 import { createClipSlice } from '../../src/stores/timeline/clipSlice';
+import { createTextClipSlice } from '../../src/stores/timeline/textClipSlice';
+import { createSolidClipSlice } from '../../src/stores/timeline/solidClipSlice';
+import { createClipEffectSlice } from '../../src/stores/timeline/clipEffectSlice';
+import { createLinkedGroupSlice } from '../../src/stores/timeline/linkedGroupSlice';
+import { createDownloadClipSlice } from '../../src/stores/timeline/downloadClipSlice';
 import { createPositioningUtils } from '../../src/stores/timeline/positioningUtils';
 
 // Minimal initial state sufficient for testing slices
@@ -91,6 +96,11 @@ export function createTestTimelineStore(overrides?: Partial<TimelineStore>) {
     const markerActions = createMarkerSlice(set as any, get as any);
     const maskActions = createMaskSlice(set as any, get as any);
     const clipActions = createClipSlice(set as any, get as any);
+    const textClipActions = createTextClipSlice(set as any, get as any);
+    const solidClipActions = createSolidClipSlice(set as any, get as any);
+    const clipEffectActions = createClipEffectSlice(set as any, get as any);
+    const linkedGroupActions = createLinkedGroupSlice(set as any, get as any);
+    const downloadClipActions = createDownloadClipSlice(set as any, get as any);
     const positioningUtils = createPositioningUtils(set as any, get as any);
 
     // Simple playback actions (inlined to avoid importing playbackSlice which pulls in engine)
@@ -239,6 +249,11 @@ export function createTestTimelineStore(overrides?: Partial<TimelineStore>) {
       ...markerActions,
       ...maskActions,
       ...clipActions,
+      ...textClipActions,
+      ...solidClipActions,
+      ...clipEffectActions,
+      ...linkedGroupActions,
+      ...downloadClipActions,
       ...positioningUtils,
       ...playbackActions,
       ...stubActions,

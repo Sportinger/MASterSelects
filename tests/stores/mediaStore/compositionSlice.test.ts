@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createStore } from 'zustand';
 import type { MediaState, MediaFile, Composition } from '../../../src/stores/mediaStore/types';
 import { createCompositionSlice, type CompositionActions } from '../../../src/stores/mediaStore/slices/compositionSlice';
+import { createSlotSlice, type SlotActions } from '../../../src/stores/mediaStore/slices/slotSlice';
+import { createMultiLayerSlice, type MultiLayerActions } from '../../../src/stores/mediaStore/slices/multiLayerSlice';
 
 // The compositionSlice calls useTimelineStore and useSettingsStore internally,
 // but these are mocked in tests/setup.ts. We rely on those mocks here.
@@ -32,7 +34,7 @@ vi.mock('../../../src/services/compositionRenderer', () => ({
   },
 }));
 
-type TestMediaStore = MediaState & CompositionActions;
+type TestMediaStore = MediaState & CompositionActions & SlotActions & MultiLayerActions;
 
 function createTestMediaStore(overrides?: Partial<MediaState>) {
   const defaultComp: Composition = {
@@ -50,6 +52,8 @@ function createTestMediaStore(overrides?: Partial<MediaState>) {
 
   return createStore<TestMediaStore>()((set, get) => {
     const compositionActions = createCompositionSlice(set as any, get as any);
+    const slotActions = createSlotSlice(set as any, get as any);
+    const multiLayerActions = createMultiLayerSlice(set as any, get as any);
 
     return {
       // Minimal initial state
@@ -75,6 +79,8 @@ function createTestMediaStore(overrides?: Partial<MediaState>) {
       fileSystemSupported: false,
       proxyFolderName: null,
       ...compositionActions,
+      ...slotActions,
+      ...multiLayerActions,
       ...overrides,
     } as TestMediaStore;
   });
