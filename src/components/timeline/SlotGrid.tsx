@@ -4,6 +4,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMediaStore } from '../../stores/mediaStore';
+import { useTimelineStore } from '../../stores/timeline';
 import { animateSlotGrid } from './slotGridAnimation';
 import { MiniTimeline } from './MiniTimeline';
 import type { Composition } from '../../stores/mediaStore';
@@ -53,10 +54,16 @@ export function SlotGrid({ opacity }: SlotGridProps) {
     return () => container.removeEventListener('wheel', handleWheel);
   }, []);
 
-  // Click = play from start, stay in grid
+  // Click = play from start (re-click restarts)
   const handleSlotClick = useCallback((comp: Composition) => {
     openCompositionTab(comp.id, { skipAnimation: true, playFromStart: true });
   }, [openCompositionTab]);
+
+  // Click empty slot = stop playback and deselect
+  const handleEmptySlotClick = useCallback(() => {
+    useTimelineStore.getState().stop();
+    useMediaStore.getState().setActiveComposition(null);
+  }, []);
 
   // Preview strip click
   const handlePreviewClick = useCallback((e: React.MouseEvent, comp: Composition) => {
@@ -186,6 +193,7 @@ export function SlotGrid({ opacity }: SlotGridProps) {
                 <div
                   key={slotIndex}
                   className={`slot-grid-item empty${isDragOver ? ' drag-over' : ''}`}
+                  onClick={handleEmptySlotClick}
                   onDragEnter={handleDragEnter}
                   onDragOver={(e) => handleDragOver(e, slotIndex)}
                   onDragLeave={handleDragLeave}
