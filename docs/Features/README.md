@@ -558,6 +558,35 @@ See [Keyboard Shortcuts](./Keyboard-Shortcuts.md) for complete reference.
 
 ---
 
+## Test Coverage
+
+Overview of unit test coverage across feature areas. Run all tests with `npx vitest run`.
+
+| Feature Doc | Test Files | Tests | Notes |
+|-------------|-----------|-------|-------|
+| [Timeline](./Timeline.md) | 5 | 101 | Clips, tracks, selection, playback, markers |
+| [Keyframes](./Keyframes.md) | 2 | 66 | Keyframe CRUD, easing, bezier interpolation |
+| [Preview](./Preview.md) | — | — | GPU-dependent, not unit testable |
+| [Export](./Export.md) | 1 | 42 | FCP XML, time calculations, settings |
+| [Audio](./Audio.md) | 2 | 49 | Volume, EQ, timing, speed, audio sync |
+| [Effects](./Effects.md) | 2 | 42 | Registry, parameters, categories, type helpers |
+| [GPU Engine](./GPU-Engine.md) | 1 | 13 | Transform math |
+| [Masks](./Masks.md) | 1 | 22 | Mask CRUD, modes, vertices |
+| [AI Integration](./AI-Integration.md) | 1 | 60 | Tool definitions, schemas |
+| [Text Clips](./Text-Clips.md) | 1 | 50 | Covered by clipSlice tests |
+| [Media Panel](./Media-Panel.md) | 2 | 60 | Files, folders, solids, compositions |
+| [Proxy System](./Proxy-System.md) | — | — | Hardware-dependent |
+| [Download Panel](./YouTube.md) | — | — | Requires network/native helper |
+| [Project Persistence](./Project-Persistence.md) | 2 | 38 | Serialization, undo/redo |
+| [Native Helper](./Native-Helper.md) | — | — | Rust binary, tested separately |
+| [Keyboard Shortcuts](./Keyboard-Shortcuts.md) | 1 | 16 | Playback shortcuts |
+| [UI Panels](./UI-Panels.md) | — | — | React component-level UI |
+| [Multicam AI](./Multicam-AI.md) | 1 | 6 | Audio sync cross-correlation |
+
+**Total: ~565 tests across 22 test files**
+
+---
+
 ## Not Yet Implemented
 
 The following features are planned but not currently available:

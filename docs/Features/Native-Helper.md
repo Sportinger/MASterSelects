@@ -241,3 +241,9 @@ cargo build --release
 1. Check firewall allows localhost:9876
 2. Ensure only one instance running
 3. Check browser console for WebSocket errors
+
+---
+
+## Tests
+
+No dedicated unit tests — this feature is a Rust binary tested separately.

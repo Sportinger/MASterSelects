@@ -215,4 +215,14 @@ Complete reference of all keyboard shortcuts (verified from codebase).
 
 ---
 
+## Tests
+
+| Test File | Tests | Coverage |
+|-----------|-------|----------|
+| [`playbackSlice.test.ts`](../../tests/stores/timeline/playbackSlice.test.ts) | 16 | Playback shortcuts (space, JKL, in/out) |
+
+Run tests: `npx vitest run`
+
+---
+
 *Compiled from codebase analysis*

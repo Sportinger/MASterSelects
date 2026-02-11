@@ -520,4 +520,10 @@ Window geometry (position, size) is preserved even after closing, so restored wi
 
 ---
 
+## Tests
+
+No dedicated unit tests — this feature requires browser APIs (WebGPU/WebCodecs) that cannot be easily mocked.
+
+---
+
 *Source: `src/components/preview/Preview.tsx`, `src/components/outputManager/`, `src/stores/renderTargetStore.ts`, `src/stores/sliceStore.ts`, `src/services/renderScheduler.ts`*

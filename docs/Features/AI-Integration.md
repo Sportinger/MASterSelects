@@ -452,4 +452,14 @@ Keys stored in browser localStorage. SAM 2 model files stored in OPFS.
 
 ---
 
+## Tests
+
+| Test File | Tests | Coverage |
+|-----------|-------|----------|
+| [`aiToolDefinitions.test.ts`](../../tests/unit/aiToolDefinitions.test.ts) | 60 | Tool definitions, schemas |
+
+Run tests: `npx vitest run`
+
+---
+
 *Source: `src/components/panels/AIChatPanel.tsx`, `src/components/panels/AIVideoPanel.tsx`, `src/components/panels/SAM2Panel.tsx`, `src/components/preview/SAM2Overlay.tsx`, `src/services/sam2/SAM2Service.ts`, `src/services/sam2/SAM2ModelManager.ts`, `src/services/sam2/sam2Worker.ts`, `src/stores/sam2Store.ts`, `src/services/aiTools.ts`, `src/services/claudeService.ts`, `src/services/klingService.ts`*

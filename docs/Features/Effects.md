@@ -298,4 +298,15 @@ Final Output
 
 ---
 
+## Tests
+
+| Test File | Tests | Coverage |
+|-----------|-------|----------|
+| [`effectsRegistry.test.ts`](../../tests/unit/effectsRegistry.test.ts) | 32 | Registry, parameters, categories |
+| [`typeHelpers.test.ts`](../../tests/unit/typeHelpers.test.ts) | 10 | Effect property parsing |
+
+Run tests: `npx vitest run`
+
+---
+
 *Source: `src/shaders/effects.wgsl` (243 lines), `src/shaders/composite.wgsl` (743 lines), `src/components/panels/EffectsPanel.tsx`*

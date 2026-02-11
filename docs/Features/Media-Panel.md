@@ -289,6 +289,17 @@ Toolbar button to restore file permissions:
 
 ---
 
+## Tests
+
+| Test File | Tests | Coverage |
+|-----------|-------|----------|
+| [`fileManageSlice.test.ts`](../../tests/stores/mediaStore/fileManageSlice.test.ts) | 31 | Files, folders, solids, text items |
+| [`compositionSlice.test.ts`](../../tests/stores/mediaStore/compositionSlice.test.ts) | 29 | Compositions |
+
+Run tests: `npx vitest run`
+
+---
+
 ## Not Implemented
 
 - Cloud storage integration

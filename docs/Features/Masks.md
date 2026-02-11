@@ -222,6 +222,16 @@ generateMaskTexture(masks, width, height)
 
 ---
 
+## Tests
+
+| Test File | Tests | Coverage |
+|-----------|-------|----------|
+| [`maskSlice.test.ts`](../../tests/stores/timeline/maskSlice.test.ts) | 22 | Mask CRUD, modes, vertices |
+
+Run tests: `npx vitest run`
+
+---
+
 ## Not Implemented
 
 - Animated mask paths

@@ -332,4 +332,18 @@ Located in timeline toolbar:
 
 ---
 
+## Tests
+
+| Test File | Tests | Coverage |
+|-----------|-------|----------|
+| [`clipSlice.test.ts`](../../tests/stores/timeline/clipSlice.test.ts) | 50 | Clip operations, split, trim, move, effects, speed |
+| [`trackSlice.test.ts`](../../tests/stores/timeline/trackSlice.test.ts) | 13 | Track management, auto-naming |
+| [`selectionSlice.test.ts`](../../tests/stores/timeline/selectionSlice.test.ts) | 12 | Clip selection, multi-select |
+| [`playbackSlice.test.ts`](../../tests/stores/timeline/playbackSlice.test.ts) | 16 | Playback, in/out points, zoom |
+| [`markerSlice.test.ts`](../../tests/stores/timeline/markerSlice.test.ts) | 10 | Markers |
+
+Run tests: `npx vitest run`
+
+---
+
 *Source: `src/components/timeline/`, `src/stores/timeline/`*

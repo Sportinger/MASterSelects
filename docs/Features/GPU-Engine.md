@@ -284,4 +284,14 @@ chrome://gpu
 
 ---
 
+## Tests
+
+| Test File | Tests | Coverage |
+|-----------|-------|----------|
+| [`transformComposition.test.ts`](../../tests/unit/transformComposition.test.ts) | 13 | Transform math, composition |
+
+Run tests: `npx vitest run`
+
+---
+
 *Source: `src/engine/WebGPUEngine.ts`, `src/engine/pipeline/`, `src/shaders/`*

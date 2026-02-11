@@ -553,4 +553,10 @@ Top-right of toolbar:
 
 ---
 
+## Tests
+
+No dedicated unit tests — this feature covers React component-level UI that requires a browser environment.
+
+---
+
 *Source: `src/components/panels/PropertiesPanel.tsx`, `src/components/dock/`, `src/stores/dockStore.ts`, `src/types/dock.ts`, `src/components/timeline/SlotGrid.tsx`, `src/services/layerPlaybackManager.ts`, `src/components/common/TutorialOverlay.tsx`*

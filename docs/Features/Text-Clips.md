@@ -171,6 +171,18 @@ interface TextClipProperties {
 }
 ```
 
+---
+
+## Tests
+
+| Test File | Tests | Coverage |
+|-----------|-------|----------|
+| [`clipSlice.test.ts`](../../tests/stores/timeline/clipSlice.test.ts) | 50 | Text clip operations (included in clip tests) |
+
+Run tests: `npx vitest run`
+
+---
+
 ## Future Enhancements
 
 Planned but not yet implemented:

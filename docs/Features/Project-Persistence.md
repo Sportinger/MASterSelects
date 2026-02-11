@@ -344,4 +344,15 @@ If IndexedDB storage becomes corrupted, an error dialog appears automatically:
 
 ---
 
+## Tests
+
+| Test File | Tests | Coverage |
+|-----------|-------|----------|
+| [`serialization.test.ts`](../../tests/unit/serialization.test.ts) | 22 | Serialize/deserialize, round-trip |
+| [`historyStore.test.ts`](../../tests/stores/historyStore.test.ts) | 16 | Undo/redo |
+
+Run tests: `npx vitest run`
+
+---
+
 *Source: `src/services/projectDB.ts`, `src/services/fileSystemService.ts`, `src/stores/mediaStore.ts`*

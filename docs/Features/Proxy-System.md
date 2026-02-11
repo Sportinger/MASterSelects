@@ -229,4 +229,10 @@ Background process logging shows:
 
 ---
 
+## Tests
+
+No dedicated unit tests — this feature requires hardware-dependent APIs (WebCodecs, GPU batch resize) that cannot be easily mocked.
+
+---
+
 *Commits: 82db433 through d63e381*

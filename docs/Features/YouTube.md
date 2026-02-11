@@ -128,4 +128,10 @@ Without an API key, you can still paste YouTube URLs directly (metadata is fetch
 
 ---
 
+## Tests
+
+No dedicated unit tests — this feature requires network access and the Native Helper (yt-dlp).
+
+---
+
 *See also: [Media Panel](./Media-Panel.md) | [Native Helper](./Native-Helper.md)*
