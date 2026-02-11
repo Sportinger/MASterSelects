@@ -309,6 +309,12 @@ Located in timeline toolbar:
 - Green divider line between video and audio tracks
 - Clearer visual structure for track organization
 
+### Clip Entrance Animations
+- When switching compositions, clips animate in with entrance transitions
+- Animation phases: `exiting` (old clips fade out) then `entering` (new clips animate in)
+- Controlled by `clipEntranceAnimationKey` which increments on each composition switch
+- Only clips present at the time of the switch receive the animation class
+
 ### RAM Preview
 - Toggle: "RAM ON/OFF" button
 - Caches 30fps frames

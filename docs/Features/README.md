@@ -2,7 +2,7 @@
 
 **Professional WebGPU Video Compositor & Timeline Editor**
 
-Version 1.2.2 | February 2026
+Version 1.2.4 | February 2026
 
 ---
 
@@ -29,6 +29,8 @@ MASterSelects is a browser-based professional video editing application built on
 | **Transitions** | Crossfade transitions with GPU-accelerated rendering |
 | **4 Export Modes** | WebCodecs Fast, HTMLVideo Precise, FFmpeg WASM, FCP XML interchange |
 | **Parallel Decoding** | Multi-clip parallel decode for faster exports |
+| **Output Manager** | Source routing, slice management, corner pin warping, multi-window control |
+| **Slot Grid** | Resolume-style 4x12 grid with multi-layer playback and column activation |
 | **Native Helper** | Optional 10x faster ProRes/DNxHD decode with hardware accel |
 | **Local Storage** | Project folder with Raw media, autosave, backups, smart relinking |
 | **Mobile Support** | Responsive UI with touch gestures |
@@ -47,7 +49,7 @@ Video Encoding    WebCodecs (Fast/Precise) + FFmpeg WASM (ProRes, DNxHR, HAP)
 Audio Processing  Web Audio API, audio master clock, varispeed scrubbing
 AI Services       OpenAI GPT-4/GPT-5 function calling, PiAPI video generation
 Persistence       File System Access API + local project folders with Raw media
-Native Helper     Rust + FFmpeg (Linux/Mac) or yt-dlp (Windows)
+Native Helper     Rust + FFmpeg + yt-dlp (unified cross-platform)
 UI Framework      Custom dockable panel system with mobile support
 ```
 
@@ -60,6 +62,7 @@ UI Framework      Custom dockable panel system with mobile support
 | [Timeline](./Timeline.md) | Multi-track editing, clips, snapping, compositions, multicam |
 | [Keyframes](./Keyframes.md) | Animation system, curve editor, bezier interpolation |
 | [Preview & Playback](./Preview.md) | RAM Preview, scrubbing, multiple outputs, edit mode |
+| [Output Manager](./Preview.md#output-manager) | Source routing, slices, corner pin warping, mask layers |
 | [Effects](./Effects.md) | 30+ modular GPU effects, 37 blend modes, transforms |
 | [Masks](./Masks.md) | Shape masks, pen tool, GPU feathering |
 | [AI Integration](./AI-Integration.md) | 50+ AI tools, transcription, AI video generation |
@@ -107,6 +110,24 @@ UI Framework      Custom dockable panel system with mobile support
 | Solid Color Clips | ✅ | Solid layers with color picker and comp dimensions |
 | Transitions | ✅ | Crossfade transitions with GPU-accelerated rendering |
 | Marker Drag-to-Create | ✅ | Drag M button to create markers with ghost preview |
+
+### Output Manager
+
+| Feature | Status | Details |
+|---------|--------|---------|
+| RenderTarget System | ✅ | Unified rendering to multiple independent outputs |
+| Output Manager | ✅ | Source routing, slice management, multi-window control |
+| Corner Pin Warping | ✅ | Slice system with 4-corner warping for projection mapping |
+| Mask Layers | ✅ | Per-slice mask layers with invert and drag-drop reorder |
+| Output Persistence | ✅ | Auto-save per project, window geometry preservation |
+
+### Slot Grid
+
+| Feature | Status | Details |
+|---------|--------|---------|
+| Slot Grid | ✅ | Resolume-style 4x12 grid with click-to-play activation |
+| Multi-Layer Playback | ✅ | 4 independent layers (A-D) with wall-clock time |
+| Column Activation | ✅ | Click column header to activate entire column |
 
 ### Text Clips
 
@@ -198,8 +219,9 @@ UI Framework      Custom dockable panel system with mobile support
 | Deepgram | ✅ | Fast transcription service |
 | Multicam EDL | ✅ | AI-generated edit decision lists |
 | Context Awareness | ✅ | AI knows timeline state |
+| SAM2 Segmentation | ✅ | Click-to-segment with WebGPU ONNX inference |
 
-### YouTube Integration
+### Download Panel
 
 | Feature | Status | Details |
 |---------|--------|---------|
@@ -212,6 +234,8 @@ UI Framework      Custom dockable panel system with mobile support
 | Project Storage | ✅ | Downloads saved to project YT/ folder |
 | H.264 Preference | ✅ | Prefers H.264 over AV1/VP9 for compatibility |
 | Dual API Support | ✅ | Invidious (no key) or YouTube Data API (optional) |
+| Multi-Platform Download | ✅ | TikTok, Instagram, Twitter/X, Facebook, Reddit, Vimeo, Twitch |
+| Platform Subfolders | ✅ | Downloads organized by platform in project folder |
 
 ### Audio
 
@@ -299,15 +323,14 @@ UI Framework      Custom dockable panel system with mobile support
 
 | Feature | Status | Details |
 |---------|--------|---------|
-| Windows Lite Build | ✅ | YouTube downloads only (~10MB, no FFmpeg) |
-| Linux/Mac Full Build | ✅ | ProRes/DNxHD decode + YouTube downloads |
-| ProRes Decoding | ✅ | All profiles at native speed (Linux/Mac) |
-| DNxHD/DNxHR Decoding | ✅ | All profiles at native speed (Linux/Mac) |
+| Unified Cross-Platform Build | ✅ | FFmpeg decode/encode + yt-dlp downloads on all platforms |
+| ProRes Decoding | ✅ | All profiles at native speed |
+| DNxHD/DNxHR Decoding | ✅ | All profiles at native speed |
 | Hardware Acceleration | ✅ | VAAPI (Intel/AMD), NVDEC (NVIDIA) |
 | YouTube Downloads | ✅ | yt-dlp integration with quality selection |
 | Frame Cache | ✅ | LRU cache up to 2GB |
 | Background Prefetch | ✅ | Frames loaded ahead of playhead |
-| Native Encoding | ✅ | 10x faster ProRes/DNxHD export (Linux/Mac) |
+| Native Encoding | ✅ | 10x faster ProRes/DNxHD export |
 | Auto-Detection | ✅ | Toolbar shows "⚡ Turbo" when connected |
 | Download Link | ✅ | Click indicator for helper download |
 
@@ -332,6 +355,8 @@ UI Framework      Custom dockable panel system with mobile support
 | Desktop Mode Toggle | ✅ | Option to view full UI on mobile |
 | What's New Dialog | ✅ | Time-grouped changelog on refresh |
 | Welcome Overlay | ✅ | Project folder selection on launch |
+| Tutorial System | ✅ | Spotlight-based panel intro with Clippy mascot |
+| Welcome Screen | ✅ | Program selection (Premiere, Resolve, FCP, AE, Beginner) |
 
 ---
 
@@ -545,6 +570,8 @@ The following features are planned but not currently available:
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 1.2.4 | Feb 2026 | Slot Grid (Resolume-style multi-layer composition), Output Manager (source routing, corner pin warping, mask layers, persistence), Download Panel (multi-platform: TikTok, Instagram, Twitter/X), unified native helper, render loop watchdog |
+| 1.2.3 | Feb 2026 | Tutorial system (Clippy mascot, welcome screen, panel intro, timeline deep-dive), SAM2 AI segmentation, composition resolution drives render pipeline, Vitest test suite (182 tests) |
 | 1.2.2 | Feb 2026 | Video Scopes (Histogram, Vectorscope, Waveform), keyframe copy/paste, keyframe tick marks, curve editor auto-scale, mask edge dragging, exponential zoom, cross-track resistance, vertical scroll snapping |
 | 1.2.1 | Feb 2026 | Linked clip selection, proxy resume from disk, proxy rewrite with parallel JPEG encoding, instant media import, split deep-clone fix |
 | 1.2.0 | Feb 2026 | Solid color clips, AE visual redesign, inline GPU effects (brightness/contrast/saturation/invert in composite shader), AE-style media panel, lazy-load panels |

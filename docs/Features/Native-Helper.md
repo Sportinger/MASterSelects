@@ -14,49 +14,43 @@ While the web app uses browser-native decoders (WebCodecs, HTMLVideoElement) and
 - **LRU frame cache** - Smooth scrubbing with up to 2GB cache
 - **Background prefetch** - Frames loaded ahead of playhead
 - **YouTube downloads** - Fast downloads via yt-dlp integration
+- **Multi-platform downloads** - TikTok, Instagram, Twitter/X, and other platforms via yt-dlp
 
-## Platform-Specific Builds
+## Unified Cross-Platform Build
 
-The Native Helper has different builds per platform:
+The Native Helper is a single unified Rust binary that builds and runs on all platforms:
 
-| Platform | Location | Features |
-|----------|----------|----------|
-| **Windows** | `tools/helpers/win/` | YouTube downloads only (yt-dlp) |
-| **Linux** | `tools/helpers/linux/` | Full FFmpeg decoder + encoder |
-| **macOS** | `tools/helpers/mac/` | Full FFmpeg decoder + encoder |
+| Platform | FFmpeg | Downloads (yt-dlp) | Notes |
+|----------|--------|-------------------|-------|
+| **Windows** | Full decode + encode | YouTube, TikTok, Instagram, Twitter/X, etc. | Requires FFMPEG_DIR + LIBCLANG_PATH env vars |
+| **Linux** | Full decode + encode | YouTube, TikTok, Instagram, Twitter/X, etc. | System FFmpeg (pkg-config) |
+| **macOS** | Full decode + encode | YouTube, TikTok, Instagram, Twitter/X, etc. | Homebrew FFmpeg recommended |
 
-### Windows (Lite)
-
-Windows build focuses on YouTube downloads without requiring FFmpeg:
+### Building
 
 ```bash
-cd tools/helpers/win
+cd tools/native-helper
 cargo run --release
 ```
 
-### Linux (Full)
+### Windows Build Setup
 
-Linux build includes full FFmpeg decoding and encoding:
+On Windows, two environment variables are required for building:
+- **`FFMPEG_DIR`** - Path to FFmpeg development libraries (headers + DLLs)
+- **`LIBCLANG_PATH`** - Path to libclang (for FFmpeg bindings generation)
 
-```bash
-cd tools/helpers/linux
-cargo run --release
+At runtime, FFmpeg DLLs must be available. The binary auto-detects them in this order:
+1. DLLs next to the executable (e.g., `avcodec-61.dll`)
+2. `ffmpeg/bin/` subdirectory next to the executable
+3. `FFMPEG_DIR` environment variable (looks in `%FFMPEG_DIR%/bin/`)
 
-# For FFmpeg 8.0+ (e.g., Arch Linux):
-FFMPEG_INCLUDE_DIR=/usr/include/ffmpeg4.4 \
-FFMPEG_LIB_DIR=/usr/lib/ffmpeg4.4 \
-PKG_CONFIG_PATH=/usr/lib/ffmpeg4.4/pkgconfig \
-cargo run --release
-```
+Download FFmpeg DLLs from: https://github.com/BtbN/FFmpeg-Builds/releases
 
-### macOS (Full)
+See `tools/native-helper/README.md` for detailed Windows setup instructions.
 
-macOS build includes full FFmpeg decoding and encoding:
+### Multi-Platform Download
 
-```bash
-cd tools/helpers/mac
-cargo run --release
-```
+The app detects the user's platform (Windows, Linux, macOS) and provides the appropriate download link from GitHub Releases. Click the Turbo indicator in the toolbar to access the download dialog.
 
 ## Architecture
 
@@ -78,11 +72,23 @@ System video hardware
 
 ### Linux
 
-1. Download the helper from the toolbar (click the Turbo indicator)
+1. Download the helper from the toolbar (click the Turbo indicator) or from [GitHub Releases](https://github.com/Sportinger/MASterSelects/releases/latest)
 2. Make it executable: `chmod +x masterselects-helper`
 3. Run it: `./masterselects-helper`
 
 The helper will automatically be detected by the app.
+
+### Windows
+
+1. Download from the toolbar or [GitHub Releases](https://github.com/Sportinger/MASterSelects/releases/latest)
+2. Ensure FFmpeg DLLs are available (see [Windows DLL Setup](#windows-dll-setup))
+3. Run `masterselects-helper.exe`
+
+### macOS
+
+1. Download from the toolbar or [GitHub Releases](https://github.com/Sportinger/MASterSelects/releases/latest)
+2. Install FFmpeg via Homebrew: `brew install ffmpeg`
+3. Make executable and run: `chmod +x masterselects-helper && ./masterselects-helper`
 
 ### Options
 
@@ -173,23 +179,32 @@ Binary messages with 16-byte header containing width, height, frame number, and 
 
 ### Source Code
 
-The helpers are written in Rust and located at:
+The helper is a unified Rust binary:
 ```
-tools/helpers/
-├── win/                # Windows: YouTube only (lite)
-│   └── src/
-│       └── main.rs
-├── linux/              # Linux: Full FFmpeg
-│   └── src/
-│       ├── main.rs
-│       ├── server.rs
-│       ├── decoder/
-│       ├── encoder/
-│       ├── cache/
-│       └── protocol/
-└── mac/                # macOS: Full FFmpeg
-    └── src/
-        └── (same as linux)
+tools/native-helper/
+└── src/
+    ├── main.rs          # Entry point, CLI args, platform setup
+    ├── server.rs        # WebSocket + HTTP server
+    ├── session.rs       # Auth token management
+    ├── decoder/         # FFmpeg video decoding
+    │   ├── mod.rs
+    │   ├── ffmpeg.rs
+    │   ├── hwaccel.rs
+    │   └── pool.rs
+    ├── encoder/         # FFmpeg video encoding
+    │   ├── mod.rs
+    │   └── job.rs
+    ├── cache/           # LRU frame cache
+    │   ├── mod.rs
+    │   └── lru.rs
+    ├── download/        # yt-dlp integration
+    │   ├── mod.rs
+    │   └── ytdlp.rs
+    ├── protocol/        # WebSocket protocol
+    │   ├── mod.rs
+    │   ├── commands.rs
+    │   └── frame.rs
+    └── utils.rs         # Shared utilities
 ```
 
 Browser client code:
@@ -203,7 +218,7 @@ src/services/nativeHelper/
 
 Build with:
 ```bash
-cd tools/helpers/linux  # or /win or /mac
+cd tools/native-helper
 cargo build --release
 ```
 

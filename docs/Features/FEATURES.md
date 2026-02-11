@@ -53,6 +53,13 @@ Vollständige Dokumentation aller Features der Video-Editing-Anwendung.
 - Ease-In
 - Ease-Out
 - Ease-In-Out
+- Custom Bezier (frei einstellbare Bezier-Kurve)
+
+### Erweiterte Keyframe-Features
+- **Copy/Paste**: Ctrl+C / Ctrl+V für Keyframes
+- **Keyframe-Ticks**: Visuelle Tick-Markierungen auf Clip-Balken in der Timeline
+- **Curve Editor Auto-Scale**: Automatische Skalierung der Kurvenansicht
+- **Custom Bezier Easing**: 5. Easing-Modus mit frei definierbarer Bezier-Kurve
 
 ### Animierbare Properties
 - **Opacity**: 0-1
@@ -65,19 +72,57 @@ Vollständige Dokumentation aller Features der Video-Editing-Anwendung.
 
 ## 3. Effekte & Transforms
 
-### Verfügbare Effekte
+### Verfügbare Effekte (30 Effekte)
+
+#### Color (9)
 | Effekt | Beschreibung |
 |--------|-------------|
-| Hue Shift | Farben im HSV-Raum rotieren |
 | Brightness | Helligkeit anpassen |
 | Contrast | Kontrast und Mitten |
 | Saturation | Farbsättigung |
+| Vibrance | Intelligente Sättigung (schont Hauttöne) |
+| Hue Shift | Farben im HSV-Raum rotieren |
+| Temperature | Farbtemperatur (warm/kalt) |
+| Exposure | Belichtungskorrektur |
 | Levels | Histogram mit Input/Output Black/White, Gamma |
+| Invert | Farbumkehrung |
+
+#### Blur (5)
+| Effekt | Beschreibung |
+|--------|-------------|
+| Box Blur | Einfacher Weichzeichner |
+| Gaussian Blur | Gausssche Unschärfe |
+| Motion Blur | Bewegungsunschärfe mit Richtung |
+| Radial Blur | Kreisförmige Unschärfe |
+| Zoom Blur | Zentraler Zoom-Effekt |
+
+#### Distort (7)
+| Effekt | Beschreibung |
+|--------|-------------|
 | Pixelate | Mosaik-Effekt |
 | Kaleidoscope | Segment-Spiegelung mit Rotation |
 | Mirror | Horizontal/Vertikal spiegeln |
 | RGB Split | Chromatische Aberration |
-| Invert | Farbumkehrung |
+| Twirl | Spiralförmige Verzerrung |
+| Wave | Wellenförmige Verzerrung |
+| Bulge | Kugelförmige Verzerrung (Fischauge) |
+
+#### Stylize (8)
+| Effekt | Beschreibung |
+|--------|-------------|
+| Vignette | Randabdunklung |
+| Grain | Film-Korn Simulation |
+| Glow | Leuchtender Weichzeichner |
+| Posterize | Farbreduktion / Poster-Effekt |
+| Edge Detect | Kantenerkennung |
+| Scanlines | CRT-Monitor Scanlines |
+| Threshold | Schwellwert-Binarisierung |
+| Sharpen | Nachschärfen |
+
+#### Keying (1)
+| Effekt | Beschreibung |
+|--------|-------------|
+| Chroma Key | Greenscreen/Bluescreen-Entfernung |
 
 ### Blend-Modes (After Effects-Style)
 **Normal**: normal, dissolve, dancing-dissolve
@@ -205,7 +250,17 @@ Vollständige Dokumentation aller Features der Video-Editing-Anwendung.
 
 ---
 
-## 9. Multicam
+## 9. Download Panel (ehemals YouTube)
+
+### Features
+- **Multi-Plattform Downloads**: Videos von verschiedenen Plattformen herunterladen
+- **Unterstützte Plattformen**: YouTube, TikTok, Instagram, Twitter/X, Facebook, Reddit, Vimeo, Twitch
+- **Native Helper Integration**: Downloads via yt-dlp über den Native Helper Service
+- **Qualitätsauswahl**: Verschiedene Auflösungen und Formate wählbar
+
+---
+
+## 10. Multicam
 
 ### Features
 - **Mehrere Kameras**: Clips zur Multicam-Gruppe hinzufügen
@@ -219,7 +274,7 @@ Vollständige Dokumentation aller Features der Video-Editing-Anwendung.
 
 ---
 
-## 10. AI Chat Panel
+## 11. AI Chat Panel
 
 ### Integration
 - **OpenAI**: Direkte Chat-Verbindung
@@ -227,9 +282,13 @@ Vollständige Dokumentation aller Features der Video-Editing-Anwendung.
 - **Message History**: Kontext bleibt erhalten
 - **API Key Management**: Sichere Schlüsselspeicherung
 
+### SAM2 AI Segmentation
+- **AI-basierte Objektsegmentierung**: Meta SAM2 Modell zur automatischen Maskenerstellung
+- **Interaktive Auswahl**: Objekte im Video per Klick auswählen und verfolgen
+
 ---
 
-## 11. Video Scopes
+## 12. Video Scopes
 
 ### GPU-beschleunigte Scopes
 - **Histogram**: RGB-Verteilungsgraph mit R/G/B/Luma View-Modes
@@ -241,7 +300,7 @@ Vollständige Dokumentation aller Features der Video-Editing-Anwendung.
 
 ---
 
-## 12. Transitions
+## 13. Transitions
 
 ### Features
 - **Crossfade-Transitions**: GPU-beschleunigte Überblendungen
@@ -250,7 +309,7 @@ Vollständige Dokumentation aller Features der Video-Editing-Anwendung.
 
 ---
 
-## 13. UI Features
+## 14. UI Features
 
 ### Dock-System
 - **Anpassbares Layout**: Panels per Drag-and-Drop
@@ -259,10 +318,10 @@ Vollständige Dokumentation aller Features der Video-Editing-Anwendung.
 - **Split Panes**: Vertikal/Horizontal teilen
 - **Layout-Persistenz**: Layouts speichern/laden
 
-### Panels (14 Typen)
+### Panels (16 Typen)
 - Timeline, Preview, Media Panel, Properties Panel
 - Export, Multicam, AI Chat, AI Video
-- YouTube, Transitions, Histogram, Vectorscope, Waveform, Slots
+- Download, AI Segment, Transitions, Histogram, Vectorscope, Waveform, Slots
 
 ### Toolbar
 - **Projekt-Management**: New, Save, Load, Delete
@@ -272,7 +331,7 @@ Vollständige Dokumentation aller Features der Video-Editing-Anwendung.
 
 ---
 
-## 13. Performance
+## 15. Performance
 
 ### Optimierungen
 - **WebGPU**: GPU-beschleunigtes Rendering
@@ -289,7 +348,7 @@ Vollständige Dokumentation aller Features der Video-Editing-Anwendung.
 
 ---
 
-## 14. Projekt-Management
+## 16. Projekt-Management
 
 ### Funktionen
 - **Neues Projekt**: Leere Projekte erstellen
@@ -302,7 +361,40 @@ Vollständige Dokumentation aller Features der Video-Editing-Anwendung.
 
 ---
 
-## 15. Technische Spezifikationen
+## 17. Output Manager
+
+### Multi-Output Rendering
+- **RenderTarget-System**: Mehrere unabhängige Ausgabeziele gleichzeitig rendern
+- **Source Routing**: Quellzuweisung pro Output (aktive Komposition, spezifische Compositions, Slots)
+- **Slice-System**: Corner-Pin Warping für Projection Mapping
+- **Mask Layers**: Sichtbarkeitskontrolle pro Output über Masken-Ebenen
+- **Auto-Save**: Konfigurationen werden automatisch pro Projekt gespeichert
+- **Window Management**: Fensterposition und -größe werden wiederhergestellt beim Öffnen
+
+---
+
+## 18. Slot Grid
+
+### Resolume-Style Performance Grid
+- **4x12 Grid**: 4 Layer (A-D) mit je 12 Slots
+- **Click-to-Play**: Klick startet Clip, erneuter Klick startet neu
+- **Multi-Layer Composition**: Layer A-D werden live übereinandergelegt
+- **Unabhängige Wall-Clock Time**: Jeder Layer läuft mit eigener Echtzeit-Uhr
+- **Ansichtswechsel**: Ctrl+Shift+Scroll zum Umschalten zwischen Timeline und Slot Grid
+
+---
+
+## 19. Tutorial System
+
+### Interaktives Onboarding
+- **Welcome Screen**: Programmauswahl beim ersten Start
+- **Spotlight-Einführung**: Panel-basierte Einführung mit Spotlight-Hervorhebung
+- **Timeline Deep-Dive**: Teil 2 mit detaillierter Timeline-Erklärung
+- **Clippy Maskottchen**: Animierter Begleiter während des Tutorials
+
+---
+
+## 20. Technische Spezifikationen
 
 ### Unterstützte Formate
 - **Video**: H.264, HEVC, VP9, AV1 (via WebCodecs)

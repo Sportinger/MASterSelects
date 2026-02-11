@@ -2,7 +2,7 @@
 
 [← Back to Index](./README.md)
 
-GPT-powered editing with 50+ tools, transcription, and multicam EDL generation.
+GPT-powered editing with 50+ tools, transcription, multicam EDL generation, and AI object segmentation.
 
 ---
 
@@ -10,6 +10,7 @@ GPT-powered editing with 50+ tools, transcription, and multicam EDL generation.
 
 - [AI Chat Panel](#ai-chat-panel)
 - [AI Video Panel](#ai-video-panel)
+- [AI Segmentation (SAM 2)](#ai-segmentation-sam-2)
 - [AI Editor Tools](#ai-editor-tools)
 - [Transcription](#transcription)
 - [Multicam EDL](#multicam-edl)
@@ -122,6 +123,94 @@ Kling uses Access Key + Secret Key for JWT authentication:
    - Import video to KlingAI folder
    - Optionally add clip to timeline
    - Add to history for later access
+```
+
+---
+
+## AI Segmentation (SAM 2)
+
+> **Status:** Work in progress (WIP badge in the panel tab)
+
+### Overview
+AI-powered object segmentation using Meta's **Segment Anything Model 2 (SAM 2)**. Click on objects in the preview to create precise masks, then optionally propagate those masks across video frames. All inference runs locally in the browser using ONNX Runtime with WebGPU acceleration — no API keys or cloud services required.
+
+### Location
+- Tab in dock panels alongside AI Chat and AI Video
+- View menu → AI Segment
+
+### One-Time Model Download
+On first use, the panel prompts for a one-time model download:
+- **Model:** SAM 2 Hiera Small (ORT-optimized encoder + ONNX decoder)
+- **Total size:** ~184 MB
+- **Storage:** Cached in the browser's Origin Private File System (OPFS) for persistent local storage
+- **Progress:** Download progress bar shown in the panel
+- **Fallback URLs:** If the primary CDN is unavailable, models are fetched from fallback hosts automatically
+- After download, the model auto-loads into ONNX sessions for immediate use
+- On subsequent visits, cached models are detected and loaded automatically
+
+### Model Lifecycle
+
+| Status | Description |
+|--------|-------------|
+| **Not Downloaded** | Panel shows download prompt |
+| **Downloading** | Progress bar with percentage |
+| **Downloaded** | Cached in OPFS, auto-loading |
+| **Loading** | Creating ONNX inference sessions |
+| **Ready** | Green status dot, ready for segmentation |
+| **Error** | Red status dot with error message and retry button |
+
+### Point-Based Segmentation
+Once the model is ready and a clip is selected in the timeline:
+
+1. **Activate** segmentation mode using the Activate button
+2. **Left-click** on the preview canvas to place a **foreground point** (green) — marks regions to include in the mask
+3. **Right-click** to place a **background point** (red) — marks regions to exclude from the mask
+4. Each point triggers an immediate decode pass, updating the mask in real time
+5. Points are listed in the panel with coordinates and can be individually removed
+
+The **Auto-Detect** button places a center-point and runs a full encode + decode cycle, useful for quick initial segmentation of a prominent subject.
+
+### Preview Overlay
+When segmentation is active, a transparent overlay appears on top of the preview canvas:
+- **Mask visualization:** Selected regions shown as a blue semi-transparent overlay
+- **Point markers:** Foreground points shown as green dots, background points as red dots, each with a white border and center dot
+- **Processing indicator:** Text overlay appears while the model is computing
+- **Crosshair cursor:** Indicates the overlay is ready for point placement
+
+### Display Settings
+
+| Setting | Range | Description |
+|---------|-------|-------------|
+| **Opacity** | 0–100% | Transparency of the mask overlay |
+| **Feather** | 0–50px | Edge softness of the mask |
+| **Invert Mask** | On/Off | Swap foreground and background regions |
+
+### Video Propagation
+After creating a mask on the current frame, propagate it forward across subsequent frames:
+- **Forward** button propagates the mask up to 150 frames (~5 seconds at 30fps)
+- Progress bar and percentage shown during propagation
+- **Stop** button to cancel propagation at any time
+- Each propagated frame's mask is RLE-compressed and stored efficiently in memory
+- Propagation uses the SAM 2 memory bank mechanism to track objects across frames
+
+### Architecture
+All heavy computation runs off the main thread to keep the UI responsive:
+- **Web Worker** (`sam2Worker`) handles ONNX encoder and decoder inference
+- **Encoder** runs with WebGPU acceleration (WASM fallback if WebGPU is unavailable in the worker)
+- **Decoder** runs on WASM (small model, fast enough without GPU)
+- **Message protocol:** Main thread sends encode/decode/propagate requests; worker responds with embeddings, masks, and progress updates
+- **RLE compression** for storing per-frame masks efficiently (run-length encoding of binary mask data)
+
+### Workflow
+```
+1. Open AI Segment panel
+2. Download model (first time only, ~184 MB)
+3. Select a video clip in the timeline
+4. Click "Activate" to enable segmentation mode
+5. Left-click objects to include, right-click to exclude
+6. Adjust opacity/feather/invert as needed
+7. Optionally propagate mask forward through video
+8. Clear All to reset and start over
 ```
 
 ---
@@ -326,8 +415,11 @@ Settings dialog → API Keys:
 Settings dialog → AI Video Generation:
 - Kling AI API key (for text-to-video, image-to-video)
 
+### No API Key Required
+- **SAM 2 AI Segmentation** — runs entirely in the browser, no external service
+
 ### Storage
-Keys stored in browser localStorage.
+Keys stored in browser localStorage. SAM 2 model files stored in OPFS.
 
 ---
 
@@ -360,4 +452,4 @@ Keys stored in browser localStorage.
 
 ---
 
-*Source: `src/components/panels/AIChatPanel.tsx`, `src/components/panels/AIVideoPanel.tsx`, `src/services/aiTools.ts`, `src/services/claudeService.ts`, `src/services/klingService.ts`*
+*Source: `src/components/panels/AIChatPanel.tsx`, `src/components/panels/AIVideoPanel.tsx`, `src/components/panels/SAM2Panel.tsx`, `src/components/preview/SAM2Overlay.tsx`, `src/services/sam2/SAM2Service.ts`, `src/services/sam2/SAM2ModelManager.ts`, `src/services/sam2/sam2Worker.ts`, `src/stores/sam2Store.ts`, `src/services/aiTools.ts`, `src/services/claudeService.ts`, `src/services/klingService.ts`*

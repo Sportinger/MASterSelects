@@ -273,6 +273,19 @@ View toggle states are saved in the project file:
 - Scopes visibility
 - Restored when opening a project
 
+### Output Manager Persistence
+The Output Manager window state is tracked via `localStorage`:
+- `masterselects-om-open` key stores whether the Output Manager was open
+- On page refresh, the app detects the existing popup and reconnects via `reconnectOutputManager()`
+- Uses `sessionStorage` guard to prevent false reconnection on fresh tabs
+- Window position and size preserved by the browser's named window (`output_manager`)
+
+### Composition Resolution Persistence
+Each composition stores its own resolution (width/height) in the project file:
+- Resolution is saved per composition, not globally
+- Changing resolution adjusts clip transforms proportionally (auto-reposition)
+- Restored when opening a project or switching compositions
+
 ### Actions
 ```typescript
 saveLayoutAsDefault()  // View menu
@@ -282,6 +295,13 @@ resetLayout()          // View menu
 ---
 
 ## Troubleshooting
+
+### IndexedDB Error Dialog
+If IndexedDB storage becomes corrupted, an error dialog appears automatically:
+- Explains the issue and provides instructions for clearing site data
+- Offers a "Refresh" button to reload the app after clearing
+- Dismissable via Escape key or backdrop click
+- Source: `src/components/common/IndexedDBErrorDialog.tsx`
 
 ### Project Not Loading
 1. Check if `project.json` exists in folder

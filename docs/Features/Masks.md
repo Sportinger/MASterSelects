@@ -189,6 +189,9 @@ On-screen text shows current mode instructions.
 
 ### Performance Optimizations
 - Skip history snapshots during mask dragging for smooth interaction
+- Vertex and handle updates throttled to 60fps (16ms interval) during drag operations
+- Whole-mask dragging also throttled to ~60fps to prevent excessive store updates
+- Mask texture regeneration skipped entirely during active drag for smooth interaction
 - GPU texture updates throttled at 30fps instead of every frame
 - Targeted cache invalidation (only affected layers)
 

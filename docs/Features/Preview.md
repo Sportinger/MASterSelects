@@ -2,7 +2,7 @@
 
 [← Back to Index](./README.md)
 
-WebGPU preview with RAM caching, multiple panels, and edit mode.
+WebGPU preview with RAM caching, multiple panels, edit mode, and multi-output management.
 
 ---
 
@@ -15,6 +15,12 @@ WebGPU preview with RAM caching, multiple panels, and edit mode.
 - [Multiple Previews](#multiple-previews)
 - [Edit Mode](#edit-mode)
 - [Statistics Overlay](#statistics-overlay)
+- [Unified RenderTarget System](#unified-rendertarget-system)
+- [RenderScheduler](#renderscheduler)
+- [Output Manager](#output-manager)
+- [Slice & Warp System](#slice--warp-system)
+- [Output Window Management](#output-window-management)
+- [Output Manager Persistence](#output-manager-persistence)
 
 ---
 
@@ -28,11 +34,10 @@ WebGPU preview with RAM caching, multiple panels, and edit mode.
 - **Edit mode** toggle
 
 ### Canvas Registration
-```typescript
-registerPreviewCanvas()           // Main preview
-registerIndependentPreviewCanvas() // Additional previews
-unregisterPreviewCanvas()         // Cleanup
-```
+All preview canvases register through the unified RenderTarget system (see [Unified RenderTarget System](#unified-rendertarget-system)):
+1. Engine assigns a WebGPU context to the canvas via `registerTargetCanvas()`
+2. A `RenderTarget` entry is created in `renderTargetStore` with source and destination metadata
+3. If the source is independent (not the active composition), the `RenderScheduler` manages its render loop
 
 ---
 
@@ -188,13 +193,11 @@ Each preview can show different composition:
 - Or select specific saved composition
 
 ### Independent Rendering
-```typescript
-// Each panel has:
-- Own canvas
-- Own RAF loop
-- Own ping-pong buffers
-- Independent composition evaluation
-```
+Each additional preview panel participates in the unified RenderTarget system:
+- Own canvas registered as a `RenderTarget`
+- Independent sources rendered by the `RenderScheduler`
+- Shared independent ping-pong buffers on the GPU
+- Composition evaluation via `compositionRenderer`
 
 ### Layout
 - Panels appear side-by-side
@@ -336,6 +339,178 @@ evaluateAtTime(compositionId, time)
 
 ---
 
+## Unified RenderTarget System
+
+All preview outputs (main preview, additional preview panels, output windows) use a unified RenderTarget system for rendering.
+
+### RenderTarget
+
+Each output is a `RenderTarget` with a source and a destination:
+
+| Property | Description |
+|----------|-------------|
+| **Source** | What to display: active composition, specific composition, layer, slot, or program mix |
+| **Destination** | Where to display: canvas element, popup window, or browser tab |
+| **Enabled** | Toggle rendering on/off per target |
+| **Fullscreen** | Toggle fullscreen mode per window |
+
+### Source Types
+
+| Source Type | Description |
+|-------------|-------------|
+| **Active Comp** | Follows whichever composition is currently open in the Timeline editor |
+| **Composition** | Renders a specific composition by ID (independent of editor) |
+| **Layer** | Renders specific layers from the active layer slots |
+| **Slot** | Renders a slot from the multi-layer slot grid |
+| **Program** | Main mix output (all layers composited) |
+
+### Registration Flow
+1. Canvas element registers via `registerTargetCanvas()`
+2. Engine assigns a WebGPU context to the canvas
+3. Target entry created in `renderTargetStore` with source/destination metadata
+4. If source is independent (not active comp), `RenderScheduler` manages its render loop
+
+---
+
+## RenderScheduler
+
+The RenderScheduler service manages independent render loops for targets that don't follow the active composition.
+
+| Feature | Description |
+|---------|-------------|
+| **Independent RAF loops** | Each non-active-comp target gets its own `requestAnimationFrame` loop |
+| **Composition evaluation** | Evaluates layers at the correct time for each target's source |
+| **Automatic registration** | Targets with independent sources auto-register on creation |
+| **Cleanup** | Loops stop when targets are removed or disabled |
+
+---
+
+## Output Manager
+
+The Output Manager is a dedicated interface for managing multiple output targets, applying corner-pin warping (slices), and routing sources to different displays. Useful for projection mapping, multi-screen setups, and VJ performances.
+
+### Opening the Output Manager
+- Menu: **Output → Output Manager**
+- Opens in a new browser popup window
+
+### Layout
+
+| Area | Description |
+|------|-------------|
+| **Sidebar (left)** | Target list with nested slices, source selectors, controls |
+| **Preview (center)** | Live preview canvas showing the selected target with slices applied |
+| **Tab Bar (top)** | Switch between Input and Output views |
+
+### Target Management
+
+| Action | How |
+|--------|-----|
+| **Add Output Window** | Click "+" button → opens new popup window |
+| **Select Source** | Dropdown per target: Active Comp, specific composition, slot, etc. |
+| **Rename** | Double-click the target name to edit inline |
+| **Enable/Disable** | Toggle switch per target |
+| **Close Window** | Close button (window becomes grayed out with Restore option) |
+
+### Save & Exit
+- **Save & Exit** button saves all configurations and closes the Output Manager
+- Configurations persist per-project in localStorage
+
+---
+
+## Slice & Warp System
+
+Slices map a rectangular input region to a quadrilateral output area via corner-pin warping. Each output target can have multiple slices and mask layers.
+
+### How Slices Work
+
+Each slice has two sets of four corner points in normalized (0–1) coordinates:
+
+| Side | Description |
+|------|-------------|
+| **Input Corners** | Define which rectangular region of the source to display (clamped to 0–1) |
+| **Output Corners** | Define where that region appears in the output (unclamped, can exceed bounds for warping) |
+
+### Input Tab
+- Shows the source content with draggable corner points
+- Drag corners to select a sub-region of the source
+- Supports zoom (Shift+Scroll) and pan (Alt+Drag)
+- Right-click context menu: "Match Input to Output Shape"
+
+### Output Tab
+- Shows the output canvas with draggable corner points
+- Drag corners to warp/stretch the slice into any quadrilateral shape
+- Outlines and vertices visible even outside the canvas bounds
+- Right-click context menu: "Match Output to Input Shape"
+
+### Slice Controls
+
+| Action | How |
+|--------|-----|
+| **Add Slice** | "Add Slice" button in sidebar |
+| **Add Mask** | "Add Mask" button in sidebar |
+| **Rename** | Double-click the slice name |
+| **Enable/Disable** | Toggle switch per slice |
+| **Reorder** | Drag handle for drag-and-drop reordering |
+| **Reset** | Reset corners to default positions |
+| **Delete** | Delete button per slice |
+
+### Mask Layers
+
+Mask layers are slices with `type: 'mask'` that control pixel visibility:
+
+| Property | Description |
+|----------|-------------|
+| **Normal mode** | Pixels outside the mask quad are transparent |
+| **Inverted mode** | Pixels inside the mask quad are transparent |
+| **Visual style** | Displayed as dashed red outlines in both Input/Output views |
+| **Non-interactive on Input** | Mask corners are view-only in Input tab, editable in Output tab |
+
+---
+
+## Output Window Management
+
+### Creating Output Windows
+- Click "+" in Output Manager sidebar to open a new popup window
+- Each window is a full render target with its own source routing
+
+### Window Restore-on-Close
+| State | Appearance |
+|-------|------------|
+| **Open** | Active window with live rendering |
+| **Closed** | Grayed-out entry in sidebar with "Restore" button |
+| **Restored** | Re-opens at previous position and size |
+
+Window geometry (position, size) is preserved even after closing, so restored windows reappear in the same screen location.
+
+### Window Reconnection
+- On page refresh, output windows attempt to reconnect via sessionStorage flag
+- Named popup windows allow the browser to find existing windows
+- Prevents duplicate windows from spawning on refresh
+
+---
+
+## Output Manager Persistence
+
+### Auto-Save
+- Slice configurations auto-save on every change (debounced 500ms)
+- Saved per-project using localStorage key: `Outputmanager_{ProjectName}`
+- Window geometry included in saved metadata
+
+### What Gets Saved
+| Data | Storage |
+|------|---------|
+| Slice configurations (corners, warp, masks) | localStorage per project |
+| Target metadata (name, source, window geometry) | localStorage per project |
+| Selected slice state | Transient (not persisted) |
+
+### Load on Boot
+1. Output Manager mounts and loads saved config from localStorage
+2. Closed targets restore as grayed-out entries
+3. Window geometry preserved for restoration
+4. Slice configs applied immediately to render pipeline
+
+---
+
 ## Related Features
 
 - [Timeline](./Timeline.md) - Main editing interface
@@ -345,4 +520,4 @@ evaluateAtTime(compositionId, time)
 
 ---
 
-*Source: `src/components/preview/Preview.tsx`, `src/stores/timeline/playbackSlice.ts`, `src/engine/texture/ScrubbingCache.ts`*
+*Source: `src/components/preview/Preview.tsx`, `src/components/outputManager/`, `src/stores/renderTargetStore.ts`, `src/stores/sliceStore.ts`, `src/services/renderScheduler.ts`*

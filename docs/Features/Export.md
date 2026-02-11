@@ -382,6 +382,44 @@ FFmpeg WASM is loaded on-demand when first used:
 
 ---
 
+## Export System V2 (Shared Decoder Pool)
+
+### Overview
+Export V2 introduces a shared decoder architecture for more efficient multi-clip exports. Instead of creating separate decoders per clip instance, V2 shares decoder instances per unique file.
+
+### Components
+
+| Component | Purpose |
+|-----------|---------|
+| **SharedDecoderPool** | Manages one VideoDecoder per unique file, with reuse via reset + configure |
+| **ExportPlanner** | Analyzes timeline to optimize decode scheduling and cache allocation |
+| **FrameCacheManager** | Integrated frame cache for decoded frames |
+| **SystemSelector** | Selects between V1 and V2 based on timeline complexity |
+| **V2ExportBridge** | Bridges V2 system into existing export pipeline |
+
+### ExportPlanner Features
+- Analyzes full export range to understand file usage patterns
+- Detects heavy-usage files (>20% of export) for larger cache allocation
+- Plans look-ahead decode scheduling (2-3 seconds ahead)
+- Minimizes decoder switches and seeks
+- Groups clips by file for efficient decoding
+
+### SharedDecoderPool Features
+- One decoder instance per unique file (not per clip instance)
+- Decoder reuse via `reset()` + `configure()`
+- Smart position tracking to minimize seeks
+- 30-frame buffer ahead per decoder
+- Statistics tracking (total decoded, seeks, resets)
+
+### Source Files
+- `src/engine/export/v2/SharedDecoderPool.ts`
+- `src/engine/export/v2/ExportPlanner.ts`
+- `src/engine/export/v2/FrameCacheManager.ts`
+- `src/engine/export/v2/V2ExportBridge.ts`
+- `src/engine/export/v2/SystemSelector.ts`
+
+---
+
 ## Not Implemented
 
 - Multi-pass encoding

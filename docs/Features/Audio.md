@@ -368,6 +368,21 @@ interface EditDecision {
 
 ---
 
+## Composition Audio Mixdown
+
+When nesting compositions, the inner composition's audio tracks are mixed down to a single buffer for use in the parent timeline.
+
+### How It Works
+- `CompositionAudioMixer` extracts and mixes all audio from a nested composition
+- Processes all audio tracks including volume, EQ, and speed/pitch changes
+- Produces a single mixed buffer at the composition's sample rate
+- Used automatically when a composition clip plays in a parent timeline
+
+### Source
+- `src/services/compositionAudioMixer.ts`
+
+---
+
 ## Audio Export
 
 Audio is exported alongside video with full effect processing.

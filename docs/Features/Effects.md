@@ -2,7 +2,7 @@
 
 [← Back to Index](./README.md)
 
-GPU-accelerated visual effects with 37 blend modes and 9 shader effects.
+GPU-accelerated visual effects with 37 blend modes and 30 shader effects.
 
 ---
 

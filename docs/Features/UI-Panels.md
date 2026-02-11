@@ -11,7 +11,9 @@ Dockable panel system with After Effects-style menu bar and unified Properties p
 - [Menu Bar](#menu-bar)
 - [Panel System](#panel-system)
 - [Available Panels](#available-panels)
+- [Slot Grid (Multi-Layer Composition)](#slot-grid-multi-layer-composition)
 - [Properties Panel](#properties-panel)
+- [Tutorial System](#tutorial-system)
 - [Dock Layouts](#dock-layouts)
 - [MIDI Control](#midi-control)
 
@@ -75,7 +77,7 @@ Resolume-style visual feedback:
 
 ## Available Panels
 
-MASterSelects has 14 dockable panel types:
+MASterSelects has 16 dockable panel types (plus the Slot Grid overlay, see [Slot Grid](#slot-grid-multi-layer-composition)):
 
 | Panel | Purpose |
 |-------|---------|
@@ -87,12 +89,13 @@ MASterSelects has 14 dockable panel types:
 | **Multicam** | Camera sync and EDL |
 | **AI Chat** | GPT-powered editing assistant |
 | **AI Video** | AI video generation (PiAPI) |
-| **YouTube** | Search and download YouTube videos |
+| **AI Segment** | AI object segmentation (SAM 2, local in-browser) |
+| **Download** | Search and download videos from YouTube and other platforms |
 | **Transitions** | Drag-drop transition library |
 | **Histogram** | GPU-accelerated histogram scope |
 | **Vectorscope** | Color vector analysis scope |
 | **Waveform** | Luma/RGB waveform monitor |
-| **Slots** | Layer slot management |
+| **Slots** | Layer slot management (see also [Slot Grid](#slot-grid-multi-layer-composition)) |
 
 ### Preview Panel
 - Canvas for composition output
@@ -139,12 +142,21 @@ See [Properties Panel](#properties-panel) section below for details.
 - Context-aware editing commands
 - 50+ available tools
 
-### YouTube Panel
-- Search YouTube videos via Invidious or YouTube Data API
+### Download Panel
+- Paste URLs from YouTube, TikTok, Instagram, Twitter/X, Facebook, Reddit, Vimeo, Twitch, and more
+- Search YouTube videos via YouTube Data API
 - Video thumbnails, titles, channels, duration display
 - Quality/format selection before download
-- Download via Native Helper (yt-dlp) or Cobalt fallback
-- Downloads saved to project YT/ folder
+- Download via Native Helper (yt-dlp)
+- Downloads organized in platform-specific subfolders (Downloads/YT/, Downloads/TikTok/, etc.)
+
+### AI Segment Panel
+- AI object segmentation using Meta's SAM 2 (Segment Anything Model 2)
+- Runs locally in-browser via ONNX Runtime + WebGPU (no API key required)
+- One-time model download (~184 MB), cached in OPFS
+- Point-based segmentation: left-click to include, right-click to exclude
+- Real-time mask overlay with adjustable opacity, feather, and invert
+- Video propagation: forward propagation up to 150 frames
 
 ### AI Video Panel
 - Text-to-video generation
@@ -176,6 +188,71 @@ Three independent scope panels with GPU-accelerated rendering:
 - Layer slot grid
 - Visibility toggles
 - Effect status indicators
+
+---
+
+## Slot Grid (Multi-Layer Composition)
+
+Resolume-style slot grid for simultaneous multi-layer composition playback. The grid overlays the Timeline panel and allows triggering multiple compositions on independent layers, each running on its own wall-clock time.
+
+### Grid Layout
+
+The slot grid is a 4-row by 12-column grid:
+
+| Element | Description |
+|---------|-------------|
+| **Row labels** | Letters A through D on the left edge, each representing one playback layer |
+| **Column headers** | Numbers 1 through 12 along the top, clickable to activate an entire column |
+| **Slots** | 100px cells displaying a mini-timeline preview of the assigned composition |
+| **Corner cell** | Empty top-left corner where row labels and column headers meet |
+
+Compositions are automatically assigned to slots in order, or can be dragged to any position. Each slot shows:
+- A mini-timeline preview with track/clip layout
+- The composition name
+- A live playhead indicator (red line) when the composition is active
+- A "PRV" preview strip button for previewing without activating
+
+### Opening the Slot Grid
+
+| Method | Action |
+|--------|--------|
+| `Ctrl+Shift+Scroll Down` | Zoom out from Timeline into Slot Grid view |
+| `Ctrl+Shift+Scroll Up` | Zoom back into Timeline (only when hovering a filled slot) |
+
+The transition between Timeline and Slot Grid uses a 250ms ease-out cubic animation. During transition, the Timeline scales back slightly and fades out while the grid fades in.
+
+### Slot Interaction
+
+| Action | Behavior |
+|--------|----------|
+| **Click a filled slot** | Activate the composition on that slot's layer (A-D) and start playback from the beginning |
+| **Re-click an active slot** | Restart playback from the beginning |
+| **Click an empty slot** | Deactivate that layer entirely |
+| **Click a column header** | Activate all compositions in that column simultaneously across all layers |
+| **Drag a slot** | Reorder/move a composition to a different slot position (swap if target is occupied) |
+| **Click "PRV" strip** | Toggle preview mode for that composition without activating it on a layer |
+
+### Multi-Layer Playback
+
+Each layer (A through D) can have one active composition playing at the same time. All active layers are composited together in the render output.
+
+| Feature | Detail |
+|---------|--------|
+| **Independent wall-clock time** | Each background layer tracks elapsed time independently using `performance.now()`, not the global playhead |
+| **Automatic looping** | When a background composition reaches its end, it loops back to the start |
+| **Media hydration** | Background layers load their own video, audio, and image elements independently |
+| **Background audio** | Background layer audio is muted by default |
+| **Layer deactivation** | Clicking an empty slot deactivates that layer; if it was the editor-active composition, the editor switches to the next active layer |
+
+### Visual States
+
+| State | Appearance |
+|-------|------------|
+| **Editor-active** | Highlighted slot (the composition currently open in the Timeline editor) |
+| **Layer-active** | Secondary highlight for compositions playing on background layers |
+| **Previewed** | Distinct highlight for the composition in preview mode |
+| **Drag-over** | Drop target indicator when dragging a slot |
+| **Empty** | Dim, unfilled slot |
 
 ---
 
@@ -233,6 +310,93 @@ The unified Properties panel consolidates clip editing into a single tabbed inte
 - Shows selected clip name in tab title
 - Example: "Properties - Interview_01.mp4"
 - Updates automatically on clip selection
+
+---
+
+## Tutorial System
+
+Spotlight-based interactive tutorial that introduces new users to the interface. The tutorial uses a Clippy mascot companion and walks through panels and timeline elements with animated spotlight highlights.
+
+### Automatic Launch
+
+The tutorial starts automatically on first launch (when `hasSeenTutorial` is false). If a What's New changelog dialog is shown, the tutorial starts after it is closed. Once completed or skipped, it does not appear again unless manually triggered.
+
+### Welcome Screen (Part 1 Start)
+
+Before the tutorial steps begin, a centered welcome dialog asks the user about their editing background:
+
+| Option | Description |
+|--------|-------------|
+| **Premiere Pro** | Coming from Adobe Premiere Pro |
+| **DaVinci Resolve** | Coming from DaVinci Resolve |
+| **Final Cut Pro** | Coming from Final Cut Pro |
+| **After Effects** | Coming from Adobe After Effects |
+| **Beginner** | New to video editing |
+
+The selection is saved to personalize the experience. A "Skip Tutorial" button is available to dismiss the entire tutorial immediately.
+
+### Part 1 — Panel Introduction
+
+After the welcome screen, the tutorial highlights each main panel one at a time using an SVG spotlight mask:
+
+| Step | Panel | Description |
+|------|-------|-------------|
+| 1 | **Timeline** | Arrange and edit clips on tracks. Drag to move, trim edges, add keyframes and transitions. |
+| 2 | **Preview** | Live preview of the composition. Play, pause, and scrub in real-time. |
+| 3 | **Media** | Import and organize media files. Drag clips onto the Timeline to start editing. |
+| 4 | **Properties** | Adjust transforms, effects, and masks for the selected clip. |
+
+Each step:
+- Dims the rest of the interface with a 75% opacity dark overlay
+- Cuts out the highlighted panel with a rounded rectangle mask
+- Activates the corresponding panel tab so it is visible
+- Shows a tooltip with step number, title, description, and progress dots
+- Advances on click anywhere
+
+### Part 2 — Timeline Deep-Dive
+
+Part 2 starts automatically after Part 1 finishes (unless Part 2 was already seen). It zooms into individual Timeline elements with a yellow highlight ring:
+
+| Step | Element | Description |
+|------|---------|-------------|
+| 1 | **Playback** | Play, Stop, and Loop controls |
+| 2 | **Timecode** | Current position and total duration display (click duration to edit) |
+| 3 | **Tools & Zoom** | Snapping, Cut tool, Zoom, and Fit controls |
+| 4 | **In/Out Points** | Set In (I) and Out (O) points for the export range |
+| 5 | **Tracks** | Add video, audio, or text tracks |
+| 6 | **Navigator** | Scroll and zoom the Timeline; drag edges to zoom in/out |
+
+Part 2 highlights individual UI elements within the Timeline panel using CSS selectors. The Timeline panel itself remains fully visible (spotlight mask), while the target element gets a yellow highlight ring overlay.
+
+### Clippy Mascot
+
+An animated Clippy companion appears alongside tutorial tooltips:
+
+| Phase | Behavior |
+|-------|----------|
+| **Intro** | One-shot WebM animation when the tutorial first opens |
+| **Loop** | Continuous looping idle animation during tutorial steps |
+| **Outro** | Exit animation when the tutorial is closed or skipped |
+
+Falls back to a static WebP image if WebM video is not supported by the browser.
+
+### Navigation and Controls
+
+| Action | Behavior |
+|--------|----------|
+| **Click anywhere** | Advance to the next step |
+| **Escape** | Close the tutorial |
+| **Skip button** | Available on every step and the welcome screen; plays the Clippy outro animation, then dismisses |
+| **Progress dots** | Visual indicator showing current step and completed steps |
+
+### Re-triggering Tutorials
+
+Both tutorial parts can be re-launched manually from the menu bar:
+
+| Menu Location | Action |
+|---------------|--------|
+| Info menu → Tutorial | Start Part 1 (panel introduction) |
+| Info menu → Timeline Tutorial | Start Part 2 (timeline deep-dive) |
 
 ---
 
@@ -389,4 +553,4 @@ Top-right of toolbar:
 
 ---
 
-*Source: `src/components/panels/PropertiesPanel.tsx`, `src/components/dock/`, `src/stores/dockStore.ts`, `src/types/dock.ts`*
+*Source: `src/components/panels/PropertiesPanel.tsx`, `src/components/dock/`, `src/stores/dockStore.ts`, `src/types/dock.ts`, `src/components/timeline/SlotGrid.tsx`, `src/services/layerPlaybackManager.ts`, `src/components/common/TutorialOverlay.tsx`*

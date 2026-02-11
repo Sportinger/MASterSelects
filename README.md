@@ -4,7 +4,7 @@
 
 ### Browser-based Video Compositor
 
-[![Version](https://img.shields.io/badge/version-1.2.3-blue.svg)](https://github.com/Sportinger/MASterSelects/releases)
+[![Version](https://img.shields.io/badge/version-1.2.4-blue.svg)](https://github.com/Sportinger/MASterSelects/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 [![WebGPU](https://img.shields.io/badge/WebGPU-Powered-990000?style=flat-square&logo=webgpu&logoColor=white)](#)
@@ -14,7 +14,7 @@
 
 <table>
 <tr>
-<td align="center"><b>39</b><br><sub>GPU Effects</sub></td>
+<td align="center"><b>30+</b><br><sub>GPU Effects</sub></td>
 <td align="center"><b>37</b><br><sub>Blend Modes</sub></td>
 <td align="center"><b>2,300+</b><br><sub>Lines WGSL</sub></td>
 <td align="center"><b>35</b><br><sub>AI Tools</sub></td>
@@ -69,9 +69,11 @@ Built with Claude as my pair-programmer. I'm not mass-prompting generic code - e
 | [**AI Integration**](docs/Features/AI-Integration.md) | 50+ tools controllable via GPT-4/GPT-5 |
 | [**4 Export Modes**](docs/Features/Export.md) | WebCodecs Fast/Precise, FFmpeg ProRes/DNxHR, FCP XML |
 | [**Live EQ & Audio**](docs/Features/Audio.md) | 10-band parametric EQ with real-time Web Audio preview |
-| [**YouTube Download**](docs/Features/YouTube.md) | Search, download, and edit directly |
+| [**Download Panel**](docs/Features/YouTube.md) | YouTube, TikTok, Instagram, Twitter/X, and more |
 | [**Text & Solids**](docs/Features/Text-Clips.md) | 50 Google Fonts, stroke, shadow, solid color clips |
 | [**Proxy System**](docs/Features/Proxy-System.md) | GPU-accelerated proxies with resume and cache indicator |
+| [**Output Manager**](docs/Features/Preview.md) | Source routing, corner pin warping, mask layers, multi-window |
+| [**Slot Grid**](docs/Features/UI-Panels.md) | Resolume-style 4x12 grid with multi-layer playback |
 | [**Preview & Playback**](docs/Features/Preview.md) | RAM Preview, transform handles, multiple outputs |
 | [**Project Storage**](docs/Features/Project-Persistence.md) | Local folders, Raw media auto-copy, autosave, backups |
 
@@ -100,7 +102,7 @@ npm run dev     # http://localhost:5173
 
 This is alpha software. Features get added fast, things break.
 
-- YouTube download requires Native Helper with yt-dlp installed
+- Video downloads require Native Helper with yt-dlp installed
 - Audio waveforms may not display for some video formats
 - Very long videos (>2 hours) may cause performance issues
 
