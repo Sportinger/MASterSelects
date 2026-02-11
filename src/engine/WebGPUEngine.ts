@@ -7,7 +7,7 @@ import type { Layer, EngineStats, LayerRenderData } from './core/types';
 import { WebGPUContext, type GPUPowerPreference } from './core/WebGPUContext';
 import { TextureManager } from './texture/TextureManager';
 import { MaskTextureManager } from './texture/MaskTextureManager';
-import { ScrubbingCache } from './texture/ScrubbingCache';
+import { CacheManager } from './managers/CacheManager';
 import { CompositorPipeline } from './pipeline/CompositorPipeline';
 import { EffectsPipeline } from '../effects/EffectsPipeline';
 import { OutputPipeline } from './pipeline/OutputPipeline';
@@ -46,7 +46,7 @@ export class WebGPUEngine {
   // Existing managers (unchanged)
   private textureManager: TextureManager | null = null;
   private maskTextureManager: MaskTextureManager | null = null;
-  private scrubbingCache: ScrubbingCache | null = null;
+  private cacheManager: CacheManager = new CacheManager();
   private videoFrameManager: VideoFrameManager;
 
   // Pipelines
@@ -70,16 +70,9 @@ export class WebGPUEngine {
   private isExporting = false;
   private lastRenderHadContent = false;
 
-  // Video time tracking (for optimization)
-  private lastVideoTime: Map<string, number> = new Map();
-
   // Track whether play has ever been pressed — persists across RenderLoop recreations.
   // Before first play, idle detection is suppressed so video GPU surfaces stay warm.
   private hasEverPlayed = false;
-
-  // RAM preview playback
-  private ramPlaybackCanvas: HTMLCanvasElement | null = null;
-  private ramPlaybackCtx: CanvasRenderingContext2D | null = null;
 
   // Export canvas (OffscreenCanvas for zero-copy VideoFrame creation)
   private exportCanvas: OffscreenCanvas | null = null;
@@ -123,7 +116,7 @@ export class WebGPUEngine {
     // Initialize managers
     this.textureManager = new TextureManager(device);
     this.maskTextureManager = new MaskTextureManager(device);
-    this.scrubbingCache = new ScrubbingCache(device);
+    this.cacheManager.initialize(device);
 
     // Create sampler
     this.sampler = this.context.createSampler();
@@ -173,7 +166,7 @@ export class WebGPUEngine {
       this.effectsPipeline,
       this.textureManager,
       this.maskTextureManager,
-      this.scrubbingCache
+      this.cacheManager.getScrubbingCache()
     );
 
     this.renderLoop = new RenderLoop(this.performanceStats, {
@@ -192,12 +185,11 @@ export class WebGPUEngine {
     this.renderTargetManager?.clearAll();
     this.previewContext = null;
     this.targetCanvases.clear();
-    this.lastVideoTime.clear();
+    this.cacheManager.handleDeviceLost();
 
     // Clear managers
     this.textureManager = null;
     this.maskTextureManager = null;
-    this.scrubbingCache = null;
     this.compositorPipeline = null;
     this.effectsPipeline = null;
     this.outputPipeline = null;
@@ -411,10 +403,9 @@ export class WebGPUEngine {
   }
 
   cleanupVideo(video: HTMLVideoElement): void {
-    this.scrubbingCache?.cleanupVideo(video);
+    this.cacheManager.cleanupVideoCache(video);
     this.videoFrameManager.cleanupVideo(video);
     if (video.src) {
-      this.lastVideoTime.delete(video.src);
       // Release video element resources to free memory
       video.pause();
       video.removeAttribute('src');
@@ -451,76 +442,55 @@ export class WebGPUEngine {
     return this.textureManager?.importVideoTexture(source) ?? null;
   }
 
-  // === CACHING ===
+  // === CACHING (delegated to CacheManager) ===
 
   clearCaches(): void {
-    this.scrubbingCache?.clearAll();
+    this.cacheManager.clearAll();
     this.textureManager?.clearCaches();
-    log.debug('Cleared all caches');
   }
 
   clearVideoCache(): void {
-    this.lastVideoTime.clear();
-    log.debug('Cleared video texture cache');
+    this.cacheManager.clearVideoTimeTracking();
   }
 
   cacheFrameAtTime(video: HTMLVideoElement, time: number): void {
-    this.scrubbingCache?.cacheFrameAtTime(video, time);
+    this.cacheManager.cacheFrameAtTime(video, time);
   }
 
   getCachedFrame(videoSrc: string, time: number): GPUTextureView | null {
-    return this.scrubbingCache?.getCachedFrame(videoSrc, time) ?? null;
+    return this.cacheManager.getCachedFrame(videoSrc, time);
   }
 
   getScrubbingCacheStats(): { count: number; maxCount: number } {
-    return this.scrubbingCache?.getScrubbingCacheStats() ?? { count: 0, maxCount: 0 };
+    return this.cacheManager.getScrubbingCacheStats();
   }
 
   clearScrubbingCache(videoSrc?: string): void {
-    this.scrubbingCache?.clearScrubbingCache(videoSrc);
+    this.cacheManager.clearScrubbingCache(videoSrc);
   }
 
   // === RAM PREVIEW CACHE ===
 
   async cacheCompositeFrame(time: number): Promise<void> {
-    if (!this.scrubbingCache) return;
-    if (this.scrubbingCache.hasCompositeCacheFrame(time)) return;
-
-    const pixels = await this.readPixels();
-    if (!pixels) return;
-
-    const { width, height } = this.renderTargetManager?.getResolution() ?? { width: 640, height: 360 };
-
-    if (this.scrubbingCache.getCompositeCacheStats(width, height).count === 0) {
-      let nonZero = 0;
-      for (let i = 0; i < Math.min(1000, pixels.length); i++) {
-        if (pixels[i] !== 0) nonZero++;
-      }
-      log.debug('RAM Preview first frame', { nonZero, width, height });
-    }
-
-    const imageData = new ImageData(new Uint8ClampedArray(pixels), width, height);
-    this.scrubbingCache.cacheCompositeFrame(time, imageData);
+    const getResolution = () => this.renderTargetManager?.getResolution() ?? { width: 640, height: 360 };
+    await this.cacheManager.cacheCompositeFrame(time, () => this.readPixels(), getResolution);
   }
 
   getCachedCompositeFrame(time: number): ImageData | null {
-    return this.scrubbingCache?.getCachedCompositeFrame(time) ?? null;
+    return this.cacheManager.getCachedCompositeFrame(time);
   }
 
   hasCompositeCacheFrame(time: number): boolean {
-    return this.scrubbingCache?.hasCompositeCacheFrame(time) ?? false;
+    return this.cacheManager.hasCompositeCacheFrame(time);
   }
 
   clearCompositeCache(): void {
-    this.scrubbingCache?.clearCompositeCache();
-    this.ramPlaybackCanvas = null;
-    this.ramPlaybackCtx = null;
-    log.debug('Composite cache cleared');
+    this.cacheManager.clearCompositeCache();
   }
 
   getCompositeCacheStats(): { count: number; maxFrames: number; memoryMB: number } {
-    const { width, height } = this.renderTargetManager?.getResolution() ?? { width: 640, height: 360 };
-    return this.scrubbingCache?.getCompositeCacheStats(width, height) ?? { count: 0, maxFrames: 0, memoryMB: 0 };
+    const getResolution = () => this.renderTargetManager?.getResolution() ?? { width: 640, height: 360 };
+    return this.cacheManager.getCompositeCacheStats(getResolution);
   }
 
   setGeneratingRamPreview(generating: boolean): void {
@@ -529,7 +499,7 @@ export class WebGPUEngine {
 
   setExporting(exporting: boolean): void {
     this.isExporting = exporting;
-    if (exporting) this.lastVideoTime.clear();
+    if (exporting) this.cacheManager.clearVideoTimeTracking();
     log.info('Export mode', { enabled: exporting });
   }
 
@@ -628,9 +598,7 @@ export class WebGPUEngine {
    * Called before seeking to provide a fallback frame during seek.
    */
   ensureVideoFrameCached(video: HTMLVideoElement): void {
-    if (this.scrubbingCache && !this.scrubbingCache.getLastFrame(video)) {
-      this.scrubbingCache.captureVideoFrame(video);
-    }
+    this.cacheManager.ensureVideoFrameCached(video);
   }
 
   /**
@@ -639,8 +607,7 @@ export class WebGPUEngine {
    * Call from canplaythrough handlers during project restore.
    */
   async preCacheVideoFrame(video: HTMLVideoElement): Promise<boolean> {
-    if (!this.scrubbingCache) return false;
-    const success = await this.scrubbingCache.captureVideoFrameViaImageBitmap(video);
+    const success = await this.cacheManager.preCacheVideoFrame(video);
     if (success) {
       this.requestRender();
     }
@@ -701,9 +668,9 @@ export class WebGPUEngine {
     const t1 = performance.now();
     const layerData = this.layerCollector.collect(layers, {
       textureManager: this.textureManager!,
-      scrubbingCache: this.scrubbingCache,
-      getLastVideoTime: (key) => this.lastVideoTime.get(key),
-      setLastVideoTime: (key, time) => this.lastVideoTime.set(key, time),
+      scrubbingCache: this.cacheManager.getScrubbingCache(),
+      getLastVideoTime: (key) => this.cacheManager.getLastVideoTime(key),
+      setLastVideoTime: (key, time) => this.cacheManager.setLastVideoTime(key, time),
       isExporting: this.isExporting,
     });
     const importTime = performance.now() - t1;
@@ -1030,11 +997,12 @@ export class WebGPUEngine {
 
   renderCachedFrame(time: number): boolean {
     const device = this.context.getDevice();
-    if (!this.previewContext || !device || !this.scrubbingCache || !this.outputPipeline || !this.sampler) {
+    const scrubbingCache = this.cacheManager.getScrubbingCache();
+    if (!this.previewContext || !device || !scrubbingCache || !this.outputPipeline || !this.sampler) {
       return false;
     }
 
-    const gpuCached = this.scrubbingCache.getGpuCachedFrame(time);
+    const gpuCached = scrubbingCache.getGpuCachedFrame(time);
     if (gpuCached) {
       log.debug('RAM Preview cache hit (GPU)', { time: time.toFixed(3) });
       const commandEncoder = device.createCommandEncoder();
@@ -1049,11 +1017,11 @@ export class WebGPUEngine {
       return true;
     }
 
-    const imageData = this.scrubbingCache.getCachedCompositeFrame(time);
+    const imageData = scrubbingCache.getCachedCompositeFrame(time);
     if (!imageData) {
       // Only log occasionally to avoid spam
       if (Math.random() < 0.05) {
-        log.debug('RAM Preview cache miss', { time: time.toFixed(3), cacheSize: this.scrubbingCache.getCompositeCacheStats(1920, 1080).count });
+        log.debug('RAM Preview cache miss', { time: time.toFixed(3), cacheSize: scrubbingCache.getCompositeCacheStats(1920, 1080).count });
       }
       return false;
     }
@@ -1062,19 +1030,22 @@ export class WebGPUEngine {
     try {
       const { width, height } = { width: imageData.width, height: imageData.height };
 
-      if (!this.ramPlaybackCanvas || !this.ramPlaybackCtx) {
-        this.ramPlaybackCanvas = document.createElement('canvas');
-        this.ramPlaybackCanvas.width = width;
-        this.ramPlaybackCanvas.height = height;
-        this.ramPlaybackCtx = this.ramPlaybackCanvas.getContext('2d', { willReadFrequently: false });
-      } else if (this.ramPlaybackCanvas.width !== width || this.ramPlaybackCanvas.height !== height) {
-        this.ramPlaybackCanvas.width = width;
-        this.ramPlaybackCanvas.height = height;
+      let canvas = this.cacheManager.getRamPlaybackCanvas();
+      let ctx = this.cacheManager.getRamPlaybackCtx();
+
+      if (!canvas || !ctx) {
+        canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        ctx = canvas.getContext('2d', { willReadFrequently: false });
+        if (!ctx) return false;
+        this.cacheManager.setRamPlaybackCanvas(canvas, ctx);
+      } else if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
       }
 
-      if (!this.ramPlaybackCtx) return false;
-
-      this.ramPlaybackCtx.putImageData(imageData, 0, 0);
+      ctx.putImageData(imageData, 0, 0);
 
       const texture = device.createTexture({
         size: [width, height],
@@ -1082,12 +1053,12 @@ export class WebGPUEngine {
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
       });
 
-      device.queue.copyExternalImageToTexture({ source: this.ramPlaybackCanvas }, { texture }, [width, height]);
+      device.queue.copyExternalImageToTexture({ source: canvas }, { texture }, [width, height]);
 
       const view = texture.createView();
       const bindGroup = this.outputPipeline.createOutputBindGroup(this.sampler, view);
 
-      this.scrubbingCache.addToGpuCache(time, { texture, view, bindGroup });
+      scrubbingCache.addToGpuCache(time, { texture, view, bindGroup });
 
       const commandEncoder = device.createCommandEncoder();
       this.outputPipeline.renderToCanvas(commandEncoder, this.previewContext, bindGroup);
@@ -1189,8 +1160,8 @@ export class WebGPUEngine {
 
   setResolution(width: number, height: number): void {
     if (this.renderTargetManager?.setResolution(width, height)) {
-      this.scrubbingCache?.clearCompositeCache();
-      this.scrubbingCache?.clearScrubbingCache();
+      this.cacheManager.clearCompositeCache();
+      this.cacheManager.clearScrubbingCache();
       this.outputWindowManager?.updateResolution(width, height);
       this.outputPipeline?.invalidateCache();
       this.compositorPipeline?.invalidateBindGroupCache();
@@ -1361,14 +1332,13 @@ export class WebGPUEngine {
     this.nestedCompRenderer?.destroy();
     this.textureManager?.destroy();
     this.maskTextureManager?.destroy();
-    this.scrubbingCache?.destroy();
+    this.cacheManager.destroy();
     this.videoFrameManager.destroy();
     this.compositorPipeline?.destroy();
     this.effectsPipeline?.destroy();
     this.outputPipeline?.destroy();
     this.slicePipeline?.destroy();
     this.context.destroy();
-    this.lastVideoTime.clear();
   }
 }
 
