@@ -9707,14 +9707,14 @@ input[type="checkbox"] {
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9), 0 0 6px rgba(0, 0, 0, 0.7);
 }
 
-/* Slot time display (elapsed + duration stacked) */
+/* Slot time display (elapsed / duration) */
 .slot-grid-time {
   position: absolute;
   bottom: 2px;
   left: 4px;
   text-align: left;
   font-size: 10px;
-  line-height: 1.2;
+  white-space: nowrap;
   font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
   color: rgba(255, 255, 255, 0.85);
   pointer-events: none;

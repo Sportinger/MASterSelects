@@ -498,7 +498,7 @@ const SlotTimeOverlay = memo(function SlotTimeOverlay({
 
     if (!isActive) {
       line.style.display = 'none';
-      timeEl.innerHTML = `${fmtTime(0)}<br>${durationStr}`;
+      timeEl.textContent = `${fmtTime(0)} / ${durationStr}`;
       return;
     }
 
@@ -531,7 +531,7 @@ const SlotTimeOverlay = memo(function SlotTimeOverlay({
       }
       const pct = Math.max(0, Math.min(1, pos / duration));
       line.style.left = `${padding + pct * trackWidth}px`;
-      timeEl.innerHTML = `${fmtTime(pos)}<br>${durationStr}`;
+      timeEl.textContent = `${fmtTime(pos)} / ${durationStr}`;
       rafId = requestAnimationFrame(update);
     };
 
