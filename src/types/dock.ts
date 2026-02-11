@@ -2,7 +2,7 @@
 
 // Panel types that can be docked
 // Note: Effects, Transcript, Analysis are now integrated into Properties panel
-export type PanelType = 'preview' | 'timeline' | 'clip-properties' | 'media' | 'export' | 'multicam' | 'ai-chat' | 'ai-video' | 'ai-segment' | 'download' | 'transitions' | 'scope-waveform' | 'scope-histogram' | 'scope-vectorscope';
+export type PanelType = 'preview' | 'multi-preview' | 'timeline' | 'clip-properties' | 'media' | 'export' | 'multicam' | 'ai-chat' | 'ai-video' | 'ai-segment' | 'download' | 'transitions' | 'scope-waveform' | 'scope-histogram' | 'scope-vectorscope';
 
 // AI panel types for grouping in View menu
 export const AI_PANEL_TYPES: PanelType[] = ['ai-chat', 'ai-video', 'ai-segment'];
@@ -19,7 +19,16 @@ export interface PreviewPanelData {
   showTransparencyGrid?: boolean; // per-tab transparency grid toggle (default false)
 }
 
-export type PanelData = PreviewPanelData;
+export interface MultiPreviewSlotData {
+  compositionId: string | null;
+}
+
+export interface MultiPreviewPanelData {
+  slots: [MultiPreviewSlotData, MultiPreviewSlotData, MultiPreviewSlotData, MultiPreviewSlotData];
+  showTransparencyGrid: boolean;
+}
+
+export type PanelData = PreviewPanelData | MultiPreviewPanelData;
 
 // A panel instance
 export interface DockPanel {
@@ -100,6 +109,13 @@ export const PANEL_CONFIGS: Record<PanelType, PanelConfig> = {
     title: 'Preview',
     minWidth: 200,
     minHeight: 150,
+    closable: false,
+  },
+  'multi-preview': {
+    type: 'multi-preview',
+    title: 'Multi Preview',
+    minWidth: 400,
+    minHeight: 300,
     closable: false,
   },
   timeline: {

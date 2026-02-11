@@ -2,7 +2,7 @@
 // Note: Effects, Transcript, Analysis are now integrated into PropertiesPanel
 
 import { lazy, Suspense } from 'react';
-import type { DockPanel, PreviewPanelData } from '../../types/dock';
+import type { DockPanel, PreviewPanelData, MultiPreviewPanelData } from '../../types/dock';
 import { Preview } from '../preview';
 import { PropertiesPanel, MediaPanel } from '../panels';
 import { Timeline } from '../timeline';
@@ -20,6 +20,12 @@ const SAM2Panel = lazy(() => import('../panels/SAM2Panel').then(m => ({ default:
 const WaveformPanel = lazy(() => import('../panels/scopes/WaveformPanel').then(m => ({ default: m.WaveformPanel })));
 const HistogramPanel = lazy(() => import('../panels/scopes/HistogramPanel').then(m => ({ default: m.HistogramPanel })));
 const VectorscopePanel = lazy(() => import('../panels/scopes/VectorscopePanel').then(m => ({ default: m.VectorscopePanel })));
+const MultiPreviewPanel = lazy(() => import('../preview/MultiPreviewPanel').then(m => ({ default: m.MultiPreviewPanel })));
+
+const DEFAULT_MULTI_PREVIEW_DATA: MultiPreviewPanelData = {
+  slots: [{ compositionId: null }, { compositionId: null }, { compositionId: null }, { compositionId: null }],
+  showTransparencyGrid: false,
+};
 
 function PanelLoading() {
   return <div className="flex items-center justify-center h-full text-gray-500 text-sm">Loading...</div>;
@@ -34,6 +40,10 @@ export function DockPanelContent({ panel }: DockPanelContentProps) {
     case 'preview': {
       const previewData = panel.data as PreviewPanelData | undefined;
       return <Preview panelId={panel.id} compositionId={previewData?.compositionId ?? null} showTransparencyGrid={previewData?.showTransparencyGrid ?? false} />;
+    }
+    case 'multi-preview': {
+      const mpData = (panel.data as MultiPreviewPanelData | undefined) ?? DEFAULT_MULTI_PREVIEW_DATA;
+      return <Suspense fallback={<PanelLoading />}><MultiPreviewPanel panelId={panel.id} data={mpData} /></Suspense>;
     }
     case 'export':
       return <Suspense fallback={<PanelLoading />}><ExportPanel /></Suspense>;
