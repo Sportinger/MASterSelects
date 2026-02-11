@@ -451,7 +451,9 @@ function fmtTime(seconds: number): string {
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
   const ms = Math.floor((seconds % 1) * 100);
-  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
+  const msStr = ms.toString().padStart(2, '0');
+  if (mins > 0) return `${mins}:${secs.toString().padStart(2, '0')}.${msStr}`;
+  return `${secs}.${msStr}`;
 }
 
 /** Slot overlay — playhead line + live time / duration display via rAF */
@@ -496,7 +498,7 @@ const SlotTimeOverlay = memo(function SlotTimeOverlay({
 
     if (!isActive) {
       line.style.display = 'none';
-      timeEl.textContent = `00:00.00 / ${durationStr}`;
+      timeEl.innerHTML = `${fmtTime(0)}<br>${durationStr}`;
       return;
     }
 
@@ -529,7 +531,7 @@ const SlotTimeOverlay = memo(function SlotTimeOverlay({
       }
       const pct = Math.max(0, Math.min(1, pos / duration));
       line.style.left = `${padding + pct * trackWidth}px`;
-      timeEl.textContent = `${fmtTime(pos)} / ${durationStr}`;
+      timeEl.innerHTML = `${fmtTime(pos)}<br>${durationStr}`;
       rafId = requestAnimationFrame(update);
     };
 
