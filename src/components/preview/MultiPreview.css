@@ -1,0 +1,131 @@
+/* ========== MULTI PREVIEW ========== */
+
+/* Container fills the dock panel */
+.multi-preview-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  background: var(--bg-canvas);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Controls bar */
+.multi-preview-controls {
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.multi-preview-title {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-right: auto;
+}
+
+/* Grid wrapper — centers the 16:9 grid in the available space */
+.multi-preview-grid-wrapper {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 0;
+}
+
+/* 2x2 grid that maintains 16:9 as a whole.
+   Each cell is 16:9, 2 cols + 2 rows = total 16:9.
+   max-width/max-height + aspect-ratio ensure it scales to fit. */
+.multi-preview-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 1px;
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  max-height: 100%;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* When container is wider than 16:9, constrain width by height */
+.multi-preview-grid-wrapper:has(.multi-preview-grid) {
+  container-type: size;
+}
+
+/* Single slot */
+.multi-preview-slot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-canvas);
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+}
+
+.multi-preview-slot-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+/* Slot composition dropdown — hidden by default, visible on hover */
+.multi-preview-slot-dropdown-wrapper {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 10;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.multi-preview-slot:hover .multi-preview-slot-dropdown-wrapper {
+  opacity: 1;
+}
+
+.multi-preview-slot-dropdown-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+  backdrop-filter: blur(4px);
+}
+
+.multi-preview-slot-dropdown-btn:hover {
+  background: rgba(0, 0, 0, 0.9);
+  color: var(--text-primary);
+  border-color: #555;
+}
+
+.multi-preview-slot-comp-name {
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.multi-preview-slot-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  min-width: 140px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  padding: 4px 0;
+  z-index: 100;
+}

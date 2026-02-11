@@ -8,6 +8,7 @@ import { useDockStore } from '../../stores/dockStore';
 import { StatsOverlay } from './StatsOverlay';
 import { MultiPreviewSlot } from './MultiPreviewSlot';
 import type { MultiPreviewPanelData } from '../../types/dock';
+import './MultiPreview.css';
 
 interface MultiPreviewPanelProps {
   panelId: string;
@@ -95,18 +96,20 @@ export function MultiPreviewPanel({ panelId, data }: MultiPreviewPanelProps) {
         </div>
       </div>
 
-      {/* 2x2 grid */}
-      <div className="multi-preview-grid">
-        {data.slots.map((slot, index) => (
-          <MultiPreviewSlot
-            key={index}
-            panelId={panelId}
-            slotIndex={index}
-            compositionId={slot.compositionId}
-            showTransparencyGrid={data.showTransparencyGrid}
-            onCompositionChange={(compId) => handleSlotCompositionChange(index, compId)}
-          />
-        ))}
+      {/* 2x2 grid — wrapper centers the 16:9 block, grid scales uniformly */}
+      <div className="multi-preview-grid-wrapper">
+        <div className="multi-preview-grid">
+          {data.slots.map((slot, index) => (
+            <MultiPreviewSlot
+              key={index}
+              panelId={panelId}
+              slotIndex={index}
+              compositionId={slot.compositionId}
+              showTransparencyGrid={data.showTransparencyGrid}
+              onCompositionChange={(compId) => handleSlotCompositionChange(index, compId)}
+            />
+          ))}
+        </div>
       </div>
 
       {/* Single stats overlay over the whole panel */}
