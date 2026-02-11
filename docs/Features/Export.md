@@ -424,7 +424,7 @@ Export V2 introduces a shared decoder architecture for more efficient multi-clip
 
 | Test File | Tests | Coverage |
 |-----------|-------|----------|
-| [`exportUtils.test.ts`](../../tests/unit/exportUtils.test.ts) | 42 | FCP XML, time calculations, export settings |
+| [`exportUtils.test.ts`](../../tests/unit/exportUtils.test.ts) | 109 | FCP XML, time calculations, codec helpers, bitrate, presets, export settings |
 
 Run tests: `npx vitest run`
 
