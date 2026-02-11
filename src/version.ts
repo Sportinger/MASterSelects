@@ -1,7 +1,7 @@
 // App version - INCREMENT ON EVERY COMMIT!
 // Format: MAJOR.MINOR.PATCH
 // Increment PATCH (0.0.X) for each commit
-export const APP_VERSION = '1.2.4';
+export const APP_VERSION = '1.2.5';
 
 // Build/Platform notice shown at top of changelog (set to null to hide)
 export const BUILD_NOTICE: {
