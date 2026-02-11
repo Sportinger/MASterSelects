@@ -12,6 +12,10 @@ interface TargetListProps {
   onSelect: (id: string) => void;
 }
 
+function isTargetClosed(target: RenderTarget): boolean {
+  return target.window === null || target.window === undefined || target.window.closed;
+}
+
 export function TargetList({ selectedTargetId, onSelect }: TargetListProps) {
   const targets = useRenderTargetStore((s) => s.targets);
 
@@ -46,6 +50,14 @@ export function TargetList({ selectedTargetId, onSelect }: TargetListProps) {
     engine.closeOutputWindow(targetId);
   };
 
+  const handleRestore = (targetId: string) => {
+    engine.restoreOutputWindow(targetId);
+  };
+
+  const handleRemove = (targetId: string) => {
+    engine.removeOutputTarget(targetId);
+  };
+
   const handleNewOutput = () => {
     const id = `output_${Date.now()}`;
     engine.createOutputWindow(id, `Output ${Date.now()}`);
@@ -63,39 +75,68 @@ export function TargetList({ selectedTargetId, onSelect }: TargetListProps) {
         {outputTargets.length === 0 && (
           <div className="om-empty">No output targets. Click "+ Add" to create one.</div>
         )}
-        {outputTargets.map((target) => (
-          <div
-            key={target.id}
-            className={`om-target-item ${selectedTargetId === target.id ? 'selected' : ''}`}
-            onClick={() => onSelect(target.id)}
-          >
-            <div className="om-target-row">
-              <span className={`om-target-status ${target.enabled ? 'enabled' : 'disabled'}`} />
-              <span className="om-target-name">{target.name}</span>
-              <span className="om-target-type">{target.destinationType}</span>
+        {outputTargets.map((target) => {
+          const closed = isTargetClosed(target);
+          return (
+            <div
+              key={target.id}
+              className={`om-target-item ${selectedTargetId === target.id ? 'selected' : ''} ${closed ? 'closed' : ''}`}
+              onClick={() => onSelect(target.id)}
+            >
+              <div className="om-target-row">
+                <span className={`om-target-status ${closed ? 'closed' : target.enabled ? 'enabled' : 'disabled'}`} />
+                <span className="om-target-name">{target.name}</span>
+                <span className="om-target-type">{closed ? 'closed' : target.destinationType}</span>
+              </div>
+              <div className="om-target-row om-target-controls">
+                {closed ? (
+                  <>
+                    <span className="om-source-label-readonly">
+                      {target.source.type === 'activeComp' ? 'Active Comp' :
+                       target.source.type === 'composition' ? 'Composition' :
+                       target.source.type}
+                    </span>
+                    <button
+                      className="om-restore-btn"
+                      onClick={(e) => { e.stopPropagation(); handleRestore(target.id); }}
+                      title="Restore output window"
+                    >
+                      Restore
+                    </button>
+                    <button
+                      className="om-remove-btn"
+                      onClick={(e) => { e.stopPropagation(); handleRemove(target.id); }}
+                      title="Remove from list"
+                    >
+                      Remove
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <SourceSelector
+                      currentSource={target.source}
+                      onChange={(source) => handleSourceChange(target.id, source)}
+                    />
+                    <button
+                      className={`om-toggle-btn ${target.enabled ? 'active' : ''}`}
+                      onClick={(e) => { e.stopPropagation(); handleToggleEnabled(target.id, !target.enabled); }}
+                      title={target.enabled ? 'Disable' : 'Enable'}
+                    >
+                      {target.enabled ? 'ON' : 'OFF'}
+                    </button>
+                    <button
+                      className="om-close-btn"
+                      onClick={(e) => { e.stopPropagation(); handleClose(target.id); }}
+                      title="Close output"
+                    >
+                      X
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
-            <div className="om-target-row om-target-controls">
-              <SourceSelector
-                currentSource={target.source}
-                onChange={(source) => handleSourceChange(target.id, source)}
-              />
-              <button
-                className={`om-toggle-btn ${target.enabled ? 'active' : ''}`}
-                onClick={(e) => { e.stopPropagation(); handleToggleEnabled(target.id, !target.enabled); }}
-                title={target.enabled ? 'Disable' : 'Enable'}
-              >
-                {target.enabled ? 'ON' : 'OFF'}
-              </button>
-              <button
-                className="om-close-btn"
-                onClick={(e) => { e.stopPropagation(); handleClose(target.id); }}
-                title="Close output"
-              >
-                X
-              </button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

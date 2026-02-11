@@ -292,6 +292,40 @@ export class WebGPUEngine {
       target.window.close();
     }
     this.unregisterTargetCanvas(id);
+    useRenderTargetStore.getState().deactivateTarget(id);
+  }
+
+  restoreOutputWindow(id: string): boolean {
+    if (!this.outputWindowManager) return false;
+
+    const target = useRenderTargetStore.getState().targets.get(id);
+    if (!target || target.destinationType !== 'window') return false;
+
+    const result = this.outputWindowManager.createWindow(id, target.name);
+    if (!result) return false;
+
+    const gpuContext = this.registerTargetCanvas(id, result.canvas);
+    if (!gpuContext) {
+      result.window.close();
+      return false;
+    }
+
+    // Update the existing store entry with new runtime refs
+    const store = useRenderTargetStore.getState();
+    store.setTargetCanvas(id, result.canvas, gpuContext);
+    store.setTargetWindow(id, result.window);
+    store.setTargetEnabled(id, true);
+
+    // Restore fullscreen if it was previously fullscreen
+    if (target.isFullscreen) {
+      result.canvas.requestFullscreen().catch(() => {});
+    }
+
+    return true;
+  }
+
+  removeOutputTarget(id: string): void {
+    this.unregisterTargetCanvas(id);
     useRenderTargetStore.getState().unregisterTarget(id);
   }
 

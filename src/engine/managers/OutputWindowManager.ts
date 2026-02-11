@@ -100,9 +100,9 @@ export class OutputWindowManager {
       fullscreenBtn.style.display = outputWindow.document.fullscreenElement ? 'none' : 'block';
     });
 
-    // When window is closed by user, clean up from render target store
+    // When window is closed by user, deactivate (keep entry grayed out) instead of removing
     outputWindow.onbeforeunload = () => {
-      useRenderTargetStore.getState().unregisterTarget(id);
+      useRenderTargetStore.getState().deactivateTarget(id);
     };
 
     log.info('Created output window', { id, name });

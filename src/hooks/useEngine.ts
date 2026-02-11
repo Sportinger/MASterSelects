@@ -481,11 +481,21 @@ export function useEngine() {
     engine.closeOutputWindow(id);
   }, []);
 
+  const restoreOutputWindow = useCallback((id: string) => {
+    return engine.restoreOutputWindow(id);
+  }, []);
+
+  const removeOutputTarget = useCallback((id: string) => {
+    engine.removeOutputTarget(id);
+  }, []);
+
   return {
     canvasRef,
     isEngineReady,
     isPlaying,
     createOutputWindow,
     closeOutputWindow,
+    restoreOutputWindow,
+    removeOutputTarget,
   };
 }

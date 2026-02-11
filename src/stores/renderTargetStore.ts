@@ -15,6 +15,7 @@ interface RenderTargetActions {
   // Target lifecycle
   registerTarget: (target: RenderTarget) => void;
   unregisterTarget: (id: string) => void;
+  deactivateTarget: (id: string) => void;
 
   // Source routing
   updateTargetSource: (id: string, source: RenderSource) => void;
@@ -64,6 +65,16 @@ export const useRenderTargetStore = create<RenderTargetState & RenderTargetActio
           targets: next,
           selectedTargetId: state.selectedTargetId === id ? null : state.selectedTargetId,
         };
+      });
+    },
+
+    deactivateTarget: (id) => {
+      set((state) => {
+        const target = state.targets.get(id);
+        if (!target) return state;
+        const next = new Map(state.targets);
+        next.set(id, { ...target, canvas: null, context: null, window: null });
+        return { targets: next };
       });
     },
 

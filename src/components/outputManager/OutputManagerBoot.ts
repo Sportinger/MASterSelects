@@ -227,6 +227,52 @@ function getOutputManagerStyles(): string {
       border-color: #f44;
     }
 
+    /* Closed (deactivated) target state */
+    .om-target-item.closed {
+      opacity: 0.55;
+    }
+    .om-target-status.closed {
+      background: #555;
+      border: 1px solid #777;
+    }
+    .om-source-label-readonly {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 11px;
+      color: #777;
+      font-style: italic;
+    }
+    .om-restore-btn {
+      background: #2D8CEB;
+      color: white;
+      border: none;
+      padding: 2px 10px;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 10px;
+      font-weight: 600;
+    }
+    .om-restore-btn:hover {
+      background: #4DA3F0;
+    }
+    .om-remove-btn {
+      background: none;
+      color: #888;
+      border: 1px solid #444;
+      padding: 2px 6px;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 10px;
+    }
+    .om-remove-btn:hover {
+      background: #4a1a1a;
+      color: #f44;
+      border-color: #f44;
+    }
+
     /* Source Selector */
     .om-source-selector {
       position: relative;
