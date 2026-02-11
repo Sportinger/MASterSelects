@@ -6,8 +6,6 @@ import { create } from 'zustand';
 import { subscribeWithSelector, persist } from 'zustand/middleware';
 import { apiKeyManager, type ApiKeyType } from '../services/apiKeyManager';
 import { Logger } from '../services/logger';
-import type { OutputWindow } from '../types';
-
 const log = Logger.create('SettingsStore');
 
 // Transcription provider options
@@ -73,8 +71,7 @@ interface SettingsState {
   // UI state
   isSettingsOpen: boolean;
 
-  // Output settings (moved from mixerStore)
-  outputWindows: OutputWindow[];
+  // Output settings
   // Default resolution for new compositions (active composition drives the engine)
   outputResolution: { width: number; height: number };
   fps: number;
@@ -101,8 +98,6 @@ interface SettingsState {
   toggleSettings: () => void;
 
   // Output actions
-  addOutputWindow: (output: OutputWindow) => void;
-  removeOutputWindow: (id: string) => void;
   setResolution: (width: number, height: number) => void;
 
   // Helpers
@@ -144,8 +139,7 @@ export const useSettingsStore = create<SettingsState>()(
       userBackground: null, // Which program the user comes from
       isSettingsOpen: false,
 
-      // Output settings (moved from mixerStore)
-      outputWindows: [],
+      // Output settings
       outputResolution: { width: 1920, height: 1080 },
       fps: 60,
 
@@ -228,12 +222,6 @@ export const useSettingsStore = create<SettingsState>()(
       toggleSettings: () => set((state) => ({ isSettingsOpen: !state.isSettingsOpen })),
 
       // Output actions
-      addOutputWindow: (output) => {
-        set((state) => ({ outputWindows: [...state.outputWindows, output] }));
-      },
-      removeOutputWindow: (id) => {
-        set((state) => ({ outputWindows: state.outputWindows.filter((o) => o.id !== id) }));
-      },
       setResolution: (width, height) => {
         set({ outputResolution: { width, height } });
       },

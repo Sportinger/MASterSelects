@@ -1,6 +1,6 @@
 // Engine-specific types and interfaces
 // Re-export common types from main types file for convenience
-export type { Layer, BlendMode, OutputWindow, EngineStats, Effect, EffectType } from '../../types';
+export type { Layer, BlendMode, EngineStats, Effect, EffectType } from '../../types';
 import type { Layer } from '../../types';
 
 // Blend mode to shader index mapping

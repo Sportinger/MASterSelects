@@ -162,16 +162,6 @@ export function isAudioEffect(type: EffectType): boolean {
   return type === 'audio-eq' || type === 'audio-volume';
 }
 
-/** @deprecated Use RenderTarget from renderTarget.ts instead */
-export interface OutputWindow {
-  id: string;
-  name: string;
-  window: Window | null;
-  canvas: HTMLCanvasElement | null;
-  context: GPUCanvasContext | null;
-  isFullscreen: boolean;
-}
-
 export interface Project {
   id: string;
   name: string;

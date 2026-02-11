@@ -251,56 +251,6 @@ export class WebGPUEngine {
     return this.targetCanvases.get(targetId)?.context ?? null;
   }
 
-  // --- Deprecated wrappers (forward to unified system) ---
-
-  /** @deprecated Use registerTargetCanvas + renderTargetStore.registerTarget instead */
-  registerPreviewCanvas(id: string, canvas: HTMLCanvasElement): void {
-    const ctx = this.registerTargetCanvas(id, canvas);
-    if (ctx) {
-      // Also register in the target store as activeComp target
-      useRenderTargetStore.getState().registerTarget({
-        id, name: 'Preview', source: { type: 'activeComp' },
-        destinationType: 'canvas', enabled: true,
-        canvas, context: ctx, window: null, isFullscreen: false,
-      });
-    }
-  }
-
-  /** @deprecated Use unregisterTargetCanvas + renderTargetStore.unregisterTarget instead */
-  unregisterPreviewCanvas(id: string): void {
-    this.unregisterTargetCanvas(id);
-    useRenderTargetStore.getState().unregisterTarget(id);
-  }
-
-  /** @deprecated Use registerTargetCanvas + renderTargetStore.registerTarget instead */
-  registerIndependentPreviewCanvas(id: string, canvas: HTMLCanvasElement, compositionId?: string): void {
-    const ctx = this.registerTargetCanvas(id, canvas);
-    if (ctx) {
-      useRenderTargetStore.getState().registerTarget({
-        id, name: 'Independent Preview',
-        source: compositionId ? { type: 'composition', compositionId } : { type: 'activeComp' },
-        destinationType: 'canvas', enabled: true,
-        canvas, context: ctx, window: null, isFullscreen: false,
-      });
-    }
-  }
-
-  /** @deprecated Use unregisterTargetCanvas + renderTargetStore.unregisterTarget instead */
-  unregisterIndependentPreviewCanvas(id: string): void {
-    this.unregisterTargetCanvas(id);
-    useRenderTargetStore.getState().unregisterTarget(id);
-  }
-
-  /** @deprecated Use renderTargetStore.updateTargetSource instead */
-  setIndependentCanvasComposition(canvasId: string, compositionId: string): void {
-    useRenderTargetStore.getState().updateTargetSource(canvasId, { type: 'composition', compositionId });
-  }
-
-  /** @deprecated No-op */
-  setCanvasMirrorsActiveComp(_canvasId: string, _mirrors: boolean): void {
-    // Kept for backward compatibility - no-op
-  }
-
   // === OUTPUT WINDOWS ===
 
   /**
