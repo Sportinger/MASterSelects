@@ -7,12 +7,14 @@ import { createElement } from 'react';
 import { OutputManager } from './OutputManager';
 
 let managerWindow: Window | null = null;
+const OM_OPEN_KEY = 'masterselects-om-open';
 
 export function closeOutputManager(): void {
   if (managerWindow && !managerWindow.closed) {
     managerWindow.close();
   }
   managerWindow = null;
+  localStorage.removeItem(OM_OPEN_KEY);
 }
 
 /**
@@ -54,16 +56,23 @@ function injectOutputManagerUI(win: Window): void {
   const reactRoot = createRoot(root);
   reactRoot.render(createElement(OutputManager));
 
+  // Mark as open for reconnection after refresh
+  localStorage.setItem(OM_OPEN_KEY, '1');
+
   // Cleanup on close
   win.onbeforeunload = () => {
     reactRoot.unmount();
     managerWindow = null;
+    localStorage.removeItem(OM_OPEN_KEY);
   };
 
-  // Ensure window gets foreground focus (fixes Windows drag issue)
-  // Delayed focus helps with Windows popup activation
+  // Ensure popup gets foreground activation on Windows:
+  // Blur the parent first to release foreground lock, then focus the popup
+  // from its own context so the OS allows it to become the foreground window.
+  window.blur();
   win.focus();
-  setTimeout(() => win.focus(), 100);
+  win.setTimeout(() => win.focus(), 50);
+  win.setTimeout(() => win.focus(), 200);
 }
 
 export function openOutputManager(): void {
@@ -92,13 +101,21 @@ export function openOutputManager(): void {
  * Returns true if reconnection succeeded.
  */
 export function reconnectOutputManager(): boolean {
-  // window.open with same name returns existing window reference
+  // Only attempt reconnection if we know the Output Manager was open before refresh.
+  // Without this guard, window.open('', 'output_manager') creates a new blank popup
+  // which causes a focus flash and dock tab-switch bug.
+  if (!localStorage.getItem(OM_OPEN_KEY)) {
+    return false;
+  }
+
   const win = window.open('', 'output_manager');
-  if (!win || win.closed) return false;
+  if (!win || win.closed) {
+    localStorage.removeItem(OM_OPEN_KEY);
+    return false;
+  }
 
   // Check if the window has content (means it was previously opened)
   // A freshly created blank popup has about:blank with empty body
-  // We need to check if this is truly our old window vs a newly created one
   if (win.location.href === 'about:blank' && win.document.body && win.document.body.children.length > 0) {
     // This is our old window — re-inject UI
     injectOutputManagerUI(win);
@@ -109,6 +126,7 @@ export function reconnectOutputManager(): boolean {
   if (win !== managerWindow) {
     win.close();
   }
+  localStorage.removeItem(OM_OPEN_KEY);
   return false;
 }
 
