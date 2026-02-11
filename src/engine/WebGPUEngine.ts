@@ -68,7 +68,6 @@ export class WebGPUEngine {
   private isRecoveringFromDeviceLoss = false;
   private isGeneratingRamPreview = false;
   private isExporting = false;
-  private showTransparencyGrid = false;
   private lastRenderHadContent = false;
 
   // Video time tracking (for optimization)
@@ -288,6 +287,7 @@ export class WebGPUEngine {
       source: { type: 'activeComp' },
       destinationType: 'window',
       enabled: true,
+      showTransparencyGrid: false,
       canvas: result.canvas,
       context: gpuContext,
       window: result.window,
@@ -373,6 +373,7 @@ export class WebGPUEngine {
         source: saved.source,
         destinationType: 'window',
         enabled: true,
+        showTransparencyGrid: false,
         canvas: result.canvas,
         context: gpuContext,
         window: result.window,
@@ -756,15 +757,14 @@ export class WebGPUEngine {
     const renderTime = performance.now() - t2;
 
     // Output
-    const finalIsPing = result.usedPing;
-    const outputBindGroup = this.outputPipeline!.getOutputBindGroup(this.sampler, result.finalView, finalIsPing);
-    this.outputPipeline!.updateUniforms(this.showTransparencyGrid, width, height);
+    this.outputPipeline!.updateResolution(width, height);
 
     const skipCanvas = this.isGeneratingRamPreview || this.isExporting;
     if (!skipCanvas) {
-      // Output to main preview canvas
+      // Output to main preview canvas (legacy — no grid)
       if (this.previewContext) {
-        this.outputPipeline!.renderToCanvas(commandEncoder, this.previewContext, outputBindGroup);
+        const mainBindGroup = this.outputPipeline!.createOutputBindGroup(this.sampler, result.finalView, false);
+        this.outputPipeline!.renderToCanvas(commandEncoder, this.previewContext, mainBindGroup);
       }
       // Output to all activeComp render targets (from unified store)
       const activeTargets = useRenderTargetStore.getState().getActiveCompTargets();
@@ -789,16 +789,16 @@ export class WebGPUEngine {
           this.slicePipeline.buildVertexBuffer(enabledSlices);
           this.slicePipeline.renderSlicedOutput(commandEncoder, ctx, result.finalView, this.sampler!);
         } else {
-          this.outputPipeline!.renderToCanvas(commandEncoder, ctx, outputBindGroup);
+          const targetBindGroup = this.outputPipeline!.createOutputBindGroup(this.sampler, result.finalView, target.showTransparencyGrid);
+          this.outputPipeline!.renderToCanvas(commandEncoder, ctx, targetBindGroup);
         }
       }
     }
 
-    // Render to export canvas for zero-copy VideoFrame creation
+    // Render to export canvas for zero-copy VideoFrame creation (never show grid)
     if (this.isExporting && this.exportCanvasContext) {
-      // Disable transparency grid for export
-      this.outputPipeline!.updateUniforms(false, width, height);
-      this.outputPipeline!.renderToCanvas(commandEncoder, this.exportCanvasContext, outputBindGroup);
+      const exportBindGroup = this.outputPipeline!.createOutputBindGroup(this.sampler, result.finalView, false);
+      this.outputPipeline!.renderToCanvas(commandEncoder, this.exportCanvasContext, exportBindGroup);
     }
 
     // Batch submit all command buffers in single call
@@ -850,19 +850,20 @@ export class WebGPUEngine {
       });
       clearPass.end();
 
-      // Update uniforms (showTransparencyGrid flag tells shader to render checkerboard)
       const { width, height } = this.renderTargetManager!.getResolution();
-      this.outputPipeline.updateUniforms(this.showTransparencyGrid, width, height);
-      const bindGroup = this.outputPipeline.createOutputBindGroup(this.sampler, pingView);
+      this.outputPipeline.updateResolution(width, height);
 
-      // Render through output pipeline to main preview + all activeComp targets
+      // Render through output pipeline to main preview (no grid) + all activeComp targets
       if (this.previewContext) {
-        this.outputPipeline.renderToCanvas(commandEncoder, this.previewContext, bindGroup);
+        const mainBindGroup = this.outputPipeline.createOutputBindGroup(this.sampler, pingView, false);
+        this.outputPipeline.renderToCanvas(commandEncoder, this.previewContext, mainBindGroup);
       }
       const activeTargets = useRenderTargetStore.getState().getActiveCompTargets();
       for (const target of activeTargets) {
         const ctx = this.targetCanvases.get(target.id)?.context;
-        if (ctx) this.outputPipeline.renderToCanvas(commandEncoder, ctx, bindGroup);
+        if (!ctx) continue;
+        const targetBindGroup = this.outputPipeline.createOutputBindGroup(this.sampler, pingView, target.showTransparencyGrid);
+        this.outputPipeline.renderToCanvas(commandEncoder, ctx, targetBindGroup);
       }
     } else {
       // Fallback: direct clear
@@ -951,12 +952,19 @@ export class WebGPUEngine {
 
     const { width, height } = this.renderTargetManager!.getResolution();
 
+    // Read per-target transparency flag
+    const target = useRenderTargetStore.getState().targets.get(canvasId);
+    const showGrid = target?.showTransparencyGrid ?? false;
+
+    // Ensure resolution is up to date for this render
+    this.outputPipeline.updateResolution(width, height);
+
     if (layerData.length === 0) {
       const commandEncoder = device.createCommandEncoder();
       const blackTex = this.renderTargetManager!.getBlackTexture();
       if (blackTex) {
         const blackView = blackTex.createView();
-        const blackBindGroup = this.outputPipeline.createOutputBindGroup(this.sampler, blackView);
+        const blackBindGroup = this.outputPipeline.createOutputBindGroup(this.sampler, blackView, showGrid);
         this.outputPipeline.renderToCanvas(commandEncoder, canvasContext, blackBindGroup);
       }
       device.queue.submit([commandEncoder.finish()]);
@@ -1014,8 +1022,7 @@ export class WebGPUEngine {
       usePing = !usePing;
     }
 
-    const finalIsPing = !usePing;
-    const outputBindGroup = this.outputPipeline!.getOutputBindGroup(this.sampler!, readView, finalIsPing);
+    const outputBindGroup = this.outputPipeline!.createOutputBindGroup(this.sampler!, readView, showGrid);
     this.outputPipeline!.renderToCanvas(commandEncoder, canvasContext, outputBindGroup);
 
     device.queue.submit([commandEncoder.finish()]);
@@ -1191,10 +1198,6 @@ export class WebGPUEngine {
     }
   }
 
-  setShowTransparencyGrid(show: boolean): void {
-    this.showTransparencyGrid = show;
-  }
-
   clearFrame(): void {
     const device = this.context.getDevice();
     const pingView = this.renderTargetManager?.getPingView();
@@ -1214,16 +1217,18 @@ export class WebGPUEngine {
     clearPong.end();
 
     const { width, height } = this.renderTargetManager!.getResolution();
-    this.outputPipeline?.updateUniforms(this.showTransparencyGrid, width, height);
-    const outputBindGroup = this.outputPipeline?.createOutputBindGroup(this.sampler!, pingView);
-    if (outputBindGroup) {
+    this.outputPipeline?.updateResolution(width, height);
+    if (this.outputPipeline && this.sampler) {
       if (this.previewContext) {
-        this.outputPipeline!.renderToCanvas(commandEncoder, this.previewContext, outputBindGroup);
+        const mainBindGroup = this.outputPipeline.createOutputBindGroup(this.sampler, pingView, false);
+        this.outputPipeline.renderToCanvas(commandEncoder, this.previewContext, mainBindGroup);
       }
       const activeTargets = useRenderTargetStore.getState().getActiveCompTargets();
       for (const target of activeTargets) {
         const ctx = this.targetCanvases.get(target.id)?.context;
-        if (ctx) this.outputPipeline!.renderToCanvas(commandEncoder, ctx, outputBindGroup);
+        if (!ctx) continue;
+        const targetBindGroup = this.outputPipeline.createOutputBindGroup(this.sampler, pingView, target.showTransparencyGrid);
+        this.outputPipeline.renderToCanvas(commandEncoder, ctx, targetBindGroup);
       }
     }
 

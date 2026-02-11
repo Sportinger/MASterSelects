@@ -30,6 +30,9 @@ interface RenderTargetActions {
   setTargetWindow: (id: string, win: Window) => void;
   setTargetFullscreen: (id: string, isFullscreen: boolean) => void;
 
+  // Transparency grid
+  setTargetTransparencyGrid: (id: string, show: boolean) => void;
+
   // UI selection
   setSelectedTarget: (id: string | null) => void;
 
@@ -144,6 +147,16 @@ export const useRenderTargetStore = create<RenderTargetState & RenderTargetActio
         if (!target) return state;
         const next = new Map(state.targets);
         next.set(id, { ...target, isFullscreen });
+        return { targets: next };
+      });
+    },
+
+    setTargetTransparencyGrid: (id, show) => {
+      set((state) => {
+        const target = state.targets.get(id);
+        if (!target) return state;
+        const next = new Map(state.targets);
+        next.set(id, { ...target, showTransparencyGrid: show });
         return { targets: next };
       });
     },

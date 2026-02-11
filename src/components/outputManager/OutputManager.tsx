@@ -43,6 +43,7 @@ export function OutputManager() {
           source: saved.source,
           destinationType: 'window',
           enabled: false,
+          showTransparencyGrid: false,
           canvas: null,
           context: null,
           window: null,

@@ -59,6 +59,7 @@ export function TargetPreview({ targetId }: TargetPreviewProps) {
       source,
       destinationType: 'canvas',
       enabled: true,
+      showTransparencyGrid: false,
       canvas: canvasRef.current,
       context: gpuContext,
       window: null,

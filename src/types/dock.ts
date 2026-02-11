@@ -16,6 +16,7 @@ export const WIP_PANEL_TYPES: PanelType[] = ['multicam', 'transitions', 'ai-segm
 // Panel-specific data for configurable panels
 export interface PreviewPanelData {
   compositionId: string | null; // null = active composition
+  showTransparencyGrid?: boolean; // per-tab transparency grid toggle (default false)
 }
 
 export type PanelData = PreviewPanelData;

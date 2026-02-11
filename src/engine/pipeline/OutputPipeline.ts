@@ -1,4 +1,6 @@
 // Output to canvas pipeline with optional transparency grid
+// Uses dual uniform buffers (grid-on / grid-off) so different render targets
+// within the same command encoder can have different transparency states.
 
 import outputShader from '../../shaders/output.wgsl?raw';
 
@@ -11,19 +13,25 @@ export class OutputPipeline {
   // Bind group layout
   private outputBindGroupLayout: GPUBindGroupLayout | null = null;
 
-  // Uniform buffer for output settings
-  private uniformBuffer: GPUBuffer | null = null;
+  // Dual uniform buffers: one with grid enabled, one without
+  private uniformBufferGridOn: GPUBuffer | null = null;
+  private uniformBufferGridOff: GPUBuffer | null = null;
 
-  // Cached output bind groups (keyed by texture view)
-  private bindGroupCache = new Map<GPUTextureView, GPUBindGroup>();
+  // Separate caches per grid state (buffer is baked into bind group)
+  private bindGroupCacheGridOn = new Map<GPUTextureView, GPUBindGroup>();
+  private bindGroupCacheGridOff = new Map<GPUTextureView, GPUBindGroup>();
 
   constructor(device: GPUDevice) {
     this.device = device;
   }
 
   async createPipeline(): Promise<void> {
-    // Create uniform buffer (16 bytes: u32 + f32 + f32 + padding)
-    this.uniformBuffer = this.device.createBuffer({
+    // Create dual uniform buffers (16 bytes each: u32 + f32 + f32 + padding)
+    this.uniformBufferGridOn = this.device.createBuffer({
+      size: 16,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    this.uniformBufferGridOff = this.device.createBuffer({
       size: 16,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
@@ -54,18 +62,27 @@ export class OutputPipeline {
     });
   }
 
-  // Update uniform buffer with current settings
-  updateUniforms(showTransparencyGrid: boolean, outputWidth: number, outputHeight: number): void {
-    if (!this.uniformBuffer) return;
+  // Write resolution into both uniform buffers (grid=1 and grid=0)
+  updateResolution(outputWidth: number, outputHeight: number): void {
+    if (!this.uniformBufferGridOn || !this.uniformBufferGridOff) return;
 
-    const data = new ArrayBuffer(16);
-    const view = new DataView(data);
-    view.setUint32(0, showTransparencyGrid ? 1 : 0, true);  // showTransparencyGrid
-    view.setFloat32(4, outputWidth, true);   // outputWidth
-    view.setFloat32(8, outputHeight, true);  // outputHeight
-    view.setFloat32(12, 0, true);            // padding
+    // Grid ON buffer
+    const dataOn = new ArrayBuffer(16);
+    const viewOn = new DataView(dataOn);
+    viewOn.setUint32(0, 1, true);              // showTransparencyGrid = true
+    viewOn.setFloat32(4, outputWidth, true);
+    viewOn.setFloat32(8, outputHeight, true);
+    viewOn.setFloat32(12, 0, true);            // padding
+    this.device.queue.writeBuffer(this.uniformBufferGridOn, 0, dataOn);
 
-    this.device.queue.writeBuffer(this.uniformBuffer, 0, data);
+    // Grid OFF buffer
+    const dataOff = new ArrayBuffer(16);
+    const viewOff = new DataView(dataOff);
+    viewOff.setUint32(0, 0, true);             // showTransparencyGrid = false
+    viewOff.setFloat32(4, outputWidth, true);
+    viewOff.setFloat32(8, outputHeight, true);
+    viewOff.setFloat32(12, 0, true);           // padding
+    this.device.queue.writeBuffer(this.uniformBufferGridOff, 0, dataOff);
   }
 
   getOutputPipeline(): GPURenderPipeline | null {
@@ -76,10 +93,13 @@ export class OutputPipeline {
     return this.outputBindGroupLayout;
   }
 
-  // Create output bind group for a texture view
-  createOutputBindGroup(sampler: GPUSampler, textureView: GPUTextureView): GPUBindGroup {
+  // Create output bind group for a texture view, selecting the appropriate uniform buffer
+  createOutputBindGroup(sampler: GPUSampler, textureView: GPUTextureView, showGrid: boolean = false): GPUBindGroup {
+    const cache = showGrid ? this.bindGroupCacheGridOn : this.bindGroupCacheGridOff;
+    const uniformBuffer = showGrid ? this.uniformBufferGridOn! : this.uniformBufferGridOff!;
+
     // Check cache first
-    let bindGroup = this.bindGroupCache.get(textureView);
+    let bindGroup = cache.get(textureView);
     if (bindGroup) return bindGroup;
 
     // Create new bind group
@@ -88,27 +108,28 @@ export class OutputPipeline {
       entries: [
         { binding: 0, resource: sampler },
         { binding: 1, resource: textureView },
-        { binding: 2, resource: { buffer: this.uniformBuffer! } },
+        { binding: 2, resource: { buffer: uniformBuffer } },
       ],
     });
 
     // Cache it
-    this.bindGroupCache.set(textureView, bindGroup);
+    cache.set(textureView, bindGroup);
     return bindGroup;
   }
 
-  // Legacy method for compatibility - same as createOutputBindGroup now
+  // Legacy method for compatibility
   getOutputBindGroup(
     sampler: GPUSampler,
     textureView: GPUTextureView,
     _isPing: boolean
   ): GPUBindGroup {
-    return this.createOutputBindGroup(sampler, textureView);
+    return this.createOutputBindGroup(sampler, textureView, false);
   }
 
   // Invalidate cached bind groups (when textures are recreated)
   invalidateCache(): void {
-    this.bindGroupCache.clear();
+    this.bindGroupCacheGridOn.clear();
+    this.bindGroupCacheGridOff.clear();
   }
 
   // Render to a canvas context
@@ -145,7 +166,9 @@ export class OutputPipeline {
 
   destroy(): void {
     this.invalidateCache();
-    this.uniformBuffer?.destroy();
-    this.uniformBuffer = null;
+    this.uniformBufferGridOn?.destroy();
+    this.uniformBufferGridOn = null;
+    this.uniformBufferGridOff?.destroy();
+    this.uniformBufferGridOff = null;
   }
 }

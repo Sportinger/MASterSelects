@@ -138,22 +138,10 @@ export function useEngine() {
       () => updateResolution()
     );
 
-    // Subscribe to transparency grid setting
-    const updateTransparencyGrid = () => {
-      const { showTransparencyGrid } = useSettingsStore.getState();
-      engine.setShowTransparencyGrid(showTransparencyGrid);
-    };
-    updateTransparencyGrid(); // Initial update
-    const unsubscribeTransparency = useSettingsStore.subscribe(
-      (state) => state.showTransparencyGrid,
-      () => updateTransparencyGrid()
-    );
-
     return () => {
       unsubscribeActiveComp();
       unsubscribeCompositions();
       unsubscribeSettings();
-      unsubscribeTransparency();
     };
   }, [isEngineReady]);
 
@@ -467,11 +455,10 @@ export function useEngine() {
       () => engine.requestRender()
     );
 
-    // Settings changes (transparency grid, preview quality)
+    // Settings changes (preview quality)
     const unsubSettings = useSettingsStore.subscribe(
-      (state) => [state.showTransparencyGrid, state.previewQuality],
-      () => engine.requestRender(),
-      { equalityFn: (a, b) => a[0] === b[0] && a[1] === b[1] }
+      (state) => state.previewQuality,
+      () => engine.requestRender()
     );
 
     // Active composition changes

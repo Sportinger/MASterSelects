@@ -31,6 +31,7 @@ export interface RenderTarget {
   source: RenderSource;
   destinationType: RenderDestinationType;
   enabled: boolean;
+  showTransparencyGrid: boolean;
   // Runtime state (not serialized)
   canvas: HTMLCanvasElement | null;
   context: GPUCanvasContext | null;

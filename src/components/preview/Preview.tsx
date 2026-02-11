@@ -23,6 +23,7 @@ import type { EngineStats, Layer } from '../../types';
 interface PreviewProps {
   panelId: string;
   compositionId: string | null; // null = active composition
+  showTransparencyGrid: boolean; // per-tab transparency toggle
 }
 
 // Detailed stats overlay component
@@ -221,13 +222,13 @@ function StatsOverlay({ stats, resolution, expanded, onToggle }: {
   );
 }
 
-export function Preview({ panelId, compositionId }: PreviewProps) {
+export function Preview({ panelId, compositionId, showTransparencyGrid }: PreviewProps) {
   const { isEngineReady } = useEngine();
   const { engineStats } = useEngineStore();
   const { clips, selectedClipIds, selectClip, updateClipTransform, maskEditMode, layers, selectedLayerId, selectLayer, updateLayer } = useTimelineStore();
   const { compositions, activeCompositionId } = useMediaStore();
   const { addPreviewPanel, updatePanelData, closePanelById } = useDockStore();
-  const { previewQuality, setPreviewQuality, showTransparencyGrid, setShowTransparencyGrid } = useSettingsStore();
+  const { previewQuality, setPreviewQuality } = useSettingsStore();
   const sam2Active = useSAM2Store((s) => s.isActive);
 
   // Get first selected clip for preview
@@ -302,6 +303,7 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
       source,
       destinationType: 'canvas',
       enabled: true,
+      showTransparencyGrid,
       canvas: canvasRef.current,
       context: gpuContext,
       window: null,
@@ -324,6 +326,13 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
       engine.unregisterTargetCanvas(panelId);
     };
   }, [isEngineReady, panelId, compositionId, previewCompositionId, slotPreviewActive]);
+
+  // Sync per-tab transparency grid flag to render target store (lightweight, no re-registration)
+  useEffect(() => {
+    if (!isEngineReady) return;
+    useRenderTargetStore.getState().setTargetTransparencyGrid(panelId, showTransparencyGrid);
+    engine.requestRender();
+  }, [isEngineReady, panelId, showTransparencyGrid]);
 
   // Composition selector state
   const [selectorOpen, setSelectorOpen] = useState(false);
@@ -1257,7 +1266,7 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
           {/* Transparency grid toggle */}
           <button
             className={`preview-transparency-toggle ${showTransparencyGrid ? 'active' : ''}`}
-            onClick={() => setShowTransparencyGrid(!showTransparencyGrid)}
+            onClick={() => updatePanelData(panelId, { compositionId, showTransparencyGrid: !showTransparencyGrid })}
             title="Toggle transparency grid (checkerboard)"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">

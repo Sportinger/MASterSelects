@@ -33,7 +33,7 @@ export function DockPanelContent({ panel }: DockPanelContentProps) {
   switch (panel.type) {
     case 'preview': {
       const previewData = panel.data as PreviewPanelData | undefined;
-      return <Preview panelId={panel.id} compositionId={previewData?.compositionId ?? null} />;
+      return <Preview panelId={panel.id} compositionId={previewData?.compositionId ?? null} showTransparencyGrid={previewData?.showTransparencyGrid ?? false} />;
     }
     case 'export':
       return <Suspense fallback={<PanelLoading />}><ExportPanel /></Suspense>;

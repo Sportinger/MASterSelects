@@ -99,7 +99,6 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
     apiKeys,
     transcriptionProvider,
     previewQuality,
-    showTransparencyGrid,
     autosaveEnabled,
     autosaveInterval,
     turboModeEnabled,
@@ -114,7 +113,6 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
     setApiKey,
     setTranscriptionProvider,
     setPreviewQuality,
-    setShowTransparencyGrid,
     setAutosaveEnabled,
     setAutosaveInterval,
     setTurboModeEnabled,
@@ -242,17 +240,7 @@ export function SettingsDialog({ onClose }: SettingsDialogProps) {
 
             <div className="settings-group">
               <div className="settings-group-title">Transparency</div>
-
-              <label className="settings-row">
-                <span className="settings-label">Show Transparency Grid</span>
-                <input
-                  type="checkbox"
-                  checked={showTransparencyGrid}
-                  onChange={(e) => setShowTransparencyGrid(e.target.checked)}
-                  className="settings-checkbox"
-                />
-              </label>
-              <p className="settings-hint">Display checkerboard pattern for transparent areas.</p>
+              <p className="settings-hint">Transparency grid is now per-tab. Toggle it using the checkerboard button in each preview panel.</p>
             </div>
           </div>
         );

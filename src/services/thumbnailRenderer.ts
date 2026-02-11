@@ -553,7 +553,7 @@ class ThumbnailRendererService {
     }
 
     // Output to canvas
-    outputPipeline.updateUniforms(false, width, height);
+    outputPipeline.updateResolution(width, height);
     const outputBindGroup = outputPipeline.createOutputBindGroup(sampler, readView);
     outputPipeline.renderToCanvas(commandEncoder, this.canvasContext, outputBindGroup);
 
@@ -927,7 +927,7 @@ class ThumbnailRendererService {
     }
 
     // Output to canvas
-    outputPipeline.updateUniforms(false, width, height);
+    outputPipeline.updateResolution(width, height);
     const outputBindGroup = outputPipeline.createOutputBindGroup(sampler, readView);
     outputPipeline.renderToCanvas(commandEncoder, this.canvasContext, outputBindGroup);
 
