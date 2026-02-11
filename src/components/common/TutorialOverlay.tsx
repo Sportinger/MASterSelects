@@ -253,11 +253,8 @@ export function TutorialOverlay({ onClose, onSkip, part = 1 }: Props) {
   const skip = useCallback(() => {
     if (closingRef.current) return;
     closingRef.current = true;
-    if (onSkip) {
-      onSkip();
-    } else {
-      onClose();
-    }
+    setIsClosing(true);
+    setTimeout(onSkip ?? onClose, 1800);
   }, [onClose, onSkip]);
 
   const advance = useCallback(() => {
