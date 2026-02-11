@@ -4,9 +4,9 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--bg-secondary, #1a1a1a);
-  color: var(--text-primary, #e0e0e0);
-  font-size: 13px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: var(--font-lg);
   overflow: hidden;
 }
 
@@ -14,29 +14,29 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border-color, #333);
-  background: var(--bg-tertiary, #252525);
+  padding: var(--sp-2-5) var(--sp-3);
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
 }
 
 .transcript-header h2 {
   margin: 0;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--font-lg);
+  font-weight: var(--font-semibold);
 }
 
 .transcript-header-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
 }
 
 .marker-toggle {
   display: flex;
   align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--text-secondary, #888);
+  gap: var(--sp-1);
+  font-size: var(--font-sm);
+  color: var(--text-secondary);
   cursor: pointer;
 }
 
@@ -51,27 +51,27 @@
 /* Search */
 .transcript-search {
   position: relative;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border-color, #333);
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .transcript-search input {
   width: 100%;
-  padding: 6px 28px 6px 10px;
-  font-size: 12px;
-  background: var(--bg-tertiary, #252525);
-  border: 1px solid var(--border-color, #444);
-  border-radius: 4px;
-  color: var(--text-primary, #e0e0e0);
+  padding: var(--sp-1-5) 28px var(--sp-1-5) var(--sp-2-5);
+  font-size: var(--font-md);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
 }
 
 .transcript-search input:focus {
   outline: none;
-  border-color: var(--accent-primary, #4a9eff);
+  border-color: var(--accent);
 }
 
 .transcript-search input::placeholder {
-  color: var(--text-secondary, #666);
+  color: var(--text-muted);
 }
 
 .search-clear {
@@ -81,14 +81,14 @@
   transform: translateY(-50%);
   background: none;
   border: none;
-  color: var(--text-secondary, #666);
+  color: var(--text-muted);
   cursor: pointer;
-  padding: 2px 6px;
-  font-size: 14px;
+  padding: var(--sp-0-5) var(--sp-1-5);
+  font-size: var(--font-xl);
 }
 
 .search-clear:hover {
-  color: var(--text-primary, #e0e0e0);
+  color: var(--text-primary);
 }
 
 /* Clip info */
@@ -96,15 +96,15 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 12px;
-  background: var(--bg-tertiary, #252525);
-  border-bottom: 1px solid var(--border-color, #333);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .clip-name {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-primary, #e0e0e0);
+  font-size: var(--font-sm);
+  font-weight: var(--font-medium);
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -112,46 +112,46 @@
 }
 
 .transcript-status {
-  font-size: 10px;
-  padding: 2px 6px;
-  border-radius: 3px;
+  font-size: var(--font-xs);
+  padding: var(--sp-0-5) var(--sp-1-5);
+  border-radius: var(--radius-sm);
 }
 
 .transcript-status.ready {
-  background: rgba(81, 207, 102, 0.2);
-  color: var(--accent-success, #51cf66);
+  background: var(--success-dim);
+  color: var(--success-light);
 }
 
 .transcript-status.transcribing {
-  background: rgba(74, 158, 255, 0.2);
-  color: var(--accent-primary, #4a9eff);
+  background: var(--accent-dim);
+  color: var(--accent);
 }
 
 .transcript-status.error {
-  background: rgba(255, 107, 107, 0.2);
-  color: var(--accent-danger, #ff6b6b);
+  background: var(--danger-dim);
+  color: var(--danger-light);
 }
 
 /* Actions */
 .transcript-actions {
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border-color, #333);
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .btn-transcribe {
   width: 100%;
-  padding: 8px 12px;
-  font-size: 12px;
-  font-weight: 500;
-  background: var(--accent-primary, #4a9eff);
-  color: #fff;
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--font-md);
+  font-weight: var(--font-medium);
+  background: var(--accent);
+  color: var(--text-on-accent);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   cursor: pointer;
 }
 
 .btn-transcribe:hover:not(:disabled) {
-  background: #3a8eef;
+  background: var(--accent-hover);
 }
 
 .btn-transcribe:disabled {
@@ -160,30 +160,30 @@
 }
 
 .btn-transcribe.btn-secondary {
-  background: var(--bg-tertiary, #252525);
-  border: 1px solid var(--border-color, #444);
-  color: var(--text-primary, #e0e0e0);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
 }
 
 .btn-transcribe.btn-secondary:hover {
-  background: var(--bg-hover, #333);
+  background: var(--bg-hover);
 }
 
 .btn-transcribe.btn-cancel,
 .btn-transcribe.btn-danger {
-  background: rgba(255, 107, 107, 0.2);
-  border: 1px solid rgba(255, 107, 107, 0.4);
-  color: var(--accent-danger, #ff6b6b);
+  background: var(--danger-dim);
+  border: 1px solid var(--danger-border);
+  color: var(--danger-light);
 }
 
 .btn-transcribe.btn-cancel:hover,
 .btn-transcribe.btn-danger:hover {
-  background: rgba(255, 107, 107, 0.3);
+  background: var(--danger-border);
 }
 
 .transcript-btn-row {
   display: flex;
-  gap: 8px;
+  gap: var(--sp-2);
 }
 
 .transcript-btn-row .btn-transcribe {
@@ -194,30 +194,30 @@
 .transcript-language {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border-color, #333);
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .transcript-language label {
-  font-size: 11px;
-  color: var(--text-secondary, #888);
+  font-size: var(--font-sm);
+  color: var(--text-secondary);
 }
 
 .transcript-language select {
   flex: 1;
-  padding: 4px 8px;
-  font-size: 12px;
-  background: var(--bg-tertiary, #252525);
-  border: 1px solid var(--border-color, #444);
-  border-radius: 4px;
-  color: var(--text-primary, #e0e0e0);
+  padding: var(--sp-1) var(--sp-2);
+  font-size: var(--font-md);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
   cursor: pointer;
 }
 
 .transcript-language select:focus {
   outline: none;
-  border-color: var(--accent-primary, #4a9eff);
+  border-color: var(--accent);
 }
 
 .transcript-language select:disabled {
@@ -227,11 +227,11 @@
 
 /* Transcription message */
 .transcript-message {
-  padding: 6px 12px;
-  background: rgba(74, 158, 255, 0.1);
-  border-bottom: 1px solid var(--border-color, #333);
-  font-size: 11px;
-  color: var(--accent-primary, #4a9eff);
+  padding: var(--sp-1-5) var(--sp-3);
+  background: var(--accent-subtle);
+  border-bottom: 1px solid var(--border-color);
+  font-size: var(--font-sm);
+  color: var(--accent);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -240,13 +240,13 @@
 /* Progress */
 .transcript-progress {
   height: 3px;
-  background: var(--bg-tertiary, #252525);
+  background: var(--bg-tertiary);
 }
 
 .transcript-progress-bar {
   height: 100%;
-  background: var(--accent-primary, #4a9eff);
-  transition: width 0.2s ease;
+  background: var(--accent);
+  transition: width var(--transition-slow);
 }
 
 /* Content */
@@ -254,7 +254,7 @@
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 8px 0;
+  padding: var(--sp-2) 0;
 }
 
 .transcript-empty {
@@ -264,20 +264,20 @@
   justify-content: center;
   height: 100%;
   min-height: 100px;
-  padding: 20px;
+  padding: var(--sp-5);
   text-align: center;
-  color: var(--text-secondary, #666);
+  color: var(--text-muted);
 }
 
 .transcript-empty p {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--font-md);
 }
 
 /* Transcript blocks (speaker sections) */
 .transcript-block {
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border-color, #2a2a2a);
+  padding: var(--sp-2-5) var(--sp-3);
+  border-bottom: 1px solid var(--bg-active);
   overflow: hidden;
 }
 
@@ -285,25 +285,25 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: var(--sp-2);
 }
 
 .transcript-speaker {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-secondary, #888);
+  font-size: var(--font-sm);
+  font-weight: var(--font-semibold);
+  color: var(--text-secondary);
 }
 
 .transcript-speaker::before {
   content: '...';
-  margin-right: 6px;
+  margin-right: var(--sp-1-5);
   letter-spacing: 2px;
 }
 
 .transcript-time {
-  font-size: 10px;
-  color: var(--text-secondary, #666);
-  font-family: monospace;
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
 }
 
 /* Words container */
@@ -317,26 +317,26 @@
 /* Individual word styling */
 .transcript-word {
   display: inline-block;
-  padding: 2px 3px;
+  padding: var(--sp-0-5) 3px;
   margin: 1px;
-  border-radius: 3px;
-  font-size: 13px;
-  color: var(--text-primary, #e0e0e0);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-lg);
+  color: var(--text-primary);
   cursor: pointer;
-  transition: background 0.1s ease, color 0.1s ease;
+  transition: background var(--transition-fast), color var(--transition-fast);
   white-space: nowrap;
 }
 
 .transcript-word:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--bg-hover);
 }
 
 /* Active word (current playhead position) */
 .transcript-word.active {
-  background: #fbbf24;
-  color: #000;
-  font-weight: 600;
-  border-radius: 3px;
+  background: var(--warning-light);
+  color: var(--text-inverse);
+  font-weight: var(--font-semibold);
+  border-radius: var(--radius-sm);
   animation: word-pulse 0.5s ease;
 }
 
@@ -348,55 +348,55 @@
 
 /* Highlighted word (search match) */
 .transcript-word.highlighted {
-  background: rgba(251, 191, 36, 0.3);
-  color: #fbbf24;
+  background: var(--warning-dim);
+  color: var(--warning-light);
 }
 
 .transcript-word.highlighted.active {
-  background: #fbbf24;
-  color: #000;
+  background: var(--warning-light);
+  color: var(--text-inverse);
 }
 
 /* Legacy support for old transcript-entry class */
 .transcript-entry {
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border-color, #2a2a2a);
+  padding: var(--sp-2-5) var(--sp-3);
+  border-bottom: 1px solid var(--bg-active);
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background var(--transition-normal);
 }
 
 .transcript-entry:hover {
-  background: var(--bg-hover, #252525);
+  background: var(--bg-hover);
 }
 
 .transcript-entry.active {
-  background: rgba(74, 158, 255, 0.1);
-  border-left: 3px solid var(--accent-primary, #4a9eff);
+  background: var(--accent-subtle);
+  border-left: 3px solid var(--accent);
 }
 
 .transcript-entry-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 6px;
+  margin-bottom: var(--sp-1-5);
 }
 
 .transcript-text {
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--text-primary, #e0e0e0);
+  font-size: var(--font-md);
+  line-height: var(--leading-relaxed);
+  color: var(--text-primary);
 }
 
 /* Footer */
 .transcript-footer {
-  padding: 8px 12px;
-  border-top: 1px solid var(--border-color, #333);
-  background: var(--bg-tertiary, #252525);
+  padding: var(--sp-2) var(--sp-3);
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
 }
 
 .transcript-hint {
-  font-size: 10px;
-  color: var(--text-secondary, #666);
+  font-size: var(--font-xs);
+  color: var(--text-muted);
 }
 
 /* Scrollbar styling */
@@ -405,14 +405,14 @@
 }
 
 .transcript-content::-webkit-scrollbar-track {
-  background: var(--bg-secondary, #1a1a1a);
+  background: var(--bg-secondary);
 }
 
 .transcript-content::-webkit-scrollbar-thumb {
-  background: var(--border-color, #444);
-  border-radius: 3px;
+  background: var(--border-color);
+  border-radius: var(--radius-sm);
 }
 
 .transcript-content::-webkit-scrollbar-thumb:hover {
-  background: var(--text-secondary, #666);
+  background: var(--text-secondary);
 }
