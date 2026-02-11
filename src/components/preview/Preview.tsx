@@ -10,10 +10,13 @@ import { useTimelineStore } from '../../stores/timeline';
 import { useMediaStore } from '../../stores/mediaStore';
 import { useDockStore } from '../../stores/dockStore';
 import { useSettingsStore, type PreviewQuality } from '../../stores/settingsStore';
+import { useRenderTargetStore } from '../../stores/renderTargetStore';
 import { MaskOverlay } from './MaskOverlay';
 import { SAM2Overlay } from './SAM2Overlay';
 import { useSAM2Store } from '../../stores/sam2Store';
-import { previewRenderManager } from '../../services/previewRenderManager';
+import { renderScheduler } from '../../services/renderScheduler';
+import { engine } from '../../engine/WebGPUEngine';
+import type { RenderSource } from '../../types/renderTarget';
 import type { EngineStats, Layer } from '../../types';
 
 interface PreviewProps {
@@ -218,7 +221,7 @@ function StatsOverlay({ stats, resolution, expanded, onToggle }: {
 }
 
 export function Preview({ panelId, compositionId }: PreviewProps) {
-  const { isEngineReady, registerPreviewCanvas, unregisterPreviewCanvas, registerIndependentPreviewCanvas, unregisterIndependentPreviewCanvas } = useEngine();
+  const { isEngineReady } = useEngine();
   const { engineStats } = useEngineStore();
   const { clips, selectedClipIds, selectClip, updateClipTransform, maskEditMode, layers, selectedLayerId, selectLayer, updateLayer } = useTimelineStore();
   const { compositions, activeCompositionId } = useMediaStore();
@@ -252,88 +255,56 @@ export function Preview({ panelId, compositionId }: PreviewProps) {
     ? { width: displayedComp.width, height: displayedComp.height }
     : useSettingsStore.getState().outputResolution;
 
-  // Is this an independent preview? (user explicitly selected a composition, not "Active")
-  // If compositionId is null, it means "Active" is selected -> use main render loop
-  // If compositionId is set to ANY value, use independent render loop with that composition's data
-  // Also independent when slot preview is active
-  const isIndependentComp = compositionId !== null || slotPreviewActive;
-
-  // Track which registration mode is active to properly clean up on change
-  const registrationModeRef = useRef<'main' | 'independent' | null>(null);
-
-  // Register/unregister canvas based on mode
-  // CRITICAL: Must properly clean up when switching between modes to prevent
-  // canvas being in both maps (which causes main loop to override independent render)
+  // Unified RenderTarget registration
+  // Determines source, registers canvas with engine, registers target in store,
+  // and sets up the render scheduler for independent (non-activeComp) sources
   useEffect(() => {
-    if (!isEngineReady || !canvasRef.current) {
-      return;
+    if (!isEngineReady || !canvasRef.current) return;
+
+    // Determine source based on composition selector and slot preview state
+    const source: RenderSource = compositionId
+      ? { type: 'composition', compositionId }
+      : slotPreviewActive && previewCompositionId
+        ? { type: 'composition', compositionId: previewCompositionId }
+        : { type: 'activeComp' };
+
+    const isIndependent = source.type !== 'activeComp';
+
+    log.debug(`[${panelId}] Registering render target`, { source, isIndependent });
+
+    // Register canvas with engine (creates WebGPU context)
+    const gpuContext = engine.registerTargetCanvas(panelId, canvasRef.current);
+    if (!gpuContext) return;
+
+    // Register as render target in store
+    useRenderTargetStore.getState().registerTarget({
+      id: panelId,
+      name: 'Preview',
+      source,
+      destinationType: 'canvas',
+      enabled: true,
+      canvas: canvasRef.current,
+      context: gpuContext,
+      window: null,
+      isFullscreen: false,
+    });
+
+    // For independent sources, register with the render scheduler
+    // (it handles: composition preparation, RAF loop, nested comp sync)
+    if (isIndependent) {
+      renderScheduler.register(panelId);
+      setCompReady(true);
     }
 
-    // Determine target mode
-    const targetMode = isIndependentComp ? 'independent' : 'main';
-    const currentMode = registrationModeRef.current;
-
-    // If mode hasn't changed and we're already registered, nothing to do
-    if (currentMode === targetMode) {
-      return;
-    }
-
-    // Clean up previous registration
-    if (currentMode === 'main') {
-      log.debug(`[${panelId}] Unregistering from main canvas map`);
-      unregisterPreviewCanvas(panelId);
-    } else if (currentMode === 'independent') {
-      log.debug(`[${panelId}] Unregistering from independent canvas map`);
-      unregisterIndependentPreviewCanvas(panelId);
-    }
-
-    // The effective composition ID for independent mode (handles slot preview override)
-    const effectiveCompId = slotPreviewActive ? previewCompositionId : compositionId;
-
-    // Register with new mode
-    if (targetMode === 'main') {
-      log.debug(`[${panelId}] Registering with main canvas map (Active mode)`);
-      registerPreviewCanvas(panelId, canvasRef.current);
-    } else {
-      log.debug(`[${panelId}] Registering with independent canvas map (composition: ${effectiveCompId})`);
-      registerIndependentPreviewCanvas(panelId, canvasRef.current, effectiveCompId || undefined);
-    }
-
-    registrationModeRef.current = targetMode;
-
-    // Cleanup on unmount
     return () => {
-      const mode = registrationModeRef.current;
-      if (mode === 'main') {
-        unregisterPreviewCanvas(panelId);
-      } else if (mode === 'independent') {
-        unregisterIndependentPreviewCanvas(panelId);
+      log.debug(`[${panelId}] Unregistering render target`);
+      if (isIndependent) {
+        renderScheduler.unregister(panelId);
       }
-      registrationModeRef.current = null;
+      useRenderTargetStore.getState().unregisterTarget(panelId);
+      engine.unregisterTargetCanvas(panelId);
     };
-  }, [isEngineReady, isIndependentComp, panelId, compositionId, previewCompositionId, slotPreviewActive, registerPreviewCanvas, unregisterPreviewCanvas, registerIndependentPreviewCanvas, unregisterIndependentPreviewCanvas]);
-
-  // For independent composition: register with centralized PreviewRenderManager
-  // The manager handles preparation, render loop, and nested composition sync
-  const effectiveIndependentCompId = slotPreviewActive ? previewCompositionId : compositionId;
-  useEffect(() => {
-    if (!isIndependentComp || !effectiveIndependentCompId || !isEngineReady) {
-      setCompReady(false);
-      return;
-    }
-
-    log.debug(`[${panelId}] Registering with PreviewRenderManager for composition: ${effectiveIndependentCompId}`);
-
-    // Register with the centralized render manager
-    // It handles: preparation, single RAF loop, nested comp sync
-    previewRenderManager.register(panelId, effectiveIndependentCompId);
-    setCompReady(true);
-
-    return () => {
-      log.debug(`[${panelId}] Unregistering from PreviewRenderManager`);
-      previewRenderManager.unregister(panelId);
-    };
-  }, [isIndependentComp, effectiveIndependentCompId, isEngineReady, panelId]);
+  }, [isEngineReady, panelId, compositionId, previewCompositionId, slotPreviewActive]);
 
   // Composition selector state
   const [selectorOpen, setSelectorOpen] = useState(false);
