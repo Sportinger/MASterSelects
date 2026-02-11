@@ -29,5 +29,5 @@ struct VertexOutput {
   if (input.maskFlag > 0.5) {
     return vec4f(0.0, 0.0, 0.0, 1.0);
   }
-  return textureSample(inputTexture, texSampler, input.uv);
+  return textureSampleLevel(inputTexture, texSampler, input.uv, 0.0);
 }
