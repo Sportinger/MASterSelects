@@ -1,7 +1,7 @@
 // TargetList - lists all output-type render targets with controls
 // Slices are shown nested under each target
 
-import { useMemo } from 'react';
+import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { useRenderTargetStore } from '../../stores/renderTargetStore';
 import { useSliceStore } from '../../stores/sliceStore';
 import { SourceSelector } from './SourceSelector';
@@ -18,6 +18,57 @@ function isTargetClosed(target: RenderTarget): boolean {
   return target.window === null || target.window === undefined || target.window.closed;
 }
 
+/** Inline editable name — double-click to edit, Enter/blur to confirm, Escape to cancel */
+function InlineEdit({ value, onCommit, className }: { value: string; onCommit: (v: string) => void; className?: string }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) {
+      setDraft(value);
+      // Focus + select all after mount
+      requestAnimationFrame(() => inputRef.current?.select());
+    }
+  }, [editing, value]);
+
+  const commit = useCallback(() => {
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== value) {
+      onCommit(trimmed);
+    }
+    setEditing(false);
+  }, [draft, value, onCommit]);
+
+  if (!editing) {
+    return (
+      <span
+        className={className}
+        onDoubleClick={(e) => { e.stopPropagation(); setEditing(true); }}
+        title="Double-click to rename"
+      >
+        {value}
+      </span>
+    );
+  }
+
+  return (
+    <input
+      ref={inputRef}
+      className="om-inline-edit"
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') commit();
+        if (e.key === 'Escape') setEditing(false);
+      }}
+      onClick={(e) => e.stopPropagation()}
+      autoFocus
+    />
+  );
+}
+
 export function TargetList({ selectedTargetId, onSelect }: TargetListProps) {
   const targets = useRenderTargetStore((s) => s.targets);
   const sliceConfigs = useSliceStore((s) => s.configs);
@@ -26,6 +77,8 @@ export function TargetList({ selectedTargetId, onSelect }: TargetListProps) {
   const selectSlice = useSliceStore((s) => s.selectSlice);
   const setSliceEnabled = useSliceStore((s) => s.setSliceEnabled);
   const resetSliceWarp = useSliceStore((s) => s.resetSliceWarp);
+  const renameSlice = useSliceStore((s) => s.renameSlice);
+  const updateTargetName = useRenderTargetStore((s) => s.updateTargetName);
 
   const outputTargets = useMemo(() => {
     const result: RenderTarget[] = [];
@@ -114,7 +167,11 @@ export function TargetList({ selectedTargetId, onSelect }: TargetListProps) {
               >
                 <div className="om-target-row">
                   <span className={`om-target-status ${closed ? 'closed' : target.enabled ? 'enabled' : 'disabled'}`} />
-                  <span className="om-target-name">{target.name}</span>
+                  <InlineEdit
+                    value={target.name}
+                    onCommit={(name) => updateTargetName(target.id, name)}
+                    className="om-target-name"
+                  />
                   <span className="om-target-type">{closed ? 'closed' : target.destinationType}</span>
                 </div>
                 <div className="om-target-row om-target-controls">
@@ -180,7 +237,11 @@ export function TargetList({ selectedTargetId, onSelect }: TargetListProps) {
                     >
                       <div className="om-slice-row">
                         <span className={`om-target-status small ${slice.enabled ? 'enabled' : 'disabled'}`} />
-                        <span className="om-slice-name">{slice.name}</span>
+                        <InlineEdit
+                          value={slice.name}
+                          onCommit={(name) => renameSlice(target.id, slice.id, name)}
+                          className="om-slice-name"
+                        />
                         <span className="om-slice-mode">Corner Pin</span>
                       </div>
                       <div className="om-slice-controls">

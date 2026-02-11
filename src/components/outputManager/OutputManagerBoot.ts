@@ -262,6 +262,21 @@ function getOutputManagerStyles(): string {
       color: #666;
       text-transform: uppercase;
     }
+
+    /* Inline edit input */
+    .om-inline-edit {
+      background: #1a1a1a;
+      color: #e0e0e0;
+      border: 1px solid #2D8CEB;
+      border-radius: 3px;
+      padding: 1px 4px;
+      font-size: inherit;
+      font-weight: inherit;
+      font-family: inherit;
+      flex: 1;
+      min-width: 0;
+      outline: none;
+    }
     .om-toggle-btn {
       background: #333;
       color: #888;

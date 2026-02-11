@@ -32,6 +32,7 @@ interface SliceActions {
   setCornerPinCorner: (targetId: string, sliceId: string, cornerIndex: number, point: Point2D) => void;
   updateWarp: (targetId: string, sliceId: string, warp: SliceWarp) => void;
   resetSliceWarp: (targetId: string, sliceId: string) => void;
+  renameSlice: (targetId: string, sliceId: string, name: string) => void;
   matchInputToOutput: (targetId: string, sliceId: string) => void;
   matchOutputToInput: (targetId: string, sliceId: string) => void;
   saveToLocalStorage: () => void;
@@ -209,6 +210,16 @@ export const useSliceStore = create<SliceState & SliceActions>()((set, get) => (
           corners: [...DEFAULT_CORNERS] as [Point2D, Point2D, Point2D, Point2D],
         },
       })));
+      return { configs: next };
+    });
+  },
+
+  renameSlice: (targetId, sliceId, name) => {
+    set((state) => {
+      const config = state.configs.get(targetId);
+      if (!config) return state;
+      const next = new Map(state.configs);
+      next.set(targetId, updateSliceInConfig(config, sliceId, (s) => ({ ...s, name })));
       return { configs: next };
     });
   },
