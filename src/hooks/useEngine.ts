@@ -384,6 +384,36 @@ export function useEngine() {
           engine.requestRender();
         }
 
+        // Keep engine awake while video clips at the playhead need GPU surface warmup.
+        // After page reload, video elements have played.length === 0 and their GPU decoder
+        // surface is empty. syncClipVideo triggers an async warmup (play/RVFC/pause) but
+        // the engine must stay active for the warmup to complete and render the first frame.
+        // Without this, the engine goes idle after 1s and the warmup never finishes.
+        {
+          const { clips: allClips } = useTimelineStore.getState();
+          const needsWarmup = (video: HTMLVideoElement) =>
+            video.played.length === 0 && video.readyState >= 2;
+          const hasUnwarmedVideos = allClips.some(c => {
+            const atPlayhead = currentPlayhead >= c.startTime &&
+              currentPlayhead < c.startTime + c.duration;
+            if (!atPlayhead) return false;
+            // Direct video clips
+            if (c.source?.videoElement && !c.isLoading && needsWarmup(c.source.videoElement)) {
+              return true;
+            }
+            // Nested composition clips
+            if (c.isComposition && c.nestedClips) {
+              return c.nestedClips.some(nc =>
+                nc.source?.videoElement && !nc.isLoading && needsWarmup(nc.source.videoElement)
+              );
+            }
+            return false;
+          });
+          if (hasUnwarmedVideos) {
+            engine.requestRender();
+          }
+        }
+
         // ALWAYS try cached frame first - even when idle!
         // This enables instant scrubbing over cached RAM Preview frames
         if (engine.renderCachedFrame(currentPlayhead)) {
