@@ -714,6 +714,9 @@ export class WebGPUEngine {
     this.outputPipeline!.updateUniforms(this.showTransparencyGrid, width, height);
 
     const skipCanvas = this.isGeneratingRamPreview || this.isExporting;
+    // Collect targets that need sliced rendering (separate command encoder to isolate failures)
+    const slicedTargets: { ctx: GPUCanvasContext; slices: import('../types/outputSlice').OutputSlice[] }[] = [];
+
     if (!skipCanvas) {
       // Output to main preview canvas
       if (this.previewContext) {
@@ -739,8 +742,8 @@ export class WebGPUEngine {
         const enabledSlices = config?.slices.filter((s) => s.enabled) ?? [];
 
         if (enabledSlices.length > 0 && this.slicePipeline) {
-          this.slicePipeline.buildVertexBuffer(enabledSlices);
-          this.slicePipeline.renderSlicedOutput(commandEncoder, ctx, result.finalView, this.sampler!);
+          // Defer sliced rendering to a separate command encoder
+          slicedTargets.push({ ctx, slices: enabledSlices });
         } else {
           this.outputPipeline!.renderToCanvas(commandEncoder, ctx, outputBindGroup);
         }
@@ -766,6 +769,20 @@ export class WebGPUEngine {
       return;
     }
     const submitTime = performance.now() - t3;
+
+    // Render sliced targets in separate command encoder (isolates from main preview)
+    if (slicedTargets.length > 0 && this.slicePipeline) {
+      for (const { ctx, slices } of slicedTargets) {
+        try {
+          this.slicePipeline.buildVertexBuffer(slices);
+          const sliceEncoder = device.createCommandEncoder();
+          this.slicePipeline.renderSlicedOutput(sliceEncoder, ctx, result.finalView, this.sampler!);
+          device.queue.submit([sliceEncoder.finish()]);
+        } catch (e) {
+          log.error('Sliced target render failed', e);
+        }
+      }
+    }
 
     // Cleanup after submit
     if (hasNestedComps) {
