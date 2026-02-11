@@ -43,7 +43,20 @@ export function SlotGrid({ opacity }: SlotGridProps) {
     const handleWheel = (e: WheelEvent) => {
       if (e.ctrlKey && e.shiftKey) {
         e.preventDefault();
-        animateSlotGrid(e.deltaY > 0 ? 1 : 0);
+        if (e.deltaY > 0) {
+          // Zoom out → show grid (always allowed)
+          animateSlotGrid(1);
+        } else {
+          // Zoom in → back to timeline, only if hovering a filled slot
+          const target = e.target as HTMLElement;
+          const slotEl = target.closest('.slot-grid-item:not(.empty)');
+          if (!slotEl) return; // Not over a filled slot — block transition
+          const compId = slotEl.getAttribute('data-comp-id');
+          if (compId) {
+            useMediaStore.getState().openCompositionTab(compId, { skipAnimation: true, playFromStart: true });
+          }
+          animateSlotGrid(0);
+        }
       } else {
         // Stop propagation so timeline's wheel handler doesn't preventDefault
         // This lets the container scroll natively
@@ -161,6 +174,7 @@ export function SlotGrid({ opacity }: SlotGridProps) {
                   <div
                     key={slotIndex}
                     className={`slot-grid-item${isActive ? ' active' : ''}${isPreviewed ? ' previewed' : ''}${isDragOver && !isSelf ? ' drag-over' : ''}`}
+                    data-comp-id={comp.id}
                     onClick={() => handleSlotClick(comp)}
                     title={comp.name}
                     draggable
