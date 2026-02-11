@@ -28,7 +28,6 @@ export function SlotGrid({ opacity }: SlotGridProps) {
   const slotAssignments = useMediaStore(state => state.slotAssignments);
   const activeLayerSlots = useMediaStore(state => state.activeLayerSlots);
   const openCompositionTab = useMediaStore(state => state.openCompositionTab);
-  const activateOnLayer = useMediaStore(state => state.activateOnLayer);
   const deactivateLayer = useMediaStore(state => state.deactivateLayer);
   const activateColumn = useMediaStore(state => state.activateColumn);
   const moveSlot = useMediaStore(state => state.moveSlot);
@@ -36,6 +35,16 @@ export function SlotGrid({ opacity }: SlotGridProps) {
   const assignMediaFileToSlot = useMediaStore(state => state.assignMediaFileToSlot);
   const getSlotMap = useMediaStore(state => state.getSlotMap);
   const compositions = useMediaStore(state => state.compositions);
+  const files = useMediaStore(state => state.files);
+
+  // Build mediaFileId → thumbnailUrl lookup
+  const thumbnailMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const f of files) {
+      if (f.thumbnailUrl) map.set(f.id, f.thumbnailUrl);
+    }
+    return map;
+  }, [files]);
 
   // Build a set of active composition IDs from activeLayerSlots
   const activeLayerCompIds = useMemo(() => {
@@ -127,16 +136,14 @@ export function SlotGrid({ opacity }: SlotGridProps) {
     return () => container.removeEventListener('wheel', handleWheel);
   }, []);
 
-  // Click = activate on layer + play from start (re-click restarts)
-  const handleSlotClick = useCallback((comp: Composition, slotIndex: number) => {
-    const layerIndex = Math.floor(slotIndex / GRID_COLS);
+  // Click = open comp + play from start (single active, no multi-layer)
+  const handleSlotClick = useCallback((comp: Composition) => {
+    // Deactivate all layers — single click = single active composition
+    useMediaStore.getState().deactivateAllLayers();
 
-    // Activate this composition on its layer
-    activateOnLayer(comp.id, layerIndex);
-
-    // Also open in timeline editor and play from start
+    // Open in timeline editor and play from start
     openCompositionTab(comp.id, { skipAnimation: true, playFromStart: true });
-  }, [activateOnLayer, openCompositionTab]);
+  }, [openCompositionTab]);
 
   // Click empty slot = fully deactivate that layer
   const handleEmptySlotClick = useCallback((slotIndex: number) => {
@@ -312,6 +319,11 @@ export function SlotGrid({ opacity }: SlotGridProps) {
                 const isEditorActive = comp.id === activeCompositionId;
                 const isLayerActive = activeLayerCompIds.has(comp.id);
                 const isSelf = comp.id === dragCompId;
+                // Find thumbnail from first video clip's media file
+                const firstVideoClip = comp.timelineData?.clips?.find(
+                  (c: { sourceType: string; mediaFileId?: string }) => c.sourceType === 'video' && c.mediaFileId
+                );
+                const thumbUrl = firstVideoClip?.mediaFileId ? thumbnailMap.get(firstVideoClip.mediaFileId) : undefined;
                 return (
                   <div
                     key={slotIndex}
@@ -322,7 +334,8 @@ export function SlotGrid({ opacity }: SlotGridProps) {
                       `${isDragOver && !isSelf ? ' drag-over' : ''}`
                     }
                     data-comp-id={comp.id}
-                    onClick={() => handleSlotClick(comp, slotIndex)}
+                    style={thumbUrl ? { backgroundImage: `url(${thumbUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
+                    onClick={() => handleSlotClick(comp)}
                     onContextMenu={(e) => handleContextMenu(e, comp)}
                     title={comp.name}
                     draggable

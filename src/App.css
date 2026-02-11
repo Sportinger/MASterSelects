@@ -9637,12 +9637,13 @@ input[type="checkbox"] {
   left: 4px;
   right: 4px;
   font-size: 10px;
-  color: #ccc;
+  color: #eee;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   pointer-events: none;
   z-index: 2;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9), 0 0 6px rgba(0, 0, 0, 0.7);
 }
 
 /* Slot time display (current / duration) */
@@ -9654,9 +9655,10 @@ input[type="checkbox"] {
   text-align: center;
   font-size: 10px;
   font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(255, 255, 255, 0.85);
   pointer-events: none;
   z-index: 2;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9), 0 0 6px rgba(0, 0, 0, 0.7);
 }
 
 /* Slot playhead line */
