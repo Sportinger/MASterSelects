@@ -273,17 +273,33 @@ export const useSliceStore = create<SliceState & SliceActions>()((set, get) => (
       // Only overwrite if there are actual window/tab targets registered
       // (avoids wiping saved metadata during post-refresh auto-save when store is empty)
       const targets = useRenderTargetStore.getState().targets;
+
+      // Read existing saved metadata to preserve geometry of closed/deactivated windows
+      // (auto-save fires after deactivateTarget nulls the window ref)
+      const existingSaved = getSavedTargetMeta();
+      const existingMap = new Map(existingSaved.map((m) => [m.id, m]));
+
       const targetMeta: SavedTargetMeta[] = [];
       for (const t of targets.values()) {
         if (t.destinationType === 'window' || t.destinationType === 'tab') {
           const meta: SavedTargetMeta = { id: t.id, name: t.name, source: t.source };
-          // Capture window geometry if window is open
           if (t.window && !t.window.closed) {
+            // Capture live geometry from open window
             meta.screenX = t.window.screenX;
             meta.screenY = t.window.screenY;
             meta.outerWidth = t.window.outerWidth;
             meta.outerHeight = t.window.outerHeight;
             meta.isFullscreen = !!t.window.document.fullscreenElement;
+          } else {
+            // Window closed/deactivated — preserve previously saved geometry
+            const prev = existingMap.get(t.id);
+            if (prev) {
+              meta.screenX = prev.screenX;
+              meta.screenY = prev.screenY;
+              meta.outerWidth = prev.outerWidth;
+              meta.outerHeight = prev.outerHeight;
+              meta.isFullscreen = prev.isFullscreen;
+            }
           }
           targetMeta.push(meta);
         }
