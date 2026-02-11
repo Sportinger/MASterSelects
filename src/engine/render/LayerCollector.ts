@@ -160,6 +160,10 @@ export class LayerCollector {
     return null;
   }
 
+  // Track videos where importExternalTexture produces valid (non-black) frames
+  // After page reload, importExternalTexture returns black until the video is played
+  private videoGpuReady = new WeakSet<HTMLVideoElement>();
+
   private tryHTMLVideo(layer: Layer, video: HTMLVideoElement, deps: LayerCollectorDeps): LayerRenderData | null {
     const videoKey = video.src || layer.id;
 
@@ -187,8 +191,6 @@ export class LayerCollector {
       }
 
       // If video is seeking, prefer cached frame to avoid frame jumps
-      // This prevents visual glitches from H.264 decoder showing intermediate I-frames during seek
-      // Applies to both playback and paused states (e.g., after clip move or effect change)
       if (video.seeking && !deps.isExporting) {
         const lastFrame = deps.scrubbingCache?.getLastFrame(video);
         if (lastFrame) {
@@ -204,7 +206,34 @@ export class LayerCollector {
         }
       }
 
-      // Import external texture
+      // After page reload, importExternalTexture returns a valid GPUExternalTexture
+      // but the frame data is black/empty because the GPU decoder hasn't presented a frame.
+      // Use canvas.drawImage as primary path until the video has been properly played.
+      // canvas.drawImage reads CPU-decoded frames which are always available at readyState >= 2.
+      if (!this.videoGpuReady.has(video) && !deps.isExporting) {
+        // Check if the video is actively playing — that means the GPU decoder is active
+        if (!video.paused && !video.seeking) {
+          this.videoGpuReady.add(video);
+        } else {
+          // Use canvas path
+          deps.scrubbingCache?.captureVideoFrameViaCanvas(video);
+          const canvasFrame = deps.scrubbingCache?.getLastFrame(video);
+          if (canvasFrame) {
+            deps.setLastVideoTime(videoKey, currentTime);
+            this.currentDecoder = 'HTMLVideo(canvas)';
+            return {
+              layer,
+              isVideo: false,
+              externalTexture: null,
+              textureView: canvasFrame.view,
+              sourceWidth: canvasFrame.width,
+              sourceHeight: canvasFrame.height,
+            };
+          }
+        }
+      }
+
+      // Import external texture (zero-copy GPU path)
       log.debug('Attempting to import video as external texture...');
       const extTex = deps.textureManager.importVideoTexture(video);
       if (extTex) {
@@ -258,9 +287,7 @@ export class LayerCollector {
       }
     }
 
-    // Last resort: canvas-based capture for videos that haven't presented to GPU
-    // canvas.drawImage uses CPU-decoded frames which are available at readyState >= 2
-    // even when importExternalTexture fails (e.g. after page reload before first play)
+    // Final fallback: canvas capture
     if (video.readyState >= 2 && !deps.isExporting) {
       deps.scrubbingCache?.captureVideoFrameViaCanvas(video);
       const canvasFrame = deps.scrubbingCache?.getLastFrame(video);
