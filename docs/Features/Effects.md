@@ -302,8 +302,8 @@ Final Output
 
 | Test File | Tests | Coverage |
 |-----------|-------|----------|
-| [`effectsRegistry.test.ts`](../../tests/unit/effectsRegistry.test.ts) | 32 | Registry, parameters, categories |
-| [`typeHelpers.test.ts`](../../tests/unit/typeHelpers.test.ts) | 10 | Effect property parsing |
+| [`effectsRegistry.test.ts`](../../tests/unit/effectsRegistry.test.ts) | 94 | Registry, parameters, categories, packUniforms, animatable |
+| [`typeHelpers.test.ts`](../../tests/unit/typeHelpers.test.ts) | 34 | Effect property parsing, isAudioEffect |
 
 Run tests: `npx vitest run`
 

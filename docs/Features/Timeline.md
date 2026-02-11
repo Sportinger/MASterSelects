@@ -336,11 +336,11 @@ Located in timeline toolbar:
 
 | Test File | Tests | Coverage |
 |-----------|-------|----------|
-| [`clipSlice.test.ts`](../../tests/stores/timeline/clipSlice.test.ts) | 50 | Clip operations, split, trim, move, effects, speed |
-| [`trackSlice.test.ts`](../../tests/stores/timeline/trackSlice.test.ts) | 13 | Track management, auto-naming |
-| [`selectionSlice.test.ts`](../../tests/stores/timeline/selectionSlice.test.ts) | 12 | Clip selection, multi-select |
-| [`playbackSlice.test.ts`](../../tests/stores/timeline/playbackSlice.test.ts) | 16 | Playback, in/out points, zoom |
-| [`markerSlice.test.ts`](../../tests/stores/timeline/markerSlice.test.ts) | 10 | Markers |
+| [`clipSlice.test.ts`](../../tests/stores/timeline/clipSlice.test.ts) | 104 | Clip operations, split, trim, move, effects, speed, linked groups |
+| [`trackSlice.test.ts`](../../tests/stores/timeline/trackSlice.test.ts) | 66 | Track management, auto-naming, scaling, cycle detection |
+| [`selectionSlice.test.ts`](../../tests/stores/timeline/selectionSlice.test.ts) | 49 | Clip selection, multi-select, curve editor blocking |
+| [`playbackSlice.test.ts`](../../tests/stores/timeline/playbackSlice.test.ts) | 88 | Playback, in/out points, zoom, JKL shuttle, RAM preview |
+| [`markerSlice.test.ts`](../../tests/stores/timeline/markerSlice.test.ts) | 50 | Markers, boundaries, sort invariants |
 
 Run tests: `npx vitest run`
 

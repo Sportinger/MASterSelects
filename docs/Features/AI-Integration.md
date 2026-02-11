@@ -456,7 +456,7 @@ Keys stored in browser localStorage. SAM 2 model files stored in OPFS.
 
 | Test File | Tests | Coverage |
 |-----------|-------|----------|
-| [`aiToolDefinitions.test.ts`](../../tests/unit/aiToolDefinitions.test.ts) | 60 | Tool definitions, schemas |
+| [`aiToolDefinitions.test.ts`](../../tests/unit/aiToolDefinitions.test.ts) | 132 | Tool definitions, schemas, MODIFYING_TOOLS, enums |
 
 Run tests: `npx vitest run`
 

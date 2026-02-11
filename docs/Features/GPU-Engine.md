@@ -288,7 +288,7 @@ chrome://gpu
 
 | Test File | Tests | Coverage |
 |-----------|-------|----------|
-| [`transformComposition.test.ts`](../../tests/unit/transformComposition.test.ts) | 13 | Transform math, composition |
+| [`transformComposition.test.ts`](../../tests/unit/transformComposition.test.ts) | 56 | Transform math, composition, cycle detection |
 
 Run tests: `npx vitest run`
 

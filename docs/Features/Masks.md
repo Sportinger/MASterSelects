@@ -226,7 +226,7 @@ generateMaskTexture(masks, width, height)
 
 | Test File | Tests | Coverage |
 |-----------|-------|----------|
-| [`maskSlice.test.ts`](../../tests/stores/timeline/maskSlice.test.ts) | 22 | Mask CRUD, modes, vertices |
+| [`maskSlice.test.ts`](../../tests/stores/timeline/maskSlice.test.ts) | 78 | Mask CRUD, modes, vertices, preset shapes, workflows |
 
 Run tests: `npx vitest run`
 
