@@ -23,7 +23,8 @@
   margin-right: auto;
 }
 
-/* Grid wrapper — centers the 16:9 grid in the available space */
+/* Grid wrapper — centers the 16:9 grid in the available space.
+   Uses container-type:size so the grid can query both dimensions. */
 .multi-preview-grid-wrapper {
   flex: 1;
   display: flex;
@@ -31,21 +32,29 @@
   justify-content: center;
   min-height: 0;
   padding: 0;
+  container-type: size;
 }
 
 /* 2x2 grid that maintains 16:9 as a whole.
-   Each cell is 16:9, 2 cols + 2 rows = total 16:9.
-   max-width + max-height prevent overflow in both directions;
-   aspect-ratio picks the smaller constraint automatically. */
+   Fills width by default; when the wrapper is wider than 16:9,
+   a container query switches to height-based sizing. */
 .multi-preview-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   grid-template-rows: 1fr 1fr;
   gap: 1px;
   aspect-ratio: 16 / 9;
-  max-width: 100%;
-  max-height: 100%;
+  width: 100%;
   background: var(--border-color);
+}
+
+/* When wrapper is wider than 16:9 (aspect > 1.78), the width-based
+   grid would exceed the height. Switch to height-based sizing. */
+@container (min-aspect-ratio: 16/9) {
+  .multi-preview-grid {
+    width: auto;
+    height: 100%;
+  }
 }
 
 /* Single slot */
