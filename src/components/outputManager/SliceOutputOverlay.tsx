@@ -1,5 +1,5 @@
 // SliceOutputOverlay - SVG overlay for dragging corner pin warp points
-// Renders 4 draggable corner points per slice + quad outlines
+// Uses setPointerCapture for reliable drag across popup window boundaries
 
 import { useCallback, useRef } from 'react';
 import { useSliceStore } from '../../stores/sliceStore';
@@ -14,14 +14,13 @@ interface SliceOutputOverlayProps {
 const SLICE_COLORS = ['#2D8CEB', '#EB8C2D', '#2DEB8C', '#EB2D8C', '#8C2DEB', '#8CEB2D'];
 const CORNER_LABELS = ['TL', 'TR', 'BR', 'BL'];
 const POINT_RADIUS = 6;
-const THROTTLE_MS = 16;
 
 export function SliceOutputOverlay({ targetId, width, height }: SliceOutputOverlayProps) {
   const config = useSliceStore((s) => s.configs.get(targetId));
   const selectSlice = useSliceStore((s) => s.selectSlice);
   const setCornerPinCorner = useSliceStore((s) => s.setCornerPinCorner);
   const svgRef = useRef<SVGSVGElement>(null);
-  const lastUpdateRef = useRef(0);
+  const dragRef = useRef<{ sliceId: string; cornerIndex: number; pointerId: number } | null>(null);
 
   const handlePointerDown = useCallback((
     e: React.PointerEvent,
@@ -31,33 +30,38 @@ export function SliceOutputOverlay({ targetId, width, height }: SliceOutputOverl
     e.preventDefault();
     e.stopPropagation();
 
-    // Select the slice on interaction
     selectSlice(targetId, sliceId);
+
+    // Capture pointer on the SVG element for reliable cross-element drag
+    const svg = svgRef.current;
+    if (!svg) return;
+
+    dragRef.current = { sliceId, cornerIndex, pointerId: e.pointerId };
+    svg.setPointerCapture(e.pointerId);
+  }, [targetId, selectSlice]);
+
+  const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    const drag = dragRef.current;
+    if (!drag || e.pointerId !== drag.pointerId) return;
 
     const svg = svgRef.current;
     if (!svg) return;
 
-    const handleMove = (moveEvent: PointerEvent) => {
-      const now = performance.now();
-      if (now - lastUpdateRef.current < THROTTLE_MS) return;
-      lastUpdateRef.current = now;
+    const rect = svg.getBoundingClientRect();
+    const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
 
-      const rect = svg.getBoundingClientRect();
-      // Calculate position relative to SVG viewBox
-      const x = Math.max(0, Math.min(1, (moveEvent.clientX - rect.left) / rect.width));
-      const y = Math.max(0, Math.min(1, (moveEvent.clientY - rect.top) / rect.height));
+    setCornerPinCorner(targetId, drag.sliceId, drag.cornerIndex, { x, y });
+  }, [targetId, setCornerPinCorner]);
 
-      setCornerPinCorner(targetId, sliceId, cornerIndex, { x, y });
-    };
+  const handlePointerUp = useCallback((e: React.PointerEvent) => {
+    const drag = dragRef.current;
+    if (!drag || e.pointerId !== drag.pointerId) return;
 
-    const handleUp = () => {
-      window.removeEventListener('pointermove', handleMove);
-      window.removeEventListener('pointerup', handleUp);
-    };
-
-    window.addEventListener('pointermove', handleMove);
-    window.addEventListener('pointerup', handleUp);
-  }, [targetId, selectSlice, setCornerPinCorner]);
+    const svg = svgRef.current;
+    if (svg) svg.releasePointerCapture(drag.pointerId);
+    dragRef.current = null;
+  }, []);
 
   if (!config || config.slices.length === 0) return null;
 
@@ -69,6 +73,9 @@ export function SliceOutputOverlay({ targetId, width, height }: SliceOutputOverl
       className="om-slice-overlay"
       viewBox={`0 0 ${width} ${height}`}
       preserveAspectRatio="xMidYMid meet"
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onLostPointerCapture={handlePointerUp}
     >
       {config.slices.map((slice, idx) => {
         if (!slice.enabled || slice.warp.mode !== 'cornerPin') return null;
@@ -103,7 +110,7 @@ export function SliceOutputOverlay({ targetId, width, height }: SliceOutputOverl
                 <circle
                   cx={pt.x}
                   cy={pt.y}
-                  r={POINT_RADIUS * 2}
+                  r={POINT_RADIUS * 2.5}
                   fill="transparent"
                   style={{ cursor: 'grab' }}
                   onPointerDown={(e) => handlePointerDown(e, slice.id, ci)}

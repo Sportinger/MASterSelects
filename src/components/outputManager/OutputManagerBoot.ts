@@ -487,12 +487,7 @@ function getOutputManagerStyles(): string {
       left: 0;
       width: 100%;
       height: 100%;
-      pointer-events: none;
-    }
-    .om-slice-overlay rect,
-    .om-slice-overlay path,
-    .om-slice-overlay circle {
-      pointer-events: auto;
+      touch-action: none;
     }
   `;
 }
