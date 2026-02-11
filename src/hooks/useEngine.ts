@@ -378,11 +378,15 @@ export function useEngine() {
         // ALWAYS try cached frame first - even when idle!
         // This enables instant scrubbing over cached RAM Preview frames
         if (engine.renderCachedFrame(currentPlayhead)) {
+          // Still sync audio - cached frames are visual-only
+          layerBuilder.syncAudioElements();
           return;
         }
 
         // Skip actual rendering if engine is idle (but cache check above still runs)
         if (engine.getIsIdle()) {
+          // Still sync audio when idle (scrub audio needs to play even without GPU rendering)
+          layerBuilder.syncAudioElements();
           return;
         }
 
