@@ -97,7 +97,7 @@ export class LayerCollector {
       if (source.nativeDecoder) {
         const bitmap = source.nativeDecoder.getCurrentFrame();
         if (bitmap) {
-          const texture = deps.textureManager.createImageBitmapTexture(bitmap);
+          const texture = deps.textureManager.createImageBitmapTexture(bitmap, layer.id);
           if (texture) {
             this.currentDecoder = 'NativeHelper';
             return {
@@ -105,7 +105,7 @@ export class LayerCollector {
               isVideo: false,
               isDynamic: true,
               externalTexture: null,
-              textureView: texture.createView(),
+              textureView: deps.textureManager.getDynamicTextureView(layer.id) ?? texture.createView(),
               sourceWidth: bitmap.width,
               sourceHeight: bitmap.height,
             };

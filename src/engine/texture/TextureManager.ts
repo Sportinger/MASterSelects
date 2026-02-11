@@ -17,6 +17,9 @@ export class TextureManager {
   // Cached image texture views
   private cachedImageViews: Map<GPUTexture, GPUTextureView> = new Map();
 
+  // Reusable dynamic textures keyed by layer ID (for NativeDecoder frames)
+  private dynamicTextures: Map<string, { texture: GPUTexture; view: GPUTextureView; width: number; height: number }> = new Map();
+
   // Video frame textures (rendered from external textures)
   private videoFrameTextures: Map<string, GPUTexture> = new Map();
   private videoFrameViews: Map<string, GPUTextureView> = new Map();
@@ -119,13 +122,36 @@ export class TextureManager {
     return this.canvasTextures.get(canvas);
   }
 
-  // Create GPU texture from ImageBitmap (for native helper decoded frames)
-  // NOT cached - ImageBitmaps change every frame and are closed after use
-  createImageBitmapTexture(bitmap: ImageBitmap): GPUTexture | null {
+  // Create or reuse GPU texture from ImageBitmap (for native helper decoded frames).
+  // When a key is provided, reuses the existing texture if dimensions match,
+  // avoiding GPU memory growth from creating 30+ textures/second.
+  createImageBitmapTexture(bitmap: ImageBitmap, key?: string): GPUTexture | null {
     const width = bitmap.width;
     const height = bitmap.height;
 
     if (width === 0 || height === 0) return null;
+
+    // Fast path: reuse existing texture for this key
+    if (key) {
+      const existing = this.dynamicTextures.get(key);
+      if (existing && existing.width === width && existing.height === height) {
+        try {
+          this.device.queue.copyExternalImageToTexture(
+            { source: bitmap },
+            { texture: existing.texture },
+            [width, height]
+          );
+          return existing.texture;
+        } catch {
+          // Texture became invalid (device lost, etc.) — fall through to create new
+          this.dynamicTextures.delete(key);
+        }
+      } else if (existing) {
+        // Dimensions changed — destroy old texture
+        existing.texture.destroy();
+        this.dynamicTextures.delete(key);
+      }
+    }
 
     try {
       const texture = this.device.createTexture({
@@ -140,10 +166,30 @@ export class TextureManager {
         [width, height]
       );
 
+      // Cache for reuse if key provided
+      if (key) {
+        const view = texture.createView();
+        this.dynamicTextures.set(key, { texture, view, width, height });
+      }
+
       return texture;
     } catch (e) {
       log.error('Failed to create ImageBitmap texture', e);
       return null;
+    }
+  }
+
+  // Get cached view for a dynamic texture (avoids creating new view every frame)
+  getDynamicTextureView(key: string): GPUTextureView | null {
+    return this.dynamicTextures.get(key)?.view ?? null;
+  }
+
+  // Remove a dynamic texture entry (e.g. when clip is removed or downgraded from NH)
+  removeDynamicTexture(key: string): void {
+    const entry = this.dynamicTextures.get(key);
+    if (entry) {
+      entry.texture.destroy();
+      this.dynamicTextures.delete(key);
     }
   }
 
@@ -232,6 +278,11 @@ export class TextureManager {
     this.cachedImageViews.clear();
     this.videoFrameTextures.clear();
     this.videoFrameViews.clear();
+    // Dynamic textures are explicitly destroyed since we own them
+    for (const entry of this.dynamicTextures.values()) {
+      entry.texture.destroy();
+    }
+    this.dynamicTextures.clear();
   }
 
   // Remove a specific image from cache
