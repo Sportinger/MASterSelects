@@ -82,10 +82,15 @@ export function openOutputManager(): void {
     return;
   }
 
+  const width = 900;
+  const height = 600;
+  const left = Math.round(window.screenX + (window.outerWidth - width) / 2);
+  const top = Math.round(window.screenY + (window.outerHeight - height) / 2);
+
   const win = window.open(
     '',
     'output_manager',
-    'width=900,height=600,menubar=no,toolbar=no,location=no,status=no'
+    `width=${width},height=${height},left=${left},top=${top},menubar=no,toolbar=no,location=no,status=no`
   );
 
   if (!win) {
