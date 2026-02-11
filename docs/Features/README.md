@@ -17,9 +17,9 @@ MASterSelects is a browser-based professional video editing application built on
 | **WebGPU Rendering** | Hardware-accelerated compositing with zero-copy video textures at 60fps |
 | **Multi-track Timeline** | Professional NLE with video/audio tracks, nested compositions, and multicam |
 | **Keyframe Animation** | Full property animation with bezier curve editor and 5 easing modes |
-| **AI Integration** | 50+ intelligent editing tools via OpenAI function calling (GPT-4/GPT-5) |
+| **AI Integration** | 33 intelligent editing tools via OpenAI function calling (GPT-4/GPT-5) |
 | **AI Video Generation** | PiAPI integration for AI-powered video creation |
-| **YouTube Integration** | Search, download, and edit YouTube videos directly |
+| **Download Panel** | Download videos from YouTube, TikTok, Instagram, Twitter/X and more |
 | **30+ GPU Effects** | Modular color, blur, distort, stylize, keying effects with quality controls |
 | **Video Scopes** | GPU-accelerated Histogram, Vectorscope, Waveform monitor (DaVinci-style) |
 | **Text Clips** | Typography with 50 Google Fonts, stroke, shadow effects |
@@ -42,7 +42,7 @@ MASterSelects is a browser-based professional video editing application built on
 ```
 Frontend          React 19 + TypeScript + Vite 7.2
 State Management  Zustand with modular slice architecture
-GPU Rendering     WebGPU + WGSL shaders (2,000+ lines)
+GPU Rendering     WebGPU + WGSL shaders (2,400+ lines)
 GPU Effects       30+ modular effects with individual WGSL shaders
 Video Decoding    WebCodecs API with hardware acceleration + parallel decode
 Video Encoding    WebCodecs (Fast/Precise) + FFmpeg WASM (ProRes, DNxHR, HAP)
@@ -65,7 +65,7 @@ UI Framework      Custom dockable panel system with mobile support
 | [Output Manager](./Preview.md#output-manager) | Source routing, slices, corner pin warping, mask layers |
 | [Effects](./Effects.md) | 30+ modular GPU effects, 37 blend modes, transforms |
 | [Masks](./Masks.md) | Shape masks, pen tool, GPU feathering |
-| [AI Integration](./AI-Integration.md) | 50+ AI tools, transcription, AI video generation |
+| [AI Integration](./AI-Integration.md) | 33 AI tools, transcription, AI video generation |
 | [Media Panel](./Media-Panel.md) | Import, folder organization, columns, compositions |
 | [Audio](./Audio.md) | 10-band EQ, audio master clock, varispeed scrubbing |
 | [Text Clips](./Text-Clips.md) | Typography, 50 Google Fonts, stroke, shadow |
@@ -74,6 +74,7 @@ UI Framework      Custom dockable panel system with mobile support
 | [GPU Engine](./GPU-Engine.md) | WebGPU architecture, modular render pipeline |
 | [Project Persistence](./Project-Persistence.md) | Local folders, Raw media, autosave, backups |
 | [Proxy System](./Proxy-System.md) | GPU-accelerated proxy generation |
+| [Download Panel](./YouTube.md) | YouTube, TikTok, Instagram, Twitter/X downloads |
 | [Native Helper](./Native-Helper.md) | Turbo Mode for ProRes/DNxHD, YouTube downloads |
 | [Keyboard Shortcuts](./Keyboard-Shortcuts.md) | Complete shortcut reference |
 | [Debugging](./Debugging.md) | Logger service, module filtering, AI-agent inspection |
@@ -212,7 +213,7 @@ UI Framework      Custom dockable panel system with mobile support
 | Feature | Status | Details |
 |---------|--------|---------|
 | GPT-4 Chat | ✅ | Natural language editing commands |
-| 50+ AI Tools | ✅ | Clip, track, keyframe, effect operations |
+| 33 AI Tools | ✅ | Clip, track, keyframe, effect operations |
 | Local Whisper | ✅ | Browser-based transcription |
 | OpenAI Whisper API | ✅ | Cloud transcription service |
 | AssemblyAI | ✅ | Professional transcription |
@@ -403,11 +404,14 @@ UI Framework      Custom dockable panel system with mobile support
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `composite.wgsl` | 743 | Layer compositing, 37 blend modes |
+| `composite.wgsl` | 618 | Layer compositing, 37 blend modes |
 | `opticalflow.wgsl` | 326 | Motion analysis, scene detection |
 | `effects.wgsl` | 243 | GPU effect implementations |
-| `output.wgsl` | 40 | Final output passthrough |
-| **Total** | **1,352** | |
+| `output.wgsl` | 71 | Final output passthrough |
+| `slice.wgsl` | 33 | Output slice rendering |
+| `common.wgsl` | 154 | Shared effect utilities |
+| 30 effect shaders | ~954 | Individual GPU effect shaders |
+| **Total** | **~2,400** | |
 
 ### Zustand Store Architecture
 

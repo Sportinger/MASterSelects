@@ -2,7 +2,7 @@
 
 # MasterSelects
 
-### Browser-based Video Compositor & Live VJ Tool
+### Browser-based Video Compositor
 
 [![Version](https://img.shields.io/badge/version-1.2.4-blue.svg)](https://github.com/Sportinger/MASterSelects/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -16,9 +16,9 @@
 <table>
 <tr>
 <td align="center"><b>31</b><br><sub>GPU Effects</sub></td>
-<td align="center"><b>44</b><br><sub>Blend Modes</sub></td>
+<td align="center"><b>37</b><br><sub>Blend Modes</sub></td>
 <td align="center"><b>2,200+</b><br><sub>Lines WGSL</sub></td>
-<td align="center"><b>35</b><br><sub>AI Tools</sub></td>
+<td align="center"><b>33</b><br><sub>AI Tools</sub></td>
 <td align="center"><b>13</b><br><sub>Dependencies</sub></td>
 </tr>
 </table>
@@ -33,7 +33,7 @@
 
 Most browser-based video editors share a pattern: Canvas 2D compositing, heavyweight dependency trees, and CPU-bound rendering that falls apart at scale. This project takes a fundamentally different approach.
 
-**GPU-first architecture.** Preview, scrubbing, and export all run through the same **WebGPU ping-pong compositor**. Video textures are imported as `texture_external` (**zero-copy**, no CPU roundtrip). **44 blend modes**, 3D rotation, and inline color effects all execute in a **single WGSL composite shader** per layer. No THREE.js, no GSAP, no Canvas 2D fallback in the hot path.
+**GPU-first architecture.** Preview, scrubbing, and export all run through the same **WebGPU ping-pong compositor**. Video textures are imported as `texture_external` (**zero-copy**, no CPU roundtrip). **37 blend modes**, 3D rotation, and inline color effects all execute in a **single WGSL composite shader** per layer. No THREE.js, no GSAP, no Canvas 2D fallback in the hot path.
 
 **Zero-copy export pipeline.** Frames are captured as `new VideoFrame(offscreenCanvas)` directly from the GPU canvas. **No `readPixels()`**, no `getImageData()`, no staging buffers in the default path. The GPU renders, **WebCodecs encodes**. That's it.
 
@@ -51,7 +51,7 @@ Most browser-based video editors share a pattern: Canvas 2D compositing, heavywe
 
 No Adobe subscription, no patience for cracks, and every free online editor felt like garbage. I needed something that actually works - fast, in the browser, with the power of After Effects, Premiere, and a bit of Ableton mixed in.
 
-**The vision:** A tool where AI can control *everything*. 35 editing tools accessible via GPT function calling. Plus a live video output for VJ performances (been doing video art for 16 years, so yeah, that matters to me).
+**The vision:** A tool where AI can control *everything*. 33 editing tools accessible via GPT function calling, plus a multi-output system for live performances (been doing video art for 16 years, so yeah, that matters to me).
 
 Built with Claude as my pair-programmer. Every feature gets debugged, refactored, and beaten into shape until it does what I need. ~100k lines of TypeScript, ~2,200 lines of WGSL, and a Rust native helper for the stuff browsers can't do.
 
@@ -68,7 +68,7 @@ Built with Claude as my pair-programmer. Every feature gets debugged, refactored
 | [**Vector Masks**](docs/Features/Masks.md) | Pen tool, edge dragging, feathering, multiple masks per clip |
 | [**SAM2 Segmentation**](docs/Features/AI-Integration.md) | AI object selection in preview - click to mask, propagate across frames |
 | [**Transitions**](docs/Features/UI-Panels.md#transitions-panel) | Crossfade transitions with GPU-accelerated rendering |
-| [**AI Integration**](docs/Features/AI-Integration.md) | 35 tools controllable via GPT-4/GPT-5 function calling |
+| [**AI Integration**](docs/Features/AI-Integration.md) | 33 tools controllable via GPT-4/GPT-5 function calling |
 | [**4 Export Modes**](docs/Features/Export.md) | WebCodecs Fast/Precise, FFmpeg ProRes/DNxHR, FCP XML |
 | [**Live EQ & Audio**](docs/Features/Audio.md) | 10-band parametric EQ with real-time Web Audio preview |
 | [**Download Panel**](docs/Features/YouTube.md) | YouTube, TikTok, Instagram, Twitter/X via Native Helper |

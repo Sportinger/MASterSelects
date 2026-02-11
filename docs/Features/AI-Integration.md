@@ -2,7 +2,7 @@
 
 [← Back to Index](./README.md)
 
-GPT-powered editing with 50+ tools, transcription, multicam EDL generation, and AI object segmentation.
+GPT-powered editing with 33 tools, transcription, multicam EDL generation, and AI object segmentation.
 
 ---
 
@@ -43,7 +43,7 @@ o3, o4-mini, o3-pro (reasoning)
 ### Editor Mode
 When enabled (default):
 - Includes timeline context in prompts
-- 50+ editing tools available
+- 33 editing tools available
 - AI can manipulate timeline directly
 
 ---

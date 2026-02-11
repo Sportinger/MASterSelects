@@ -140,7 +140,7 @@ See [Properties Panel](#properties-panel) section below for details.
 - Chat interface with GPT-4
 - Model/provider selector
 - Context-aware editing commands
-- 50+ available tools
+- 33 available tools
 
 ### Download Panel
 - Paste URLs from YouTube, TikTok, Instagram, Twitter/X, Facebook, Reddit, Vimeo, Twitch, and more

@@ -55,8 +55,12 @@ MyProject/
 ├── Raw/                   # Auto-copied media files (portable)
 │   ├── Interview_01.mp4
 │   └── Music.wav
-├── YT/                    # Downloaded YouTube videos
-│   └── video_title.mp4
+├── Downloads/             # Downloaded videos (platform subfolders)
+│   ├── YouTube/
+│   │   └── video_title.mp4
+│   ├── TikTok/
+│   ├── Instagram/
+│   └── Twitter/
 ├── Backups/               # Auto-backup folder
 │   ├── project_2026-01-11_14-00-00.json
 │   └── ... (last 20 backups)

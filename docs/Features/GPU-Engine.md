@@ -120,14 +120,17 @@ Final → Output to Canvas
 
 ## Shader Capabilities
 
-### Total WGSL Code: 1,352 lines
+### Total WGSL Code: ~2,400 lines
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `composite.wgsl` | 743 | Blending + 37 modes |
-| `effects.wgsl` | 243 | 9 GPU effects |
+| `composite.wgsl` | 618 | Blending + 37 modes |
+| `effects.wgsl` | 243 | Inline GPU effects |
 | `opticalflow.wgsl` | 326 | Motion analysis |
-| `output.wgsl` | 40 | Passthrough |
+| `output.wgsl` | 71 | Passthrough |
+| `slice.wgsl` | 33 | Output slice rendering |
+| `common.wgsl` | 154 | Shared effect utilities |
+| 30 effect shaders | ~954 | Individual effect shaders |
 
 ### Blend Mode Implementation
 All 37 modes in switch statement:
@@ -182,25 +185,14 @@ interface MotionStats {
 - **During video playback**: 30fps limit
 - **Frame drop detection**: 1.5x target time
 
-### Idle Mode (Power Saving)
-After 1 second of no changes (stopped playhead, no scrubbing, no parameter changes), the engine enters idle mode:
-- **Render loop pauses** - No GPU work until needed
-- **Wake on demand** - Any state change triggers immediate re-render:
-  - Playhead movement (playback or scrubbing)
-  - Clip changes (content, transforms, effects)
-  - Track changes
-  - Layer changes
-  - Resolution/settings changes
-  - Composition switching
+### Idle Mode (Disabled)
+Idle mode was originally designed to pause the render loop after 1 second of inactivity to save GPU resources. However, it has been **disabled** to ensure scrubbing always works reliably after page reload. The engine now renders continuously.
 
-```typescript
-// Wake the engine from idle
-engine.requestRender();
-
-// Check idle status
-const stats = engine.getStats();
-console.log(stats.isIdle); // true/false
-```
+### Render Loop Watchdog
+A watchdog monitors the render loop for crashes and hangs:
+- Detects when the render loop stops unexpectedly
+- Automatically recovers from GPU-related crashes
+- Prevents permanent preview freezes
 
 ### Statistics Tracking
 ```typescript
