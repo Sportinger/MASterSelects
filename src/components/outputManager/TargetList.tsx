@@ -8,6 +8,7 @@ import { SourceSelector } from './SourceSelector';
 import { renderScheduler } from '../../services/renderScheduler';
 import { engine } from '../../engine/WebGPUEngine';
 import type { RenderSource, RenderTarget } from '../../types/renderTarget';
+import type { OutputSlice } from '../../types/outputSlice';
 
 interface TargetListProps {
   selectedTargetId: string | null;
@@ -73,12 +74,20 @@ export function TargetList({ selectedTargetId, onSelect }: TargetListProps) {
   const targets = useRenderTargetStore((s) => s.targets);
   const sliceConfigs = useSliceStore((s) => s.configs);
   const addSlice = useSliceStore((s) => s.addSlice);
+  const addMask = useSliceStore((s) => s.addMask);
   const removeSlice = useSliceStore((s) => s.removeSlice);
   const selectSlice = useSliceStore((s) => s.selectSlice);
   const setSliceEnabled = useSliceStore((s) => s.setSliceEnabled);
+  const setMaskInverted = useSliceStore((s) => s.setMaskInverted);
+  const reorderItems = useSliceStore((s) => s.reorderItems);
   const resetSliceWarp = useSliceStore((s) => s.resetSliceWarp);
   const renameSlice = useSliceStore((s) => s.renameSlice);
   const updateTargetName = useRenderTargetStore((s) => s.updateTargetName);
+
+  // Drag-drop state
+  const dragIndexRef = useRef<number | null>(null);
+  const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
+  const dragTargetIdRef = useRef<string | null>(null);
 
   const outputTargets = useMemo(() => {
     const result: RenderTarget[] = [];
@@ -130,6 +139,42 @@ export function TargetList({ selectedTargetId, onSelect }: TargetListProps) {
     }
   };
 
+  const handleAddMask = () => {
+    if (selectedTargetId) {
+      addMask(selectedTargetId);
+    }
+  };
+
+  const handleDragStart = (targetId: string, index: number) => {
+    dragIndexRef.current = index;
+    dragTargetIdRef.current = targetId;
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    setDropTargetIndex(index);
+  };
+
+  const handleDragLeave = () => {
+    setDropTargetIndex(null);
+  };
+
+  const handleDrop = (targetId: string, toIndex: number) => {
+    const fromIndex = dragIndexRef.current;
+    if (fromIndex !== null && dragTargetIdRef.current === targetId && fromIndex !== toIndex) {
+      reorderItems(targetId, fromIndex, toIndex);
+    }
+    dragIndexRef.current = null;
+    dragTargetIdRef.current = null;
+    setDropTargetIndex(null);
+  };
+
+  const handleDragEnd = () => {
+    dragIndexRef.current = null;
+    dragTargetIdRef.current = null;
+    setDropTargetIndex(null);
+  };
+
   return (
     <div className="om-target-list">
       <div className="om-target-list-header">
@@ -145,6 +190,14 @@ export function TargetList({ selectedTargetId, onSelect }: TargetListProps) {
             title={selectedTargetId ? 'Add Slice to selected output' : 'Select an output first'}
           >
             + Slice
+          </button>
+          <button
+            className="om-add-btn om-add-mask-btn"
+            onClick={handleAddMask}
+            disabled={!selectedTargetId}
+            title={selectedTargetId ? 'Add Mask to selected output' : 'Select an output first'}
+          >
+            + Mask
           </button>
         </div>
       </div>
@@ -222,61 +275,83 @@ export function TargetList({ selectedTargetId, onSelect }: TargetListProps) {
                 </div>
               </div>
 
-              {/* Slices nested under this target */}
+              {/* Slices and masks nested under this target */}
               {slices.length > 0 && (
                 <div className="om-slice-items-nested">
-                  {slices.map((slice) => (
-                    <div
-                      key={slice.id}
-                      className={`om-slice-item ${selectedSliceId === slice.id ? 'selected' : ''} ${!slice.enabled ? 'disabled' : ''}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onSelect(target.id);
-                        selectSlice(target.id, slice.id);
-                      }}
-                    >
-                      <div className="om-slice-row">
-                        <span className={`om-target-status small ${slice.enabled ? 'enabled' : 'disabled'}`} />
-                        <InlineEdit
-                          value={slice.name}
-                          onCommit={(name) => renameSlice(target.id, slice.id, name)}
-                          className="om-slice-name"
-                        />
-                        <span className="om-slice-mode">Corner Pin</span>
+                  {slices.map((slice: OutputSlice, idx: number) => {
+                    const isMask = slice.type === 'mask';
+                    return (
+                      <div
+                        key={slice.id}
+                        className={`om-slice-item ${selectedSliceId === slice.id ? 'selected' : ''} ${!slice.enabled ? 'disabled' : ''} ${isMask ? 'om-mask-item' : ''} ${dropTargetIndex === idx && dragTargetIdRef.current === target.id ? 'om-drop-target' : ''}`}
+                        draggable
+                        onDragStart={() => handleDragStart(target.id, idx)}
+                        onDragOver={(e) => handleDragOver(e, idx)}
+                        onDragLeave={handleDragLeave}
+                        onDrop={() => handleDrop(target.id, idx)}
+                        onDragEnd={handleDragEnd}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelect(target.id);
+                          selectSlice(target.id, slice.id);
+                        }}
+                      >
+                        <div className="om-slice-row">
+                          <span className="om-drag-handle" title="Drag to reorder">⠿</span>
+                          <span className={`om-target-status small ${slice.enabled ? 'enabled' : 'disabled'}`} />
+                          <InlineEdit
+                            value={slice.name}
+                            onCommit={(name) => renameSlice(target.id, slice.id, name)}
+                            className="om-slice-name"
+                          />
+                          <span className="om-slice-mode">{isMask ? 'Mask' : 'Corner Pin'}</span>
+                        </div>
+                        <div className="om-slice-controls">
+                          {isMask && (
+                            <button
+                              className={`om-invert-toggle ${slice.inverted ? 'active' : ''}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setMaskInverted(target.id, slice.id, !slice.inverted);
+                              }}
+                              title={slice.inverted ? 'Inverted: blacks out inside mask' : 'Non-inverted: blacks out outside mask'}
+                            >
+                              Inv
+                            </button>
+                          )}
+                          <button
+                            className={`om-toggle-btn ${slice.enabled ? 'active' : ''}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSliceEnabled(target.id, slice.id, !slice.enabled);
+                            }}
+                          >
+                            {slice.enabled ? 'ON' : 'OFF'}
+                          </button>
+                          <button
+                            className="om-close-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              resetSliceWarp(target.id, slice.id);
+                            }}
+                            title="Reset warp"
+                          >
+                            Reset
+                          </button>
+                          <button
+                            className="om-remove-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeSlice(target.id, slice.id);
+                            }}
+                            title={isMask ? 'Delete mask' : 'Delete slice'}
+                          >
+                            Del
+                          </button>
+                        </div>
                       </div>
-                      <div className="om-slice-controls">
-                        <button
-                          className={`om-toggle-btn ${slice.enabled ? 'active' : ''}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSliceEnabled(target.id, slice.id, !slice.enabled);
-                          }}
-                        >
-                          {slice.enabled ? 'ON' : 'OFF'}
-                        </button>
-                        <button
-                          className="om-close-btn"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            resetSliceWarp(target.id, slice.id);
-                          }}
-                          title="Reset warp"
-                        >
-                          Reset
-                        </button>
-                        <button
-                          className="om-remove-btn"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            removeSlice(target.id, slice.id);
-                          }}
-                          title="Delete slice"
-                        >
-                          Del
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

@@ -11,7 +11,7 @@ import type {
   SliceWarp,
   Point2D,
 } from '../types/outputSlice';
-import { createDefaultSlice, DEFAULT_CORNERS, migrateSlice } from '../types/outputSlice';
+import { createDefaultSlice, createDefaultMask, DEFAULT_CORNERS, migrateSlice } from '../types/outputSlice';
 
 interface SliceState {
   configs: Map<string, TargetSliceConfig>;
@@ -25,9 +25,12 @@ interface SliceActions {
   getOrCreateConfig: (targetId: string) => TargetSliceConfig;
   removeConfig: (targetId: string) => void;
   addSlice: (targetId: string, name?: string) => string;
+  addMask: (targetId: string, name?: string) => string;
   removeSlice: (targetId: string, sliceId: string) => void;
   selectSlice: (targetId: string, sliceId: string | null) => void;
   setSliceEnabled: (targetId: string, sliceId: string, enabled: boolean) => void;
+  setMaskInverted: (targetId: string, sliceId: string, inverted: boolean) => void;
+  reorderItems: (targetId: string, fromIndex: number, toIndex: number) => void;
   setInputCorner: (targetId: string, sliceId: string, cornerIndex: number, point: Point2D) => void;
   setCornerPinCorner: (targetId: string, sliceId: string, cornerIndex: number, point: Point2D) => void;
   updateWarp: (targetId: string, sliceId: string, warp: SliceWarp) => void;
@@ -121,6 +124,19 @@ export const useSliceStore = create<SliceState & SliceActions>()((set, get) => (
     return slice.id;
   },
 
+  addMask: (targetId, name?) => {
+    const config = get().getOrCreateConfig(targetId);
+    const mask = createDefaultMask(name);
+    const next = new Map(get().configs);
+    next.set(targetId, {
+      ...config,
+      slices: [...config.slices, mask],
+      selectedSliceId: mask.id,
+    });
+    set({ configs: next });
+    return mask.id;
+  },
+
   removeSlice: (targetId, sliceId) => {
     set((state) => {
       const config = state.configs.get(targetId);
@@ -154,6 +170,30 @@ export const useSliceStore = create<SliceState & SliceActions>()((set, get) => (
       if (!config) return state;
       const next = new Map(state.configs);
       next.set(targetId, updateSliceInConfig(config, sliceId, (s) => ({ ...s, enabled })));
+      return { configs: next };
+    });
+  },
+
+  setMaskInverted: (targetId, sliceId, inverted) => {
+    set((state) => {
+      const config = state.configs.get(targetId);
+      if (!config) return state;
+      const next = new Map(state.configs);
+      next.set(targetId, updateSliceInConfig(config, sliceId, (s) => ({ ...s, inverted })));
+      return { configs: next };
+    });
+  },
+
+  reorderItems: (targetId, fromIndex, toIndex) => {
+    set((state) => {
+      const config = state.configs.get(targetId);
+      if (!config) return state;
+      const slices = [...config.slices];
+      if (fromIndex < 0 || fromIndex >= slices.length || toIndex < 0 || toIndex >= slices.length) return state;
+      const [item] = slices.splice(fromIndex, 1);
+      slices.splice(toIndex, 0, item);
+      const next = new Map(state.configs);
+      next.set(targetId, { ...config, slices });
       return { configs: next };
     });
   },

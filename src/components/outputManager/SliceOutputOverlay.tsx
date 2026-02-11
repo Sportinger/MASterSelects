@@ -13,6 +13,7 @@ interface SliceOutputOverlayProps {
 }
 
 const SLICE_COLORS = ['#2D8CEB', '#EB8C2D', '#2DEB8C', '#EB2D8C', '#8C2DEB', '#8CEB2D'];
+const MASK_COLOR = '#FF4444';
 const CORNER_LABELS = ['TL', 'TR', 'BR', 'BL'];
 const POINT_RADIUS = 6;
 
@@ -158,7 +159,8 @@ export function SliceOutputOverlay({ targetId, width, height }: SliceOutputOverl
         {config.slices.map((slice, idx) => {
           if (!slice.enabled || slice.warp.mode !== 'cornerPin') return null;
 
-          const color = SLICE_COLORS[idx % SLICE_COLORS.length];
+          const isMask = slice.type === 'mask';
+          const color = isMask ? MASK_COLOR : SLICE_COLORS[idx % SLICE_COLORS.length];
           const isSelected = slice.id === selectedSliceId;
           const corners = slice.warp.corners;
 
@@ -183,6 +185,7 @@ export function SliceOutputOverlay({ targetId, width, height }: SliceOutputOverl
                 stroke={color}
                 strokeWidth={isSelected ? 2 : 1}
                 strokeOpacity={isSelected ? 1 : 0.5}
+                strokeDasharray={isMask ? '6 3' : 'none'}
               />
 
               {/* Corner points */}
@@ -207,7 +210,7 @@ export function SliceOutputOverlay({ targetId, width, height }: SliceOutputOverl
                     strokeWidth={isSelected ? 2 : 1}
                     style={{ cursor: 'grab', pointerEvents: 'none' }}
                   />
-                  {/* Corner label (only for selected slice) */}
+                  {/* Corner label (only for selected item) */}
                   {isSelected && (
                     <text
                       x={pt.x}
@@ -218,7 +221,7 @@ export function SliceOutputOverlay({ targetId, width, height }: SliceOutputOverl
                       fontWeight="bold"
                       style={{ pointerEvents: 'none' }}
                     >
-                      {CORNER_LABELS[ci]}
+                      {isMask ? 'mask' : CORNER_LABELS[ci]}
                     </text>
                   )}
                 </g>

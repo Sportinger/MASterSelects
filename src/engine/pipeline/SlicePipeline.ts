@@ -1,11 +1,12 @@
-// SlicePipeline - renders warped slices using CPU-computed vertex positions
+// SlicePipeline - renders warped slices and masks using CPU-computed vertex positions
 // Corner Pin: 16x16 subdivision per slice for perspective-correct warping
-// Mesh Grid (Phase 2): each grid cell is a quad, same code path
+// Masks: inverted (2 tris) or non-inverted (4 complement strips of 2 tris each)
 
 import type { OutputSlice, Point2D } from '../../types/outputSlice';
 import sliceShader from '../../shaders/slice.wgsl?raw';
 
 const SUBDIVISIONS = 16;
+const FLOATS_PER_VERTEX = 5; // position.xy + uv.xy + maskFlag
 
 export class SlicePipeline {
   private device: GPUDevice;
@@ -37,10 +38,11 @@ export class SlicePipeline {
         entryPoint: 'vertexMain',
         buffers: [
           {
-            arrayStride: 16, // 4 floats * 4 bytes
+            arrayStride: 20, // 5 floats * 4 bytes
             attributes: [
-              { shaderLocation: 0, offset: 0, format: 'float32x2' },  // position
-              { shaderLocation: 1, offset: 8, format: 'float32x2' },  // uv
+              { shaderLocation: 0, offset: 0, format: 'float32x2' },   // position
+              { shaderLocation: 1, offset: 8, format: 'float32x2' },   // uv
+              { shaderLocation: 2, offset: 16, format: 'float32' },    // maskFlag
             ],
           },
         ],
@@ -59,36 +61,39 @@ export class SlicePipeline {
   }
 
   /**
-   * Build vertex buffer from enabled slices.
-   * Each corner pin slice is subdivided into 16x16 quads (2 triangles each = 3072 vertices per slice).
+   * Build vertex buffer from enabled slices and masks.
+   * Slices: 16x16 subdivided quads (1536 verts each)
+   * Inverted masks: 2 triangles (6 verts)
+   * Non-inverted masks: 4 complement strips (24 verts)
    */
   buildVertexBuffer(slices: OutputSlice[]): void {
-    const enabledSlices = slices.filter((s) => s.enabled);
-    if (enabledSlices.length === 0) {
+    const enabledItems = slices.filter((s) => s.enabled);
+    if (enabledItems.length === 0) {
       this.vertexCount = 0;
       return;
     }
 
-    // 16x16 sub-quads * 2 triangles * 3 vertices = 1536 vertices per slice
-    // Actually: 16*16 * 6 = 1536 vertices per slice
-    const verticesPerSlice = SUBDIVISIONS * SUBDIVISIONS * 6;
-    const totalVertices = enabledSlices.length * verticesPerSlice;
-    const floatsPerVertex = 4; // position.xy + uv.xy
-    const data = new Float32Array(totalVertices * floatsPerVertex);
+    // Estimate max vertices: 1536 per slice + 24 per mask
+    const maxVertices = enabledItems.reduce((sum, item) => {
+      return sum + (item.type === 'mask' ? 24 : SUBDIVISIONS * SUBDIVISIONS * 6);
+    }, 0);
+    const data = new Float32Array(maxVertices * FLOATS_PER_VERTEX);
 
     let offset = 0;
 
-    for (const slice of enabledSlices) {
-      if (slice.warp.mode === 'cornerPin') {
-        offset = this.buildCornerPinVertices(data, offset, slice);
+    for (const item of enabledItems) {
+      if (item.type === 'mask') {
+        offset = this.buildMaskVertices(data, offset, item);
+      } else {
+        if (item.warp.mode === 'cornerPin') {
+          offset = this.buildCornerPinVertices(data, offset, item);
+        }
       }
-      // meshGrid support added in Phase 2
     }
 
-    this.vertexCount = offset / floatsPerVertex;
+    this.vertexCount = offset / FLOATS_PER_VERTEX;
 
-    // Recreate buffer if needed
-    const byteSize = this.vertexCount * floatsPerVertex * 4;
+    const byteSize = this.vertexCount * FLOATS_PER_VERTEX * 4;
     if (byteSize === 0) return;
 
     if (!this.vertexBuffer || this.vertexBuffer.size < byteSize) {
@@ -127,15 +132,83 @@ export class SlicePipeline {
         const uv01 = bilinearUV(itl, itr, ibr, ibl, t0, s1);
 
         // Triangle 1: p00, p10, p11
-        offset = pushVertex(data, offset, p00, uv00);
-        offset = pushVertex(data, offset, p10, uv10);
-        offset = pushVertex(data, offset, p11, uv11);
+        offset = pushVertex(data, offset, p00, uv00, 0);
+        offset = pushVertex(data, offset, p10, uv10, 0);
+        offset = pushVertex(data, offset, p11, uv11, 0);
 
         // Triangle 2: p00, p11, p01
-        offset = pushVertex(data, offset, p00, uv00);
-        offset = pushVertex(data, offset, p11, uv11);
-        offset = pushVertex(data, offset, p01, uv01);
+        offset = pushVertex(data, offset, p00, uv00, 0);
+        offset = pushVertex(data, offset, p11, uv11, 0);
+        offset = pushVertex(data, offset, p01, uv01, 0);
       }
+    }
+
+    return offset;
+  }
+
+  private buildMaskVertices(data: Float32Array, offset: number, mask: OutputSlice): number {
+    if (mask.warp.mode !== 'cornerPin') return offset;
+
+    const corners = mask.warp.corners;
+    const [tl, tr, br, bl] = corners;
+
+    // Convert corners to clip space
+    const cTL = toClip(tl);
+    const cTR = toClip(tr);
+    const cBR = toClip(br);
+    const cBL = toClip(bl);
+
+    // Dummy UV (masks don't sample texture)
+    const dummyUV: Point2D = { x: 0, y: 0 };
+
+    if (mask.inverted) {
+      // Inverted: render inside the mask shape as black (2 triangles, 6 verts)
+      offset = pushVertex(data, offset, cTL, dummyUV, 1);
+      offset = pushVertex(data, offset, cTR, dummyUV, 1);
+      offset = pushVertex(data, offset, cBR, dummyUV, 1);
+
+      offset = pushVertex(data, offset, cTL, dummyUV, 1);
+      offset = pushVertex(data, offset, cBR, dummyUV, 1);
+      offset = pushVertex(data, offset, cBL, dummyUV, 1);
+    } else {
+      // Non-inverted: render everything OUTSIDE the mask shape as black
+      // 4 complement strips connecting screen edges to mask corners (4 * 2 tris = 24 verts)
+      const sTL: Point2D = { x: -1, y: 1 };   // screen top-left in clip space
+      const sTR: Point2D = { x: 1, y: 1 };    // screen top-right
+      const sBR: Point2D = { x: 1, y: -1 };   // screen bottom-right
+      const sBL: Point2D = { x: -1, y: -1 };  // screen bottom-left
+
+      // Top strip: sTL → sTR → cTR → cTL
+      offset = pushVertex(data, offset, sTL, dummyUV, 1);
+      offset = pushVertex(data, offset, sTR, dummyUV, 1);
+      offset = pushVertex(data, offset, cTR, dummyUV, 1);
+      offset = pushVertex(data, offset, sTL, dummyUV, 1);
+      offset = pushVertex(data, offset, cTR, dummyUV, 1);
+      offset = pushVertex(data, offset, cTL, dummyUV, 1);
+
+      // Right strip: sTR → sBR → cBR → cTR
+      offset = pushVertex(data, offset, sTR, dummyUV, 1);
+      offset = pushVertex(data, offset, sBR, dummyUV, 1);
+      offset = pushVertex(data, offset, cBR, dummyUV, 1);
+      offset = pushVertex(data, offset, sTR, dummyUV, 1);
+      offset = pushVertex(data, offset, cBR, dummyUV, 1);
+      offset = pushVertex(data, offset, cTR, dummyUV, 1);
+
+      // Bottom strip: sBR → sBL → cBL → cBR
+      offset = pushVertex(data, offset, sBR, dummyUV, 1);
+      offset = pushVertex(data, offset, sBL, dummyUV, 1);
+      offset = pushVertex(data, offset, cBL, dummyUV, 1);
+      offset = pushVertex(data, offset, sBR, dummyUV, 1);
+      offset = pushVertex(data, offset, cBL, dummyUV, 1);
+      offset = pushVertex(data, offset, cBR, dummyUV, 1);
+
+      // Left strip: sBL → sTL → cTL → cBL
+      offset = pushVertex(data, offset, sBL, dummyUV, 1);
+      offset = pushVertex(data, offset, sTL, dummyUV, 1);
+      offset = pushVertex(data, offset, cTL, dummyUV, 1);
+      offset = pushVertex(data, offset, sBL, dummyUV, 1);
+      offset = pushVertex(data, offset, cTL, dummyUV, 1);
+      offset = pushVertex(data, offset, cBL, dummyUV, 1);
     }
 
     return offset;
@@ -194,6 +267,11 @@ export class SlicePipeline {
 
 // === Helpers ===
 
+/** Convert normalized 0-1 coords to clip space (-1..1, Y-flipped for WebGPU) */
+function toClip(p: Point2D): Point2D {
+  return { x: p.x * 2 - 1, y: 1 - p.y * 2 };
+}
+
 /** Bilinear interpolation of 4 corners, result mapped to clip space (-1..1, Y-flipped) */
 function bilinear(tl: Point2D, tr: Point2D, br: Point2D, bl: Point2D, s: number, t: number): Point2D {
   const x = (1 - s) * (1 - t) * tl.x + s * (1 - t) * tr.x + s * t * br.x + (1 - s) * t * bl.x;
@@ -210,11 +288,12 @@ function bilinearUV(tl: Point2D, tr: Point2D, br: Point2D, bl: Point2D, s: numbe
   };
 }
 
-/** Push a vertex (position + UV) into the data array */
-function pushVertex(data: Float32Array, offset: number, pos: Point2D, uv: Point2D): number {
+/** Push a vertex (position + UV + maskFlag) into the data array */
+function pushVertex(data: Float32Array, offset: number, pos: Point2D, uv: Point2D, maskFlag: number): number {
   data[offset++] = pos.x;
   data[offset++] = pos.y;
   data[offset++] = uv.x;
   data[offset++] = uv.y;
+  data[offset++] = maskFlag;
   return offset;
 }

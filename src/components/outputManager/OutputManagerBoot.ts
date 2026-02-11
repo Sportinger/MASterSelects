@@ -222,6 +222,13 @@ function getOutputManagerStyles(): string {
     .om-add-slice-btn:hover:not(:disabled) {
       background: #4a4a4a;
     }
+    .om-add-mask-btn {
+      background: #3a2020;
+      color: #f88;
+    }
+    .om-add-mask-btn:hover:not(:disabled) {
+      background: #4a2a2a;
+    }
     .om-target-items {
       flex: 1;
       overflow-y: auto;
@@ -568,6 +575,53 @@ function getOutputManagerStyles(): string {
       display: flex;
       gap: 4px;
       margin-top: 4px;
+    }
+
+    /* Mask item styling */
+    .om-mask-item {
+      border-left: 2px solid #FF444466;
+    }
+    .om-mask-item.selected {
+      border-left-color: #FF4444;
+    }
+
+    /* Drag handle */
+    .om-drag-handle {
+      cursor: grab;
+      color: #555;
+      font-size: 12px;
+      user-select: none;
+      flex-shrink: 0;
+      width: 14px;
+      text-align: center;
+    }
+    .om-drag-handle:hover {
+      color: #999;
+    }
+    .om-slice-item[draggable="true"] {
+      cursor: default;
+    }
+
+    /* Drop target indicator */
+    .om-drop-target {
+      border-top: 2px solid #2D8CEB !important;
+    }
+
+    /* Invert toggle */
+    .om-invert-toggle {
+      background: #333;
+      color: #888;
+      border: 1px solid #444;
+      padding: 2px 6px;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 10px;
+      font-weight: 600;
+    }
+    .om-invert-toggle.active {
+      background: #3a2020;
+      color: #f44;
+      border-color: #f44;
     }
 
     /* Slice SVG Overlay */

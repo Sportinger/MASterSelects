@@ -13,6 +13,7 @@ interface SliceInputOverlayProps {
 }
 
 const SLICE_COLORS = ['#2D8CEB', '#EB8C2D', '#2DEB8C', '#EB2D8C', '#8C2DEB', '#8CEB2D'];
+const MASK_COLOR = '#FF4444';
 const CORNER_LABELS = ['TL', 'TR', 'BR', 'BL'];
 const POINT_RADIUS = 6;
 
@@ -151,7 +152,8 @@ export function SliceInputOverlay({ targetId, width, height }: SliceInputOverlay
         {config.slices.map((slice, idx) => {
           if (!slice.enabled) return null;
 
-          const color = SLICE_COLORS[idx % SLICE_COLORS.length];
+          const isMask = slice.type === 'mask';
+          const color = isMask ? MASK_COLOR : SLICE_COLORS[idx % SLICE_COLORS.length];
           const isSelected = slice.id === selectedSliceId;
           const corners = slice.inputCorners;
 
@@ -161,6 +163,36 @@ export function SliceInputOverlay({ targetId, width, height }: SliceInputOverlay
           }));
 
           const pathData = `M ${pts[0].x} ${pts[0].y} L ${pts[1].x} ${pts[1].y} L ${pts[2].x} ${pts[2].y} L ${pts[3].x} ${pts[3].y} Z`;
+
+          // Masks are non-interactive reference shapes in the input view
+          if (isMask) {
+            return (
+              <g key={slice.id} style={{ pointerEvents: 'none' }}>
+                <path
+                  d={pathData}
+                  fill="transparent"
+                  stroke={color}
+                  strokeWidth={1}
+                  strokeOpacity={0.3}
+                  strokeDasharray="6 3"
+                />
+                {/* Label at center */}
+                {isSelected && (
+                  <text
+                    x={(pts[0].x + pts[1].x + pts[2].x + pts[3].x) / 4}
+                    y={(pts[0].y + pts[1].y + pts[2].y + pts[3].y) / 4}
+                    textAnchor="middle"
+                    fill={color}
+                    fontSize={10}
+                    fontWeight="bold"
+                    opacity={0.5}
+                  >
+                    mask
+                  </text>
+                )}
+              </g>
+            );
+          }
 
           return (
             <g

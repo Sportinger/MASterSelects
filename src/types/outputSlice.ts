@@ -30,9 +30,13 @@ export interface MeshGridWarp {
 
 export type SliceWarp = CornerPinWarp | MeshGridWarp;
 
+export type SliceItemType = 'slice' | 'mask';
+
 export interface OutputSlice {
   id: string;
   name: string;
+  type: SliceItemType;
+  inverted: boolean;
   enabled: boolean;
   inputCorners: [Point2D, Point2D, Point2D, Point2D]; // TL, TR, BR, BL (0-1 normalized)
   warp: SliceWarp;
@@ -60,6 +64,8 @@ export function createDefaultSlice(name?: string): OutputSlice {
   return {
     id,
     name: name ?? `Slice ${sliceCounter}`,
+    type: 'slice',
+    inverted: false,
     enabled: true,
     inputCorners: [
       { x: 0, y: 0 }, // TL
@@ -79,19 +85,57 @@ export function createDefaultSlice(name?: string): OutputSlice {
   };
 }
 
-/** Migrate legacy slices that have inputRect instead of inputCorners */
-export function migrateSlice(slice: OutputSlice & { inputRect?: SliceInputRect }): OutputSlice {
-  if (slice.inputCorners) return slice;
-  const r = slice.inputRect ?? { x: 0, y: 0, width: 1, height: 1 };
+let maskCounter = 0;
+
+export function createDefaultMask(name?: string): OutputSlice {
+  const id = `mask_${Date.now()}_${++maskCounter}`;
   return {
-    ...slice,
+    id,
+    name: name ?? `Mask ${maskCounter}`,
+    type: 'mask',
+    inverted: true,
+    enabled: true,
     inputCorners: [
-      { x: r.x, y: r.y },
-      { x: r.x + r.width, y: r.y },
-      { x: r.x + r.width, y: r.y + r.height },
-      { x: r.x, y: r.y + r.height },
+      { x: 0.25, y: 0.25 },
+      { x: 0.75, y: 0.25 },
+      { x: 0.75, y: 0.75 },
+      { x: 0.25, y: 0.75 },
     ],
+    warp: {
+      mode: 'cornerPin',
+      corners: [
+        { x: 0.25, y: 0.25 },
+        { x: 0.75, y: 0.25 },
+        { x: 0.75, y: 0.75 },
+        { x: 0.25, y: 0.75 },
+      ],
+    },
   };
+}
+
+/** Migrate legacy slices that have inputRect instead of inputCorners, or missing type/inverted */
+export function migrateSlice(slice: OutputSlice & { inputRect?: SliceInputRect }): OutputSlice {
+  let result = slice;
+  if (!result.inputCorners) {
+    const r = slice.inputRect ?? { x: 0, y: 0, width: 1, height: 1 };
+    result = {
+      ...result,
+      inputCorners: [
+        { x: r.x, y: r.y },
+        { x: r.x + r.width, y: r.y },
+        { x: r.x + r.width, y: r.y + r.height },
+        { x: r.x, y: r.y + r.height },
+      ],
+    };
+  }
+  // Add type/inverted for legacy data
+  if (!result.type) {
+    result = { ...result, type: 'slice' };
+  }
+  if (result.inverted === undefined) {
+    result = { ...result, inverted: false };
+  }
+  return result;
 }
 
 export function createMeshGrid(cols: number, rows: number): MeshGridWarp {
