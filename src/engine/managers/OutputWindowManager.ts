@@ -2,6 +2,7 @@
 // Simplified: only handles window lifecycle. State lives in renderTargetStore.
 
 import { useRenderTargetStore } from '../../stores/renderTargetStore';
+import { useSliceStore } from '../../stores/sliceStore';
 import { Logger } from '../../services/logger';
 
 const log = Logger.create('OutputWindowManager');
@@ -19,13 +20,18 @@ export class OutputWindowManager {
    * Creates a popup window with a canvas element.
    * Does NOT configure WebGPU - that's done by engine.registerTargetCanvas().
    * Returns the window + canvas for the caller to wire up.
+   * Optional geometry restores previous position/size/screen.
    */
-  createWindow(id: string, name: string): { window: Window; canvas: HTMLCanvasElement } | null {
-    const outputWindow = window.open(
-      '',
-      `output_${id}`,
-      'width=960,height=540,menubar=no,toolbar=no,location=no,status=no'
-    );
+  createWindow(id: string, name: string, geometry?: {
+    screenX?: number; screenY?: number; outerWidth?: number; outerHeight?: number;
+  }): { window: Window; canvas: HTMLCanvasElement } | null {
+    const w = geometry?.outerWidth ?? 960;
+    const h = geometry?.outerHeight ?? 540;
+    let features = `width=${w},height=${h},menubar=no,toolbar=no,location=no,status=no`;
+    if (geometry?.screenX != null && geometry?.screenY != null) {
+      features += `,left=${geometry.screenX},top=${geometry.screenY}`;
+    }
+    const outputWindow = window.open('', `output_${id}`, features);
 
     if (!outputWindow) {
       log.error('Failed to open window (popup blocked?)');
@@ -100,13 +106,20 @@ export class OutputWindowManager {
       fullscreenBtn.style.display = outputWindow.document.fullscreenElement ? 'none' : 'block';
     });
 
-    // When window is closed by user, deactivate (keep entry grayed out) instead of removing
+    // When window is closed by user, save geometry then deactivate (keep entry grayed out)
     outputWindow.onbeforeunload = () => {
+      // Trigger a save so geometry is captured with current window position/size
+      try { useSliceStore.getState().saveToLocalStorage(); } catch { /* ignore */ }
       useRenderTargetStore.getState().deactivateTarget(id);
     };
 
-    // Ensure window gets foreground focus (fixes Windows drag issue)
+    // Ensure popup gets foreground activation on Windows:
+    // Blur the parent first to release foreground lock, then focus the popup
+    // from its own context so the OS allows it to become the foreground window.
+    window.blur();
     outputWindow.focus();
+    outputWindow.setTimeout(() => outputWindow.focus(), 50);
+    outputWindow.setTimeout(() => outputWindow.focus(), 200);
 
     log.info('Created output window', { id, name });
     return { window: outputWindow, canvas };
@@ -129,8 +142,9 @@ export class OutputWindowManager {
       return null;
     }
 
-    // Re-setup the close handler
+    // Re-setup the close handler (save geometry before deactivating)
     existing.onbeforeunload = () => {
+      try { useSliceStore.getState().saveToLocalStorage(); } catch { /* ignore */ }
       useRenderTargetStore.getState().deactivateTarget(id);
     };
 

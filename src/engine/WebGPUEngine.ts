@@ -15,7 +15,7 @@ import { SlicePipeline } from './pipeline/SlicePipeline';
 import { VideoFrameManager } from './video/VideoFrameManager';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useRenderTargetStore } from '../stores/renderTargetStore';
-import { useSliceStore } from '../stores/sliceStore';
+import { useSliceStore, getSavedTargetMeta } from '../stores/sliceStore';
 import { reportRenderTime } from '../services/performanceMonitor';
 import { Logger } from '../services/logger';
 
@@ -307,7 +307,17 @@ export class WebGPUEngine {
     const target = useRenderTargetStore.getState().targets.get(id);
     if (!target || target.destinationType !== 'window') return false;
 
-    const result = this.outputWindowManager.createWindow(id, target.name);
+    // Look up saved geometry from localStorage
+    const savedTargets = getSavedTargetMeta();
+    const savedMeta = savedTargets.find((t) => t.id === id);
+    const geometry = savedMeta ? {
+      screenX: savedMeta.screenX,
+      screenY: savedMeta.screenY,
+      outerWidth: savedMeta.outerWidth,
+      outerHeight: savedMeta.outerHeight,
+    } : undefined;
+
+    const result = this.outputWindowManager.createWindow(id, target.name, geometry);
     if (!result) return false;
 
     const gpuContext = this.registerTargetCanvas(id, result.canvas);
@@ -323,7 +333,7 @@ export class WebGPUEngine {
     store.setTargetEnabled(id, true);
 
     // Restore fullscreen if it was previously fullscreen
-    if (target.isFullscreen) {
+    if (savedMeta?.isFullscreen || target.isFullscreen) {
       result.canvas.requestFullscreen().catch(() => {});
     }
 

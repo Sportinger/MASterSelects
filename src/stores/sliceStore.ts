@@ -273,10 +273,19 @@ export const useSliceStore = create<SliceState & SliceActions>()((set, get) => (
       // Only overwrite if there are actual window/tab targets registered
       // (avoids wiping saved metadata during post-refresh auto-save when store is empty)
       const targets = useRenderTargetStore.getState().targets;
-      const targetMeta: Array<{ id: string; name: string; source: RenderSource }> = [];
+      const targetMeta: SavedTargetMeta[] = [];
       for (const t of targets.values()) {
         if (t.destinationType === 'window' || t.destinationType === 'tab') {
-          targetMeta.push({ id: t.id, name: t.name, source: t.source });
+          const meta: SavedTargetMeta = { id: t.id, name: t.name, source: t.source };
+          // Capture window geometry if window is open
+          if (t.window && !t.window.closed) {
+            meta.screenX = t.window.screenX;
+            meta.screenY = t.window.screenY;
+            meta.outerWidth = t.window.outerWidth;
+            meta.outerHeight = t.window.outerHeight;
+            meta.isFullscreen = !!t.window.document.fullscreenElement;
+          }
+          targetMeta.push(meta);
         }
       }
       if (targetMeta.length > 0) {
@@ -325,13 +334,25 @@ try {
   // Ignore errors during initial load
 }
 
+/** Saved target metadata for reconnection after refresh */
+export interface SavedTargetMeta {
+  id: string;
+  name: string;
+  source: RenderSource;
+  screenX?: number;
+  screenY?: number;
+  outerWidth?: number;
+  outerHeight?: number;
+  isFullscreen?: boolean;
+}
+
 /** Get saved target metadata from localStorage (for reconnection) */
-export function getSavedTargetMeta(): Array<{ id: string; name: string; source: RenderSource }> {
+export function getSavedTargetMeta(): SavedTargetMeta[] {
   const key = getStorageKey();
   try {
     const raw = localStorage.getItem(key + '_targets');
     if (!raw) return [];
-    return JSON.parse(raw) as Array<{ id: string; name: string; source: RenderSource }>;
+    return JSON.parse(raw) as SavedTargetMeta[];
   } catch {
     return [];
   }

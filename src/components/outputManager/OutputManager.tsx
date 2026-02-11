@@ -46,7 +46,7 @@ export function OutputManager() {
           canvas: null,
           context: null,
           window: null,
-          isFullscreen: false,
+          isFullscreen: saved.isFullscreen ?? false,
         });
       }
     }
