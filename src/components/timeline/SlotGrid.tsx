@@ -137,10 +137,10 @@ export function SlotGrid({ opacity }: SlotGridProps) {
     return () => container.removeEventListener('wheel', handleWheel);
   }, []);
 
-  // Click = open comp + play from start (single active, no multi-layer)
-  const handleSlotClick = useCallback((comp: Composition) => {
-    // Deactivate all layers — single click = single active composition
-    useMediaStore.getState().deactivateAllLayers();
+  // Click = activate on layer + open in editor + play from start
+  const handleSlotClick = useCallback((comp: Composition, slotIndex: number) => {
+    const layerIndex = Math.floor(slotIndex / GRID_COLS);
+    useMediaStore.getState().activateOnLayer(comp.id, layerIndex);
 
     // Open in timeline editor and play from start
     openCompositionTab(comp.id, { skipAnimation: true, playFromStart: true });
@@ -336,7 +336,7 @@ export function SlotGrid({ opacity }: SlotGridProps) {
                     }
                     data-comp-id={comp.id}
                     style={thumbUrl ? { backgroundImage: `url(${thumbUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
-                    onClick={() => handleSlotClick(comp)}
+                    onClick={() => handleSlotClick(comp, slotIndex)}
                     onContextMenu={(e) => handleContextMenu(e, comp)}
                     title={comp.name}
                     draggable
