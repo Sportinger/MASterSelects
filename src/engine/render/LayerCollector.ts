@@ -258,6 +258,25 @@ export class LayerCollector {
       }
     }
 
+    // Last resort: canvas-based capture for videos that haven't presented to GPU
+    // canvas.drawImage uses CPU-decoded frames which are available at readyState >= 2
+    // even when importExternalTexture fails (e.g. after page reload before first play)
+    if (video.readyState >= 2 && !deps.isExporting) {
+      deps.scrubbingCache?.captureVideoFrameViaCanvas(video);
+      const canvasFrame = deps.scrubbingCache?.getLastFrame(video);
+      if (canvasFrame) {
+        this.currentDecoder = 'HTMLVideo(canvas)';
+        return {
+          layer,
+          isVideo: false,
+          externalTexture: null,
+          textureView: canvasFrame.view,
+          sourceWidth: canvasFrame.width,
+          sourceHeight: canvasFrame.height,
+        };
+      }
+    }
+
     return null;
   }
 
