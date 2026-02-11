@@ -98,8 +98,9 @@ export function SliceInputOverlay({ targetId, width, height }: SliceInputOverlay
     const pos = clientToNormalized(svg, e.clientX, e.clientY, width, height);
     if (!pos) return;
 
-    const x = pos.x + drag.offsetX;
-    const y = pos.y + drag.offsetY;
+    // Clamp input corners to 0-1 range (must stay within source area)
+    const x = Math.max(0, Math.min(1, pos.x + drag.offsetX));
+    const y = Math.max(0, Math.min(1, pos.y + drag.offsetY));
 
     setInputCorner(targetId, drag.sliceId, drag.cornerIndex, { x, y });
   }, [targetId, width, height, setInputCorner]);

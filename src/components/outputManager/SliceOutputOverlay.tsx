@@ -149,6 +149,7 @@ export function SliceOutputOverlay({ targetId, width, height }: SliceOutputOverl
         className="om-slice-overlay"
         viewBox={`0 0 ${width} ${height}`}
         preserveAspectRatio="xMidYMid meet"
+        overflow="visible"
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onLostPointerCapture={handlePointerUp}
