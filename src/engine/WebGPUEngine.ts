@@ -11,9 +11,11 @@ import { ScrubbingCache } from './texture/ScrubbingCache';
 import { CompositorPipeline } from './pipeline/CompositorPipeline';
 import { EffectsPipeline } from '../effects/EffectsPipeline';
 import { OutputPipeline } from './pipeline/OutputPipeline';
+import { SlicePipeline } from './pipeline/SlicePipeline';
 import { VideoFrameManager } from './video/VideoFrameManager';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useRenderTargetStore } from '../stores/renderTargetStore';
+import { useSliceStore } from '../stores/sliceStore';
 import { reportRenderTime } from '../services/performanceMonitor';
 import { Logger } from '../services/logger';
 
@@ -51,6 +53,7 @@ export class WebGPUEngine {
   private compositorPipeline: CompositorPipeline | null = null;
   private effectsPipeline: EffectsPipeline | null = null;
   private outputPipeline: OutputPipeline | null = null;
+  private slicePipeline: SlicePipeline | null = null;
 
   // Resources
   private sampler: GPUSampler | null = null;
@@ -126,9 +129,11 @@ export class WebGPUEngine {
     this.compositorPipeline = new CompositorPipeline(device);
     this.effectsPipeline = new EffectsPipeline(device);
     this.outputPipeline = new OutputPipeline(device);
+    this.slicePipeline = new SlicePipeline(device);
     await this.compositorPipeline.createPipelines();
     await this.effectsPipeline.createPipelines();
     await this.outputPipeline.createPipeline();
+    await this.slicePipeline.createPipeline();
 
     // Small delay to let Vulkan memory manager settle after pipeline creation
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -192,6 +197,7 @@ export class WebGPUEngine {
     this.compositorPipeline = null;
     this.effectsPipeline = null;
     this.outputPipeline = null;
+    this.slicePipeline = null;
 
     log.debug('Resources cleaned after device loss');
   }
@@ -670,9 +676,21 @@ export class WebGPUEngine {
       }
       // Output to all activeComp render targets (from unified store)
       const activeTargets = useRenderTargetStore.getState().getActiveCompTargets();
+      const sliceConfigs = useSliceStore.getState().configs;
       for (const target of activeTargets) {
         const ctx = this.targetCanvases.get(target.id)?.context;
-        if (ctx) this.outputPipeline!.renderToCanvas(commandEncoder, ctx, outputBindGroup);
+        if (!ctx) continue;
+
+        // Check for slice configuration on this target
+        const config = sliceConfigs.get(target.id);
+        const enabledSlices = config?.slices.filter((s) => s.enabled) ?? [];
+
+        if (enabledSlices.length > 0 && this.slicePipeline) {
+          this.slicePipeline.buildVertexBuffer(enabledSlices);
+          this.slicePipeline.renderSlicedOutput(commandEncoder, ctx, result.finalView, this.sampler!);
+        } else {
+          this.outputPipeline!.renderToCanvas(commandEncoder, ctx, outputBindGroup);
+        }
       }
     }
 
@@ -1034,6 +1052,32 @@ export class WebGPUEngine {
     this.nestedCompRenderer?.cleanupTexture(compositionId);
   }
 
+  /**
+   * Render sliced output to a specific canvas using the main composited output.
+   * Used by TargetPreview to preview sliced output for a target.
+   */
+  renderSlicedToCanvas(canvasId: string, slices: import('../types/outputSlice').OutputSlice[]): boolean {
+    const device = this.context.getDevice();
+    const canvasContext = this.targetCanvases.get(canvasId)?.context;
+    const pingView = this.renderTargetManager?.getPingView();
+    const pongView = this.renderTargetManager?.getPongView();
+
+    if (!device || !canvasContext || !this.slicePipeline || !this.sampler || !pingView || !pongView) return false;
+
+    const enabledSlices = slices.filter((s) => s.enabled);
+    if (enabledSlices.length === 0) return false;
+
+    const finalIsPing = !this.compositor?.getLastRenderWasPing();
+    const finalView = finalIsPing ? pingView : pongView;
+
+    this.slicePipeline.buildVertexBuffer(enabledSlices);
+
+    const commandEncoder = device.createCommandEncoder();
+    this.slicePipeline.renderSlicedOutput(commandEncoder, canvasContext, finalView, this.sampler);
+    device.queue.submit([commandEncoder.finish()]);
+    return true;
+  }
+
   // === RESOLUTION ===
 
   setResolution(width: number, height: number): void {
@@ -1217,6 +1261,7 @@ export class WebGPUEngine {
     this.compositorPipeline?.destroy();
     this.effectsPipeline?.destroy();
     this.outputPipeline?.destroy();
+    this.slicePipeline?.destroy();
     this.context.destroy();
     this.lastVideoTime.clear();
   }

@@ -93,8 +93,7 @@ function getOutputManagerStyles(): string {
     .om-main {
       flex: 1;
       display: flex;
-      align-items: center;
-      justify-content: center;
+      flex-direction: column;
       background: #0a0a0a;
       min-width: 0;
     }
@@ -346,6 +345,16 @@ function getOutputManagerStyles(): string {
       margin: 2px 0;
     }
 
+    /* Preview Wrapper (for overlay positioning) */
+    .om-preview-wrapper {
+      position: relative;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 0;
+    }
+
     /* Preview */
     .om-preview {
       width: 100%;
@@ -370,6 +379,116 @@ function getOutputManagerStyles(): string {
       height: 100%;
       color: #555;
       font-size: 14px;
+    }
+
+    /* Tab Bar */
+    .om-tab-bar {
+      display: flex;
+      gap: 0;
+      background: #161616;
+      border-bottom: 1px solid #2a2a2a;
+      flex-shrink: 0;
+      padding: 0 12px;
+    }
+    .om-tab {
+      background: none;
+      border: none;
+      color: #888;
+      padding: 8px 16px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 2px solid transparent;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .om-tab:hover {
+      color: #ccc;
+    }
+    .om-tab.active {
+      color: #2D8CEB;
+      border-bottom-color: #2D8CEB;
+    }
+
+    /* Slice List */
+    .om-slice-list {
+      display: flex;
+      flex-direction: column;
+      border-top: 1px solid #2a2a2a;
+    }
+    .om-slice-list-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 12px;
+      border-bottom: 1px solid #2a2a2a;
+    }
+    .om-slice-list-title {
+      font-weight: 600;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #888;
+    }
+    .om-slice-items {
+      overflow-y: auto;
+      padding: 4px;
+      max-height: 300px;
+    }
+    .om-slice-item {
+      padding: 8px 10px;
+      margin-bottom: 2px;
+      border-radius: 4px;
+      cursor: pointer;
+      border: 1px solid transparent;
+    }
+    .om-slice-item:hover {
+      background: #1e1e1e;
+    }
+    .om-slice-item.selected {
+      background: #1a2a3a;
+      border-color: #2D8CEB;
+    }
+    .om-slice-item.disabled {
+      opacity: 0.5;
+    }
+    .om-slice-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .om-slice-name {
+      font-weight: 500;
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .om-slice-mode {
+      font-size: 10px;
+      color: #666;
+    }
+    .om-slice-controls {
+      display: flex;
+      gap: 4px;
+      margin-top: 6px;
+    }
+
+    /* Slice SVG Overlay */
+    .om-slice-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+    .om-slice-overlay rect,
+    .om-slice-overlay path,
+    .om-slice-overlay circle {
+      pointer-events: auto;
     }
   `;
 }
