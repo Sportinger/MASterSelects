@@ -9613,11 +9613,6 @@ input[type="checkbox"] {
   box-shadow: 0 0 12px rgba(255, 152, 0, 0.4);
 }
 
-.slot-grid-item.previewed {
-  border-color: #ff9800;
-  box-shadow: 0 0 10px rgba(255, 152, 0, 0.3);
-}
-
 .slot-grid-item.empty {
   background: #151515;
   border: 1px dashed rgba(255, 255, 255, 0.06);
@@ -9635,40 +9630,44 @@ input[type="checkbox"] {
   box-shadow: 0 0 12px rgba(255, 152, 0, 0.4);
 }
 
-/* Preview strip at bottom of filled slots */
-.slot-grid-preview-strip {
+/* Slot composition name */
+.slot-grid-name {
   position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  color: rgba(255, 255, 255, 0.6);
-  background: rgba(0, 0, 0, 0.6);
-  opacity: 0;
-  transition: opacity 0.15s;
-  cursor: pointer;
+  top: 3px;
+  left: 4px;
+  right: 4px;
+  font-size: 10px;
+  color: #ccc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
   z-index: 2;
 }
 
-.slot-grid-item:hover .slot-grid-preview-strip {
-  opacity: 1;
+/* Slot time display (current / duration) */
+.slot-grid-time {
+  position: absolute;
+  bottom: 3px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 10px;
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  color: rgba(255, 255, 255, 0.7);
+  pointer-events: none;
+  z-index: 2;
 }
 
-.slot-grid-preview-strip:hover {
-  background: rgba(255, 152, 0, 0.3);
-  color: #ff9800;
-}
-
-.slot-grid-preview-strip.active {
-  opacity: 1;
-  background: rgba(255, 152, 0, 0.4);
-  color: #ff9800;
+/* Slot playhead line */
+.slot-grid-playhead {
+  position: absolute;
+  top: 18px;
+  bottom: 18px;
+  width: 1.5px;
+  background: #ff3b3b;
+  pointer-events: none;
+  z-index: 1;
 }
 
 .slot-grid-context-menu {

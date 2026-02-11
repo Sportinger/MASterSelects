@@ -9,7 +9,6 @@ import { useTimelineStore } from '../../stores/timeline';
 import { playheadState } from '../../services/layerBuilder';
 import { layerPlaybackManager } from '../../services/layerPlaybackManager';
 import { animateSlotGrid } from './slotGridAnimation';
-import { MiniTimeline } from './MiniTimeline';
 import type { Composition } from '../../stores/mediaStore';
 
 interface SlotGridProps {
@@ -26,7 +25,6 @@ export function SlotGrid({ opacity }: SlotGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   const activeCompositionId = useMediaStore(state => state.activeCompositionId);
-  const previewCompositionId = useMediaStore(state => state.previewCompositionId);
   const slotAssignments = useMediaStore(state => state.slotAssignments);
   const activeLayerSlots = useMediaStore(state => state.activeLayerSlots);
   const openCompositionTab = useMediaStore(state => state.openCompositionTab);
@@ -36,7 +34,6 @@ export function SlotGrid({ opacity }: SlotGridProps) {
   const moveSlot = useMediaStore(state => state.moveSlot);
   const unassignSlot = useMediaStore(state => state.unassignSlot);
   const assignMediaFileToSlot = useMediaStore(state => state.assignMediaFileToSlot);
-  const setPreviewComposition = useMediaStore(state => state.setPreviewComposition);
   const getSlotMap = useMediaStore(state => state.getSlotMap);
   const compositions = useMediaStore(state => state.compositions);
 
@@ -191,16 +188,6 @@ export function SlotGrid({ opacity }: SlotGridProps) {
     }
   }, [activateColumn, getSlotMap, openCompositionTab]);
 
-  // Preview strip click
-  const handlePreviewClick = useCallback((e: React.MouseEvent, comp: Composition) => {
-    e.stopPropagation();
-    if (previewCompositionId === comp.id) {
-      setPreviewComposition(null);
-    } else {
-      setPreviewComposition(comp.id);
-    }
-  }, [previewCompositionId, setPreviewComposition]);
-
   // Right-click context menu on filled slots
   const handleContextMenu = useCallback((e: React.MouseEvent, comp: Composition) => {
     e.preventDefault();
@@ -324,7 +311,6 @@ export function SlotGrid({ opacity }: SlotGridProps) {
               if (comp) {
                 const isEditorActive = comp.id === activeCompositionId;
                 const isLayerActive = activeLayerCompIds.has(comp.id);
-                const isPreviewed = comp.id === previewCompositionId;
                 const isSelf = comp.id === dragCompId;
                 return (
                   <div
@@ -333,7 +319,6 @@ export function SlotGrid({ opacity }: SlotGridProps) {
                       `slot-grid-item` +
                       `${isEditorActive ? ' active' : ''}` +
                       `${isLayerActive && !isEditorActive ? ' layer-active' : ''}` +
-                      `${isPreviewed ? ' previewed' : ''}` +
                       `${isDragOver && !isSelf ? ' drag-over' : ''}`
                     }
                     data-comp-id={comp.id}
@@ -348,22 +333,12 @@ export function SlotGrid({ opacity }: SlotGridProps) {
                     onDrop={(e) => handleDrop(e, slotIndex)}
                     onDragEnd={handleDragEnd}
                   >
-                    <MiniTimeline
-                      timelineData={comp.timelineData}
-                      compositionName={comp.name}
-                      compositionDuration={comp.duration}
-                      isActive={isEditorActive}
-                      width={SLOT_SIZE - 4}
-                      height={SLOT_SIZE - 4}
+                    <div className="slot-grid-name">{comp.name}</div>
+                    <SlotTimeOverlay
+                      duration={comp.duration}
+                      isActive={isEditorActive || isLayerActive}
+                      slotSize={SLOT_SIZE - 4}
                     />
-                    {(isEditorActive || isLayerActive) && <LivePlayhead duration={comp.duration} slotSize={SLOT_SIZE - 4} />}
-                    <div
-                      className={`slot-grid-preview-strip${isPreviewed ? ' active' : ''}`}
-                      onClick={(e) => handlePreviewClick(e, comp)}
-                      title="Preview this composition"
-                    >
-                      PRV
-                    </div>
                   </div>
                 );
               }
@@ -398,14 +373,41 @@ export function SlotGrid({ opacity }: SlotGridProps) {
   );
 }
 
-/** Live playhead indicator — reads from high-frequency playheadState via rAF */
-const LivePlayhead = memo(function LivePlayhead({ duration, slotSize }: { duration: number; slotSize: number }) {
+function fmtTime(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  const ms = Math.floor((seconds % 1) * 100);
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(2, '0')}`;
+}
+
+/** Slot overlay — playhead line + live time / duration display via rAF */
+const SlotTimeOverlay = memo(function SlotTimeOverlay({
+  duration,
+  isActive,
+  slotSize,
+}: {
+  duration: number;
+  isActive: boolean;
+  slotSize: number;
+}) {
   const lineRef = useRef<HTMLDivElement>(null);
+  const timeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const line = lineRef.current;
-    if (!line || duration <= 0) return;
+    const timeEl = timeRef.current;
+    if (!line || !timeEl || duration <= 0) return;
 
+    // Always show duration
+    const durationStr = fmtTime(duration);
+
+    if (!isActive) {
+      line.style.display = 'none';
+      timeEl.textContent = `00:00.00 / ${durationStr}`;
+      return;
+    }
+
+    line.style.display = '';
     let rafId: number;
     const padding = 3;
     const trackWidth = slotSize - padding * 2;
@@ -416,25 +418,24 @@ const LivePlayhead = memo(function LivePlayhead({ duration, slotSize }: { durati
         : useTimelineStore.getState().playheadPosition;
       const pct = Math.max(0, Math.min(1, pos / duration));
       line.style.left = `${padding + pct * trackWidth}px`;
+      timeEl.textContent = `${fmtTime(pos)} / ${durationStr}`;
       rafId = requestAnimationFrame(update);
     };
 
     rafId = requestAnimationFrame(update);
     return () => cancelAnimationFrame(rafId);
-  }, [duration, slotSize]);
+  }, [duration, isActive, slotSize]);
 
   return (
-    <div
-      ref={lineRef}
-      style={{
-        position: 'absolute',
-        top: 19,
-        bottom: 3,
-        width: 1.5,
-        background: '#ff3b3b',
-        pointerEvents: 'none',
-        zIndex: 1,
-      }}
-    />
+    <>
+      <div
+        ref={lineRef}
+        className="slot-grid-playhead"
+      />
+      <div
+        ref={timeRef}
+        className="slot-grid-time"
+      />
+    </>
   );
 });
