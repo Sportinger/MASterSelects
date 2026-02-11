@@ -155,6 +155,49 @@ export class ScrubbingCache {
     }
   }
 
+  // Capture video frame via canvas intermediate (CPU decode path)
+  // Works even when the GPU decoder hasn't presented a frame yet (e.g. after page reload)
+  // canvas.drawImage uses the browser's CPU-side decoded frame which is always available at readyState >= 2
+  captureVideoFrameViaCanvas(video: HTMLVideoElement): void {
+    if (video.videoWidth === 0 || video.videoHeight === 0 || video.readyState < 2) return;
+
+    const width = video.videoWidth;
+    const height = video.videoHeight;
+
+    // Draw video to canvas (forces CPU decode)
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0, width, height);
+
+    // Get or create texture
+    let texture = this.lastFrameTextures.get(video);
+    const existingSize = this.lastFrameSizes.get(video);
+
+    if (!texture || !existingSize || existingSize.width !== width || existingSize.height !== height) {
+      texture = this.device.createTexture({
+        size: [width, height],
+        format: 'rgba8unorm',
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+      });
+      this.lastFrameTextures.set(video, texture);
+      this.lastFrameSizes.set(video, { width, height });
+      this.lastFrameViews.set(video, texture.createView());
+    }
+
+    try {
+      this.device.queue.copyExternalImageToTexture(
+        { source: canvas },
+        { texture },
+        [width, height]
+      );
+    } catch {
+      // Canvas copy failed - nothing we can do
+    }
+  }
+
   // Get last cached frame for a video (used during seeks)
   getLastFrame(video: HTMLVideoElement): { view: GPUTextureView; width: number; height: number } | null {
     const view = this.lastFrameViews.get(video);
