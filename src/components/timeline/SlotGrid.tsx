@@ -359,6 +359,8 @@ export function SlotGrid({ opacity }: SlotGridProps) {
                     <SlotTimeOverlay
                       duration={comp.duration}
                       isActive={isEditorActive || isLayerActive}
+                      isEditorComp={isEditorActive}
+                      layerIndex={rowIndex}
                       slotSize={SLOT_SIZE - 4}
                     />
                   </div>
@@ -406,10 +408,14 @@ function fmtTime(seconds: number): string {
 const SlotTimeOverlay = memo(function SlotTimeOverlay({
   duration,
   isActive,
+  isEditorComp,
+  layerIndex,
   slotSize,
 }: {
   duration: number;
   isActive: boolean;
+  isEditorComp: boolean;
+  layerIndex: number;
   slotSize: number;
 }) {
   const lineRef = useRef<HTMLDivElement>(null);
@@ -435,9 +441,17 @@ const SlotTimeOverlay = memo(function SlotTimeOverlay({
     const trackWidth = slotSize - padding * 2;
 
     const update = () => {
-      const pos = playheadState.isUsingInternalPosition
-        ? playheadState.position
-        : useTimelineStore.getState().playheadPosition;
+      let pos: number;
+      if (isEditorComp) {
+        // Editor composition: read from global playhead
+        pos = playheadState.isUsingInternalPosition
+          ? playheadState.position
+          : useTimelineStore.getState().playheadPosition;
+      } else {
+        // Background layer: read from layerPlaybackManager's independent wall-clock time
+        const layerState = layerPlaybackManager.getLayerState(layerIndex);
+        pos = layerState ? layerPlaybackManager.getLayerTime(layerState) : 0;
+      }
       const pct = Math.max(0, Math.min(1, pos / duration));
       line.style.left = `${padding + pct * trackWidth}px`;
       timeEl.textContent = `${fmtTime(pos)} / ${durationStr}`;
@@ -446,7 +460,7 @@ const SlotTimeOverlay = memo(function SlotTimeOverlay({
 
     rafId = requestAnimationFrame(update);
     return () => cancelAnimationFrame(rafId);
-  }, [duration, isActive, slotSize]);
+  }, [duration, isActive, isEditorComp, layerIndex, slotSize]);
 
   return (
     <>
