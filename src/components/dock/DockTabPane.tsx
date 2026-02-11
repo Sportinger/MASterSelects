@@ -41,7 +41,7 @@ export function DockTabPane({ group }: DockTabPaneProps) {
     closeCompositionTab,
     reorderCompositionTabs
   } = useMediaStore();
-  const { clips, selectedClipIds } = useTimelineStore();
+  const { clips, selectedClipIds, slotGridProgress } = useTimelineStore();
 
   // Get selected clip name for dynamic tab titles (Properties/Audio panels)
   const selectedClipName = useMemo(() => {
@@ -404,8 +404,8 @@ export function DockTabPane({ group }: DockTabPaneProps) {
         title="Ctrl+Scroll to zoom | Hold to drag | Middle-click drag to scroll"
         onMouseDown={handleTabBarMouseDown}
       >
-        {/* For timeline panels, show drag handle + composition tabs */}
-        {hasTimelinePanel && openCompositions.length > 0 ? (
+        {/* For timeline panels, show drag handle + composition tabs (hidden in slot view) */}
+        {hasTimelinePanel && openCompositions.length > 0 && slotGridProgress < 1 ? (
           <>
             {/* Drag handle for repositioning the timeline panel */}
             {(() => {

@@ -757,7 +757,7 @@ export function Timeline() {
 
   return (
     <div className={`timeline-container ${clipDrag || clipTrim ? 'is-dragging' : ''}`}>
-      <TimelineControls
+      {slotGridProgress < 1 && <TimelineControls
         isPlaying={isPlaying}
         loopPlayback={loopPlayback}
         playheadPosition={playheadPosition}
@@ -800,7 +800,7 @@ export function Timeline() {
         onFitToWindow={handleFitToWindow}
         formatTime={formatTime}
         parseTime={parseTime}
-      />
+      />}
 
       <div className="timeline-body" ref={timelineBodyRef}>
         {/* SlotGrid — fades in over timeline */}
