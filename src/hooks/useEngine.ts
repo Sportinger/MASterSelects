@@ -10,6 +10,7 @@ import { useSAM2Store, maskToImageData } from '../stores/sam2Store';
 import type { ClipMask, MaskVertex } from '../types';
 import { generateMaskTexture } from '../utils/maskRenderer';
 import { layerBuilder, playheadState } from '../services/layerBuilder';
+import { layerPlaybackManager } from '../services/layerPlaybackManager';
 import { Logger } from '../services/logger';
 
 const log = Logger.create('Engine');
@@ -350,6 +351,11 @@ export function useEngine() {
         // When stopped/scrubbing, only renders when playhead actually moves
         if (currentPlayhead !== lastPlayhead) {
           lastPlayhead = currentPlayhead;
+          engine.requestRender();
+        }
+
+        // Keep engine awake when background layers are playing (independent of global playhead)
+        if (layerPlaybackManager.hasActiveLayers()) {
           engine.requestRender();
         }
 

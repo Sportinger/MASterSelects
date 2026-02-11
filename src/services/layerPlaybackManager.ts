@@ -16,6 +16,9 @@ interface LayerCompState {
   clips: TimelineClip[];
   tracks: TimelineTrack[];
   duration: number;
+  // Independent time tracking (wall-clock based, not tied to global playhead)
+  activatedAt: number;   // performance.now() when this layer was activated
+  pausedAt: number | null; // if paused, the elapsed time at pause; null = running
 }
 
 class LayerPlaybackManager {
@@ -45,6 +48,8 @@ class LayerPlaybackManager {
         clips: [],
         tracks: timelineData?.tracks || [],
         duration: comp.duration,
+        activatedAt: performance.now(),
+        pausedAt: null,
       });
       return;
     }
@@ -106,6 +111,8 @@ class LayerPlaybackManager {
       clips: hydratedClips,
       tracks: timelineData.tracks,
       duration: comp.duration,
+      activatedAt: performance.now(),
+      pausedAt: null,
     });
 
     log.info(`Activated layer ${layerIndex} with composition "${comp.name}" (${hydratedClips.length} clips)`);
@@ -159,14 +166,25 @@ class LayerPlaybackManager {
   }
 
   /**
-   * Build render layers for a background composition at a given playhead position.
-   * Returns layers wrapped as NestedCompositionData for GPU compositing.
+   * Get the independent elapsed time for a layer (wall-clock based, not global playhead).
+   * Loops back to 0 when reaching composition duration.
    */
-  buildLayersForLayer(layerIndex: number, playheadPosition: number): Layer | null {
+  getLayerTime(state: LayerCompState): number {
+    const elapsed = (performance.now() - state.activatedAt) / 1000;
+    // Loop within composition duration
+    return state.duration > 0 ? elapsed % state.duration : 0;
+  }
+
+  /**
+   * Build render layers for a background composition.
+   * Uses independent wall-clock time per layer, NOT the global playhead.
+   */
+  buildLayersForLayer(layerIndex: number, _playheadPosition: number): Layer | null {
     const state = this.layerStates.get(layerIndex);
     if (!state) return null;
 
-    const innerLayers = this.buildInnerLayers(state, playheadPosition);
+    const layerTime = this.getLayerTime(state);
+    const innerLayers = this.buildInnerLayers(state, layerTime);
     if (innerLayers.length === 0) return null;
 
     const nestedCompData: NestedCompositionData = {
@@ -174,7 +192,7 @@ class LayerPlaybackManager {
       layers: innerLayers,
       width: state.composition.width,
       height: state.composition.height,
-      currentTime: playheadPosition,
+      currentTime: layerTime,
     };
 
     // Wrap as a single full-screen layer
@@ -280,11 +298,11 @@ class LayerPlaybackManager {
   }
 
   /**
-   * Sync video elements for all background layers to the given playhead position
+   * Sync video elements for all background layers (each uses its own independent time)
    */
-  syncVideoElements(playheadPosition: number, isPlaying: boolean): void {
+  syncVideoElements(_playheadPosition: number, _isPlaying: boolean): void {
     for (const [, state] of this.layerStates) {
-      const time = Math.max(0, Math.min(playheadPosition, state.duration));
+      const time = this.getLayerTime(state);
 
       for (const clip of state.clips) {
         if (!clip.source?.videoElement) continue;
@@ -304,28 +322,21 @@ class LayerPlaybackManager {
 
         const timeDiff = Math.abs(video.currentTime - clipTime);
 
-        if (isPlaying) {
-          if (video.paused) video.play().catch(() => {});
-          // Seek if significantly out of sync
-          if (timeDiff > 0.5) {
-            video.currentTime = clipTime;
-          }
-        } else {
-          if (!video.paused) video.pause();
-          if (timeDiff > 0.05) {
-            video.currentTime = clipTime;
-          }
+        // Background layers always play (independent of global playback state)
+        if (video.paused) video.play().catch(() => {});
+        if (timeDiff > 0.5) {
+          video.currentTime = clipTime;
         }
       }
     }
   }
 
   /**
-   * Sync audio elements for all background layers
+   * Sync audio elements for all background layers (each uses its own independent time)
    */
-  syncAudioElements(playheadPosition: number, isPlaying: boolean): void {
+  syncAudioElements(_playheadPosition: number, _isPlaying: boolean): void {
     for (const [, state] of this.layerStates) {
-      const time = Math.max(0, Math.min(playheadPosition, state.duration));
+      const time = this.getLayerTime(state);
 
       for (const clip of state.clips) {
         if (!clip.source?.audioElement) continue;
@@ -345,16 +356,10 @@ class LayerPlaybackManager {
 
         const timeDiff = Math.abs(audio.currentTime - clipTime);
 
-        if (isPlaying) {
-          if (audio.paused) audio.play().catch(() => {});
-          if (timeDiff > 0.3) {
-            audio.currentTime = clipTime;
-          }
-        } else {
-          if (!audio.paused) audio.pause();
-          if (timeDiff > 0.05) {
-            audio.currentTime = clipTime;
-          }
+        // Background layers always play (independent of global playback state)
+        if (audio.paused) audio.play().catch(() => {});
+        if (timeDiff > 0.3) {
+          audio.currentTime = clipTime;
         }
       }
     }

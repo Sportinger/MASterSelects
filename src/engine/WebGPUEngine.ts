@@ -2,7 +2,8 @@
 // Orchestrates: PerformanceStats, RenderTargetManager, OutputWindowManager,
 //               RenderLoop, LayerCollector, Compositor, NestedCompRenderer
 
-import type { Layer, OutputWindow, EngineStats, LayerRenderData } from './core/types';
+import type { Layer, EngineStats, LayerRenderData } from './core/types';
+import type { OutputWindow } from '../types';
 import { WebGPUContext, type GPUPowerPreference } from './core/WebGPUContext';
 import { TextureManager } from './texture/TextureManager';
 import { MaskTextureManager } from './texture/MaskTextureManager';
@@ -11,8 +12,8 @@ import { CompositorPipeline } from './pipeline/CompositorPipeline';
 import { EffectsPipeline } from '../effects/EffectsPipeline';
 import { OutputPipeline } from './pipeline/OutputPipeline';
 import { VideoFrameManager } from './video/VideoFrameManager';
-import { useMediaStore } from '../stores/mediaStore';
 import { useSettingsStore } from '../stores/settingsStore';
+import { useRenderTargetStore } from '../stores/renderTargetStore';
 import { reportRenderTime } from '../services/performanceMonitor';
 import { Logger } from '../services/logger';
 
@@ -54,14 +55,11 @@ export class WebGPUEngine {
   // Resources
   private sampler: GPUSampler | null = null;
 
-  // Canvas management (kept inline - simple Map operations)
-  private previewContext: GPUCanvasContext | null = null;
-  private previewCanvases: Map<string, GPUCanvasContext> = new Map();
-  private independentPreviewCanvases: Map<string, GPUCanvasContext> = new Map();
-  private independentCanvasCompositions: Map<string, string> = new Map();
-  private previewCanvasElements: Map<string, HTMLCanvasElement> = new Map();
-  private independentCanvasElements: Map<string, HTMLCanvasElement> = new Map();
+  // Unified canvas management - single Map replaces 6 old Maps
+  private targetCanvases: Map<string, { canvas: HTMLCanvasElement; context: GPUCanvasContext }> = new Map();
+  // Legacy: kept for backward compat during migration
   private mainPreviewCanvas: HTMLCanvasElement | null = null;
+  private previewContext: GPUCanvasContext | null = null;
 
   // State flags
   private isRecoveringFromDeviceLoss = false;
@@ -184,8 +182,7 @@ export class WebGPUEngine {
     // Clear GPU resources
     this.renderTargetManager?.clearAll();
     this.previewContext = null;
-    this.previewCanvases.clear();
-    this.independentPreviewCanvases.clear();
+    this.targetCanvases.clear();
     this.lastVideoTime.clear();
 
     // Clear managers
@@ -202,17 +199,19 @@ export class WebGPUEngine {
   private async handleDeviceRestored(): Promise<void> {
     await this.createResources();
 
-    // Reconfigure canvases
+    // Reconfigure main preview canvas
     if (this.mainPreviewCanvas) {
       this.previewContext = this.context.configureCanvas(this.mainPreviewCanvas);
     }
-    for (const [id, canvas] of this.previewCanvasElements) {
-      const ctx = this.context.configureCanvas(canvas);
-      if (ctx) this.previewCanvases.set(id, ctx);
-    }
-    for (const [id, canvas] of this.independentCanvasElements) {
-      const ctx = this.context.configureCanvas(canvas);
-      if (ctx) this.independentPreviewCanvases.set(id, ctx);
+
+    // Reconfigure all target canvases from unified map
+    for (const [id, entry] of this.targetCanvases) {
+      const ctx = this.context.configureCanvas(entry.canvas);
+      if (ctx) {
+        this.targetCanvases.set(id, { canvas: entry.canvas, context: ctx });
+        // Also update the store's context reference
+        useRenderTargetStore.getState().setTargetCanvas(id, entry.canvas, ctx);
+      }
     }
 
     this.renderLoop?.start();
@@ -220,50 +219,84 @@ export class WebGPUEngine {
     log.info('Recovery complete');
   }
 
-  // === CANVAS MANAGEMENT ===
+  // === CANVAS MANAGEMENT (Unified) ===
 
   setPreviewCanvas(canvas: HTMLCanvasElement): void {
     this.mainPreviewCanvas = canvas;
     this.previewContext = this.context.configureCanvas(canvas);
   }
 
+  /**
+   * Register a canvas as a render target. Configures WebGPU context and stores in unified map.
+   * Returns the GPU context or null on failure.
+   */
+  registerTargetCanvas(targetId: string, canvas: HTMLCanvasElement): GPUCanvasContext | null {
+    const ctx = this.context.configureCanvas(canvas);
+    if (ctx) {
+      this.targetCanvases.set(targetId, { canvas, context: ctx });
+      log.debug('Registered target canvas', { targetId });
+      return ctx;
+    }
+    return null;
+  }
+
+  /** Remove a canvas from the unified target map */
+  unregisterTargetCanvas(targetId: string): void {
+    this.targetCanvases.delete(targetId);
+    log.debug('Unregistered target canvas', { targetId });
+  }
+
+  /** Lookup GPU context for a target */
+  getTargetContext(targetId: string): GPUCanvasContext | null {
+    return this.targetCanvases.get(targetId)?.context ?? null;
+  }
+
+  // --- Deprecated wrappers (forward to unified system) ---
+
+  /** @deprecated Use registerTargetCanvas + renderTargetStore.registerTarget instead */
   registerPreviewCanvas(id: string, canvas: HTMLCanvasElement): void {
-    this.previewCanvasElements.set(id, canvas);
-    const ctx = this.context.configureCanvas(canvas);
+    const ctx = this.registerTargetCanvas(id, canvas);
     if (ctx) {
-      this.previewCanvases.set(id, ctx);
-      log.debug('Registered preview canvas', { id });
+      // Also register in the target store as activeComp target
+      useRenderTargetStore.getState().registerTarget({
+        id, name: 'Preview', source: { type: 'activeComp' },
+        destinationType: 'canvas', enabled: true,
+        canvas, context: ctx, window: null, isFullscreen: false,
+      });
     }
   }
 
+  /** @deprecated Use unregisterTargetCanvas + renderTargetStore.unregisterTarget instead */
   unregisterPreviewCanvas(id: string): void {
-    this.previewCanvases.delete(id);
-    this.previewCanvasElements.delete(id);
-    log.debug('Unregistered preview canvas', { id });
+    this.unregisterTargetCanvas(id);
+    useRenderTargetStore.getState().unregisterTarget(id);
   }
 
+  /** @deprecated Use registerTargetCanvas + renderTargetStore.registerTarget instead */
   registerIndependentPreviewCanvas(id: string, canvas: HTMLCanvasElement, compositionId?: string): void {
-    this.independentCanvasElements.set(id, canvas);
-    const ctx = this.context.configureCanvas(canvas);
+    const ctx = this.registerTargetCanvas(id, canvas);
     if (ctx) {
-      this.independentPreviewCanvases.set(id, ctx);
-      if (compositionId) this.independentCanvasCompositions.set(id, compositionId);
-      log.debug('Registered independent preview canvas', { id, compositionId });
+      useRenderTargetStore.getState().registerTarget({
+        id, name: 'Independent Preview',
+        source: compositionId ? { type: 'composition', compositionId } : { type: 'activeComp' },
+        destinationType: 'canvas', enabled: true,
+        canvas, context: ctx, window: null, isFullscreen: false,
+      });
     }
   }
 
+  /** @deprecated Use unregisterTargetCanvas + renderTargetStore.unregisterTarget instead */
   unregisterIndependentPreviewCanvas(id: string): void {
-    this.independentPreviewCanvases.delete(id);
-    this.independentCanvasElements.delete(id);
-    this.independentCanvasCompositions.delete(id);
-    log.debug('Unregistered independent preview canvas', { id });
+    this.unregisterTargetCanvas(id);
+    useRenderTargetStore.getState().unregisterTarget(id);
   }
 
+  /** @deprecated Use renderTargetStore.updateTargetSource instead */
   setIndependentCanvasComposition(canvasId: string, compositionId: string): void {
-    this.independentCanvasCompositions.set(canvasId, compositionId);
+    useRenderTargetStore.getState().updateTargetSource(canvasId, { type: 'composition', compositionId });
   }
 
-  /** @deprecated Use setIndependentCanvasComposition instead */
+  /** @deprecated No-op */
   setCanvasMirrorsActiveComp(_canvasId: string, _mirrors: boolean): void {
     // Kept for backward compatibility - no-op
   }
@@ -615,23 +648,15 @@ export class WebGPUEngine {
 
     const skipCanvas = this.isGeneratingRamPreview || this.isExporting;
     if (!skipCanvas) {
+      // Output to main preview canvas
       if (this.previewContext) {
         this.outputPipeline!.renderToCanvas(commandEncoder, this.previewContext, outputBindGroup);
       }
-      for (const ctx of this.previewCanvases.values()) {
-        this.outputPipeline!.renderToCanvas(commandEncoder, ctx, outputBindGroup);
-      }
-      // Independent canvases showing active comp
-      const activeCompId = useMediaStore.getState().activeCompositionId;
-      for (const [canvasId, compId] of this.independentCanvasCompositions) {
-        if (compId === activeCompId) {
-          const ctx = this.independentPreviewCanvases.get(canvasId);
-          if (ctx) this.outputPipeline!.renderToCanvas(commandEncoder, ctx, outputBindGroup);
-        }
-      }
-      // Output windows
-      for (const output of this.outputWindowManager!.getOutputWindows().values()) {
-        if (output.context) this.outputPipeline!.renderToCanvas(commandEncoder, output.context, outputBindGroup);
+      // Output to all activeComp render targets (from unified store)
+      const activeTargets = useRenderTargetStore.getState().getActiveCompTargets();
+      for (const target of activeTargets) {
+        const ctx = this.targetCanvases.get(target.id)?.context;
+        if (ctx) this.outputPipeline!.renderToCanvas(commandEncoder, ctx, outputBindGroup);
       }
     }
 
@@ -696,12 +721,14 @@ export class WebGPUEngine {
       this.outputPipeline.updateUniforms(this.showTransparencyGrid, width, height);
       const bindGroup = this.outputPipeline.createOutputBindGroup(this.sampler, pingView);
 
-      // Render through output pipeline to all preview canvases
+      // Render through output pipeline to main preview + all activeComp targets
       if (this.previewContext) {
         this.outputPipeline.renderToCanvas(commandEncoder, this.previewContext, bindGroup);
       }
-      for (const ctx of this.previewCanvases.values()) {
-        this.outputPipeline.renderToCanvas(commandEncoder, ctx, bindGroup);
+      const activeTargets = useRenderTargetStore.getState().getActiveCompTargets();
+      for (const target of activeTargets) {
+        const ctx = this.targetCanvases.get(target.id)?.context;
+        if (ctx) this.outputPipeline.renderToCanvas(commandEncoder, ctx, bindGroup);
       }
     } else {
       // Fallback: direct clear
@@ -741,14 +768,14 @@ export class WebGPUEngine {
   }
 
   /**
-   * Render specific layers to a specific preview canvas
+   * Render specific layers to a specific target canvas
    * Used for multi-composition preview where each preview shows different content
    */
   renderToPreviewCanvas(canvasId: string, layers: Layer[]): void {
     if (this.isRecoveringFromDeviceLoss || this.context.recovering) return;
 
     const device = this.context.getDevice();
-    const canvasContext = this.independentPreviewCanvases.get(canvasId);
+    const canvasContext = this.targetCanvases.get(canvasId)?.context;
     if (!device || !canvasContext || !this.compositorPipeline || !this.outputPipeline || !this.sampler) return;
 
     const indPingView = this.renderTargetManager?.getIndependentPingView();
@@ -871,11 +898,11 @@ export class WebGPUEngine {
       log.debug('RAM Preview cache hit (GPU)', { time: time.toFixed(3) });
       const commandEncoder = device.createCommandEncoder();
       this.outputPipeline.renderToCanvas(commandEncoder, this.previewContext, gpuCached.bindGroup);
-      for (const previewCtx of this.previewCanvases.values()) {
-        this.outputPipeline.renderToCanvas(commandEncoder, previewCtx, gpuCached.bindGroup);
-      }
-      for (const output of this.outputWindowManager!.getOutputWindows().values()) {
-        if (output.context) this.outputPipeline.renderToCanvas(commandEncoder, output.context, gpuCached.bindGroup);
+      // Output to all activeComp targets
+      const activeTargets = useRenderTargetStore.getState().getActiveCompTargets();
+      for (const target of activeTargets) {
+        const ctx = this.targetCanvases.get(target.id)?.context;
+        if (ctx) this.outputPipeline.renderToCanvas(commandEncoder, ctx, gpuCached.bindGroup);
       }
       device.queue.submit([commandEncoder.finish()]);
       return true;
@@ -923,11 +950,11 @@ export class WebGPUEngine {
 
       const commandEncoder = device.createCommandEncoder();
       this.outputPipeline.renderToCanvas(commandEncoder, this.previewContext, bindGroup);
-      for (const previewCtx of this.previewCanvases.values()) {
-        this.outputPipeline.renderToCanvas(commandEncoder, previewCtx, bindGroup);
-      }
-      for (const output of this.outputWindowManager!.getOutputWindows().values()) {
-        if (output.context) this.outputPipeline.renderToCanvas(commandEncoder, output.context, bindGroup);
+      // Output to all activeComp targets
+      const cachedActiveTargets = useRenderTargetStore.getState().getActiveCompTargets();
+      for (const target of cachedActiveTargets) {
+        const ctx = this.targetCanvases.get(target.id)?.context;
+        if (ctx) this.outputPipeline.renderToCanvas(commandEncoder, ctx, bindGroup);
       }
       device.queue.submit([commandEncoder.finish()]);
       return true;
@@ -957,7 +984,7 @@ export class WebGPUEngine {
 
   copyMainOutputToPreview(canvasId: string): boolean {
     const device = this.context.getDevice();
-    const canvasContext = this.independentPreviewCanvases.get(canvasId);
+    const canvasContext = this.targetCanvases.get(canvasId)?.context;
     const pingView = this.renderTargetManager?.getPingView();
     const pongView = this.renderTargetManager?.getPongView();
 
@@ -975,7 +1002,7 @@ export class WebGPUEngine {
 
   copyNestedCompTextureToPreview(canvasId: string, compositionId: string): boolean {
     const device = this.context.getDevice();
-    const canvasContext = this.independentPreviewCanvases.get(canvasId);
+    const canvasContext = this.targetCanvases.get(canvasId)?.context;
     const compTexture = this.nestedCompRenderer?.getTexture(compositionId);
 
     if (!device || !canvasContext || !compTexture || !this.outputPipeline || !this.sampler) return false;
@@ -1033,8 +1060,10 @@ export class WebGPUEngine {
       if (this.previewContext) {
         this.outputPipeline!.renderToCanvas(commandEncoder, this.previewContext, outputBindGroup);
       }
-      for (const previewCtx of this.previewCanvases.values()) {
-        this.outputPipeline!.renderToCanvas(commandEncoder, previewCtx, outputBindGroup);
+      const activeTargets = useRenderTargetStore.getState().getActiveCompTargets();
+      for (const target of activeTargets) {
+        const ctx = this.targetCanvases.get(target.id)?.context;
+        if (ctx) this.outputPipeline!.renderToCanvas(commandEncoder, ctx, outputBindGroup);
       }
     }
 
@@ -1095,13 +1124,13 @@ export class WebGPUEngine {
     if (this.mainPreviewCanvas) {
       this.previewContext = this.context.configureCanvas(this.mainPreviewCanvas);
     }
-    for (const [id, canvas] of this.previewCanvasElements) {
-      const ctx = this.context.configureCanvas(canvas);
-      if (ctx) this.previewCanvases.set(id, ctx);
-    }
-    for (const [id, canvas] of this.independentCanvasElements) {
-      const ctx = this.context.configureCanvas(canvas);
-      if (ctx) this.independentPreviewCanvases.set(id, ctx);
+    // Reconfigure all target canvases
+    for (const [id, entry] of this.targetCanvases) {
+      const ctx = this.context.configureCanvas(entry.canvas);
+      if (ctx) {
+        this.targetCanvases.set(id, { canvas: entry.canvas, context: ctx });
+        useRenderTargetStore.getState().setTargetCanvas(id, entry.canvas, ctx);
+      }
     }
 
     this.requestRender();
