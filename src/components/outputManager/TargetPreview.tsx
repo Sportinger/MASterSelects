@@ -29,13 +29,12 @@ export function TargetPreview({ targetId }: TargetPreviewProps) {
     };
   }, [targetId]);
 
-  // Request a render frame whenever slice config changes (engine idle when paused)
+  // Request a render frame whenever slice config or active tab changes (engine idle when paused)
   const sliceConfig = useSliceStore((s) => targetId ? s.configs.get(targetId) : undefined);
+  const activeTab = useSliceStore((s) => s.activeTab);
   useEffect(() => {
-    if (sliceConfig) {
-      engine.requestRender();
-    }
-  }, [sliceConfig]);
+    engine.requestRender();
+  }, [sliceConfig, activeTab]);
 
   useEffect(() => {
     if (!canvasRef.current || !source) {
