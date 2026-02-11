@@ -126,7 +126,7 @@ export function SlotGrid({ opacity }: SlotGridProps) {
     openCompositionTab(comp.id, { skipAnimation: true, playFromStart: true });
   }, [activateOnLayer, openCompositionTab]);
 
-  // Click empty slot = deactivate that layer
+  // Click empty slot = fully deactivate that layer (stop + remove from active slots)
   const handleEmptySlotClick = useCallback((slotIndex: number) => {
     const layerIndex = Math.floor(slotIndex / GRID_COLS);
     const { activeLayerSlots, activeCompositionId } = useMediaStore.getState();
@@ -134,9 +134,21 @@ export function SlotGrid({ opacity }: SlotGridProps) {
 
     deactivateLayer(layerIndex);
 
-    // If the deactivated comp was the editor-active one, stop playback
     if (compOnLayer && compOnLayer === activeCompositionId) {
+      // Deactivated comp was the editor-active one — stop playback and clear
       useTimelineStore.getState().stop();
+
+      // Switch editor to another still-active layer's comp, or null if none left
+      const remaining = { ...activeLayerSlots };
+      delete remaining[layerIndex];
+      const stillActive = Object.entries(remaining)
+        .filter(([, id]) => id != null)
+        .sort(([a], [b]) => Number(a) - Number(b)); // prefer top layer (A first)
+      if (stillActive.length > 0) {
+        useMediaStore.getState().openCompositionTab(stillActive[0][1]!, { skipAnimation: true });
+      } else {
+        useMediaStore.getState().setActiveComposition(null);
+      }
     }
   }, [deactivateLayer]);
 
