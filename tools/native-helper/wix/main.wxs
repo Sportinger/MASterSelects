@@ -1,0 +1,147 @@
+<?xml version='1.0' encoding='windows-1252'?>
+<!--
+  WiX v3 installer manifest for MasterSelects Native Helper.
+
+  Installs to %LocalAppData%\MasterSelects Helper\ (no admin required).
+  Bundles: exe + FFmpeg DLLs + ffmpeg.exe (~120 MB compressed in MSI).
+  Creates a Start Menu shortcut.
+  Uses a stable UpgradeCode so newer MSIs cleanly upgrade older installs.
+
+  Build:  cargo wix --no-build   (after cargo build --release + DLL copy)
+  Or use: scripts\build-msi.bat
+-->
+<Wix xmlns='http://schemas.microsoft.com/wix/2006/wi'>
+
+    <Product
+        Id='*'
+        Name='MasterSelects Helper'
+        UpgradeCode='B8F3C4A1-2D7E-4F9B-A6C8-1E5D9F0B3A72'
+        Manufacturer='MasterSelects'
+        Language='1033'
+        Codepage='1252'
+        Version='$(var.Version)'>
+
+        <Package Id='*'
+            Keywords='Installer'
+            Description='MasterSelects Native Helper - video codec acceleration'
+            Manufacturer='MasterSelects'
+            InstallerVersion='450'
+            Languages='1033'
+            Compressed='yes'
+            InstallScope='perUser'
+            SummaryCodepage='1252' />
+
+        <!-- Upgrade: remove older versions, block downgrades -->
+        <MajorUpgrade
+            Schedule='afterInstallInitialize'
+            DowngradeErrorMessage='A newer version of [ProductName] is already installed. Setup will now exit.' />
+
+        <!-- Compress all files into the MSI -->
+        <MediaTemplate EmbedCab='yes' />
+
+        <!-- Feature: everything in one feature -->
+        <Feature Id='Complete' Title='MasterSelects Helper' Level='1'>
+            <ComponentGroupRef Id='Binaries' />
+            <ComponentGroupRef Id='StartMenuShortcut' />
+        </Feature>
+
+        <!-- License dialog (optional - can be skipped with cargo wix flags) -->
+        <UIRef Id='WixUI_Minimal' />
+        <WixVariable Id='WixUILicenseRtf' Value='wix\License.rtf' />
+
+        <!-- Icon for Add/Remove Programs -->
+        <Icon Id='ProductICO' SourceFile='assets\icon.ico' />
+        <Property Id='ARPPRODUCTICON' Value='ProductICO' />
+        <Property Id='ARPHELPLINK' Value='https://masterselects.app' />
+
+    </Product>
+
+    <!-- ================================================================== -->
+    <!-- Directory structure                                                 -->
+    <!-- ================================================================== -->
+    <Fragment>
+        <Directory Id='TARGETDIR' Name='SourceDir'>
+            <Directory Id='LocalAppDataFolder'>
+                <Directory Id='INSTALLDIR' Name='MasterSelects Helper' />
+            </Directory>
+            <Directory Id='ProgramMenuFolder'>
+                <Directory Id='ApplicationProgramsFolder' Name='MasterSelects Helper' />
+            </Directory>
+        </Directory>
+    </Fragment>
+
+    <!-- ================================================================== -->
+    <!-- Binary files                                                        -->
+    <!-- ================================================================== -->
+    <Fragment>
+        <ComponentGroup Id='Binaries' Directory='INSTALLDIR'>
+
+            <!-- Main executable -->
+            <Component Id='exe_main' Guid='*'>
+                <File Id='masterselects_helper_exe'
+                    Name='masterselects-helper.exe'
+                    Source='target\release\masterselects-helper.exe'
+                    KeyPath='yes' />
+            </Component>
+
+            <!-- FFmpeg DLLs -->
+            <Component Id='dll_avcodec' Guid='*'>
+                <File Id='avcodec_dll' Name='avcodec-61.dll'
+                    Source='target\release\avcodec-61.dll' KeyPath='yes' />
+            </Component>
+
+            <Component Id='dll_avformat' Guid='*'>
+                <File Id='avformat_dll' Name='avformat-61.dll'
+                    Source='target\release\avformat-61.dll' KeyPath='yes' />
+            </Component>
+
+            <Component Id='dll_avutil' Guid='*'>
+                <File Id='avutil_dll' Name='avutil-59.dll'
+                    Source='target\release\avutil-59.dll' KeyPath='yes' />
+            </Component>
+
+            <Component Id='dll_swresample' Guid='*'>
+                <File Id='swresample_dll' Name='swresample-5.dll'
+                    Source='target\release\swresample-5.dll' KeyPath='yes' />
+            </Component>
+
+            <Component Id='dll_swscale' Guid='*'>
+                <File Id='swscale_dll' Name='swscale-8.dll'
+                    Source='target\release\swscale-8.dll' KeyPath='yes' />
+            </Component>
+
+            <!-- FFmpeg CLI (used by yt-dlp for muxing) -->
+            <Component Id='exe_ffmpeg' Guid='*'>
+                <File Id='ffmpeg_exe' Name='ffmpeg.exe'
+                    Source='target\release\ffmpeg.exe' KeyPath='yes' />
+            </Component>
+
+        </ComponentGroup>
+    </Fragment>
+
+    <!-- ================================================================== -->
+    <!-- Start Menu shortcut                                                 -->
+    <!-- ================================================================== -->
+    <Fragment>
+        <ComponentGroup Id='StartMenuShortcut' Directory='ApplicationProgramsFolder'>
+            <Component Id='StartMenuShortcutComponent' Guid='*'>
+                <Shortcut Id='ApplicationStartMenuShortcut'
+                    Name='MasterSelects Helper'
+                    Description='Video codec acceleration for MasterSelects'
+                    Target='[INSTALLDIR]masterselects-helper.exe'
+                    WorkingDirectory='INSTALLDIR' />
+                <RemoveFolder Id='CleanUpShortcutFolder'
+                    Directory='ApplicationProgramsFolder'
+                    On='uninstall' />
+                <RegistryValue
+                    Root='HKCU'
+                    Key='Software\MasterSelects\Helper'
+                    Name='installed'
+                    Type='integer'
+                    Value='1'
+                    KeyPath='yes' />
+            </Component>
+        </ComponentGroup>
+    </Fragment>
+
+</Wix>

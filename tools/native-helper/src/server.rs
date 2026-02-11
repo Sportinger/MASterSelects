@@ -11,6 +11,9 @@ use tokio_tungstenite::WebSocketStream;
 use tracing::{debug, error, info, warn};
 use warp::Filter;
 
+#[cfg(windows)]
+use std::sync::atomic::Ordering;
+
 use crate::download;
 use crate::protocol::{Command, Response};
 use crate::session::{AppState, Session};
@@ -59,6 +62,80 @@ pub async fn run(config: ServerConfig) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Run the server with graceful shutdown support (Windows tray mode).
+/// Checks `tray_state.quit_requested` to know when to stop.
+#[cfg(windows)]
+pub async fn run_with_shutdown(
+    config: ServerConfig,
+    tray_state: Arc<crate::tray::TrayState>,
+) -> Result<()> {
+    let ws_addr = format!("127.0.0.1:{}", config.port);
+    let http_port = config.port + 1;
+
+    let listener = TcpListener::bind(&ws_addr).await?;
+    info!("WebSocket server listening on ws://{}", ws_addr);
+
+    let state = Arc::new(AppState::new(
+        config.cache_mb,
+        config.max_decoders,
+        None,
+    ));
+
+    let allowed_origins = Arc::new(config.allowed_origins);
+
+    // Signal that the server is ready
+    tray_state.running.store(true, Ordering::Relaxed);
+
+    // Start HTTP file server in background
+    tokio::spawn(async move {
+        run_http_server(http_port).await;
+    });
+
+    // Accept connections with shutdown awareness
+    loop {
+        tokio::select! {
+            result = listener.accept() => {
+                match result {
+                    Ok((stream, addr)) => {
+                        let state = state.clone();
+                        let allowed_origins = allowed_origins.clone();
+                        let ts = tray_state.clone();
+
+                        ts.connection_count.fetch_add(1, Ordering::Relaxed);
+
+                        tokio::spawn(async move {
+                            if let Err(e) = handle_connection(stream, addr, state, allowed_origins).await {
+                                error!("Connection error from {}: {}", addr, e);
+                            }
+                            ts.connection_count.fetch_sub(1, Ordering::Relaxed);
+                        });
+                    }
+                    Err(e) => {
+                        error!("Accept error: {}", e);
+                    }
+                }
+            }
+            _ = wait_for_quit(&tray_state) => {
+                info!("Shutdown requested, stopping server...");
+                break;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Poll `quit_requested` until it becomes true.
+#[cfg(windows)]
+async fn wait_for_quit(tray_state: &Arc<crate::tray::TrayState>) {
+    loop {
+        if tray_state.quit_requested.load(Ordering::Relaxed) {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
 }
 
 /// Run HTTP file server for fast file downloads

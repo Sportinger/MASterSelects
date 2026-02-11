@@ -4,7 +4,9 @@
 //! video decoding/encoding and video downloads via WebSocket for the
 //! MasterSelects web application.
 //!
-//! Supports Windows, Linux, and macOS.
+//! On Windows (default): runs as a system tray app with no console window.
+//! On Windows (--console): runs in a terminal like on other platforms.
+//! On Linux/macOS: always runs in console mode.
 
 mod cache;
 mod decoder;
@@ -13,10 +15,12 @@ mod encoder;
 mod protocol;
 mod server;
 mod session;
+#[cfg(windows)]
+mod tray;
 mod utils;
 
 use clap::Parser;
-use tracing::{info, error, warn, Level};
+use tracing::{error, info, Level};
 use tracing_subscriber::FmtSubscriber;
 
 /// MasterSelects Native Helper - Video codec acceleration for masterselects.app
@@ -52,14 +56,16 @@ struct Args {
     /// Log level (trace, debug, info, warn, error)
     #[arg(long, default_value = "info")]
     log_level: String,
+
+    /// Run in console mode (show terminal window, no system tray).
+    /// On Linux/macOS this is always the default.
+    #[arg(long)]
+    console: bool,
 }
 
 /// On Windows, add bundled DLL directory to the DLL search path
 #[cfg(windows)]
 fn setup_dll_search_path() {
-    use std::ffi::OsStr;
-    use std::os::windows::ffi::OsStrExt;
-
     // Try to add the directory containing our executable to the DLL search path
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(exe_dir) = exe_path.parent() {
@@ -105,18 +111,54 @@ fn set_dll_directory(dir: &std::path::Path) {
     eprintln!("  DLL path: {}", dir.display());
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+// ---------------------------------------------------------------------------
+// Entry point
+// ---------------------------------------------------------------------------
+
+fn main() {
     let args = Args::parse();
 
-    // Handle token generation
+    // Handle token generation (quick exit)
     if args.generate_token {
         let token = session::generate_auth_token();
         println!("{}", token);
-        return Ok(());
+        return;
     }
 
     // Initialize logging
+    init_logging(&args);
+
+    // On Windows, set up DLL search paths before FFmpeg init
+    #[cfg(windows)]
+    setup_dll_search_path();
+
+    // Initialize FFmpeg
+    if let Err(e) = init_ffmpeg() {
+        error!("{}", e);
+        std::process::exit(1);
+    }
+
+    // Build server config
+    let config = build_config(&args);
+
+    // Decide: tray mode or console mode
+    #[cfg(windows)]
+    {
+        if !args.console {
+            run_with_tray(config, &args);
+            return;
+        }
+    }
+
+    // Console mode (all platforms, or --console on Windows)
+    run_console(config, &args);
+}
+
+// ---------------------------------------------------------------------------
+// Setup helpers
+// ---------------------------------------------------------------------------
+
+fn init_logging(args: &Args) {
     if !args.background {
         let level = match args.log_level.to_lowercase().as_str() {
             "trace" => Level::TRACE,
@@ -133,84 +175,167 @@ async fn main() -> anyhow::Result<()> {
             .compact()
             .init();
     }
+}
 
-    // On Windows, set up DLL search paths before FFmpeg init
-    #[cfg(windows)]
-    setup_dll_search_path();
-
-    // Initialize FFmpeg
+fn init_ffmpeg() -> Result<(), String> {
     match ffmpeg_next::init() {
-        Ok(()) => info!("FFmpeg initialized"),
+        Ok(()) => {
+            info!("FFmpeg initialized");
+            Ok(())
+        }
         Err(e) => {
-            error!("Failed to initialize FFmpeg: {}", e);
             #[cfg(windows)]
             {
-                error!("Make sure FFmpeg DLLs are available. Options:");
-                error!("  1. Place DLLs next to this executable");
-                error!("  2. Set FFMPEG_DIR environment variable");
-                error!("  3. Place FFmpeg in ffmpeg/win64/ relative to project");
-                error!("Download from: https://github.com/BtbN/FFmpeg-Builds/releases");
+                return Err(format!(
+                    "Failed to initialize FFmpeg: {}\n\
+                     Make sure FFmpeg DLLs are available:\n\
+                     1. Place DLLs next to this executable\n\
+                     2. Set FFMPEG_DIR environment variable\n\
+                     3. Place FFmpeg in ffmpeg/win64/ relative to project\n\
+                     Download from: https://github.com/BtbN/FFmpeg-Builds/releases",
+                    e
+                ));
             }
-            return Err(anyhow::anyhow!("FFmpeg initialization failed: {}", e));
+            #[cfg(not(windows))]
+            {
+                Err(format!("FFmpeg initialization failed: {}", e))
+            }
         }
     }
+}
 
-    // Parse allowed origins
+fn build_config(args: &Args) -> server::ServerConfig {
     let allowed_origins: Vec<String> = args
         .allowed_origins
+        .as_ref()
         .map(|s| s.split(',').map(|s| s.trim().to_string()).collect())
-        .unwrap_or_else(|| vec![
-            "https://masterselects.app".to_string(),
-            "https://app.masterselects.com".to_string(),
-            "http://localhost:5173".to_string(),
-            "http://localhost:3000".to_string(),
-            "http://127.0.0.1:5173".to_string(),
-            "http://127.0.0.1:3000".to_string(),
-        ]);
+        .unwrap_or_else(|| {
+            vec![
+                "https://masterselects.app".to_string(),
+                "https://app.masterselects.com".to_string(),
+                "http://localhost:5173".to_string(),
+                "http://localhost:3000".to_string(),
+                "http://127.0.0.1:5173".to_string(),
+                "http://127.0.0.1:3000".to_string(),
+            ]
+        });
 
-    // Create server config
-    let config = server::ServerConfig {
+    server::ServerConfig {
         port: args.port,
         cache_mb: args.cache_mb,
         max_decoders: args.max_decoders,
         allowed_origins,
-    };
+    }
+}
 
-    // Detect capabilities for banner
+fn print_banner(config: &server::ServerConfig) {
     let hw_accel = decoder::detect_hw_accel();
     let ytdlp_path = download::get_ytdlp_command();
     let ytdlp_available = download::find_ytdlp().is_some();
     let deno_available = download::find_deno().is_some();
 
-    // Print startup banner
+    let os_name = if cfg!(windows) {
+        "Windows"
+    } else if cfg!(target_os = "linux") {
+        "Linux"
+    } else if cfg!(target_os = "macos") {
+        "macOS"
+    } else {
+        "Unknown"
+    };
+
+    println!();
+    println!("========================================================");
+    println!(
+        "  MasterSelects Native Helper v{}",
+        env!("CARGO_PKG_VERSION")
+    );
+    println!("  Platform: {}", os_name);
+    println!("========================================================");
+    println!("  WebSocket: ws://127.0.0.1:{}", config.port);
+    println!("  HTTP File: http://127.0.0.1:{}", config.port + 1);
+    println!(
+        "  Cache:     {} MB (max {} decoders)",
+        config.cache_mb, config.max_decoders
+    );
+    println!("  FFmpeg:    initialized");
+    println!(
+        "  HW Accel:  {}",
+        if hw_accel.is_empty() {
+            "none detected".to_string()
+        } else {
+            hw_accel.join(", ")
+        }
+    );
+    println!(
+        "  yt-dlp:    {} [{}]",
+        ytdlp_path,
+        if ytdlp_available { "OK" } else { "NOT FOUND" }
+    );
+    println!(
+        "  deno:      {}",
+        if deno_available {
+            "OK"
+        } else {
+            "not found (optional)"
+        }
+    );
+    println!("  Downloads: {}", utils::get_download_dir().display());
+    println!("========================================================");
+    println!();
+}
+
+// ---------------------------------------------------------------------------
+// Run modes
+// ---------------------------------------------------------------------------
+
+/// Console mode: print banner, run server in a tokio runtime (blocks forever).
+fn run_console(config: server::ServerConfig, args: &Args) {
     if !args.background {
-        let os_name = if cfg!(windows) { "Windows" }
-            else if cfg!(target_os = "linux") { "Linux" }
-            else if cfg!(target_os = "macos") { "macOS" }
-            else { "Unknown" };
-
-        println!();
-        println!("========================================================");
-        println!("  MasterSelects Native Helper v{}", env!("CARGO_PKG_VERSION"));
-        println!("  Platform: {}", os_name);
-        println!("========================================================");
-        println!("  WebSocket: ws://127.0.0.1:{}", args.port);
-        println!("  HTTP File: http://127.0.0.1:{}", args.port + 1);
-        println!("  Cache:     {} MB (max {} decoders)", args.cache_mb, args.max_decoders);
-        println!("  FFmpeg:    initialized");
-        println!("  HW Accel:  {}", if hw_accel.is_empty() { "none detected".to_string() } else { hw_accel.join(", ") });
-        println!("  yt-dlp:    {} [{}]", ytdlp_path, if ytdlp_available { "OK" } else { "NOT FOUND" });
-        println!("  deno:      {}", if deno_available { "OK" } else { "not found (optional)" });
-        println!("  Downloads: {}", utils::get_download_dir().display());
-        println!("========================================================");
-        println!();
+        print_banner(&config);
     }
 
-    // Start server
-    if let Err(e) = server::run(config).await {
+    let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
+    if let Err(e) = rt.block_on(server::run(config)) {
         error!("Server error: {}", e);
-        return Err(e);
+        std::process::exit(1);
+    }
+}
+
+/// Windows tray mode: hide console, tray icon on main thread, server on worker thread.
+#[cfg(windows)]
+fn run_with_tray(config: server::ServerConfig, _args: &Args) {
+    use std::sync::Arc;
+
+    // Hide the console window
+    tray::hide_console_window();
+
+    // Prevent multiple instances
+    let _lock = match tray::acquire_single_instance_lock() {
+        Some(handle) => handle,
+        None => {
+            // Another instance is already running — exit silently
+            return;
+        }
+    };
+
+    let port = config.port;
+    let state = Arc::new(tray::TrayState::new());
+    let state_for_server = state.clone();
+
+    // Spawn server on a worker thread (with its own tokio runtime)
+    let server_thread = std::thread::spawn(move || {
+        let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
+        if let Err(e) = rt.block_on(server::run_with_shutdown(config, state_for_server)) {
+            eprintln!("Server error: {}", e);
+        }
+    });
+
+    // Run tray message pump on the main thread (blocks until Quit)
+    if let Err(e) = tray::run_tray(state, port) {
+        eprintln!("Tray error: {}", e);
     }
 
-    Ok(())
+    // Wait for the server thread to finish
+    let _ = server_thread.join();
 }
