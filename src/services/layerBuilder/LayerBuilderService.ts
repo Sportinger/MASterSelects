@@ -1115,40 +1115,75 @@ export class LayerBuilderService {
   }
 
   /**
-   * Throttled video seek with requestVideoFrameCallback for frame-accurate re-render.
-   * RVFC fires when the decoded frame is actually presented to the compositor,
-   * which is more accurate than the 'seeked' event (which fires when seek completes
-   * but the frame may not yet be decoded).
+   * Hybrid seeking strategy for smooth scrubbing on all codec types:
+   *
+   * During drag (fast scrubbing):
+   *   Phase 1: fastSeek → instant keyframe feedback (<10ms, shows nearest I-frame)
+   *   Phase 2: deferred precise seek → exact frame when scrubbing pauses (debounced 120ms)
+   *
+   * This solves the long-GOP problem: YouTube/phone videos with 5-7s keyframe distance
+   * previously showed a stale cached frame for 100-300ms per seek (currentTime decodes
+   * from keyframe to target). Now the user sees the nearest keyframe immediately, then
+   * the exact frame fills in when they pause.
+   *
+   * When not dragging (single click / arrow keys): precise seek via currentTime.
+   *
+   * RVFC (requestVideoFrameCallback) triggers re-render when the decoded frame is
+   * actually presented to the compositor — more accurate than the 'seeked' event.
    */
   private rvfcHandles: Record<string, number> = {};
+  private preciseSeekTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+  private latestSeekTargets: Record<string, number> = {};
+
   private throttledSeek(clipId: string, video: HTMLVideoElement, time: number, ctx: FrameContext): void {
     const lastSeek = this.lastSeekRef[clipId] || 0;
     const threshold = ctx.isDraggingPlayhead ? 50 : 33;
     if (ctx.now - lastSeek > threshold) {
-      // Always use currentTime for exact-frame seeking.
-      // fastSeek jumps to nearest keyframe which causes janky scrubbing for
-      // long-GOP codecs (H.264 phone footage: keyframes every 2-5s = only 3-6
-      // unique frames per 30s). currentTime decodes to the exact frame.
-      // The RVFC callback below ensures we only re-render when the decoded
-      // frame is actually ready, so the longer decode time is handled gracefully.
-      video.currentTime = time;
+      if (ctx.isDraggingPlayhead && 'fastSeek' in video) {
+        // Phase 1: Instant keyframe feedback via fastSeek.
+        // For all-intra codecs this IS the exact frame. For long-GOP codecs
+        // this shows the nearest keyframe — better than a stale cached frame.
+        video.fastSeek(time);
+
+        // Phase 2: Schedule deferred precise seek for exact frame.
+        // Debounced: resets on each new scrub position, only fires when
+        // the user pauses or slows their scrubbing.
+        this.latestSeekTargets[clipId] = time;
+        clearTimeout(this.preciseSeekTimers[clipId]);
+        this.preciseSeekTimers[clipId] = setTimeout(() => {
+          const target = this.latestSeekTargets[clipId];
+          // Only do precise seek if the fastSeek landed far from the target
+          // (i.e., this is a long-GOP video where fastSeek shows a different frame)
+          if (target !== undefined && Math.abs(video.currentTime - target) > 0.01) {
+            video.currentTime = target;
+            // Register RVFC for when the precise frame arrives
+            this.registerRVFC(clipId, video);
+          }
+        }, 120);
+      } else {
+        // Not dragging: precise seek immediately (click, arrow keys, etc.)
+        video.currentTime = time;
+        clearTimeout(this.preciseSeekTimers[clipId]);
+      }
       this.lastSeekRef[clipId] = ctx.now;
 
-      // Use RVFC to trigger re-render when the decoded frame is actually ready.
-      // Cancel previous pending RVFC to avoid stacking callbacks during fast scrubbing.
-      const rvfc = (video as any).requestVideoFrameCallback;
-      if (typeof rvfc === 'function') {
-        const prevHandle = this.rvfcHandles[clipId];
-        if (prevHandle !== undefined) {
-          (video as any).cancelVideoFrameCallback(prevHandle);
-        }
-        this.rvfcHandles[clipId] = rvfc.call(video, () => {
-          delete this.rvfcHandles[clipId];
-          // Use requestNewFrameRender to bypass the scrub rate limiter -
-          // a fresh decoded frame should be displayed immediately
-          engine.requestNewFrameRender();
-        });
+      // Register RVFC to trigger re-render when the decoded frame is presented.
+      this.registerRVFC(clipId, video);
+    }
+  }
+
+  private registerRVFC(clipId: string, video: HTMLVideoElement): void {
+    const rvfc = (video as any).requestVideoFrameCallback;
+    if (typeof rvfc === 'function') {
+      const prevHandle = this.rvfcHandles[clipId];
+      if (prevHandle !== undefined) {
+        (video as any).cancelVideoFrameCallback(prevHandle);
       }
+      this.rvfcHandles[clipId] = rvfc.call(video, () => {
+        delete this.rvfcHandles[clipId];
+        // Bypass the scrub rate limiter — a fresh decoded frame should be displayed immediately
+        engine.requestNewFrameRender();
+      });
     }
   }
 
