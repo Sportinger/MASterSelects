@@ -1,12 +1,12 @@
 // Manages external output windows (fullscreen, secondary displays)
+// Simplified: only handles window lifecycle. State lives in renderTargetStore.
 
-import type { OutputWindow } from '../core/types';
+import { useRenderTargetStore } from '../../stores/renderTargetStore';
 import { Logger } from '../../services/logger';
 
 const log = Logger.create('OutputWindowManager');
 
 export class OutputWindowManager {
-  private outputWindows: Map<string, OutputWindow> = new Map();
   private outputWidth: number;
   private outputHeight: number;
 
@@ -15,7 +15,12 @@ export class OutputWindowManager {
     this.outputHeight = height;
   }
 
-  createOutputWindow(id: string, name: string, device: GPUDevice): OutputWindow | null {
+  /**
+   * Creates a popup window with a canvas element.
+   * Does NOT configure WebGPU - that's done by engine.registerTargetCanvas().
+   * Returns the window + canvas for the caller to wire up.
+   */
+  createWindow(id: string, name: string): { window: Window; canvas: HTMLCanvasElement } | null {
     const outputWindow = window.open(
       '',
       `output_${id}`,
@@ -34,7 +39,7 @@ export class OutputWindowManager {
     const canvas = outputWindow.document.createElement('canvas');
     canvas.width = this.outputWidth;
     canvas.height = this.outputHeight;
-    canvas.style.cssText = 'display:block;background:#000;';
+    canvas.style.cssText = 'display:block;background:#000;width:100%;height:100%;';
     outputWindow.document.body.appendChild(canvas);
 
     // Aspect ratio locking
@@ -79,22 +84,7 @@ export class OutputWindowManager {
       setTimeout(() => { resizing = false; }, 50);
     };
 
-    canvas.style.width = '100%';
-    canvas.style.height = '100%';
     outputWindow.addEventListener('resize', enforceAspectRatio);
-
-    let context: GPUCanvasContext | null = null;
-
-    if (device) {
-      context = canvas.getContext('webgpu');
-      if (context) {
-        context.configure({
-          device,
-          format: navigator.gpu.getPreferredCanvasFormat(),
-          alphaMode: 'premultiplied',
-        });
-      }
-    }
 
     // Fullscreen button
     const fullscreenBtn = outputWindow.document.createElement('button');
@@ -110,33 +100,13 @@ export class OutputWindowManager {
       fullscreenBtn.style.display = outputWindow.document.fullscreenElement ? 'none' : 'block';
     });
 
+    // When window is closed by user, clean up from render target store
     outputWindow.onbeforeunload = () => {
-      this.outputWindows.delete(id);
+      useRenderTargetStore.getState().unregisterTarget(id);
     };
 
-    const output: OutputWindow = {
-      id,
-      name,
-      window: outputWindow,
-      canvas,
-      context,
-      isFullscreen: false,
-    };
-
-    this.outputWindows.set(id, output);
-    return output;
-  }
-
-  closeOutputWindow(id: string): void {
-    const output = this.outputWindows.get(id);
-    if (output?.window) {
-      output.window.close();
-    }
-    this.outputWindows.delete(id);
-  }
-
-  getOutputWindows(): Map<string, OutputWindow> {
-    return this.outputWindows;
+    log.info('Created output window', { id, name });
+    return { window: outputWindow, canvas };
   }
 
   updateResolution(width: number, height: number): void {
@@ -145,9 +115,12 @@ export class OutputWindowManager {
   }
 
   destroy(): void {
-    for (const output of this.outputWindows.values()) {
-      output.window?.close();
+    // Close all output windows via the render target store
+    const store = useRenderTargetStore.getState();
+    for (const target of store.targets.values()) {
+      if (target.destinationType === 'window' && target.window && !target.window.closed) {
+        target.window.close();
+      }
     }
-    this.outputWindows.clear();
   }
 }

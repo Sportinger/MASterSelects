@@ -9,6 +9,7 @@ import { useEngineStore } from '../../stores/engineStore';
 import { useDockStore } from '../../stores/dockStore';
 import { PANEL_CONFIGS, AI_PANEL_TYPES, SCOPE_PANEL_TYPES, WIP_PANEL_TYPES, type PanelType } from '../../types/dock';
 import { useSettingsStore, type AutosaveInterval } from '../../stores/settingsStore';
+import { useRenderTargetStore } from '../../stores/renderTargetStore';
 import { useMIDI } from '../../hooks/useMIDI';
 import { SettingsDialog } from './SettingsDialog';
 import { SavedToast } from './SavedToast';
@@ -31,7 +32,13 @@ type MenuId = 'file' | 'edit' | 'view' | 'output' | 'window' | 'info' | null;
 export function Toolbar() {
   const { isEngineReady, createOutputWindow } = useEngine();
   const { gpuInfo } = useEngineStore();
-  const { outputWindows } = useSettingsStore();
+  const outputTargets = useRenderTargetStore((s) => {
+    const result: { id: string; name: string }[] = [];
+    for (const t of s.targets.values()) {
+      if (t.destinationType === 'window') result.push({ id: t.id, name: t.name });
+    }
+    return result;
+  });
   const { resetLayout, isPanelTypeVisible, togglePanelType, saveLayoutAsDefault } = useDockStore();
   const { isSupported: midiSupported, isEnabled: midiEnabled, enableMIDI, disableMIDI, devices } = useMIDI();
   const {
@@ -669,12 +676,12 @@ export function Toolbar() {
               <button className="menu-option" onClick={handleNewOutput} disabled={!isEngineReady}>
                 <span>New Output Window</span>
               </button>
-              {outputWindows.length > 0 && (
+              {outputTargets.length > 0 && (
                 <>
                   <div className="menu-separator" />
                   <div className="menu-submenu">
                     <span className="menu-label">Active Outputs</span>
-                    {outputWindows.map((output) => (
+                    {outputTargets.map((output) => (
                       <div key={output.id} className="menu-option">
                         <span>{output.name || `Output ${output.id}`}</span>
                       </div>

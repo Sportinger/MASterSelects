@@ -3,7 +3,7 @@
 //               RenderLoop, LayerCollector, Compositor, NestedCompRenderer
 
 import type { Layer, EngineStats, LayerRenderData } from './core/types';
-import type { OutputWindow } from '../types';
+// OutputWindow type no longer needed — state lives in renderTargetStore
 import { WebGPUContext, type GPUPowerPreference } from './core/WebGPUContext';
 import { TextureManager } from './texture/TextureManager';
 import { MaskTextureManager } from './texture/MaskTextureManager';
@@ -303,14 +303,46 @@ export class WebGPUEngine {
 
   // === OUTPUT WINDOWS ===
 
-  createOutputWindow(id: string, name: string): OutputWindow | null {
-    const device = this.context.getDevice();
-    if (!device || !this.outputWindowManager) return null;
-    return this.outputWindowManager.createOutputWindow(id, name, device);
+  /**
+   * Create an output window, register it as a render target, and configure WebGPU.
+   * The window will automatically receive frames based on its source (default: activeComp).
+   */
+  createOutputWindow(id: string, name: string): { id: string; name: string } | null {
+    if (!this.outputWindowManager) return null;
+
+    const result = this.outputWindowManager.createWindow(id, name);
+    if (!result) return null;
+
+    // Register canvas with engine (creates WebGPU context)
+    const gpuContext = this.registerTargetCanvas(id, result.canvas);
+    if (!gpuContext) {
+      result.window.close();
+      return null;
+    }
+
+    // Register as render target in store (default source: activeComp)
+    useRenderTargetStore.getState().registerTarget({
+      id,
+      name,
+      source: { type: 'activeComp' },
+      destinationType: 'window',
+      enabled: true,
+      canvas: result.canvas,
+      context: gpuContext,
+      window: result.window,
+      isFullscreen: false,
+    });
+
+    return { id, name };
   }
 
   closeOutputWindow(id: string): void {
-    this.outputWindowManager?.closeOutputWindow(id);
+    const target = useRenderTargetStore.getState().targets.get(id);
+    if (target?.window && !target.window.closed) {
+      target.window.close();
+    }
+    this.unregisterTargetCanvas(id);
+    useRenderTargetStore.getState().unregisterTarget(id);
   }
 
   // === MASK MANAGEMENT ===
