@@ -243,10 +243,10 @@ export class LayerCollector {
       if (extTex) {
         deps.setLastVideoTime(videoKey, currentTime);
 
-        // Cache frame for pause fallback
+        // Cache frame for pause/seek fallback (50ms = ~20fps capture rate for fresh fallback frames)
         const now = performance.now();
         const lastCapture = deps.scrubbingCache?.getLastCaptureTime(video) || 0;
-        if (now - lastCapture > 200) {
+        if (now - lastCapture > 50) {
           deps.scrubbingCache?.captureVideoFrame(video);
           deps.scrubbingCache?.setLastCaptureTime(video, now);
         }

@@ -425,6 +425,10 @@ export class WebGPUEngine {
     this.renderLoop?.setIsPlaying(playing);
   }
 
+  setIsScrubbing(scrubbing: boolean): void {
+    this.renderLoop?.setIsScrubbing(scrubbing);
+  }
+
   // === TEXTURE MANAGEMENT ===
 
   createImageTexture(image: HTMLImageElement): GPUTexture | null {

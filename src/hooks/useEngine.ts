@@ -334,11 +334,20 @@ export function useEngine() {
     };
   }, [isEngineReady, updateMaskTextures]);
 
-  // Update engine playing state for frame rate limiting
+  // Update engine playing/scrubbing state for frame rate limiting
   useEffect(() => {
     if (!isEngineReady) return;
     engine.setIsPlaying(isPlaying);
   }, [isEngineReady, isPlaying]);
+
+  useEffect(() => {
+    if (!isEngineReady) return;
+    const unsub = useTimelineStore.subscribe(
+      (state) => state.isDraggingPlayhead,
+      (isDragging) => { engine.setIsScrubbing(isDragging); }
+    );
+    return unsub;
+  }, [isEngineReady]);
 
   // Render loop - optimized with direct layer building (bypasses React state)
   useEffect(() => {

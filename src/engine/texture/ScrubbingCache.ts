@@ -10,10 +10,12 @@ export class ScrubbingCache {
   private device: GPUDevice;
 
   // Scrubbing frame cache - pre-decoded frames for instant access
-  // Key: "videoSrc:frameTime" -> { texture, view }
+  // Key: "videoSrc:quantizedFrameTime" -> { texture, view }
+  // Time is quantized to frame boundaries (1/30s) for better cache hit rate
   // Uses Map insertion order for O(1) LRU operations
   private scrubbingCache: Map<string, { texture: GPUTexture; view: GPUTextureView }> = new Map();
   private maxScrubbingCacheFrames = 300; // ~10 seconds at 30fps, ~2.4GB VRAM at 1080p
+  private readonly SCRUB_CACHE_FPS = 30; // Quantization granularity for scrubbing cache keys
 
   // Last valid frame cache - keeps last frame visible during seeks
   private lastFrameTextures: Map<HTMLVideoElement, GPUTexture> = new Map();
@@ -41,11 +43,18 @@ export class ScrubbingCache {
 
   // === SCRUBBING FRAME CACHE ===
 
+  // Quantize time to nearest frame boundary for consistent cache keys.
+  // Two scrub positions within the same frame (e.g. 1.5001s and 1.5009s at 30fps)
+  // map to the same key, dramatically improving cache hit rate.
+  private quantizeToFrame(time: number): string {
+    return (Math.round(time * this.SCRUB_CACHE_FPS) / this.SCRUB_CACHE_FPS).toFixed(3);
+  }
+
   // Cache a frame at a specific time for instant scrubbing access
   cacheFrameAtTime(video: HTMLVideoElement, time: number): void {
     if (video.videoWidth === 0 || video.readyState < 2) return;
 
-    const key = `${video.src}:${time.toFixed(3)}`;
+    const key = `${video.src}:${this.quantizeToFrame(time)}`;
     if (this.scrubbingCache.has(key)) return; // Already cached
 
     const width = video.videoWidth;
@@ -81,9 +90,9 @@ export class ScrubbingCache {
     }
   }
 
-  // Get cached frame for scrubbing
+  // Get cached frame for scrubbing (uses quantized time for better hit rate)
   getCachedFrame(videoSrc: string, time: number): GPUTextureView | null {
-    const key = `${videoSrc}:${time.toFixed(3)}`;
+    const key = `${videoSrc}:${this.quantizeToFrame(time)}`;
     const entry = this.scrubbingCache.get(key);
     if (entry) {
       // Move to end of Map (delete + re-add) for O(1) LRU update

@@ -24,6 +24,8 @@ export interface CompositionActions {
   getOpenCompositions: () => Composition[];
   reorderCompositionTabs: (fromIndex: number, toIndex: number) => void;
   moveSlot: (compId: string, toSlotIndex: number) => void;
+  unassignSlot: (compId: string) => void;
+  assignMediaFileToSlot: (mediaFileId: string, slotIndex: number) => void;
   setPreviewComposition: (id: string | null) => void;
   getSlotMap: (totalSlots: number) => (Composition | null)[];
   // Multi-layer playback (Resolume-style)
@@ -69,12 +71,17 @@ export const createCompositionSlice: MediaSliceCreator<CompositionActions> = (se
   },
 
   removeComposition: (id: string) => {
-    set((state) => ({
-      compositions: state.compositions.filter((c) => c.id !== id),
-      selectedIds: state.selectedIds.filter((sid) => sid !== id),
-      activeCompositionId: state.activeCompositionId === id ? null : state.activeCompositionId,
-      openCompositionIds: state.openCompositionIds.filter((cid) => cid !== id),
-    }));
+    set((state) => {
+      const newAssignments = { ...state.slotAssignments };
+      delete newAssignments[id];
+      return {
+        compositions: state.compositions.filter((c) => c.id !== id),
+        selectedIds: state.selectedIds.filter((sid) => sid !== id),
+        activeCompositionId: state.activeCompositionId === id ? null : state.activeCompositionId,
+        openCompositionIds: state.openCompositionIds.filter((cid) => cid !== id),
+        slotAssignments: newAssignments,
+      };
+    });
   },
 
   updateComposition: (id: string, updates: Partial<Composition>) => {
@@ -188,6 +195,70 @@ export const createCompositionSlice: MediaSliceCreator<CompositionActions> = (se
     set({ slotAssignments: newAssignments });
   },
 
+  unassignSlot: (compId: string) => {
+    const { slotAssignments } = get();
+    const newAssignments = { ...slotAssignments };
+    delete newAssignments[compId];
+    set({ slotAssignments: newAssignments });
+  },
+
+  assignMediaFileToSlot: (mediaFileId: string, slotIndex: number) => {
+    const { files } = get();
+    const mediaFile = files.find(f => f.id === mediaFileId);
+    if (!mediaFile) return;
+
+    // Create composition from media file (inline createComposition logic)
+    const { outputResolution } = useSettingsStore.getState();
+    const nameWithoutExt = mediaFile.name.replace(/\.[^.]+$/, '');
+    const comp: Composition = {
+      id: generateId(),
+      name: nameWithoutExt,
+      type: 'composition',
+      parentId: null,
+      createdAt: Date.now(),
+      width: mediaFile.width || outputResolution.width,
+      height: mediaFile.height || outputResolution.height,
+      frameRate: 30,
+      duration: mediaFile.duration || 60,
+      backgroundColor: '#000000',
+    };
+    set((state) => ({ compositions: [...state.compositions, comp] }));
+
+    // Assign to slot (inline moveSlot logic)
+    const { slotAssignments } = get();
+    const newAssignments = { ...slotAssignments };
+    for (const [id, idx] of Object.entries(newAssignments)) {
+      if (idx === slotIndex && id !== comp.id) {
+        delete newAssignments[id];
+        break;
+      }
+    }
+    newAssignments[comp.id] = slotIndex;
+    set({ slotAssignments: newAssignments });
+
+    // Open the composition tab (loads empty timeline)
+    const { activeCompositionId, compositions } = get();
+    if (!get().openCompositionIds.includes(comp.id)) {
+      set({ openCompositionIds: [...get().openCompositionIds, comp.id] });
+    }
+    doSetActiveComposition(set, get, activeCompositionId, comp.id, compositions, { skipAnimation: true });
+
+    // After microtask (let loadState settle), add media as a clip
+    queueMicrotask(() => {
+      const ts = useTimelineStore.getState();
+      const videoTrack = ts.tracks.find(t => t.type === 'video');
+      const audioTrack = ts.tracks.find(t => t.type === 'audio');
+
+      if (mediaFile.file) {
+        if ((mediaFile.type === 'video' || mediaFile.type === 'image') && videoTrack) {
+          ts.addClip(videoTrack.id, mediaFile.file, 0, mediaFile.duration, mediaFile.id);
+        } else if (mediaFile.type === 'audio' && audioTrack) {
+          ts.addClip(audioTrack.id, mediaFile.file, 0, mediaFile.duration, mediaFile.id);
+        }
+      }
+    });
+  },
+
   setPreviewComposition: (id: string | null) => {
     set({ previewCompositionId: id });
   },
@@ -206,18 +277,6 @@ export const createCompositionSlice: MediaSliceCreator<CompositionActions> = (se
           assigned.add(compId);
         }
       }
-    }
-
-    // Fill unassigned compositions into remaining empty slots (alphabetical)
-    const unassigned = compositions
-      .filter((c: Composition) => !assigned.has(c.id))
-      .sort((a: Composition, b: Composition) => a.name.localeCompare(b.name));
-    let nextEmpty = 0;
-    for (const comp of unassigned) {
-      while (nextEmpty < totalSlots && map[nextEmpty] !== null) nextEmpty++;
-      if (nextEmpty >= totalSlots) break;
-      map[nextEmpty] = comp;
-      nextEmpty++;
     }
 
     return map;
@@ -250,23 +309,14 @@ export const createCompositionSlice: MediaSliceCreator<CompositionActions> = (se
     const GRID_COLS = 12;
     const GRID_ROWS = 4;
     const TOTAL_SLOTS = GRID_COLS * GRID_ROWS;
-    // Build slot map inline (same logic as getSlotMap but avoids unknown type from index signature)
+    // Inline getSlotMap logic (avoids unknown type from index signature)
     const { compositions, slotAssignments } = get();
     const slotMap: (Composition | null)[] = new Array(TOTAL_SLOTS).fill(null);
-    const assigned = new Set<string>();
     for (const [compId, slotIdx] of Object.entries(slotAssignments)) {
       if (slotIdx >= 0 && slotIdx < TOTAL_SLOTS) {
         const comp = compositions.find(c => c.id === compId);
-        if (comp) { slotMap[slotIdx] = comp; assigned.add(compId); }
+        if (comp) { slotMap[slotIdx] = comp; }
       }
-    }
-    const unassigned = compositions.filter(c => !assigned.has(c.id)).sort((a, b) => a.name.localeCompare(b.name));
-    let nextEmpty = 0;
-    for (const comp of unassigned) {
-      while (nextEmpty < TOTAL_SLOTS && slotMap[nextEmpty] !== null) nextEmpty++;
-      if (nextEmpty >= TOTAL_SLOTS) break;
-      slotMap[nextEmpty] = comp;
-      nextEmpty++;
     }
 
     const newSlots: Record<number, string | null> = {};

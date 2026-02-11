@@ -303,6 +303,8 @@ export const createProjectSlice: MediaSliceCreator<ProjectActions> = (set, get) 
       openCompositionIds: [newCompId],
       selectedIds: [],
       expandedFolderIds: [],
+      slotAssignments: {},
+      activeLayerSlots: {},
       currentProjectId: null,
       currentProjectName: 'Untitled Project',
       proxyEnabled: false,

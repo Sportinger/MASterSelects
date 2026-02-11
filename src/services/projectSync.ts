@@ -202,6 +202,7 @@ export async function syncStoresToProject(): Promise<void> {
     projectData.activeCompositionId = freshState.activeCompositionId;
     projectData.openCompositionIds = freshState.openCompositionIds;
     projectData.expandedFolderIds = freshState.expandedFolderIds;
+    projectData.slotAssignments = freshState.slotAssignments;
 
     // Save YouTube panel state
     const youtubeState = useYouTubeStore.getState().getState();
@@ -499,6 +500,7 @@ export async function loadProjectToStores(): Promise<void> {
     activeCompositionId: projectData.activeCompositionId,
     openCompositionIds: projectData.openCompositionIds || [],
     expandedFolderIds: projectData.expandedFolderIds || [],
+    slotAssignments: projectData.slotAssignments || {},
   });
 
   // Load active composition's timeline
@@ -1017,7 +1019,7 @@ export function closeCurrentProject(): void {
 export function setupAutoSync(): void {
   // Subscribe to store changes and mark project dirty
   useMediaStore.subscribe(
-    (state) => [state.files, state.compositions, state.folders],
+    (state) => [state.files, state.compositions, state.folders, state.slotAssignments],
     () => {
       if (projectFileService.isProjectOpen()) {
         projectFileService.markDirty();

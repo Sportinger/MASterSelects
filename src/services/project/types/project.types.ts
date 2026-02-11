@@ -75,6 +75,9 @@ export interface ProjectFile {
   openCompositionIds: string[];
   expandedFolderIds: string[];
 
+  // Slot grid assignments (compId → slotIndex)
+  slotAssignments?: Record<string, number>;
+
   // Media source folders (for relinking after cache clear)
   mediaSourceFolders?: string[];
 

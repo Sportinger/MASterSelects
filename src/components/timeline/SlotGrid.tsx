@@ -34,6 +34,8 @@ export function SlotGrid({ opacity }: SlotGridProps) {
   const deactivateLayer = useMediaStore(state => state.deactivateLayer);
   const activateColumn = useMediaStore(state => state.activateColumn);
   const moveSlot = useMediaStore(state => state.moveSlot);
+  const unassignSlot = useMediaStore(state => state.unassignSlot);
+  const assignMediaFileToSlot = useMediaStore(state => state.assignMediaFileToSlot);
   const setPreviewComposition = useMediaStore(state => state.setPreviewComposition);
   const getSlotMap = useMediaStore(state => state.getSlotMap);
 
@@ -49,6 +51,10 @@ export function SlotGrid({ opacity }: SlotGridProps) {
   // Drag state
   const [dragCompId, setDragCompId] = useState<string | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [isExternalDrag, setIsExternalDrag] = useState(false);
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; compId: string } | null>(null);
 
   // Sync LayerPlaybackManager when activeLayerSlots changes
   useEffect(() => {
@@ -81,6 +87,14 @@ export function SlotGrid({ opacity }: SlotGridProps) {
       }
     }
   }, [activeLayerSlots]);
+
+  // Dismiss context menu on click-outside
+  useEffect(() => {
+    if (!contextMenu) return;
+    const dismiss = () => setContextMenu(null);
+    document.addEventListener('mousedown', dismiss);
+    return () => document.removeEventListener('mousedown', dismiss);
+  }, [contextMenu]);
 
   // Handle Ctrl+Shift+Scroll on the SlotGrid itself
   useEffect(() => {
@@ -186,9 +200,24 @@ export function SlotGrid({ opacity }: SlotGridProps) {
     }
   }, [previewCompositionId, setPreviewComposition]);
 
+  // Right-click context menu on filled slots
+  const handleContextMenu = useCallback((e: React.MouseEvent, comp: Composition) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, compId: comp.id });
+  }, []);
+
+  const handleRemoveFromSlot = useCallback(() => {
+    if (contextMenu) {
+      unassignSlot(contextMenu.compId);
+      setContextMenu(null);
+    }
+  }, [contextMenu, unassignSlot]);
+
   // Drag handlers — track comp ID, not slot index
   const handleDragStart = useCallback((e: React.DragEvent, comp: Composition) => {
     setDragCompId(comp.id);
+    setIsExternalDrag(false);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', comp.id);
   }, []);
@@ -199,7 +228,14 @@ export function SlotGrid({ opacity }: SlotGridProps) {
 
   const handleDragOver = useCallback((e: React.DragEvent, slotIndex: number) => {
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
+    const types = e.dataTransfer.types;
+    const isExternal = types.includes('application/x-media-file-id') || types.includes('application/x-composition-id');
+    if (isExternal) {
+      e.dataTransfer.dropEffect = 'copy';
+      setIsExternalDrag(true);
+    } else {
+      e.dataTransfer.dropEffect = 'move';
+    }
     setDragOverIndex(slotIndex);
   }, []);
 
@@ -209,18 +245,34 @@ export function SlotGrid({ opacity }: SlotGridProps) {
 
   const handleDrop = useCallback((e: React.DragEvent, toSlotIndex: number) => {
     e.preventDefault();
-    // Read comp ID from dataTransfer (reliable across browsers, not affected by state timing)
-    const compId = e.dataTransfer.getData('text/plain') || dragCompId;
     setDragCompId(null);
     setDragOverIndex(null);
+    setIsExternalDrag(false);
+
+    // Check for external drops from MediaPanel
+    const mediaFileId = e.dataTransfer.getData('application/x-media-file-id');
+    if (mediaFileId) {
+      assignMediaFileToSlot(mediaFileId, toSlotIndex);
+      return;
+    }
+
+    const compositionId = e.dataTransfer.getData('application/x-composition-id');
+    if (compositionId) {
+      moveSlot(compositionId, toSlotIndex);
+      return;
+    }
+
+    // Internal slot drag (text/plain = comp ID)
+    const compId = e.dataTransfer.getData('text/plain') || dragCompId;
     if (compId) {
       moveSlot(compId, toSlotIndex);
     }
-  }, [dragCompId, moveSlot]);
+  }, [dragCompId, moveSlot, assignMediaFileToSlot]);
 
   const handleDragEnd = useCallback(() => {
     setDragCompId(null);
     setDragOverIndex(null);
+    setIsExternalDrag(false);
   }, []);
 
   // Build slot map from assignments (reacts to slotAssignments changes)
@@ -266,7 +318,7 @@ export function SlotGrid({ opacity }: SlotGridProps) {
             {Array.from({ length: GRID_COLS }, (_, colIndex) => {
               const slotIndex = rowIndex * GRID_COLS + colIndex;
               const comp = slotMap[slotIndex];
-              const isDragOver = slotIndex === dragOverIndex && dragCompId !== null;
+              const isDragOver = slotIndex === dragOverIndex && (dragCompId !== null || isExternalDrag);
 
               if (comp) {
                 const isEditorActive = comp.id === activeCompositionId;
@@ -285,6 +337,7 @@ export function SlotGrid({ opacity }: SlotGridProps) {
                     }
                     data-comp-id={comp.id}
                     onClick={() => handleSlotClick(comp, slotIndex)}
+                    onContextMenu={(e) => handleContextMenu(e, comp)}
                     title={comp.name}
                     draggable
                     onDragStart={(e) => handleDragStart(e, comp)}
@@ -329,6 +382,17 @@ export function SlotGrid({ opacity }: SlotGridProps) {
           </Fragment>
         ))}
       </div>
+
+      {/* Context menu */}
+      {contextMenu && (
+        <div
+          className="slot-grid-context-menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <button onClick={handleRemoveFromSlot}>Remove from Slot</button>
+        </div>
+      )}
     </div>
   );
 }

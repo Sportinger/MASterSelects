@@ -1083,7 +1083,6 @@ export class LayerBuilderService {
       const seekThreshold = ctx.isDraggingPlayhead ? 0.1 : 0.02;
       if (timeDiff > seekThreshold) {
         this.throttledSeek(clip.id, video, timeInfo.clipTime, ctx);
-        video.addEventListener('seeked', () => engine.requestRender(), { once: true });
       }
     } else if (ctx.playbackSpeed !== 1) {
       // Non-standard forward speed (2x, 4x, etc.): seek frame-by-frame for accuracy
@@ -1091,7 +1090,6 @@ export class LayerBuilderService {
       const seekThreshold = ctx.isDraggingPlayhead ? 0.1 : 0.03;
       if (timeDiff > seekThreshold) {
         this.throttledSeek(clip.id, video, timeInfo.clipTime, ctx);
-        video.addEventListener('seeked', () => engine.requestRender(), { once: true });
       }
     } else {
       // Normal 1x forward playback: let video play naturally
@@ -1105,7 +1103,6 @@ export class LayerBuilderService {
         const seekThreshold = ctx.isDraggingPlayhead ? 0.1 : 0.05;
         if (timeDiff > seekThreshold) {
           this.throttledSeek(clip.id, video, timeInfo.clipTime, ctx);
-          video.addEventListener('seeked', () => engine.requestRender(), { once: true });
         }
 
         // Force decode if readyState dropped after seek
@@ -1117,11 +1114,15 @@ export class LayerBuilderService {
   }
 
   /**
-   * Throttled video seek
+   * Throttled video seek with requestVideoFrameCallback for frame-accurate re-render.
+   * RVFC fires when the decoded frame is actually presented to the compositor,
+   * which is more accurate than the 'seeked' event (which fires when seek completes
+   * but the frame may not yet be decoded).
    */
+  private rvfcHandles: Record<string, number> = {};
   private throttledSeek(clipId: string, video: HTMLVideoElement, time: number, ctx: FrameContext): void {
     const lastSeek = this.lastSeekRef[clipId] || 0;
-    const threshold = ctx.isDraggingPlayhead ? 80 : 33;
+    const threshold = ctx.isDraggingPlayhead ? 50 : 33;
     if (ctx.now - lastSeek > threshold) {
       if (ctx.isDraggingPlayhead && 'fastSeek' in video) {
         video.fastSeek(time);
@@ -1129,6 +1130,20 @@ export class LayerBuilderService {
         video.currentTime = time;
       }
       this.lastSeekRef[clipId] = ctx.now;
+
+      // Use RVFC to trigger re-render when the decoded frame is actually ready.
+      // Cancel previous pending RVFC to avoid stacking callbacks during fast scrubbing.
+      const rvfc = (video as any).requestVideoFrameCallback;
+      if (typeof rvfc === 'function') {
+        const prevHandle = this.rvfcHandles[clipId];
+        if (prevHandle !== undefined) {
+          (video as any).cancelVideoFrameCallback(prevHandle);
+        }
+        this.rvfcHandles[clipId] = rvfc.call(video, () => {
+          delete this.rvfcHandles[clipId];
+          engine.requestRender();
+        });
+      }
     }
   }
 

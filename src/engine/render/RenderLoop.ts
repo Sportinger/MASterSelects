@@ -23,9 +23,10 @@ export class RenderLoop {
   private renderRequested = false;
   private lastRenderedPlayhead = -1;
 
-  // Frame rate limiting (only during playback, not scrubbing)
+  // Frame rate limiting
   private hasActiveVideo = false;
   private isPlaying = false;
+  private isScrubbing = false;
   private lastRenderTime = 0;
 
   // Health monitoring - detect frozen render loop
@@ -35,6 +36,7 @@ export class RenderLoop {
 
   private readonly IDLE_TIMEOUT = 1000; // 1s before idle
   private readonly VIDEO_FRAME_TIME = 16.67; // ~60fps target
+  private readonly SCRUB_FRAME_TIME = 33; // ~30fps during scrubbing (avoids wasted renders while video seeks)
   private readonly WATCHDOG_INTERVAL = 2000; // Check every 2s
   private readonly WATCHDOG_STALL_THRESHOLD = 3000; // 3s without render = stalled
 
@@ -91,14 +93,24 @@ export class RenderLoop {
         return;
       }
 
-      // Frame rate limiting for video - ONLY during playback, not scrubbing
-      // This reduces GPU load and prevents frame sync issues from excessive rendering
-      // But we never skip renders during scrubbing (when paused)
-      if (this.hasActiveVideo && this.isPlaying) {
+      // Frame rate limiting for video
+      if (this.hasActiveVideo) {
         const timeSinceLastRender = timestamp - this.lastRenderTime;
-        if (timeSinceLastRender < this.VIDEO_FRAME_TIME) {
-          this.animationId = requestAnimationFrame(loop);
-          return;
+        if (this.isPlaying) {
+          // Playback: ~60fps target
+          if (timeSinceLastRender < this.VIDEO_FRAME_TIME) {
+            this.animationId = requestAnimationFrame(loop);
+            return;
+          }
+        } else if (this.isScrubbing) {
+          // Scrubbing: ~30fps - avoids 4-5 wasted renders per seek cycle
+          // Video seeks take ~50-80ms, so rendering at 60fps just re-composites
+          // the same cached frame. 30fps catches the seeked frame promptly
+          // while halving GPU work.
+          if (timeSinceLastRender < this.SCRUB_FRAME_TIME) {
+            this.animationId = requestAnimationFrame(loop);
+            return;
+          }
         }
         this.lastRenderTime = timestamp;
       }
@@ -229,5 +241,13 @@ export class RenderLoop {
 
   setIsPlaying(playing: boolean): void {
     this.isPlaying = playing;
+  }
+
+  setIsScrubbing(scrubbing: boolean): void {
+    this.isScrubbing = scrubbing;
+    if (scrubbing) {
+      // Reset render time so first scrub frame renders immediately
+      this.lastRenderTime = 0;
+    }
   }
 }
