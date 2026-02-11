@@ -11,6 +11,8 @@ import { fileSystemService } from '../../services/fileSystemService';
 import { createFileImportSlice, type FileImportActions } from './slices/fileImportSlice';
 import { createFileManageSlice, type FileManageActions } from './slices/fileManageSlice';
 import { createCompositionSlice, type CompositionActions } from './slices/compositionSlice';
+import { createSlotSlice, type SlotActions } from './slices/slotSlice';
+import { createMultiLayerSlice, type MultiLayerActions } from './slices/multiLayerSlice';
 import { createFolderSlice, type FolderActions } from './slices/folderSlice';
 import { createSelectionSlice, type SelectionActions } from './slices/selectionSlice';
 import { createProxySlice, type ProxyActions } from './slices/proxySlice';
@@ -24,6 +26,8 @@ type MediaStoreState = MediaState &
   FileImportActions &
   FileManageActions &
   CompositionActions &
+  SlotActions &
+  MultiLayerActions &
   FolderActions &
   SelectionActions &
   ProxyActions &
@@ -185,6 +189,8 @@ export const useMediaStore = create<MediaStoreState>()(
     ...createFileImportSlice(set, get),
     ...createFileManageSlice(set, get),
     ...createCompositionSlice(set, get),
+    ...createSlotSlice(set, get),
+    ...createMultiLayerSlice(set, get),
     ...createFolderSlice(set, get),
     ...createSelectionSlice(set, get),
     ...createProxySlice(set, get),
