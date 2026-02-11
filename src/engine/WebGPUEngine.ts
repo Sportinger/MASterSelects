@@ -590,7 +590,7 @@ export class WebGPUEngine {
 
     const device = this.context.getDevice();
     if (!device || !this.compositorPipeline || !this.outputPipeline || !this.sampler) return;
-    if (!this.renderTargetManager || !this.layerCollector || !this.compositor) return;
+    if (!this.renderTargetManager || !this.layerCollector || !this.compositor || !this.textureManager) return;
 
     const pingView = this.renderTargetManager.getPingView();
     const pongView = this.renderTargetManager.getPongView();
