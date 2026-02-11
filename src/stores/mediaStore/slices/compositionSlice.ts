@@ -507,6 +507,11 @@ function doSetActiveComposition(
   // Save current timeline to current composition
   const savedCompId = currentActiveId;
   if (currentActiveId) {
+    // Sync high-frequency playhead position back to store before serializing
+    // (rAF loop updates playheadState.position but not the Zustand store)
+    if (playheadState.isUsingInternalPosition) {
+      timelineStore.setPlayheadPosition(playheadState.position);
+    }
     const timelineData = timelineStore.getSerializableState();
     set((state) => ({
       compositions: state.compositions.map((c) =>
