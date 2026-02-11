@@ -23,9 +23,11 @@ import { TimelineTrack } from './TimelineTrack';
 import { TimelineClip } from './TimelineClip';
 import { TimelineKeyframes } from './TimelineKeyframes';
 import { MulticamDialog } from './MulticamDialog';
-import { ParentChildLink } from './ParentChildLink';
-import { PhysicsCable } from './PhysicsCable';
 import { TimelineNavigator } from './TimelineNavigator';
+import { TimelineOverlays } from './components/TimelineOverlays';
+import { TransitionOverlays } from './components/TransitionOverlays';
+import { PickWhipCables } from './components/PickWhipCables';
+import { ParentChildLinksOverlay } from './components/ParentChildLinksOverlay';
 import { VerticalScrollbar } from './VerticalScrollbar';
 import { SlotGrid } from './SlotGrid';
 import { useTimelineKeyboard } from './hooks/useTimelineKeyboard';
@@ -1011,97 +1013,14 @@ export function Timeline() {
             );
           })}
 
-          {/* Junction highlight for transition drop */}
-          {activeJunction && (
-            <div
-              className="transition-junction-highlight"
-              style={{
-                position: 'absolute',
-                left: timeToPixel(activeJunction.junctionTime) - 15,
-                width: 30,
-                top: 0,
-                bottom: 0,
-                background: 'linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.4), transparent)',
-                pointerEvents: 'none',
-                zIndex: 100,
-              }}
-            >
-              <div
-                style={{
-                  position: 'absolute',
-                  left: '50%',
-                  top: '50%',
-                  transform: 'translate(-50%, -50%)',
-                  background: '#3b82f6',
-                  color: 'white',
-                  padding: '4px 10px',
-                  borderRadius: 4,
-                  fontSize: 11,
-                  fontWeight: 500,
-                  whiteSpace: 'nowrap',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-                }}
-              >
-                Drop transition
-              </div>
-            </div>
-          )}
-
-          {/* Render existing transitions as junction elements */}
-          {clips.filter(c => c.transitionOut).map(clipA => {
-            const clipB = clips.find(c => c.id === clipA.transitionOut?.linkedClipId);
-            if (!clipB || !clipA.transitionOut) return null;
-
-            const track = tracks.find(t => t.id === clipA.trackId);
-            if (!track) return null;
-
-            // Calculate track position
-            const trackIndex = tracks.indexOf(track);
-            const trackTop = tracks
-              .slice(0, trackIndex)
-              .reduce((sum, t) => sum + (isTrackExpanded(t.id) ? getExpandedTrackHeight(t.id, t.height) : t.height), 0);
-            const trackHeight = isTrackExpanded(track.id) ? getExpandedTrackHeight(track.id, track.height) : track.height;
-
-            // Transition spans from clipB.startTime to clipA.startTime + clipA.duration
-            const transitionStart = clipB.startTime;
-            const transitionEnd = clipA.startTime + clipA.duration;
-            const transitionWidth = timeToPixel(transitionEnd - transitionStart);
-            const transitionLeft = timeToPixel(transitionStart);
-
-            return (
-              <div
-                key={clipA.transitionOut.id}
-                className="timeline-transition"
-                style={{
-                  position: 'absolute',
-                  left: transitionLeft,
-                  top: trackTop,
-                  width: Math.max(transitionWidth, 20),
-                  height: trackHeight,
-                  pointerEvents: 'none',
-                  zIndex: 50,
-                }}
-              >
-                {/* Transition visual */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    inset: 4,
-                    background: 'linear-gradient(90deg, rgba(74, 158, 255, 0.3), rgba(255, 107, 74, 0.3))',
-                    borderRadius: 4,
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style={{ opacity: 0.6 }}>
-                    <path d="M7 4v16M17 4v16M7 12h10" stroke="white" strokeWidth="2" strokeLinecap="round" />
-                  </svg>
-                </div>
-              </div>
-            );
-          })}
+          <TransitionOverlays
+            activeJunction={activeJunction}
+            clips={clips}
+            tracks={tracks}
+            timeToPixel={timeToPixel}
+            isTrackExpanded={isTrackExpanded}
+            getExpandedTrackHeight={getExpandedTrackHeight}
+          />
 
           {/* New audio track preview for linked video audio */}
           {/* Only show if video has audio (hasAudio !== false) */}
@@ -1164,127 +1083,24 @@ export function Timeline() {
             </div>
           )}
 
-          {clipDrag?.isSnapping && clipDrag.snappedTime !== null && (
-            <div className="snap-line" style={{ left: timeToPixel(clipDrag.snappedTime) }} />
-          )}
-
-          {(inPoint !== null || outPoint !== null) && (
-            <>
-              {inPoint !== null && inPoint > 0 && (
-                <div
-                  className="work-area-overlay before"
-                  style={{
-                    left: 0,
-                    width: timeToPixel(inPoint),
-                  }}
-                />
-              )}
-              {outPoint !== null && (
-                <div
-                  className="work-area-overlay after"
-                  style={{
-                    left: timeToPixel(outPoint),
-                    width: timeToPixel(duration - outPoint),
-                  }}
-                />
-              )}
-            </>
-          )}
-
-          {isRamPreviewing && ramPreviewProgress !== null && (
-            <div
-              className="ram-preview-progress-text"
-              style={{
-                left: timeToPixel(playheadPosition) + 10,
-              }}
-            >
-              {Math.round(ramPreviewProgress)}%
-            </div>
-          )}
-
-          {/* Export Progress Overlay */}
-          {isExporting && exportRange && (
-            <>
-              {/* Progress bar - grows based on percentage (0-100%) */}
-              <div
-                className="timeline-export-overlay"
-                style={{
-                  left: timeToPixel(exportRange.start),
-                  width: timeToPixel((exportRange.end - exportRange.start) * ((exportProgress ?? 0) / 100)),
-                }}
-              />
-              {/* Percentage display - at end of progress bar */}
-              <div
-                className="timeline-export-text"
-                style={{
-                  left: timeToPixel(exportRange.start + (exportRange.end - exportRange.start) * ((exportProgress ?? 0) / 100)) - 10,
-                  transform: 'translateX(-100%)',
-                }}
-              >
-                {Math.round(exportProgress ?? 0)}%
-              </div>
-            </>
-          )}
-
-          {getCachedRanges().map((range, i) => (
-            <div
-              key={i}
-              className="playback-cache-indicator"
-              style={{
-                left: timeToPixel(range.start),
-                width: Math.max(2, timeToPixel(range.end - range.start)),
-              }}
-              title={`Cached: ${formatTime(range.start)} - ${formatTime(range.end)}`}
-            />
-          ))}
-
-          {/* Proxy frame cache indicator (yellow) */}
-          {(() => {
-            const ranges = getProxyCachedRanges();
-            return ranges;
-          })().map((range, i) => (
-            <div
-              key={`proxy-${i}`}
-              className="proxy-cache-indicator"
-              style={{
-                left: timeToPixel(range.start),
-                width: Math.max(2, timeToPixel(range.end - range.start)),
-              }}
-              title={`Proxy cached: ${formatTime(range.start)} - ${formatTime(range.end)}`}
-            />
-          ))}
-
-          {inPoint !== null && (
-            <div
-              className={`in-out-marker in-marker ${markerDrag?.type === 'in' ? 'dragging' : ''}`}
-              style={{ left: timeToPixel(inPoint) }}
-              title={`In: ${formatTime(inPoint)} (drag to move)`}
-            >
-              <div
-                className="marker-flag"
-                onMouseDown={(e) => handleMarkerMouseDown(e, 'in')}
-              >
-                I
-              </div>
-              <div className="marker-line" />
-            </div>
-          )}
-
-          {outPoint !== null && (
-            <div
-              className={`in-out-marker out-marker ${markerDrag?.type === 'out' ? 'dragging' : ''}`}
-              style={{ left: timeToPixel(outPoint) }}
-              title={`Out: ${formatTime(outPoint)} (drag to move)`}
-            >
-              <div
-                className="marker-flag"
-                onMouseDown={(e) => handleMarkerMouseDown(e, 'out')}
-              >
-                O
-              </div>
-              <div className="marker-line" />
-            </div>
-          )}
+          <TimelineOverlays
+            timeToPixel={timeToPixel}
+            formatTime={formatTime}
+            inPoint={inPoint}
+            outPoint={outPoint}
+            duration={duration}
+            markerDrag={markerDrag}
+            onMarkerMouseDown={handleMarkerMouseDown}
+            clipDrag={clipDrag}
+            isRamPreviewing={isRamPreviewing}
+            ramPreviewProgress={ramPreviewProgress}
+            playheadPosition={playheadPosition}
+            isExporting={isExporting}
+            exportProgress={exportProgress}
+            exportRange={exportRange}
+            getCachedRanges={getCachedRanges}
+            getProxyCachedRanges={getProxyCachedRanges}
+          />
 
               {/* Marquee selection rectangle */}
               {marquee && (
@@ -1299,74 +1115,15 @@ export function Timeline() {
                 />
               )}
 
-              {/* Parent-child link lines overlay */}
-              <svg
-                className="parent-child-links-overlay"
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  height: '100%',
-                  pointerEvents: 'none',
-                  overflow: 'visible',
-                }}
-              >
-                {clips.filter(c => c.parentClipId).map(childClip => {
-                  const parentClip = clips.find(c => c.id === childClip.parentClipId);
-                  if (!parentClip) return null;
-
-                  // Apply drag offset for real-time updates during drag
-                  let adjustedChildClip = childClip;
-                  let adjustedParentClip = parentClip;
-
-                  if (clipDrag) {
-                    const rawPixelX = clipDrag.currentX
-                      ? clipDrag.currentX -
-                        (timelineRef.current?.getBoundingClientRect().left || 0) +
-                        scrollX -
-                        clipDrag.grabOffsetX
-                      : 0;
-                    const tempStartTime =
-                      clipDrag.snappedTime ??
-                      (clipDrag.currentX ? Math.max(0, rawPixelX / zoom) : null);
-
-                    if (tempStartTime !== null) {
-                      if (clipDrag.clipId === childClip.id) {
-                        adjustedChildClip = { ...childClip, startTime: tempStartTime, trackId: clipDrag.currentTrackId };
-                      }
-                      if (clipDrag.clipId === parentClip.id) {
-                        adjustedParentClip = { ...parentClip, startTime: tempStartTime, trackId: clipDrag.currentTrackId };
-                      }
-                    }
-                  }
-
-                  // Calculate Y position for track
-                  const getTrackYPosition = (trackId: string): number => {
-                    let y = 24; // Offset for new track drop zone
-                    for (const track of tracks) {
-                      if (track.id === trackId) {
-                        return y + track.height / 2;
-                      }
-                      y += getExpandedTrackHeight(track.id, track.height);
-                    }
-                    return y;
-                  };
-
-                  return (
-                    <ParentChildLink
-                      key={childClip.id}
-                      childClip={adjustedChildClip}
-                      parentClip={adjustedParentClip}
-                      tracks={tracks}
-                      zoom={zoom}
-                      scrollX={0} // Already in scrolled container
-                      trackHeaderWidth={0} // Already offset
-                      getTrackYPosition={getTrackYPosition}
-                    />
-                  );
-                })}
-              </svg>
+              <ParentChildLinksOverlay
+                clips={clips}
+                tracks={tracks}
+                clipDrag={clipDrag}
+                timelineRef={timelineRef}
+                scrollX={scrollX}
+                zoom={zoom}
+                getExpandedTrackHeight={getExpandedTrackHeight}
+              />
 
 
             </div>{/* track-lanes-scroll */}
@@ -1446,53 +1203,7 @@ export function Timeline() {
         />
       )}
 
-      {/* Pick whip drag line - physics cable (clip parenting) */}
-      {pickWhipDrag && (
-        <svg
-          className="pick-whip-drag-overlay"
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100vw',
-            height: '100vh',
-            pointerEvents: 'none',
-            zIndex: 9999,
-          }}
-        >
-          <PhysicsCable
-            startX={pickWhipDrag.startX}
-            startY={pickWhipDrag.startY}
-            endX={pickWhipDrag.currentX}
-            endY={pickWhipDrag.currentY}
-            isPreview={true}
-          />
-        </svg>
-      )}
-
-      {/* Track pick whip drag line - physics cable (layer parenting) */}
-      {trackPickWhipDrag && (
-        <svg
-          className="pick-whip-drag-overlay"
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100vw',
-            height: '100vh',
-            pointerEvents: 'none',
-            zIndex: 9999,
-          }}
-        >
-          <PhysicsCable
-            startX={trackPickWhipDrag.startX}
-            startY={trackPickWhipDrag.startY}
-            endX={trackPickWhipDrag.currentX}
-            endY={trackPickWhipDrag.currentY}
-            isPreview={true}
-          />
-        </svg>
-      )}
+      <PickWhipCables pickWhipDrag={pickWhipDrag} trackPickWhipDrag={trackPickWhipDrag} />
 
       <TimelineContextMenu
         contextMenu={contextMenu}

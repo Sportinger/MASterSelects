@@ -30,6 +30,7 @@ interface TimelineOverlaysProps {
 
   // Cache
   getCachedRanges: () => { start: number; end: number }[];
+  getProxyCachedRanges: () => { start: number; end: number }[];
 }
 
 export function TimelineOverlays({
@@ -48,6 +49,7 @@ export function TimelineOverlays({
   exportProgress,
   exportRange,
   getCachedRanges,
+  getProxyCachedRanges,
 }: TimelineOverlaysProps) {
   return (
     <>
@@ -92,9 +94,10 @@ export function TimelineOverlays({
         </div>
       )}
 
-      {/* Export progress overlay */}
+      {/* Export Progress Overlay */}
       {isExporting && exportRange && (
         <>
+          {/* Progress bar - grows based on percentage (0-100%) */}
           <div
             className="timeline-export-overlay"
             style={{
@@ -104,6 +107,7 @@ export function TimelineOverlays({
               ),
             }}
           />
+          {/* Percentage display - at end of progress bar */}
           <div
             className="timeline-export-text"
             style={{
@@ -120,7 +124,7 @@ export function TimelineOverlays({
         </>
       )}
 
-      {/* Cache indicators */}
+      {/* Playback cache indicators (blue) */}
       {getCachedRanges().map((range, i) => (
         <div
           key={i}
@@ -130,6 +134,19 @@ export function TimelineOverlays({
             width: Math.max(2, timeToPixel(range.end - range.start)),
           }}
           title={`Cached: ${formatTime(range.start)} - ${formatTime(range.end)}`}
+        />
+      ))}
+
+      {/* Proxy frame cache indicator (yellow) */}
+      {getProxyCachedRanges().map((range, i) => (
+        <div
+          key={`proxy-${i}`}
+          className="proxy-cache-indicator"
+          style={{
+            left: timeToPixel(range.start),
+            width: Math.max(2, timeToPixel(range.end - range.start)),
+          }}
+          title={`Proxy cached: ${formatTime(range.start)} - ${formatTime(range.end)}`}
         />
       ))}
 
