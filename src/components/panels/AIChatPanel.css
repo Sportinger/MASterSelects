@@ -191,11 +191,11 @@
 }
 
 .ai-chat-message.user {
-  background: var(--gray-500);
+  background: var(--chat-user-bg);
   color: var(--text-primary);
   align-self: flex-end;
   border-bottom-right-radius: var(--radius-md);
-  border: 1px solid var(--gray-450);
+  border: 1px solid var(--chat-user-border);
 }
 
 .ai-chat-message.assistant {

@@ -10,7 +10,7 @@ import { Logger } from '../services/logger';
 const log = Logger.create('SettingsStore');
 
 // Theme mode options
-export type ThemeMode = 'dark' | 'light' | 'midnight' | 'system';
+export type ThemeMode = 'dark' | 'light' | 'midnight' | 'system' | 'crazy';
 
 // Transcription provider options
 export type TranscriptionProvider = 'local' | 'openai' | 'assemblyai' | 'deepgram';
