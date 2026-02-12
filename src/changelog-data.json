@@ -1,5 +1,184 @@
 [
   {
+    "date": "2026-02-12",
+    "type": "new",
+    "title": "Multi Preview Panel",
+    "description": "2x2 grid of independent composition previews with auto-distribute source mode, keyboard highlight (1-4 keys), 16:9 scaling grid, and optimized rendering that reuses main loop layers and evaluates once per frame.",
+    "section": "Preview",
+    "commits": [
+      "be2a0d8",
+      "4301bdf",
+      "003fc39",
+      "a1e995d",
+      "5c6eb78",
+      "2e6422f",
+      "9d421a5"
+    ]
+  },
+  {
+    "date": "2026-02-12",
+    "type": "new",
+    "title": "Theme System",
+    "description": "Full theme system with Dark, Light, Midnight, and System modes. Custom theme with adjustable hue and brightness. Crazy You animated theme. All panels migrated to theme CSS variables.",
+    "section": "UI",
+    "commits": [
+      "bd80237",
+      "d306aee",
+      "6e88822",
+      "e348d9e",
+      "bb544cb",
+      "759bfaa",
+      "bfd413e",
+      "38033e0",
+      "a97fc32"
+    ]
+  },
+  {
+    "date": "2026-02-12",
+    "type": "new",
+    "title": "Windows MSI Installer & System Tray",
+    "description": "Native Helper runs as Windows system tray application with MSI installer. Feature tree UI with shortcut toggle and desktop shortcut. Includes missing FFmpeg DLLs (avdevice, avfilter, postproc) and WiX manifest fixes.",
+    "section": "Native Helper",
+    "commits": [
+      "f331772",
+      "d2f39ad",
+      "17956fd",
+      "2e005a3",
+      "f976816"
+    ]
+  },
+  {
+    "date": "2026-02-12",
+    "type": "new",
+    "title": "Self-Update System",
+    "description": "Check GitHub Releases for new versions, download MSI, and auto-upgrade the native helper in place.",
+    "section": "Native Helper",
+    "commits": [
+      "900d3f7"
+    ]
+  },
+  {
+    "date": "2026-02-12",
+    "type": "new",
+    "title": "Encrypted API Key Storage",
+    "description": "API keys stored in encrypted .keys.enc file in project folder. Keys automatically reloaded into settingsStore after project loads.",
+    "section": "Security",
+    "commits": [
+      "41b13c1",
+      "2d9892c"
+    ]
+  },
+  {
+    "date": "2026-02-12",
+    "type": "new",
+    "title": "Per-Tab Transparency Grid",
+    "description": "Each preview tab has its own independent checkerboard toggle for transparency visualization.",
+    "section": "Preview",
+    "commits": [
+      "e1e6fc1"
+    ]
+  },
+  {
+    "date": "2026-02-12",
+    "type": "new",
+    "title": "AI Batch Execution & Clip Splitting Tools",
+    "description": "executeBatch tool for multi-action batch execution from AI. splitClipEvenly and splitClipAtTimes compound tools for precise clip splitting.",
+    "section": "AI Tools",
+    "commits": [
+      "7a4c43b",
+      "b57054d",
+      "18fceec"
+    ]
+  },
+  {
+    "date": "2026-02-12",
+    "type": "improve",
+    "title": "Native Helper Dialog Rework",
+    "description": "Redesigned Native Helper dialog with instant animations, download links, status colors. Split downloads (on by default) and turbo decode (off by default) into separate toggles. Added release workflow with v0.2.0 download link.",
+    "section": "Native Helper",
+    "commits": [
+      "6909c83",
+      "ce6f8e5",
+      "1e33b99"
+    ]
+  },
+  {
+    "date": "2026-02-12",
+    "type": "fix",
+    "title": "Slot View Playback Stability",
+    "description": "Fixed infinite 'sources not ready' spam after slot deactivation. Throttled warnings and auto-prepare compositions to eliminate playback lag in slot view.",
+    "section": "Slot Grid",
+    "commits": [
+      "5fa9484",
+      "8959032",
+      "16a6443",
+      "fe827f3"
+    ]
+  },
+  {
+    "date": "2026-02-12",
+    "type": "fix",
+    "title": "Multi Preview Grid Layout Fixes",
+    "description": "Fixed grid overflow in tall and wide panels, container query scaling, and grid splitting when panel is wide. Fixed layer-index rendering for active composition.",
+    "section": "Preview",
+    "commits": [
+      "a790341",
+      "f967cdc",
+      "035959b"
+    ]
+  },
+  {
+    "date": "2026-02-12",
+    "type": "fix",
+    "title": "Light Theme Fixes",
+    "description": "Fixed light theme rendering for timeline grid, active tabs, preview overlays, stats, changelog, scrollbars, and chat panel.",
+    "section": "UI",
+    "commits": [
+      "e348d9e",
+      "d306aee"
+    ]
+  },
+  {
+    "date": "2026-02-12",
+    "type": "refactor",
+    "title": "Engine Architecture Refactoring",
+    "description": "Major engine restructuring across 7 phases: deleted dead code, consolidated duplicated logic, extracted CacheManager, ExportCanvasManager, RenderDispatcher from WebGPUEngine. Split clipSlice, compositionSlice, playbackSlice, and projectSync into focused domain-specific modules. Extracted RAM Preview Engine.",
+    "section": "Architecture",
+    "commits": [
+      "5aa072b",
+      "1e76aec",
+      "2f1a68d",
+      "8d07937",
+      "88c1194",
+      "7516519",
+      "f934f57",
+      "1ff4dbf",
+      "c974c42",
+      "566a153",
+      "3e0c610"
+    ]
+  },
+  {
+    "date": "2026-02-12",
+    "type": "refactor",
+    "title": "Component Extraction & Modularization",
+    "description": "Extracted Preview hooks and controls, Timeline overlay components, MaskOverlay hooks, ClipWaveform and FadeCurve components, VideoSyncManager and AudioTrackSyncManager. Split SettingsDialog and ScopeRenderer into focused modules. Extracted MediaPanel dialogs and ExportPanel helpers.",
+    "section": "Architecture",
+    "commits": [
+      "78f713b",
+      "e72c8d2",
+      "962b6de",
+      "a3e9aca",
+      "7bf6eec",
+      "d480ffc",
+      "f468502",
+      "9aa0440",
+      "919a181",
+      "3fa2436",
+      "65cd652"
+    ]
+  },
+  {
     "date": "2026-02-11",
     "type": "new",
     "title": "Tutorial Campaign System",
