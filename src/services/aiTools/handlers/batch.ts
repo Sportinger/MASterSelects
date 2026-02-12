@@ -76,6 +76,10 @@ export async function handleExecuteBatch(
         error: error instanceof Error ? error.message : 'Unknown error',
       });
     }
+
+    // Microtask break between actions to prevent call stack overflow
+    // (each action triggers multiple Zustand set() calls + subscribers)
+    await new Promise(resolve => setTimeout(resolve, 0));
   }
 
   return {
