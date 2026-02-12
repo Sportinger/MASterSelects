@@ -520,23 +520,26 @@ export class ParallelDecodeManager {
         // Escalating strategy
         if (attempt < 2) {
           // First 2 attempts: just wait briefly for async output callback
-          await new Promise(r => setTimeout(r, 5));
-        } else if (attempt < 5 && clipDecoder.decoder.decodeQueueSize > 0) {
-          // Attempts 2-4: flush decoder queue to force output
+          await new Promise(r => setTimeout(r, 8));
+        } else if (clipDecoder.decoder.decodeQueueSize > 0) {
+          // Flush decoder queue to force output
           log.debug(`"${clipDecoder.clipName}": Flushing decoder (attempt ${attempt + 1}, queue=${clipDecoder.decoder.decodeQueueSize})`);
           await clipDecoder.decoder.flush();
           clipDecoder.needsKeyframe = true;
         } else if (!clipDecoder.isDecoding) {
-          // Attempts 5+: re-decode with forceFlush (last resort)
-          log.debug(`"${clipDecoder.clipName}": Re-decode with flush (attempt ${attempt + 1})`);
+          // Queue is empty but frame not found — re-decode with forceFlush
+          log.debug(`"${clipDecoder.clipName}": Re-decode with flush (attempt ${attempt + 1}, queue empty)`);
           const decodeTarget = Math.max(targetSampleIndex + BUFFER_AHEAD_FRAMES, BUFFER_AHEAD_FRAMES);
           await this.decodeAhead(clipDecoder, decodeTarget, true, 0, targetSampleIndex);
         } else {
+          // Decoder is busy, wait for it
           await new Promise(r => setTimeout(r, 10));
         }
       }
 
-      // Final check - throw error if frame still not found
+      // Final check - warn but don't crash if frame is missing.
+      // getFrameForClip() will return the closest available frame,
+      // so a slightly off frame is better than aborting the entire export.
       let finalCheck = false;
       const finalTolerance = this.frameTolerance * 3; // 3x tolerance for final check
       for (const [, decodedFrame] of clipDecoder.frameBuffer) {
@@ -546,16 +549,14 @@ export class ParallelDecodeManager {
         }
       }
       if (!finalCheck) {
-        // Show available frames for debugging
         const availableFrames = Array.from(clipDecoder.frameBuffer.values())
           .map(f => (f.timestamp / 1_000_000).toFixed(3))
           .sort()
-          .slice(0, 10) // Show first 10
+          .slice(0, 10)
           .join(', ');
 
-        const errorMsg = `"${clipDecoder.clipName}": Frame at ${(targetTimestamp/1_000_000).toFixed(3)}s not ready after all attempts (buffer: ${clipDecoder.frameBuffer.size} frames, samples: ${clipDecoder.samples.length}, decoderState: ${clipDecoder.decoder.state}, available frames: [${availableFrames}...])`;
-        log.error(errorMsg);
-        throw new Error(`Parallel decode failed: ${errorMsg}`);
+        log.warn(`"${clipDecoder.clipName}": Frame at ${(targetTimestamp/1_000_000).toFixed(3)}s not exact match after all attempts (buffer: ${clipDecoder.frameBuffer.size} frames, decoderState: ${clipDecoder.decoder.state}, nearby: [${availableFrames}...]). Using closest available frame.`);
+        // Don't throw — getFrameForClip will return closest match
       }
     }
   }

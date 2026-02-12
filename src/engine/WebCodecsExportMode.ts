@@ -160,8 +160,20 @@ export class WebCodecsExportMode {
 
     // Decode from keyframe to start position + buffer
     const endDecode = log.time('decodeInitialSamples');
+    let needsKeyframeRecovery = false;
     for (let i = keyframeIndex; i < decodeEnd; i++) {
       const sample = allSamples[i];
+
+      // After a "key frame required" error, skip delta frames until next keyframe
+      if (needsKeyframeRecovery) {
+        if (!sample.is_sync) continue;
+        // Found keyframe — reset decoder and resume
+        decoder.reset();
+        decoder.configure(exportConfig);
+        needsKeyframeRecovery = false;
+        log.debug(`Keyframe recovery at sample ${i}`);
+      }
+
       const chunk = new EncodedVideoChunk({
         type: sample.is_sync ? 'key' : 'delta',
         timestamp: (sample.cts * 1_000_000) / sample.timescale,
@@ -171,7 +183,13 @@ export class WebCodecsExportMode {
       try {
         decoder.decode(chunk);
       } catch (e) {
-        log.warn(`Decode error at sample ${i}: ${e}`);
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg.includes('key frame')) {
+          needsKeyframeRecovery = true;
+          log.debug(`Key frame required at sample ${i}, scanning for next keyframe`);
+        } else {
+          log.warn(`Decode error at sample ${i}: ${e}`);
+        }
       }
     }
     this.player.setSampleIndex(decodeEnd);
@@ -317,28 +335,69 @@ export class WebCodecsExportMode {
     const maxCtsInBuffer = this.exportFramesCts.length > 0
       ? this.exportFramesCts[this.exportFramesCts.length - 1]
       : 0;
+    const minCtsInBuffer = this.exportFramesCts.length > 0
+      ? this.exportFramesCts[0]
+      : 0;
 
-    log.warn(`Frame not in buffer: target=${targetCts.toFixed(0)}, max=${maxCtsInBuffer.toFixed(0)}, bufferSize=${this.exportFramesCts.length}`);
+    log.warn(`Frame not in buffer: target=${targetCts.toFixed(0)}, range=[${minCtsInBuffer.toFixed(0)}-${maxCtsInBuffer.toFixed(0)}], bufferSize=${this.exportFramesCts.length}`);
 
-    if (targetCts > maxCtsInBuffer && this.player.getSampleIndex() < this.player.getSamples().length) {
-      log.info(`Decoding more frames: target ahead of buffer by ${((targetCts - maxCtsInBuffer)/1000).toFixed(1)}ms`);
-      await this.decodeMoreFrames(60);
+    // Decode more frames — either target is ahead of buffer, or within range but missing
+    if (this.player.getSamples().length > 0) {
+      if (targetCts > maxCtsInBuffer) {
+        log.info(`Decoding more: target ahead of buffer by ${((targetCts - maxCtsInBuffer)/1000).toFixed(1)}ms`);
+      } else {
+        // Target is within buffer range but frame is missing (likely failed to decode)
+        // Find the right sample position and re-decode that section
+        log.info(`Decoding more: target within buffer range but missing, re-decoding section`);
+        const allSamples = this.player.getSamples();
+        const timescale = this.player.getVideoTrackTimescale()!;
+        const targetTimeInTimescale = timeSeconds * timescale;
 
-      // Try again
+        // Find sample closest to target
+        let targetSampleIdx = 0;
+        let closestDiff = Infinity;
+        for (let i = 0; i < allSamples.length; i++) {
+          const diff = Math.abs(allSamples[i].cts - targetTimeInTimescale);
+          if (diff < closestDiff) {
+            closestDiff = diff;
+            targetSampleIdx = i;
+          }
+        }
+
+        // Back up to keyframe before target
+        let kfIdx = 0;
+        for (let i = targetSampleIdx; i >= 0; i--) {
+          if (allSamples[i].is_sync) {
+            kfIdx = i;
+            break;
+          }
+        }
+
+        // Set sample index to this keyframe so decodeMoreFrames starts from there
+        this.player.setSampleIndex(kfIdx);
+      }
+
+      await this.decodeMoreFrames(90);
+
+      // Try again with wider tolerance
       bestIndex = this.findClosestFrameIndex(targetCts);
       if (bestIndex >= 0 && bestIndex < this.exportFramesCts.length) {
         const cts = this.exportFramesCts[bestIndex];
-        this.player.setCurrentFrame(this.exportFrameBuffer.get(cts) || null);
-        this.exportCurrentIndex = bestIndex;
-        return;
+        const diff = Math.abs(cts - targetCts);
+        if (diff < frameDuration * 3) {
+          this.player.setCurrentFrame(this.exportFrameBuffer.get(cts) || null);
+          this.exportCurrentIndex = bestIndex;
+          return;
+        }
       }
     }
 
-    // Fallback: use last available frame
+    // Fallback: use closest available frame (better than last frame)
     if (this.exportFramesCts.length > 0) {
-      const lastCts = this.exportFramesCts[this.exportFramesCts.length - 1];
-      this.player.setCurrentFrame(this.exportFrameBuffer.get(lastCts) || null);
-      log.warn(`Using fallback frame at CTS ${lastCts.toFixed(0)} for target ${targetCts.toFixed(0)}`);
+      bestIndex = this.findClosestFrameIndex(targetCts);
+      const fallbackCts = this.exportFramesCts[Math.max(0, bestIndex)];
+      this.player.setCurrentFrame(this.exportFrameBuffer.get(fallbackCts) || null);
+      log.warn(`Using fallback frame at CTS ${fallbackCts.toFixed(0)} for target ${targetCts.toFixed(0)}`);
     } else {
       log.error(`No frames in buffer for seek to ${timeSeconds.toFixed(3)}s`);
     }
@@ -426,12 +485,29 @@ export class WebCodecsExportMode {
       log.debug('decodeMoreFrames: decoder reset and reconfigured with prefer-software');
     }
 
+    let needsKeyframeRecovery = false;
     for (let i = startIndex; i < endIndex; i++) {
-      if (!this.player.getDecoder()) {
+      const currentDecoder = this.player.getDecoder();
+      if (!currentDecoder) {
         log.warn(`decodeMoreFrames: decoder closed at sample ${i}`);
         break;
       }
       const sample = samples[i];
+
+      // After a "key frame required" error, skip delta frames until next keyframe
+      if (needsKeyframeRecovery) {
+        if (!sample.is_sync) continue;
+        // Found keyframe — reset decoder and resume
+        currentDecoder.reset();
+        const exportConfig: VideoDecoderConfig = {
+          ...this.player.getCodecConfig()!,
+          hardwareAcceleration: 'prefer-software',
+        };
+        currentDecoder.configure(exportConfig);
+        needsKeyframeRecovery = false;
+        log.debug(`decodeMoreFrames: keyframe recovery at sample ${i}`);
+      }
+
       const chunk = new EncodedVideoChunk({
         type: sample.is_sync ? 'key' : 'delta',
         timestamp: (sample.cts * 1_000_000) / sample.timescale,
@@ -439,9 +515,15 @@ export class WebCodecsExportMode {
         data: sample.data,
       });
       try {
-        this.player.getDecoder()!.decode(chunk);
+        currentDecoder.decode(chunk);
       } catch (e) {
-        log.warn(`Decode error at sample ${i}: ${e}`);
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg.includes('key frame')) {
+          needsKeyframeRecovery = true;
+          log.debug(`decodeMoreFrames: key frame required at sample ${i}, scanning for next keyframe`);
+        } else {
+          log.warn(`Decode error at sample ${i}: ${e}`);
+        }
       }
     }
     this.player.setSampleIndex(endIndex);
