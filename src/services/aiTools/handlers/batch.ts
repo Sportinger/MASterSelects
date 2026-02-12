@@ -7,7 +7,8 @@ import { executeToolInternal } from './index';
 
 interface BatchAction {
   tool: string;
-  args: Record<string, unknown>;
+  args?: Record<string, unknown>;
+  [key: string]: unknown;
 }
 
 interface BatchActionResult {
@@ -39,10 +40,20 @@ export async function handleExecuteBatch(
     const timelineStore = useTimelineStore.getState();
     const mediaStore = useMediaStore.getState();
 
+    // Support both { tool, args: {...} } and flat { tool, clipId, splitTime, ... }
+    let toolArgs: Record<string, unknown>;
+    if (action.args && typeof action.args === 'object') {
+      toolArgs = action.args;
+    } else {
+      // Extract args from flat format: everything except 'tool' and 'args'
+      const { tool: _tool, args: _args, ...rest } = action;
+      toolArgs = rest as Record<string, unknown>;
+    }
+
     try {
       const result = await executeToolInternal(
         action.tool,
-        action.args || {},
+        toolArgs,
         timelineStore,
         mediaStore
       );
