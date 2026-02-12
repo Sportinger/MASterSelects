@@ -292,6 +292,8 @@ export async function handleSplitClipEvenly(
   }
 
   // Split from END to START so earlier positions remain valid
+  // Use microtask breaks between splits to prevent call stack overflow
+  // (each splitClip triggers multiple set() calls + Zustand subscribers)
   for (let i = splitTimes.length - 1; i >= 0; i--) {
     const splitTime = splitTimes[i];
     const currentClips = useTimelineStore.getState().clips;
@@ -304,6 +306,7 @@ export async function handleSplitClipEvenly(
     if (targetClip) {
       useTimelineStore.getState().splitClip(targetClip.id, splitTime);
     }
+    await new Promise(resolve => setTimeout(resolve, 0));
   }
 
   return {
@@ -338,6 +341,7 @@ export async function handleSplitClipAtTimes(
   }
 
   // Split from END to START so earlier positions remain valid
+  // Use microtask breaks between splits to prevent call stack overflow
   for (let i = validTimes.length - 1; i >= 0; i--) {
     const splitTime = validTimes[i];
     const currentClips = useTimelineStore.getState().clips;
@@ -350,6 +354,7 @@ export async function handleSplitClipAtTimes(
     if (targetClip) {
       useTimelineStore.getState().splitClip(targetClip.id, splitTime);
     }
+    await new Promise(resolve => setTimeout(resolve, 0));
   }
 
   return {
