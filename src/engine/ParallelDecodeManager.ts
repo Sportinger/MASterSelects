@@ -557,6 +557,58 @@ export class ParallelDecodeManager {
   }
 
   /**
+   * Recreate a decoder that has entered the permanent 'closed' state due to an error.
+   * WebCodecs decoders cannot be reset() once closed - a full recreate is needed.
+   */
+  private recreateDecoder(clipDecoder: ClipDecoder): void {
+    log.warn(`${clipDecoder.clipName}: Recreating closed decoder`);
+
+    // Create new decoder with same callbacks
+    const newDecoder = new VideoDecoder({
+      output: (frame) => {
+        if (!this.isActive) {
+          frame.close();
+          return;
+        }
+        const cd = this.clipDecoders.get(clipDecoder.clipId);
+        if (cd) {
+          this.handleDecodedFrame(cd, frame);
+        } else {
+          frame.close();
+        }
+      },
+      error: (e) => {
+        if (!this.isActive) return;
+        log.error(`Decoder error for ${clipDecoder.clipName}: ${e.message || e}`);
+      },
+    });
+
+    // Configure with existing codec config
+    try {
+      newDecoder.configure(clipDecoder.codecConfig);
+    } catch (e) {
+      log.error(`${clipDecoder.clipName}: Failed to configure recreated decoder: ${e}`);
+      throw e;
+    }
+
+    // Replace decoder
+    clipDecoder.decoder = newDecoder;
+    clipDecoder.needsKeyframe = true;
+    clipDecoder.sampleIndex = 0;
+
+    // Clear stale buffer
+    for (const [, decodedFrame] of clipDecoder.frameBuffer) {
+      try { decodedFrame.frame.close(); } catch (_) { /* already closed */ }
+    }
+    clipDecoder.frameBuffer.clear();
+    clipDecoder.sortedTimestamps = [];
+    clipDecoder.oldestTimestamp = Infinity;
+    clipDecoder.newestTimestamp = -Infinity;
+
+    log.info(`${clipDecoder.clipName}: Decoder recreated successfully`);
+  }
+
+  /**
    * Decode frames ahead to fill buffer - optimized for throughput
    * Does NOT flush after every batch - frames arrive via output callback asynchronously
    * @param seekTargetSampleIndex - If provided, use this for seek keyframe calculation instead of targetSampleIndex
@@ -574,20 +626,20 @@ export class ParallelDecodeManager {
       return; // Let current decode continue, don't wait
     }
 
-    // Check if decoder is still valid
+    // Check if decoder is still valid - recreate if closed
     if (!clipDecoder.decoder || clipDecoder.decoder.state === 'closed') {
-      log.warn(`${clipDecoder.clipName}: Decoder is ${clipDecoder.decoder?.state || 'null'}, cannot decode`);
-      return;
+      log.warn(`${clipDecoder.clipName}: Decoder is ${clipDecoder.decoder?.state || 'null'}, recreating...`);
+      this.recreateDecoder(clipDecoder);
     }
 
     clipDecoder.isDecoding = true;
 
     clipDecoder.pendingDecode = (async () => {
       try {
-        // Double-check decoder state inside async block
+        // Double-check decoder state inside async block - recreate if closed
         if (!clipDecoder.decoder || clipDecoder.decoder.state === 'closed') {
-          log.warn(`${clipDecoder.clipName}: Decoder closed during decode setup`);
-          return;
+          log.warn(`${clipDecoder.clipName}: Decoder closed during decode setup, recreating...`);
+          this.recreateDecoder(clipDecoder);
         }
         // Check if we need to seek (target is far from current position - either ahead OR behind)
         // But ONLY seek if forceFlush is true (we actually need the frame now)
