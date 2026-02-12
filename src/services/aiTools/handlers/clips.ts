@@ -445,35 +445,19 @@ export async function handleSplitClipEvenly(
     return { success: false, error: `Parts must be an integer >= 2, got: ${parts}` };
   }
 
-  const trackId = clip.trackId;
   const clipStart = clip.startTime;
   const clipDuration = clip.duration;
   const clipName = clip.name;
   const partDuration = clipDuration / parts;
 
-  // Calculate split times (N-1 splits for N parts)
+  // Calculate N-1 split times
   const splitTimes: number[] = [];
   for (let i = 1; i < parts; i++) {
     splitTimes.push(clipStart + partDuration * i);
   }
 
-  // Split from END to START so earlier positions remain valid
-  // Use microtask breaks between splits to prevent call stack overflow
-  // (each splitClip triggers multiple set() calls + Zustand subscribers)
-  for (let i = splitTimes.length - 1; i >= 0; i--) {
-    const splitTime = splitTimes[i];
-    const currentClips = useTimelineStore.getState().clips;
-    const targetClip = currentClips.find(c =>
-      c.trackId === trackId &&
-      c.startTime <= splitTime - 0.001 &&
-      c.startTime + c.duration >= splitTime + 0.001
-    );
-
-    if (targetClip) {
-      useTimelineStore.getState().splitClip(targetClip.id, splitTime);
-    }
-    await new Promise(resolve => setTimeout(resolve, 0));
-  }
+  // Single-setState batch split — no stack overflow possible
+  splitClipBatch(clip, splitTimes);
 
   return {
     success: true,
@@ -493,7 +477,6 @@ export async function handleSplitClipAtTimes(
     return { success: false, error: `Clip not found: ${clipId}` };
   }
 
-  const trackId = clip.trackId;
   const clipStart = clip.startTime;
   const clipEnd = clip.startTime + clip.duration;
 
@@ -506,22 +489,8 @@ export async function handleSplitClipAtTimes(
     return { success: false, error: `No valid split times within clip range (${clipStart}s - ${clipEnd}s)` };
   }
 
-  // Split from END to START so earlier positions remain valid
-  // Use microtask breaks between splits to prevent call stack overflow
-  for (let i = validTimes.length - 1; i >= 0; i--) {
-    const splitTime = validTimes[i];
-    const currentClips = useTimelineStore.getState().clips;
-    const targetClip = currentClips.find(c =>
-      c.trackId === trackId &&
-      c.startTime <= splitTime - 0.001 &&
-      c.startTime + c.duration >= splitTime + 0.001
-    );
-
-    if (targetClip) {
-      useTimelineStore.getState().splitClip(targetClip.id, splitTime);
-    }
-    await new Promise(resolve => setTimeout(resolve, 0));
-  }
+  // Single-setState batch split — no stack overflow possible
+  splitClipBatch(clip, validTimes);
 
   return {
     success: true,
