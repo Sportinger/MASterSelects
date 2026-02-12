@@ -1,10 +1,176 @@
 // Clip Tool Handlers
 
 import { useTimelineStore } from '../../../stores/timeline';
+import { createVideoElement, createAudioElement, initWebCodecsPlayer } from '../../../stores/timeline/helpers/webCodecsHelpers';
+import type { TimelineClip } from '../../../types';
 import type { ToolResult } from '../types';
 import { formatClipInfo } from '../utils';
 
 type TimelineStore = ReturnType<typeof useTimelineStore.getState>;
+
+/**
+ * Deep clone serializable clip properties (effects, masks, transforms, etc.)
+ * Same logic as deepCloneClipProps in clipSlice.ts
+ */
+function deepCloneClipProps(clip: TimelineClip): Partial<TimelineClip> {
+  return {
+    transform: structuredClone(clip.transform),
+    effects: clip.effects.map(e => structuredClone(e)),
+    ...(clip.masks ? { masks: clip.masks.map(m => structuredClone(m)) } : {}),
+    ...(clip.textProperties ? { textProperties: structuredClone(clip.textProperties) } : {}),
+    ...(clip.analysis ? { analysis: structuredClone(clip.analysis) } : {}),
+  };
+}
+
+/**
+ * Clone video/audio source for a new clip part.
+ * Creates new HTMLMediaElements so each clip can seek independently.
+ * Returns the cloned source and fires async WebCodecs init.
+ */
+function cloneSourceForPart(
+  clip: TimelineClip,
+  partClipId: string
+): TimelineClip['source'] {
+  if (clip.source?.type === 'video' && clip.source.videoElement && clip.file) {
+    const newVideo = createVideoElement(clip.file);
+    const newSource = {
+      ...clip.source,
+      videoElement: newVideo,
+      webCodecsPlayer: undefined,
+    };
+    // Async WebCodecs init — updates the clip source once ready
+    initWebCodecsPlayer(newVideo, clip.name).then(player => {
+      if (player) {
+        const { clips: currentClips } = useTimelineStore.getState();
+        useTimelineStore.setState({
+          clips: currentClips.map(c => {
+            if (c.id !== partClipId || !c.source) return c;
+            return { ...c, source: { ...c.source, webCodecsPlayer: player } };
+          }),
+        });
+      }
+    });
+    return newSource;
+  } else if (clip.source?.type === 'audio' && clip.source.audioElement && clip.file) {
+    return {
+      ...clip.source,
+      audioElement: createAudioElement(clip.file),
+    };
+  }
+  return clip.source;
+}
+
+/**
+ * Clone linked audio source for a new clip part.
+ */
+function cloneLinkedSourceForPart(
+  linkedClip: TimelineClip,
+  partClipId: string
+): TimelineClip['source'] {
+  if (linkedClip.source?.type === 'audio' && linkedClip.source.audioElement) {
+    if (linkedClip.mixdownBuffer) {
+      // Async create audio from mixdown buffer
+      import('../../../services/compositionAudioMixer').then(({ compositionAudioMixer }) => {
+        const newAudio = compositionAudioMixer.createAudioElement(linkedClip.mixdownBuffer!);
+        const { clips: currentClips } = useTimelineStore.getState();
+        useTimelineStore.setState({
+          clips: currentClips.map(c => {
+            if (c.id !== partClipId || !c.source) return c;
+            return { ...c, source: { ...c.source, audioElement: newAudio } };
+          }),
+        });
+      });
+      return { ...linkedClip.source };
+    } else if (linkedClip.file && linkedClip.file.size > 0) {
+      return {
+        ...linkedClip.source,
+        audioElement: createAudioElement(linkedClip.file),
+      };
+    }
+  }
+  return linkedClip.source;
+}
+
+/**
+ * Split a clip into N parts at the given sorted split times (timeline-absolute).
+ * Creates all clips at once and applies with a single setState() call.
+ * Handles linked audio clips and source element cloning.
+ */
+function splitClipBatch(clip: TimelineClip, splitTimes: number[]): void {
+  const state = useTimelineStore.getState();
+  const allClips = state.clips;
+  const linkedClip = clip.linkedClipId
+    ? allClips.find(c => c.id === clip.linkedClipId)
+    : undefined;
+
+  const timestamp = Date.now();
+  const randomSuffix = Math.random().toString(36).substr(2, 5);
+
+  // Build boundaries: [clipStart, split1, split2, ..., clipEnd]
+  const boundaries = [clip.startTime, ...splitTimes, clip.startTime + clip.duration];
+  const newParts: TimelineClip[] = [];
+  const newLinkedParts: TimelineClip[] = [];
+
+  for (let i = 0; i < boundaries.length - 1; i++) {
+    const partStart = boundaries[i];
+    const partEnd = boundaries[i + 1];
+    const partDuration = partEnd - partStart;
+    const partInPoint = clip.inPoint + (partStart - clip.startTime);
+    const partOutPoint = partInPoint + partDuration;
+    const partId = `clip-${timestamp}-${randomSuffix}-p${i}`;
+    const linkedPartId = linkedClip ? `clip-${timestamp}-${randomSuffix}-lp${i}` : undefined;
+
+    // First part keeps the original source; subsequent parts get cloned sources
+    const partSource = i === 0 ? clip.source : cloneSourceForPart(clip, partId);
+
+    const partClip: TimelineClip = {
+      ...clip,
+      ...deepCloneClipProps(clip),
+      id: partId,
+      startTime: partStart,
+      duration: partDuration,
+      inPoint: partInPoint,
+      outPoint: partOutPoint,
+      linkedClipId: linkedPartId,
+      source: partSource,
+      transitionIn: i === 0 ? clip.transitionIn : undefined,
+      transitionOut: i === boundaries.length - 2 ? clip.transitionOut : undefined,
+    };
+    newParts.push(partClip);
+
+    // Create matching linked audio part
+    if (linkedClip && linkedPartId) {
+      const linkedInPoint = linkedClip.inPoint + (partStart - clip.startTime);
+      const linkedSource = i === 0 ? linkedClip.source : cloneLinkedSourceForPart(linkedClip, linkedPartId);
+
+      const linkedPartClip: TimelineClip = {
+        ...linkedClip,
+        ...deepCloneClipProps(linkedClip),
+        id: linkedPartId,
+        startTime: partStart,
+        duration: partDuration,
+        inPoint: linkedInPoint,
+        outPoint: linkedInPoint + partDuration,
+        linkedClipId: partId,
+        source: linkedSource,
+      };
+      newLinkedParts.push(linkedPartClip);
+    }
+  }
+
+  // Remove original clip (and linked) and add all new parts
+  const removedIds = new Set([clip.id, ...(linkedClip ? [linkedClip.id] : [])]);
+  const remainingClips = allClips.filter(c => !removedIds.has(c.id));
+  const finalClips = [...remainingClips, ...newParts, ...newLinkedParts];
+
+  // Single setState() call — no stack overflow possible
+  useTimelineStore.setState({
+    clips: finalClips,
+    selectedClipIds: new Set([newParts[newParts.length - 1].id]),
+  });
+  useTimelineStore.getState().updateDuration();
+  useTimelineStore.getState().invalidateCache();
+}
 
 export async function handleGetClipDetails(
   args: Record<string, unknown>,
@@ -279,35 +445,19 @@ export async function handleSplitClipEvenly(
     return { success: false, error: `Parts must be an integer >= 2, got: ${parts}` };
   }
 
-  const trackId = clip.trackId;
   const clipStart = clip.startTime;
   const clipDuration = clip.duration;
   const clipName = clip.name;
   const partDuration = clipDuration / parts;
 
-  // Calculate split times (N-1 splits for N parts)
+  // Calculate N-1 split times
   const splitTimes: number[] = [];
   for (let i = 1; i < parts; i++) {
     splitTimes.push(clipStart + partDuration * i);
   }
 
-  // Split from END to START so earlier positions remain valid
-  // Use microtask breaks between splits to prevent call stack overflow
-  // (each splitClip triggers multiple set() calls + Zustand subscribers)
-  for (let i = splitTimes.length - 1; i >= 0; i--) {
-    const splitTime = splitTimes[i];
-    const currentClips = useTimelineStore.getState().clips;
-    const targetClip = currentClips.find(c =>
-      c.trackId === trackId &&
-      c.startTime <= splitTime - 0.001 &&
-      c.startTime + c.duration >= splitTime + 0.001
-    );
-
-    if (targetClip) {
-      useTimelineStore.getState().splitClip(targetClip.id, splitTime);
-    }
-    await new Promise(resolve => setTimeout(resolve, 0));
-  }
+  // Single-setState batch split — no stack overflow possible
+  splitClipBatch(clip, splitTimes);
 
   return {
     success: true,
@@ -327,7 +477,6 @@ export async function handleSplitClipAtTimes(
     return { success: false, error: `Clip not found: ${clipId}` };
   }
 
-  const trackId = clip.trackId;
   const clipStart = clip.startTime;
   const clipEnd = clip.startTime + clip.duration;
 
@@ -340,22 +489,8 @@ export async function handleSplitClipAtTimes(
     return { success: false, error: `No valid split times within clip range (${clipStart}s - ${clipEnd}s)` };
   }
 
-  // Split from END to START so earlier positions remain valid
-  // Use microtask breaks between splits to prevent call stack overflow
-  for (let i = validTimes.length - 1; i >= 0; i--) {
-    const splitTime = validTimes[i];
-    const currentClips = useTimelineStore.getState().clips;
-    const targetClip = currentClips.find(c =>
-      c.trackId === trackId &&
-      c.startTime <= splitTime - 0.001 &&
-      c.startTime + c.duration >= splitTime + 0.001
-    );
-
-    if (targetClip) {
-      useTimelineStore.getState().splitClip(targetClip.id, splitTime);
-    }
-    await new Promise(resolve => setTimeout(resolve, 0));
-  }
+  // Single-setState batch split — no stack overflow possible
+  splitClipBatch(clip, validTimes);
 
   return {
     success: true,
