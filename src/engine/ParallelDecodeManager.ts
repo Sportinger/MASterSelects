@@ -234,6 +234,11 @@ export class ParallelDecodeManager {
         // Start sample extraction (non-blocking)
         mp4File.setExtractionOptions(videoTrack.id, null, { nbSamples: Infinity });
         mp4File.start();
+        // flush() must be called AFTER start() — signals "no more data" to MP4Box
+        // so it extracts all remaining samples. Previously this was called outside
+        // onReady which worked when onReady was sync, but now that onReady is async
+        // (due to await findSupportedHwAccel), flush() was racing ahead of start().
+        mp4File.flush();
 
         // RESOLVE IMMEDIATELY - don't wait for samples!
         clearTimeout(timeout);
@@ -265,12 +270,11 @@ export class ParallelDecodeManager {
         }
       };
 
-      // Feed buffer to MP4Box
+      // Feed buffer to MP4Box — flush() is called inside onReady after start()
       const mp4Buffer = clipInfo.fileData as MP4ArrayBuffer;
       mp4Buffer.fileStart = 0;
       try {
         mp4File.appendBuffer(mp4Buffer);
-        mp4File.flush();
       } catch (e) {
         clearTimeout(timeout);
         reject(new Error(`MP4Box appendBuffer failed for "${clipInfo.clipName}": ${e}`));
