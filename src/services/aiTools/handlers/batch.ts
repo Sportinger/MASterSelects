@@ -7,8 +7,7 @@ import { executeToolInternal } from './index';
 
 interface BatchAction {
   tool: string;
-  args?: Record<string, unknown>;
-  [key: string]: unknown;
+  args: Record<string, unknown>;
 }
 
 interface BatchActionResult {
@@ -40,20 +39,10 @@ export async function handleExecuteBatch(
     const timelineStore = useTimelineStore.getState();
     const mediaStore = useMediaStore.getState();
 
-    // Support both { tool, args: {...} } and flat { tool, clipId, splitTime, ... }
-    let toolArgs: Record<string, unknown>;
-    if (action.args && typeof action.args === 'object') {
-      toolArgs = action.args;
-    } else {
-      // Extract args from flat format: everything except 'tool' and 'args'
-      const { tool: _tool, args: _args, ...rest } = action;
-      toolArgs = rest as Record<string, unknown>;
-    }
-
     try {
       const result = await executeToolInternal(
         action.tool,
-        toolArgs,
+        action.args || {},
         timelineStore,
         mediaStore
       );
@@ -76,10 +65,6 @@ export async function handleExecuteBatch(
         error: error instanceof Error ? error.message : 'Unknown error',
       });
     }
-
-    // Microtask break between actions to prevent call stack overflow
-    // (each action triggers multiple Zustand set() calls + subscribers)
-    await new Promise(resolve => setTimeout(resolve, 0));
   }
 
   return {

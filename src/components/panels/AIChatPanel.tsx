@@ -59,9 +59,6 @@ CRITICAL RULES - FOLLOW EXACTLY:
 5. Be precise with time values - they are in seconds.
 6. The cutRangesFromClip tool handles everything automatically: sorting end-to-start, finding clips by position, and deleting the unwanted sections.
 7. When performing multiple editing operations (splits, deletes, moves, trims), ALWAYS use executeBatch to combine them into a single action. This is much faster than calling tools individually and creates a single undo point.
-8. The timeline state is already included in this prompt — do NOT call getTimelineState unless you specifically need updated clip IDs after performing edits.
-9. For splitting clips into equal parts, use splitClipEvenly. For splitting at specific times, use splitClipAtTimes. These are much faster than executeBatch with individual splitClip calls.
-10. For reordering/shuffling clips, use reorderClips with the clip IDs in the desired order. This is much faster and more reliable than executeBatch with multiple moveClip calls.
 
 CUT EVALUATION WORKFLOW:
 - Use getCutPreviewQuad(cutTime) to see 4 frames before and 4 frames after a potential cut point
