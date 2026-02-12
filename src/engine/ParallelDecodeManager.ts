@@ -92,10 +92,10 @@ interface ClipDecoder {
 }
 
 // Buffer settings - tuned for speed like After Effects
-const BUFFER_AHEAD_FRAMES = 30;   // Pre-decode this many frames ahead (1 second at 30fps)
-const MAX_BUFFER_SIZE = 120;      // Maximum frames to keep in buffer (increased for seeks)
-const DECODE_BATCH_SIZE = 60;     // Decode this many frames per batch - large for initial catchup
-const SEEK_BATCH_MULTIPLIER = 5;  // Multiplier for batch size after seeks (5x = 300 frames)
+const BUFFER_AHEAD_FRAMES = 60;   // Pre-decode this many frames ahead (1 second at 60fps)
+const MAX_BUFFER_SIZE = 300;      // Maximum frames to keep in buffer (5s at 60fps - must cover keyframe intervals)
+const DECODE_BATCH_SIZE = 90;     // Decode this many frames per batch - large for initial catchup
+const SEEK_BATCH_MULTIPLIER = 5;  // Multiplier for batch size after seeks (5x = 450 frames)
 
 export class ParallelDecodeManager {
   private clipDecoders: Map<string, ClipDecoder> = new Map();
