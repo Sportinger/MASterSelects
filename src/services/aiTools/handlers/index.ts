@@ -20,6 +20,8 @@ import {
   handleCutRangesFromClip,
   handleMoveClip,
   handleTrimClip,
+  handleSplitClipEvenly,
+  handleSplitClipAtTimes,
   handleSelectClips,
   handleClearSelection,
 } from './clips';
@@ -69,6 +71,8 @@ const timelineHandlers: Record<string, (args: Record<string, unknown>, store: Re
   cutRangesFromClip: handleCutRangesFromClip,
   moveClip: handleMoveClip,
   trimClip: handleTrimClip,
+  splitClipEvenly: handleSplitClipEvenly,
+  splitClipAtTimes: handleSplitClipAtTimes,
   selectClips: handleSelectClips,
   clearSelection: handleClearSelection,
   createTrack: handleCreateTrack,
@@ -135,6 +139,8 @@ export {
   handleCutRangesFromClip,
   handleMoveClip,
   handleTrimClip,
+  handleSplitClipEvenly,
+  handleSplitClipAtTimes,
   handleSelectClips,
   handleClearSelection,
   // Tracks

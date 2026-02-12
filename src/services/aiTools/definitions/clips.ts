@@ -184,6 +184,49 @@ export const clipToolDefinitions: ToolDefinition[] = [
   {
     type: 'function',
     function: {
+      name: 'splitClipEvenly',
+      description: 'Split a clip into N equal parts. This is much faster than using executeBatch with individual splitClip calls. Handles linked audio automatically.',
+      parameters: {
+        type: 'object',
+        properties: {
+          clipId: {
+            type: 'string',
+            description: 'The ID of the clip to split',
+          },
+          parts: {
+            type: 'number',
+            description: 'Number of equal parts to split into (minimum 2)',
+          },
+        },
+        required: ['clipId', 'parts'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'splitClipAtTimes',
+      description: 'Split a clip at multiple specific times in a single operation. This is much faster than using executeBatch with individual splitClip calls. Handles linked audio and changing clip IDs automatically.',
+      parameters: {
+        type: 'object',
+        properties: {
+          clipId: {
+            type: 'string',
+            description: 'The ID of the clip to split',
+          },
+          times: {
+            type: 'array',
+            items: { type: 'number' },
+            description: 'Array of timeline times (in seconds) where to split the clip',
+          },
+        },
+        required: ['clipId', 'times'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'selectClips',
       description: 'Select one or more clips in the timeline.',
       parameters: {

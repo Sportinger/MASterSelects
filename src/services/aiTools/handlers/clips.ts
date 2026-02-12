@@ -264,6 +264,100 @@ export async function handleTrimClip(
   return { success: true, data: { clipId, inPoint, outPoint, newDuration: outPoint - inPoint } };
 }
 
+export async function handleSplitClipEvenly(
+  args: Record<string, unknown>,
+  timelineStore: TimelineStore
+): Promise<ToolResult> {
+  const clipId = args.clipId as string;
+  const parts = args.parts as number;
+
+  const clip = timelineStore.clips.find(c => c.id === clipId);
+  if (!clip) {
+    return { success: false, error: `Clip not found: ${clipId}` };
+  }
+  if (parts < 2 || !Number.isInteger(parts)) {
+    return { success: false, error: `Parts must be an integer >= 2, got: ${parts}` };
+  }
+
+  const trackId = clip.trackId;
+  const clipStart = clip.startTime;
+  const clipDuration = clip.duration;
+  const clipName = clip.name;
+  const partDuration = clipDuration / parts;
+
+  // Calculate split times (N-1 splits for N parts)
+  const splitTimes: number[] = [];
+  for (let i = 1; i < parts; i++) {
+    splitTimes.push(clipStart + partDuration * i);
+  }
+
+  // Split from END to START so earlier positions remain valid
+  for (let i = splitTimes.length - 1; i >= 0; i--) {
+    const splitTime = splitTimes[i];
+    const currentClips = useTimelineStore.getState().clips;
+    const targetClip = currentClips.find(c =>
+      c.trackId === trackId &&
+      c.startTime <= splitTime - 0.001 &&
+      c.startTime + c.duration >= splitTime + 0.001
+    );
+
+    if (targetClip) {
+      useTimelineStore.getState().splitClip(targetClip.id, splitTime);
+    }
+  }
+
+  return {
+    success: true,
+    data: { parts, splitTimes, clipName, partDuration },
+  };
+}
+
+export async function handleSplitClipAtTimes(
+  args: Record<string, unknown>,
+  timelineStore: TimelineStore
+): Promise<ToolResult> {
+  const clipId = args.clipId as string;
+  const times = args.times as number[];
+
+  const clip = timelineStore.clips.find(c => c.id === clipId);
+  if (!clip) {
+    return { success: false, error: `Clip not found: ${clipId}` };
+  }
+
+  const trackId = clip.trackId;
+  const clipStart = clip.startTime;
+  const clipEnd = clip.startTime + clip.duration;
+
+  // Sort and filter to valid times within clip range
+  const validTimes = [...times]
+    .sort((a, b) => a - b)
+    .filter(t => t > clipStart + 0.001 && t < clipEnd - 0.001);
+
+  if (validTimes.length === 0) {
+    return { success: false, error: `No valid split times within clip range (${clipStart}s - ${clipEnd}s)` };
+  }
+
+  // Split from END to START so earlier positions remain valid
+  for (let i = validTimes.length - 1; i >= 0; i--) {
+    const splitTime = validTimes[i];
+    const currentClips = useTimelineStore.getState().clips;
+    const targetClip = currentClips.find(c =>
+      c.trackId === trackId &&
+      c.startTime <= splitTime - 0.001 &&
+      c.startTime + c.duration >= splitTime + 0.001
+    );
+
+    if (targetClip) {
+      useTimelineStore.getState().splitClip(targetClip.id, splitTime);
+    }
+  }
+
+  return {
+    success: true,
+    data: { splitCount: validTimes.length, splitTimes: validTimes, resultingParts: validTimes.length + 1 },
+  };
+}
+
 export async function handleSelectClips(
   args: Record<string, unknown>,
   timelineStore: TimelineStore
