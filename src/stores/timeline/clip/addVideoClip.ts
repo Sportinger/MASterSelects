@@ -3,7 +3,6 @@
 
 import type { TimelineClip, TimelineTrack } from '../../../types';
 import { DEFAULT_TRANSFORM, calculateNativeScale } from '../constants';
-import { generateVideoThumbnails } from '../helpers/thumbnailHelpers';
 import { useMediaStore } from '../../mediaStore';
 import { useSettingsStore } from '../../settingsStore';
 import { NativeDecoder } from '../../../services/nativeHelper';
@@ -22,6 +21,7 @@ import { updateClipById } from '../helpers/clipStateHelpers';
 import { detectVideoAudio } from '../helpers/audioDetection';
 import { getMP4MetadataFast, estimateDurationFromFileSize } from '../helpers/mp4MetadataHelper';
 import { Logger } from '../../../services/logger';
+import { thumbnailCache } from '../../../services/thumbnailCache';
 
 const log = Logger.create('AddVideoClip');
 
@@ -296,12 +296,10 @@ export async function loadVideoMedia(params: LoadVideoMediaParams): Promise<void
     });
   }
 
-  // Generate thumbnails in background (non-blocking) - only if enabled and not large file
+  // Preload thumbnails into on-demand cache (non-blocking)
   const isLargeFile = shouldSkipWaveform(file);
-  if (thumbnailsEnabled && !isLargeFile && video) {
-    generateThumbnailsAsync(video, naturalDuration, clipId, file.name, setClips);
-  } else if (nativeDecoder) {
-    log.debug('Skipping thumbnails for NativeDecoder file', { file: file.name });
+  if (thumbnailsEnabled && !isLargeFile && mediaFileId) {
+    thumbnailCache.preloadClip(mediaFileId, naturalDuration, file);
   }
 
   // Load audio for linked clip (skip for NativeDecoder - browser can't decode ProRes/DNxHD audio)
@@ -320,40 +318,6 @@ export async function loadVideoMedia(params: LoadVideoMediaParams): Promise<void
   const mediaStore = useMediaStore.getState();
   if (!mediaStore.getFileByName(file.name)) {
     mediaStore.importFile(file);
-  }
-}
-
-/**
- * Generate thumbnails asynchronously without blocking.
- */
-async function generateThumbnailsAsync(
-  video: HTMLVideoElement,
-  duration: number,
-  clipId: string,
-  fileName: string,
-  setClips: (updater: (clips: TimelineClip[]) => TimelineClip[]) => void
-): Promise<void> {
-  try {
-    // Wait for video to be ready for thumbnail generation
-    await new Promise<void>((resolve) => {
-      if (video.readyState >= 2) {
-        resolve();
-      } else {
-        video.oncanplay = () => resolve();
-        setTimeout(resolve, 2000); // Timeout fallback
-      }
-    });
-
-    log.debug('Starting thumbnail generation', { file: fileName });
-    const thumbnails = await generateVideoThumbnails(video, duration);
-    log.debug('Thumbnails complete', { count: thumbnails.length, file: fileName });
-
-    setClips(clips => clips.map(c => c.id === clipId ? { ...c, thumbnails } : c));
-
-    // Seek back to start
-    video.currentTime = 0;
-  } catch (e) {
-    log.warn('Thumbnail generation failed', e);
   }
 }
 

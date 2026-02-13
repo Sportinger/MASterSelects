@@ -1,6 +1,6 @@
 // TimelineClip component - Clip rendering within tracks
 
-import { memo, useRef } from 'react';
+import { memo, useEffect, useRef } from 'react';
 import type { TimelineClipProps } from './types';
 import { THUMB_WIDTH } from './constants';
 import { useTimelineStore } from '../../stores/timeline';
@@ -11,6 +11,7 @@ import { Logger } from '../../services/logger';
 import { ClipWaveform } from './components/ClipWaveform';
 import { ClipAnalysisOverlay } from './components/ClipAnalysisOverlay';
 import { FadeCurve } from './components/FadeCurve';
+import { thumbnailCache, useThumbnailCacheStore, quantizeTime } from '../../services/thumbnailCache';
 
 const log = Logger.create('TimelineClip');
 
@@ -59,6 +60,11 @@ function TimelineClipComponent({
   const thumbnails = clip.thumbnails || [];
   const thumbnailsEnabled = useTimelineStore(s => s.thumbnailsEnabled);
   const waveformsEnabled = useTimelineStore(s => s.waveformsEnabled);
+
+  // On-demand thumbnail cache
+  const mediaFileId = clip.mediaFileId || clip.source?.mediaFileId;
+  // Subscribe to cache version to trigger re-render when thumbnails are generated
+  useThumbnailCacheStore(s => s.versions[mediaFileId || ''] || 0);
 
   // Subscribe to playhead position only when cut tool is active (avoids re-renders during playback)
   const playheadPosition = useTimelineStore((state) =>
@@ -237,6 +243,26 @@ function TimelineClipComponent({
 
   // Calculate how many thumbnails to show based on clip width
   const visibleThumbs = Math.max(1, Math.ceil(width / THUMB_WIDTH));
+
+  // Request on-demand thumbnails for visible time range
+  useEffect(() => {
+    if (!mediaFileId || isAudioClip || !thumbnailsEnabled) return;
+    if (clip.isComposition && clip.clipSegments && clip.clipSegments.length > 0) return;
+
+    // Get the File object from mediaStore
+    const mediaFile = useMediaStore.getState().files.find(f => f.id === mediaFileId);
+    const file = mediaFile?.file || clip.file;
+    if (!file) return;
+
+    const times: number[] = [];
+    for (let i = 0; i < visibleThumbs; i++) {
+      const positionInTrimmed = (i + 0.5) / visibleThumbs;
+      const time = displayInPoint + positionInTrimmed * (displayOutPoint - displayInPoint);
+      times.push(quantizeTime(time, zoom));
+    }
+
+    thumbnailCache.requestThumbnails(mediaFileId, times, file, 'high');
+  }, [mediaFileId, displayInPoint, displayOutPoint, visibleThumbs, zoom, isAudioClip, thumbnailsEnabled, clip.isComposition, clip.clipSegments, clip.file]);
 
   // Track filtering
   if (isDragging && clipDrag && clipDrag.currentTrackId !== trackId) {
@@ -530,27 +556,35 @@ function TimelineClipComponent({
         </div>
       )}
       {/* Regular thumbnail filmstrip - for non-composition clips */}
-      {thumbnailsEnabled && thumbnails.length > 0 && !isAudioClip && !(clip.isComposition && clip.clipSegments && clip.clipSegments.length > 0) && (
+      {thumbnailsEnabled && !isAudioClip && !(clip.isComposition && clip.clipSegments && clip.clipSegments.length > 0) && (
         <div className="clip-thumbnails">
           {Array.from({ length: visibleThumbs }).map((_, i) => {
-            // Calculate thumbnail index based on displayInPoint/displayOutPoint (trim-aware, live during trim)
-            const naturalDuration = clip.source?.naturalDuration || clip.duration;
-            const startRatio = displayInPoint / naturalDuration;
-            const endRatio = displayOutPoint / naturalDuration;
-            // Map visible position to the trimmed range in source media
-            const positionInTrimmed = i / visibleThumbs;
-            const sourceRatio = startRatio + positionInTrimmed * (endRatio - startRatio);
-            const thumbIndex = Math.floor(sourceRatio * thumbnails.length);
-            const thumb = thumbnails[Math.min(Math.max(0, thumbIndex), thumbnails.length - 1)];
-            return (
-              <img
-                key={i}
-                src={thumb}
-                alt=""
-                className="clip-thumb"
-                draggable={false}
-              />
-            );
+            // Calculate exact source time for this thumbnail position
+            const positionInTrimmed = (i + 0.5) / visibleThumbs;
+            const time = displayInPoint + positionInTrimmed * (displayOutPoint - displayInPoint);
+
+            // Try on-demand cache first
+            const cachedThumb = mediaFileId ? thumbnailCache.getThumbnail(mediaFileId, time, zoom) : null;
+
+            if (cachedThumb) {
+              return (
+                <img key={i} src={cachedThumb} alt="" className="clip-thumb" draggable={false} />
+              );
+            }
+
+            // Fallback to legacy clip.thumbnails array
+            if (thumbnails.length > 0) {
+              const naturalDuration = clip.source?.naturalDuration || clip.duration;
+              const sourceRatio = time / naturalDuration;
+              const thumbIndex = Math.floor(sourceRatio * thumbnails.length);
+              const thumb = thumbnails[Math.min(Math.max(0, thumbIndex), thumbnails.length - 1)];
+              return (
+                <img key={i} src={thumb} alt="" className="clip-thumb" draggable={false} />
+              );
+            }
+
+            // No thumbnail available yet — placeholder
+            return <div key={i} className="clip-thumb clip-thumb-placeholder" />;
           })}
         </div>
       )}

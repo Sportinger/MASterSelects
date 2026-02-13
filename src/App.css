@@ -5055,6 +5055,12 @@ input[type="checkbox"] {
   pointer-events: none;
 }
 
+.clip-thumb-placeholder {
+  background: #1a1a2e;
+  flex: 1;
+  min-width: 0;
+}
+
 .timeline-clip.video .clip-thumbnails,
 .timeline-clip.image .clip-thumbnails {
   background: rgba(0, 0, 0, 0.3);
