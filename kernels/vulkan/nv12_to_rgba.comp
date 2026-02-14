@@ -1,0 +1,123 @@
+/**
+ * nv12_to_rgba.comp -- NV12 to RGBA Color Space Conversion (Vulkan Compute)
+ *
+ * Vulkan compute shader equivalent of the CUDA nv12_to_rgba kernel.
+ * Converts NV12 hardware decoder output to RGBA using the BT.709 matrix.
+ *
+ * NV12 layout:
+ *   - Y plane:  width x height bytes (1 byte per pixel, luma)
+ *   - UV plane: width x (height/2) bytes (interleaved Cb, Cr pairs)
+ *
+ * BT.709 YUV -> RGB:
+ *   R = 1.164 * (Y - 16) + 1.793 * (V - 128)
+ *   G = 1.164 * (Y - 16) - 0.213 * (U - 128) - 0.533 * (V - 128)
+ *   B = 1.164 * (Y - 16) + 2.112 * (U - 128)
+ *   A = 255
+ *
+ * Binding layout:
+ *   set 0, binding 0: Y plane  (readonly storage buffer)
+ *   set 0, binding 1: UV plane (readonly storage buffer)
+ *   set 0, binding 2: RGBA output (writeonly storage buffer)
+ *
+ * Push constants:
+ *   width, height, y_pitch, uv_pitch, out_pitch
+ */
+
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// ---------------------------------------------------------------------------
+// Storage buffers — byte-addressable via uint arrays
+// ---------------------------------------------------------------------------
+layout(set = 0, binding = 0) readonly buffer YPlane {
+    uint y_data[];
+};
+
+layout(set = 0, binding = 1) readonly buffer UVPlane {
+    uint uv_data[];
+};
+
+layout(set = 0, binding = 2) writeonly buffer RGBAOut {
+    uint rgba_data[];
+};
+
+// ---------------------------------------------------------------------------
+// Push constants — frame dimensions and byte strides
+// ---------------------------------------------------------------------------
+layout(push_constant) uniform PushConstants {
+    int width;
+    int height;
+    int y_pitch;
+    int uv_pitch;
+    int out_pitch;
+};
+
+// ---------------------------------------------------------------------------
+// Helper: read a single byte from a uint[] buffer at a byte offset
+// ---------------------------------------------------------------------------
+uint read_byte(readonly uint[] buf, int byte_offset)
+{
+    int word_index = byte_offset >> 2;         // byte_offset / 4
+    int byte_lane  = byte_offset & 3;          // byte_offset % 4
+    return (buf[word_index] >> (byte_lane * 8)) & 0xFFu;
+}
+
+// ---------------------------------------------------------------------------
+// Helper: write a packed RGBA pixel (4 bytes) to the output buffer
+// ---------------------------------------------------------------------------
+void write_rgba(int byte_offset, uint r, uint g, uint b, uint a)
+{
+    int word_index = byte_offset >> 2;
+    uint packed = (a << 24) | (b << 16) | (g << 8) | r;
+    rgba_data[word_index] = packed;
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+void main()
+{
+    int x = int(gl_GlobalInvocationID.x);
+    int y = int(gl_GlobalInvocationID.y);
+
+    if (x >= width || y >= height)
+        return;
+
+    // -------------------------------------------------------------------
+    // 1. Fetch luma (full resolution)
+    // -------------------------------------------------------------------
+    float Y = float(read_byte(y_data, y * y_pitch + x));
+
+    // -------------------------------------------------------------------
+    // 2. Fetch chroma (half resolution, interleaved U,V)
+    //    UV row = y/2, column pair starts at even x
+    // -------------------------------------------------------------------
+    int uv_row = y >> 1;
+    int uv_col = x & (~1);          // align to even column
+    int uv_offset = uv_row * uv_pitch + uv_col;
+
+    float U = float(read_byte(uv_data, uv_offset));
+    float V = float(read_byte(uv_data, uv_offset + 1));
+
+    // -------------------------------------------------------------------
+    // 3. BT.709 conversion
+    // -------------------------------------------------------------------
+    float C = 1.164 * (Y - 16.0);
+    float D = U - 128.0;
+    float E = V - 128.0;
+
+    float R = C + 1.793 * E;
+    float G = C - 0.213 * D - 0.533 * E;
+    float B = C + 2.112 * D;
+
+    // -------------------------------------------------------------------
+    // 4. Clamp to [0, 255] and write output
+    // -------------------------------------------------------------------
+    uint r = clamp(uint(R + 0.5), 0u, 255u);
+    uint g = clamp(uint(G + 0.5), 0u, 255u);
+    uint b = clamp(uint(B + 0.5), 0u, 255u);
+
+    int out_offset = y * out_pitch + x * 4;
+    write_rgba(out_offset, r, g, b, 255u);
+}

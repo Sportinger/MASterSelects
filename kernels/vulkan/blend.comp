@@ -1,0 +1,240 @@
+/**
+ * blend.comp -- Blend Mode Compositing Shader (Vulkan Compute)
+ *
+ * Vulkan compute shader equivalent of the CUDA blend_rgba kernel.
+ * Applies one of several photoshop-style blend modes to composite a
+ * foreground RGBA layer onto a background RGBA layer with a global opacity
+ * multiplier.
+ *
+ * Supported blend modes:
+ *   0 = Normal     (standard source-over)
+ *   1 = Multiply   (fg * bg)
+ *   2 = Screen     (1 - (1-fg)*(1-bg))
+ *   3 = Overlay    (Multiply if bg < 0.5, Screen if bg >= 0.5)
+ *   4 = Add        (fg + bg, clamped)
+ *   5 = Subtract   (bg - fg, clamped)
+ *
+ * All blend math is in normalized [0, 1] float space. BT.709 color space
+ * assumed (straight sRGB values).
+ *
+ * Formula:
+ *   blended_rgb = blend_func(fg.rgb, bg.rgb)
+ *   fg_a_eff    = (fg.a / 255) * opacity
+ *   out.rgb     = lerp(bg.rgb, blended_rgb, fg_a_eff) * 255
+ *   out.a       = (fg_a_eff + (bg.a/255) * (1 - fg_a_eff)) * 255
+ *
+ * Binding layout:
+ *   set 0, binding 0: Foreground RGBA (readonly storage buffer)
+ *   set 0, binding 1: Background RGBA (readonly storage buffer)
+ *   set 0, binding 2: Output RGBA     (writeonly storage buffer)
+ *
+ * Push constants:
+ *   width, height, fg_pitch, bg_pitch, out_pitch, blend_mode, opacity
+ */
+
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// ---------------------------------------------------------------------------
+// Storage buffers
+// ---------------------------------------------------------------------------
+layout(set = 0, binding = 0) readonly buffer Foreground {
+    uint fg_data[];
+};
+
+layout(set = 0, binding = 1) readonly buffer Background {
+    uint bg_data[];
+};
+
+layout(set = 0, binding = 2) writeonly buffer Output {
+    uint out_data[];
+};
+
+// ---------------------------------------------------------------------------
+// Push constants
+// ---------------------------------------------------------------------------
+layout(push_constant) uniform PushConstants {
+    int   width;
+    int   height;
+    int   fg_pitch;
+    int   bg_pitch;
+    int   out_pitch;
+    int   blend_mode;
+    float opacity;
+};
+
+// ---------------------------------------------------------------------------
+// Helper: read a single byte from a uint[] buffer at a byte offset
+// ---------------------------------------------------------------------------
+uint read_byte(readonly uint[] buf, int byte_offset)
+{
+    int word_index = byte_offset >> 2;
+    int byte_lane  = byte_offset & 3;
+    return (buf[word_index] >> (byte_lane * 8)) & 0xFFu;
+}
+
+// ---------------------------------------------------------------------------
+// Helper: read an RGBA pixel as four floats from a uint[] buffer
+// ---------------------------------------------------------------------------
+vec4 read_rgba(readonly uint[] buf, int byte_offset)
+{
+    return vec4(
+        float(read_byte(buf, byte_offset + 0)),
+        float(read_byte(buf, byte_offset + 1)),
+        float(read_byte(buf, byte_offset + 2)),
+        float(read_byte(buf, byte_offset + 3))
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Helper: write a packed RGBA pixel to the output buffer
+// ---------------------------------------------------------------------------
+void write_rgba_pixel(int byte_offset, uvec4 color)
+{
+    int word_index = byte_offset >> 2;
+    uint packed = (color.a << 24) | (color.b << 16) | (color.g << 8) | color.r;
+    out_data[word_index] = packed;
+}
+
+// ---------------------------------------------------------------------------
+// Blend mode functions — normalized [0, 1] per channel
+// ---------------------------------------------------------------------------
+
+float blend_normal(float fg, float bg)
+{
+    return fg;
+}
+
+float blend_multiply(float fg, float bg)
+{
+    return fg * bg;
+}
+
+float blend_screen(float fg, float bg)
+{
+    return 1.0 - (1.0 - fg) * (1.0 - bg);
+}
+
+float blend_overlay(float fg, float bg)
+{
+    if (bg < 0.5)
+        return 2.0 * fg * bg;
+    else
+        return 1.0 - 2.0 * (1.0 - fg) * (1.0 - bg);
+}
+
+float blend_add(float fg, float bg)
+{
+    return min(fg + bg, 1.0);
+}
+
+float blend_subtract(float fg, float bg)
+{
+    return max(bg - fg, 0.0);
+}
+
+// ---------------------------------------------------------------------------
+// Dispatch blend by mode index
+// ---------------------------------------------------------------------------
+vec3 apply_blend(vec3 fg, vec3 bg, int mode)
+{
+    vec3 result;
+
+    switch (mode)
+    {
+        case 0:  // Normal
+            result = fg;
+            break;
+        case 1:  // Multiply
+            result = vec3(
+                blend_multiply(fg.r, bg.r),
+                blend_multiply(fg.g, bg.g),
+                blend_multiply(fg.b, bg.b)
+            );
+            break;
+        case 2:  // Screen
+            result = vec3(
+                blend_screen(fg.r, bg.r),
+                blend_screen(fg.g, bg.g),
+                blend_screen(fg.b, bg.b)
+            );
+            break;
+        case 3:  // Overlay
+            result = vec3(
+                blend_overlay(fg.r, bg.r),
+                blend_overlay(fg.g, bg.g),
+                blend_overlay(fg.b, bg.b)
+            );
+            break;
+        case 4:  // Add
+            result = vec3(
+                blend_add(fg.r, bg.r),
+                blend_add(fg.g, bg.g),
+                blend_add(fg.b, bg.b)
+            );
+            break;
+        case 5:  // Subtract
+            result = vec3(
+                blend_subtract(fg.r, bg.r),
+                blend_subtract(fg.g, bg.g),
+                blend_subtract(fg.b, bg.b)
+            );
+            break;
+        default:
+            result = fg;
+            break;
+    }
+
+    return result;
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+void main()
+{
+    int x = int(gl_GlobalInvocationID.x);
+    int y = int(gl_GlobalInvocationID.y);
+
+    if (x >= width || y >= height)
+        return;
+
+    // -------------------------------------------------------------------
+    // 1. Read foreground and background pixels (normalized to [0, 1])
+    // -------------------------------------------------------------------
+    int fg_offset = y * fg_pitch + x * 4;
+    int bg_offset = y * bg_pitch + x * 4;
+
+    vec4 fg = read_rgba(fg_data, fg_offset) / 255.0;
+    vec4 bg = read_rgba(bg_data, bg_offset) / 255.0;
+
+    // -------------------------------------------------------------------
+    // 2. Apply blend mode (in normalized space)
+    // -------------------------------------------------------------------
+    vec3 blended = apply_blend(fg.rgb, bg.rgb, blend_mode);
+
+    // -------------------------------------------------------------------
+    // 3. Composite with alpha
+    //    lerp(bg, blended, fg_a_eff) for RGB
+    //    source-over for alpha
+    // -------------------------------------------------------------------
+    float fg_a_eff = fg.a * opacity;
+    float inv_a    = 1.0 - fg_a_eff;
+
+    vec3 out_rgb = blended * fg_a_eff + bg.rgb * inv_a;
+    float out_a  = fg_a_eff + bg.a * inv_a;
+
+    // -------------------------------------------------------------------
+    // 4. Convert back to [0, 255], clamp, and write output
+    // -------------------------------------------------------------------
+    uvec4 result = uvec4(
+        clamp(uint(out_rgb.r * 255.0 + 0.5), 0u, 255u),
+        clamp(uint(out_rgb.g * 255.0 + 0.5), 0u, 255u),
+        clamp(uint(out_rgb.b * 255.0 + 0.5), 0u, 255u),
+        clamp(uint(out_a * 255.0 + 0.5), 0u, 255u)
+    );
+
+    int out_offset = y * out_pitch + x * 4;
+    write_rgba_pixel(out_offset, result);
+}

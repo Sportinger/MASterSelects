@@ -1,0 +1,50 @@
+[workspace]
+resolver = "2"
+members = [
+    "native-ui",
+    "crates/common",
+    "crates/gpu-hal",
+    "crates/demux",
+    "crates/decoder",
+]
+
+[workspace.dependencies]
+# GPU — CUDA
+cudarc = { version = "0.16", features = ["cuda-version-from-build-system"] }
+
+# GPU — Vulkan
+ash = "0.38"
+gpu-allocator = "0.27"
+
+# UI
+eframe = "0.31"
+egui = "0.31"
+egui_extras = "0.31"
+
+# Threading
+crossbeam = "0.8"
+parking_lot = "0.12"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Error Handling
+thiserror = "2"
+anyhow = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# Byte Parsing (for Demuxer)
+byteorder = "1"
+
+# Dynamic library loading
+libloading = "0.8"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

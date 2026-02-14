@@ -1,0 +1,192 @@
+/**
+ * transform.comp -- 2D Affine Transform Shader (Vulkan Compute)
+ *
+ * Vulkan compute shader equivalent of the CUDA transform_rgba kernel.
+ * Applies a 2D affine transformation (translation, scale, rotation) to an
+ * RGBA image with bilinear interpolation.
+ *
+ * The shader works in destination-to-source mapping: for each output pixel
+ * it computes the corresponding source coordinate via the inverse transform,
+ * then samples with bilinear interpolation. Out-of-bounds pixels are set to
+ * transparent black (0, 0, 0, 0).
+ *
+ * Transform order (applied to source coordinates):
+ *   1. Translate so anchor is at origin
+ *   2. Scale by (sx, sy)
+ *   3. Rotate by `rotation` radians (counter-clockwise)
+ *   4. Translate back by anchor
+ *   5. Translate by (tx, ty)
+ *
+ * Binding layout:
+ *   set 0, binding 0: Source RGBA      (readonly storage buffer)
+ *   set 0, binding 1: Destination RGBA (writeonly storage buffer)
+ *
+ * Push constants:
+ *   src_width, src_height, dst_width, dst_height,
+ *   src_pitch, dst_pitch,
+ *   tx, ty, sx, sy, rotation, anchor_x, anchor_y
+ */
+
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// ---------------------------------------------------------------------------
+// Storage buffers
+// ---------------------------------------------------------------------------
+layout(set = 0, binding = 0) readonly buffer Source {
+    uint src_data[];
+};
+
+layout(set = 0, binding = 1) writeonly buffer Destination {
+    uint dst_data[];
+};
+
+// ---------------------------------------------------------------------------
+// Push constants
+// ---------------------------------------------------------------------------
+layout(push_constant) uniform PushConstants {
+    int   src_width;
+    int   src_height;
+    int   dst_width;
+    int   dst_height;
+    int   src_pitch;
+    int   dst_pitch;
+    float tx;
+    float ty;
+    float sx;
+    float sy;
+    float rotation;
+    float anchor_x;
+    float anchor_y;
+};
+
+// ---------------------------------------------------------------------------
+// Helper: read a single byte from a uint[] buffer at a byte offset
+// ---------------------------------------------------------------------------
+uint read_byte(readonly uint[] buf, int byte_offset)
+{
+    int word_index = byte_offset >> 2;
+    int byte_lane  = byte_offset & 3;
+    return (buf[word_index] >> (byte_lane * 8)) & 0xFFu;
+}
+
+// ---------------------------------------------------------------------------
+// Helper: read an RGBA pixel as four floats from a uint[] buffer
+// ---------------------------------------------------------------------------
+vec4 read_rgba(readonly uint[] buf, int byte_offset)
+{
+    return vec4(
+        float(read_byte(buf, byte_offset + 0)),
+        float(read_byte(buf, byte_offset + 1)),
+        float(read_byte(buf, byte_offset + 2)),
+        float(read_byte(buf, byte_offset + 3))
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Helper: fetch pixel with bounds check (returns transparent black if OOB)
+// ---------------------------------------------------------------------------
+vec4 fetch_pixel(int px, int py)
+{
+    if (px < 0 || px >= src_width || py < 0 || py >= src_height)
+        return vec4(0.0, 0.0, 0.0, 0.0);
+
+    int offset = py * src_pitch + px * 4;
+    return read_rgba(src_data, offset);
+}
+
+// ---------------------------------------------------------------------------
+// Helper: bilinear sample from the source buffer
+// ---------------------------------------------------------------------------
+vec4 bilinear_sample(float sample_x, float sample_y)
+{
+    int x0 = int(floor(sample_x));
+    int y0 = int(floor(sample_y));
+    int x1 = x0 + 1;
+    int y1 = y0 + 1;
+    float fx = sample_x - float(x0);
+    float fy = sample_y - float(y0);
+
+    vec4 p00 = fetch_pixel(x0, y0);
+    vec4 p10 = fetch_pixel(x1, y0);
+    vec4 p01 = fetch_pixel(x0, y1);
+    vec4 p11 = fetch_pixel(x1, y1);
+
+    // Bilinear weights
+    float w00 = (1.0 - fx) * (1.0 - fy);
+    float w10 = fx * (1.0 - fy);
+    float w01 = (1.0 - fx) * fy;
+    float w11 = fx * fy;
+
+    return p00 * w00 + p10 * w10 + p01 * w01 + p11 * w11;
+}
+
+// ---------------------------------------------------------------------------
+// Helper: write a packed RGBA pixel to the output buffer
+// ---------------------------------------------------------------------------
+void write_rgba_pixel(int byte_offset, uvec4 color)
+{
+    int word_index = byte_offset >> 2;
+    uint packed = (color.a << 24) | (color.b << 16) | (color.g << 8) | color.r;
+    dst_data[word_index] = packed;
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+void main()
+{
+    int dx = int(gl_GlobalInvocationID.x);
+    int dy = int(gl_GlobalInvocationID.y);
+
+    if (dx >= dst_width || dy >= dst_height)
+        return;
+
+    // -------------------------------------------------------------------
+    // 1. Build inverse transform
+    //
+    //    Forward: T(tx,ty) * T(anchor) * R(rot) * S(sx,sy) * T(-anchor)
+    //    Inverse: T(anchor) * S(1/sx,1/sy) * R(-rot) * T(-anchor) * T(-tx,-ty)
+    // -------------------------------------------------------------------
+    float cos_r = cos(rotation);
+    float sin_r = sin(rotation);
+
+    float inv_sx = (sx != 0.0) ? (1.0 / sx) : 0.0;
+    float inv_sy = (sy != 0.0) ? (1.0 / sy) : 0.0;
+
+    // Inverse rotation + scale: S^-1 * R^-1
+    float m00 =  inv_sx * cos_r;
+    float m01 =  inv_sx * sin_r;
+    float m10 = -inv_sy * sin_r;
+    float m11 =  inv_sy * cos_r;
+
+    // -------------------------------------------------------------------
+    // 2. Apply inverse transform to destination pixel
+    //
+    //    src_pos = anchor + M * (dst_pos - anchor - translation)
+    // -------------------------------------------------------------------
+    float px = float(dx) - anchor_x - tx;
+    float py = float(dy) - anchor_y - ty;
+
+    float src_x = m00 * px + m01 * py + anchor_x;
+    float src_y = m10 * px + m11 * py + anchor_y;
+
+    // -------------------------------------------------------------------
+    // 3. Bilinear sample from source
+    // -------------------------------------------------------------------
+    vec4 sampled = bilinear_sample(src_x, src_y);
+
+    // -------------------------------------------------------------------
+    // 4. Clamp and write output
+    // -------------------------------------------------------------------
+    uvec4 result = uvec4(
+        clamp(uint(sampled.r + 0.5), 0u, 255u),
+        clamp(uint(sampled.g + 0.5), 0u, 255u),
+        clamp(uint(sampled.b + 0.5), 0u, 255u),
+        clamp(uint(sampled.a + 0.5), 0u, 255u)
+    );
+
+    int out_offset = dy * dst_pitch + dx * 4;
+    write_rgba_pixel(out_offset, result);
+}

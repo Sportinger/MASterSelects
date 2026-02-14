@@ -1,0 +1,16 @@
+[package]
+name = "ms-decoder"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ms-common = { path = "../common" }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+libloading = { workspace = true }
+parking_lot = { workspace = true }
+
+# Future dependencies (uncomment when needed):
+# ms-gpu-hal = { path = "../gpu-hal" }
+# ms-demux = { path = "../demux" }
+# crossbeam = { workspace = true }

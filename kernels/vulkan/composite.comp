@@ -1,0 +1,133 @@
+/**
+ * composite.comp -- Alpha Blend Compositing Shader (Vulkan Compute)
+ *
+ * Vulkan compute shader equivalent of the CUDA alpha_blend kernel.
+ * Performs source-over alpha blending of a foreground RGBA layer onto a
+ * background RGBA layer with a global opacity multiplier.
+ *
+ * Source-over formula (per channel):
+ *
+ *   fg_a_eff = (fg.a / 255.0) * opacity
+ *   out.rgb  = fg.rgb * fg_a_eff + bg.rgb * (1.0 - fg_a_eff)
+ *   out.a    = fg_a_eff + bg.a/255 * (1.0 - fg_a_eff)    (scaled to 255)
+ *
+ * Binding layout:
+ *   set 0, binding 0: Foreground RGBA (readonly storage buffer)
+ *   set 0, binding 1: Background RGBA (readonly storage buffer)
+ *   set 0, binding 2: Output RGBA     (writeonly storage buffer)
+ *
+ * Push constants:
+ *   width, height, fg_pitch, bg_pitch, out_pitch, opacity
+ */
+
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// ---------------------------------------------------------------------------
+// Storage buffers
+// ---------------------------------------------------------------------------
+layout(set = 0, binding = 0) readonly buffer Foreground {
+    uint fg_data[];
+};
+
+layout(set = 0, binding = 1) readonly buffer Background {
+    uint bg_data[];
+};
+
+layout(set = 0, binding = 2) writeonly buffer Output {
+    uint out_data[];
+};
+
+// ---------------------------------------------------------------------------
+// Push constants
+// ---------------------------------------------------------------------------
+layout(push_constant) uniform PushConstants {
+    int   width;
+    int   height;
+    int   fg_pitch;
+    int   bg_pitch;
+    int   out_pitch;
+    float opacity;
+};
+
+// ---------------------------------------------------------------------------
+// Helper: read a single byte from a uint[] buffer at a byte offset
+// ---------------------------------------------------------------------------
+uint read_byte(readonly uint[] buf, int byte_offset)
+{
+    int word_index = byte_offset >> 2;
+    int byte_lane  = byte_offset & 3;
+    return (buf[word_index] >> (byte_lane * 8)) & 0xFFu;
+}
+
+// ---------------------------------------------------------------------------
+// Helper: read an RGBA pixel as four floats from a uint[] buffer
+// ---------------------------------------------------------------------------
+vec4 read_rgba(readonly uint[] buf, int byte_offset)
+{
+    return vec4(
+        float(read_byte(buf, byte_offset + 0)),
+        float(read_byte(buf, byte_offset + 1)),
+        float(read_byte(buf, byte_offset + 2)),
+        float(read_byte(buf, byte_offset + 3))
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Helper: write a packed RGBA pixel to the output buffer
+// ---------------------------------------------------------------------------
+void write_rgba_pixel(int byte_offset, uvec4 color)
+{
+    int word_index = byte_offset >> 2;
+    uint packed = (color.a << 24) | (color.b << 16) | (color.g << 8) | color.r;
+    out_data[word_index] = packed;
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+void main()
+{
+    int x = int(gl_GlobalInvocationID.x);
+    int y = int(gl_GlobalInvocationID.y);
+
+    if (x >= width || y >= height)
+        return;
+
+    // -------------------------------------------------------------------
+    // 1. Read foreground and background pixels
+    // -------------------------------------------------------------------
+    int fg_offset = y * fg_pitch + x * 4;
+    int bg_offset = y * bg_pitch + x * 4;
+
+    vec4 fg = read_rgba(fg_data, fg_offset);
+    vec4 bg = read_rgba(bg_data, bg_offset);
+
+    // -------------------------------------------------------------------
+    // 2. Compute effective foreground alpha
+    // -------------------------------------------------------------------
+    float fg_a_eff = (fg.a / 255.0) * opacity;
+    float inv_a    = 1.0 - fg_a_eff;
+
+    // -------------------------------------------------------------------
+    // 3. Source-over blend
+    // -------------------------------------------------------------------
+    float out_r = fg.r * fg_a_eff + bg.r * inv_a;
+    float out_g = fg.g * fg_a_eff + bg.g * inv_a;
+    float out_b = fg.b * fg_a_eff + bg.b * inv_a;
+    float out_a = (fg_a_eff + (bg.a / 255.0) * inv_a) * 255.0;
+
+    // -------------------------------------------------------------------
+    // 4. Clamp and write output
+    // -------------------------------------------------------------------
+    uvec4 result = uvec4(
+        clamp(uint(out_r + 0.5), 0u, 255u),
+        clamp(uint(out_g + 0.5), 0u, 255u),
+        clamp(uint(out_b + 0.5), 0u, 255u),
+        clamp(uint(out_a + 0.5), 0u, 255u)
+    );
+
+    int out_offset = y * out_pitch + x * 4;
+    write_rgba_pixel(out_offset, result);
+}

@@ -1,0 +1,22 @@
+[package]
+name = "ms-gpu-hal"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["cuda", "vulkan"]
+cuda = ["dep:cudarc"]
+vulkan = ["dep:ash", "dep:gpu-allocator"]
+
+[dependencies]
+ms-common = { path = "../common" }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+parking_lot = { workspace = true }
+
+# CUDA (optional)
+cudarc = { workspace = true, optional = true }
+
+# Vulkan (optional)
+ash = { workspace = true, optional = true }
+gpu-allocator = { workspace = true, optional = true }

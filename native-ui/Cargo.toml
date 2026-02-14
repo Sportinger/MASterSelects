@@ -1,0 +1,18 @@
+[package]
+name = "masterselects-native"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+eframe = { workspace = true }
+egui = { workspace = true }
+egui_extras = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+crossbeam = { workspace = true }
+
+ms-common = { path = "../crates/common" }
+
+[profile.release]
+opt-level = 2

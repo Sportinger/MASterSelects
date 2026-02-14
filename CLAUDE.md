@@ -1,41 +1,116 @@
-# CLAUDE.md
+# CLAUDE.md — MasterSelects Native Engine
 
-Anweisungen für AI-Assistenten (Claude, GPT, etc.) bei der Arbeit an diesem Projekt.
+Anweisungen für AI-Assistenten bei der Arbeit an der nativen Rust-Engine.
+
+> **Vollständiger Architekturplan:** [`docs/plans/native-engine-plan.md`](./docs/plans/native-engine-plan.md)
+> **Build-Checkliste:** [`docs/plans/native-engine-checklist.md`](./docs/plans/native-engine-checklist.md)
 
 ---
 
-## 1. Workflow (WICHTIG!)
+## 1. Projekt-Übersicht
+
+**Was wir bauen:** Eine vollständig native Desktop-Video-Editing-App in Rust. Dual-GPU-Backend (CUDA für NVIDIA, Vulkan Compute für AMD/Intel/Mac), egui UI, kein Tauri, kein FFmpeg — eigener Demuxer, eigene NVDEC/NVENC FFI Bindings.
+
+**Kernentscheidungen:**
+- **Kein Tauri** — Alles nativ in Rust, egui für die komplette UI
+- **Kein FFmpeg** — Eigener MP4/MKV Demuxer, eigene NVDEC/NVENC FFI Bindings, Symphonia nur für Audio
+- **Dual GPU Backend** — `trait GpuBackend` abstrahiert CUDA und Vulkan Compute
+- **wgpu nur für egui** — Video-Processing läuft über CUDA/Vulkan direkt, nicht über wgpu
+- **30+ GPU Effects** — Jeder Effekt als `.cu` (CUDA) UND `.comp` (Vulkan Compute Shader)
+- **Web-App-kompatibles Projektformat** — Liest/schreibt dieselben JSON-Projektdateien
+
+### Crate-Struktur (12 Crates + App)
+
+```
+crates/
+├── common/           # Typen, Traits, Errors, Config                    (~1200 LOC)
+├── gpu-hal/          # GPU Abstraction + CUDA/Vulkan Backends            (~4000 LOC)
+├── demux/            # Eigener MP4 + MKV Container Parser                (~2500 LOC)
+├── decoder/          # HW Decode Management (NVDEC/Vulkan Video)         (~1500 LOC)
+├── timeline-eval/    # Timeline @ Time T → Layer-Beschreibungen          (~1500 LOC)
+├── compositor/       # GPU Compositing (Blend, Transform, Mask)          (~2000 LOC)
+├── effects/          # 30+ GPU Effects (CUDA + Vulkan)                   (~5000 LOC)
+├── encoder/          # HW Encode (NVENC/Vulkan Video Encode)             (~2000 LOC)
+├── mux/              # Container Muxing (Muxide)                         (~800 LOC)
+├── audio/            # Symphonia Decode + CPAL Output + Mixer            (~2500 LOC)
+├── project/          # Project Save/Load (Web-kompatibel)                (~1200 LOC)
+└── app-state/        # App State + Undo/Redo                             (~1500 LOC)
+
+native-ui/            # egui App (bestehend, wird erweitert)              (~4000 LOC)
+kernels/              # GPU Kernels: cuda/*.cu + vulkan/*.comp            (~6400 LOC)
+```
+
+**Dependency Graph:** `common` → `gpu-hal` → dann 6 parallele Agent-Gruppen (siehe Plan §6)
+
+### Aktueller Stand
+
+| Komponente | Pfad | Status |
+|------------|------|--------|
+| Native Helper (Legacy) | `tools/native-helper/` | Fertig (FFmpeg-basiert, wird langfristig ersetzt) |
+| egui UI Mockup | `native-ui/` | Basis-UI vorhanden, wird zur echten App erweitert |
+| Engine Crates | `crates/` | In Entwicklung — Phase 0 (Proof of Concept) |
+| Web-App | `src/` | Production (TypeScript/React/WebGPU) |
+
+---
+
+## 2. Workflow (WICHTIG!)
 
 ### Branch-Regeln
 | Branch | Zweck |
 |--------|-------|
-| `staging` | Entwicklung - hierhin committen |
-| `master` | Production - nur via PR |
+| `staging` | Entwicklung — hierhin committen |
+| `master` | Production — nur via PR |
 
-### Commit-Regeln
+### Build & Commit
+
 ```bash
 # VOR jedem Commit: Build prüfen!
+# Für Native Engine:
+cd native-ui && cargo build --release
+# oder für einzelne Crates:
+cd crates/common && cargo build
+
+# Für Web-App:
 npm run build
 
-# Nach JEDER Änderung sofort:
-git add . && git commit -m "description" && git push origin staging
+# Nach JEDEM Feature/Milestone sofort committen + pushen:
+git add . && git commit -m "[native] description" && git push origin staging
 ```
 
+### Commit-Prefix Konvention
+
+| Prefix | Bereich | Beispiel |
+|--------|---------|---------|
+| `[native]` | Engine Crates, native-ui, Kernels | `[native] Add MP4 box parser for demux crate` |
+| `[web]` | Web-App (src/, TypeScript/React) | `[web] Fix timeline clip rendering` |
+| `[helper]` | Legacy native-helper | `[helper] Update FFmpeg bindings` |
+| (kein Prefix) | Docs, Config, CI, übergreifend | `Update CLAUDE.md with native engine plan` |
+
+### Commit-Häufigkeit
+
+**Nach JEDEM abgeschlossenen Feature-Schritt committen + pushen:**
+- Neues Modul/Datei angelegt und kompiliert? → Commit
+- Trait oder Typ definiert? → Commit
+- Funktion implementiert + Test geschrieben? → Commit
+- Bug gefixt? → Commit
+- **NICHT** stundenlang Code sammeln und dann einen Riesen-Commit machen
+
 **IMMER vor Commit:**
-- `npm run build` ausführen
-- Alle Errors beheben (Warnings sind OK)
+- `cargo build` (bzw. `npm run build` für Web) ausführen
+- Alle Errors beheben (Warnings sind OK, aber `cargo clippy` Warnings beachten)
+- `cargo clippy --all-targets -- -D warnings` — keine Clippy-Warnings erlaubt
 - Erst dann committen
 
 **NIEMALS:**
 - Direkt auf `master` committen
 - Selbstständig zu `master` mergen
-- Mehrere Änderungen sammeln
+- Mehrere Änderungen sammeln ohne zu committen
 - Committen ohne vorherigen Build-Check
 
 ### Merge zu Master (nur wenn User es verlangt!)
 ```bash
-# 1. Version erhöhen in src/version.ts
-# 2. CHANGELOG aktualisieren in src/version.ts
+# 1. Version erhöhen in src/version.ts + Cargo.toml
+# 2. CHANGELOG aktualisieren
 # 3. Commit & Push
 # 4. PR erstellen und mergen:
 gh pr create --base master --head staging --title "..." --body "..."
@@ -44,375 +119,377 @@ gh pr merge --merge
 git fetch origin && git merge origin/master && git push origin staging
 ```
 
-### Version & Changelog
-- **Datei:** `src/version.ts`
-- **Version:** Nur bei Merge zu master erhöhen (PATCH +1)
-- **CHANGELOG:** Neuen Eintrag am Anfang mit `version`, `date`, `changes[]`
-- **KNOWN_ISSUES:** Aktuelle Bugs pflegen
-
-### Dokumentation
-Bei Feature-Änderungen: `docs/Features/` aktualisieren
-
 ---
 
-## 2. Quick Reference
+## 3. Quick Reference
 
 ```bash
-npm install && npm run dev   # http://localhost:5173 (ohne Changelog)
-npm run dev:changelog        # Dev-Server MIT Changelog-Dialog
-npm run build                # Production build (Changelog immer aktiv)
-npm run lint                 # ESLint check
+# Native Helper
+cd tools/native-helper && cargo run --release    # WebSocket :9876, HTTP :9877
+cd tools/native-helper && cargo test             # Tests ausführen
+cd tools/native-helper && cargo clippy            # Linting
+
+# Native UI
+cd native-ui && cargo run --release               # egui App starten
+cd native-ui && cargo test
+cd native-ui && cargo clippy
+
+# Code Quality (alle Crates)
+cargo fmt --all                                   # Formatierung
+cargo clippy --all-targets --all-features -- -D warnings  # Linting
+cargo test --all                                  # Alle Tests
+
+# Web-App
+npm install && npm run dev                        # http://localhost:5173
+npm run build                                     # Production build
 ```
 
-### Dev-Server Regeln
-- **IMMER `npm run dev` verwenden** (ohne Changelog)
-- `npm run dev:changelog` nur wenn User Changelog sehen will
-- Production builds zeigen Changelog automatisch
-
-### Native Helper (optional, cross-platform)
+### Windows Build-Voraussetzungen
 ```bash
-# All platforms (FFmpeg decode/encode + yt-dlp downloads):
-cd tools/native-helper && cargo run --release
-
-# Windows: requires FFMPEG_DIR + LIBCLANG_PATH env vars (see tools/native-helper/README.md)
+# native-helper braucht:
+# - FFMPEG_DIR env var (Pfad zu FFmpeg-Installation)
+# - LIBCLANG_PATH env var (für ffmpeg-next bindgen)
+# Siehe tools/native-helper/README.md
 ```
-Ports: WebSocket `9876`, HTTP `9877`
 
 ---
 
-## 3. Architektur (Kurzübersicht)
+## 4. Architektur
 
+> Detail-Architektur, GPU Abstraction Layer, Threading-Modell, Dual-Kernel-Strategie:
+> Siehe [`docs/plans/native-engine-plan.md`](./docs/plans/native-engine-plan.md) §1-§8
+
+### Render Pipeline (Ziel)
 ```
-src/
-├── components/          # React UI
-│   ├── timeline/        # Timeline-Editor (hooks/, components/)
-│   ├── panels/          # Properties, Media, AI, YouTube, Export, Scopes, Transitions
-│   ├── preview/         # Canvas + Overlays
-│   └── dock/            # Panel-System
-├── stores/              # Zustand State
-│   ├── timeline/        # Slices: track, clip, keyframe, mask, playback
-│   └── mediaStore/      # Slices: import, folder, proxy, composition
-├── engine/              # WebGPU Rendering
-│   ├── core/            # WebGPUContext, RenderTargetManager
-│   ├── render/          # Compositor, RenderLoop, LayerCollector
-│   ├── export/          # FrameExporter, VideoEncoder, AudioEncoder
-│   ├── audio/           # AudioMixer, TimeStretch
-│   └── ffmpeg/          # FFmpegBridge
-├── effects/             # 30+ GPU Effects (color/, blur/, distort/, stylize/, keying/)
-├── services/            # Audio, AI, Project, NativeHelper
-└── shaders/             # WGSL (composite, effects, output)
+Demuxer (eigener MP4/MKV Parser)
+  └─► NAL Units (Annex-B)
+        └─► HW Decoder (NVDEC / Vulkan Video)
+              └─► GPU Frame (NV12, auf Device)
+                    └─► NV12→RGBA Kernel
+                          └─► Compositor (Blend, Transform, Mask)
+                                └─► Effects Engine (30+ Effekte)
+                                      └─► Preview: GPU → Staging → wgpu → egui
+                                      └─► Export:  GPU → HW Encoder → Muxer → Datei
 ```
 
-**Detaillierte Struktur:** siehe `README.md` oder `docs/Features/`
+### Key Dependencies (Engine)
+- `cudarc` — CUDA Runtime (Kernel Launch, Memory, Streams)
+- `ash` + `gpu-allocator` — Vulkan Compute
+- Eigene FFI — NVDEC (nvcuvid.h), NVENC (nvEncodeAPI.h)
+- `symphonia` — Audio Decode (AAC, MP3, FLAC, WAV, Opus)
+- `cpal` — Audio Output
+- `crossbeam` — Thread-Kommunikation (Channels)
+- `eframe` / `egui` — UI
+- `muxide` — MP4 Container Muxing
+
+### Threading-Modell
+```
+Thread 1: Main (egui Event Loop)          — NICHT blockieren!
+Thread 2: Render (GPU Context Owner)      — Timeline Eval + Compositing + Effects
+Thread 3..N: Decode Pool                  — 1 Thread pro aktive Video-Datei
+Thread N+1: Audio (Realtime-Priority)     — CPAL Output + Mixer + Master Clock
+Thread N+2: Export (on-demand)            — Eigene Render-Loop + HW Encode
+```
 
 ---
 
-## 4. Critical Patterns (MUST READ)
+## 5. Rust Critical Patterns (MUST READ)
 
-### HMR Singleton
-Engine muss Hot Reloads überleben:
-```typescript
-const hot = import.meta.hot;
-if (hot?.data?.engine) {
-  engineInstance = hot.data.engine;
-} else {
-  engineInstance = new WebGPUEngine();
-  hot.data.engine = engineInstance;
+### Error Handling
+```rust
+// ✅ RICHTIG: anyhow für Application-Code
+use anyhow::{Context, Result};
+
+fn load_config() -> Result<Config> {
+    let data = std::fs::read_to_string("config.toml")
+        .context("Failed to read config file")?;
+    toml::from_str(&data).context("Failed to parse config")
+}
+
+// ✅ RICHTIG: thiserror für Library-Code
+#[derive(Debug, thiserror::Error)]
+enum DecodeError {
+    #[error("FFmpeg error: {0}")]
+    Ffmpeg(#[from] ffmpeg_next::Error),
+    #[error("Invalid format: {0}")]
+    InvalidFormat(String),
 }
 ```
 
-### Stale Closure Fix
-Immer `get()` in async Callbacks:
-```typescript
-// FALSCH
-const { layers } = get();
-video.onload = () => set({ layers: layers.map(...) });
+**NIEMALS:**
+- `.unwrap()` in Production-Code (nur in Tests erlaubt)
+- `.expect()` nur wenn Panic wirklich gewollt ist (mit klarer Message)
+- Errors still verschlucken — immer propagieren oder loggen
 
-// RICHTIG
-video.onload = () => {
-  const current = get().layers;
-  set({ layers: current.map(...) });
-};
+### Ownership & Borrowing
+```rust
+// ❌ FALSCH: Unnötiges Cloning
+fn process(data: Vec<u8>) -> Vec<u8> {
+    let copy = data.clone();  // Warum?
+    transform(copy)
+}
+
+// ✅ RICHTIG: Ownership nutzen
+fn process(data: Vec<u8>) -> Vec<u8> {
+    transform(data)  // Move statt Clone
+}
+
+// ✅ RICHTIG: Borrow wenn kein Ownership nötig
+fn analyze(data: &[u8]) -> Analysis {
+    // Nur lesen, kein Ownership nötig
+}
 ```
 
-### Video Ready State
-Warten auf `canplaythrough`, nicht `loadeddata`:
-```typescript
-video.addEventListener('canplaythrough', () => {
-  // Jetzt ist Video bereit
-}, { once: true });
+### Async/Tokio Patterns
+```rust
+// ✅ RICHTIG: Tokio-Tasks für CPU-bound Arbeit
+let result = tokio::task::spawn_blocking(move || {
+    // CPU-intensive Arbeit hier (z.B. FFmpeg Decoding)
+    decode_frame(&data)
+}).await?;
+
+// ✅ RICHTIG: Parallel mit tokio::join!
+let (frames, audio) = tokio::join!(
+    decode_video(path),
+    decode_audio(path)
+);
+
+// ❌ FALSCH: Sequentiell wenn parallel möglich
+let frames = decode_video(path).await?;
+let audio = decode_audio(path).await?;  // Wartet unnötig
 ```
 
-### Zustand Slice Pattern
-```typescript
-export const createSlice: SliceCreator<Actions> = (set, get) => ({
-  actionName: (params) => {
-    const state = get();
-    set({ /* updates */ });
-  },
+### String Handling
+```rust
+// ✅ RICHTIG: &str für Parameter, String für Ownership
+fn greet(name: &str) -> String {
+    format!("Hello, {name}!")
+}
+
+// ❌ FALSCH: String als Parameter wenn &str reicht
+fn greet(name: String) -> String {
+    format!("Hello, {name}!")
+}
+```
+
+### Stale Reference Prevention (wie Stale Closure in JS)
+```rust
+// ❌ FALSCH: Arc<Mutex> Daten vorher lesen und dann async nutzen
+let data = state.lock().data.clone();
+tokio::spawn(async move {
+    // data könnte veraltet sein!
+    process(data).await;
+});
+
+// ✅ RICHTIG: Daten erst im Task lesen
+let state = state.clone();
+tokio::spawn(async move {
+    let data = state.lock().data.clone();
+    process(data).await;
 });
 ```
 
 ---
 
-## 5. Debugging & Logging
+## 6. Memory Safety & Performance
 
-### Logger verwenden
-```typescript
-import { Logger } from '@/services/logger';
-const log = Logger.create('ModuleName');
+### Zero-Copy wo möglich
+```rust
+// ✅ RICHTIG: Slice statt Vec kopieren
+fn process_frame(frame: &[u8]) -> Result<()> {
+    // Arbeite mit Referenz, kein Kopieren
+}
 
-log.debug('Verbose', { data });  // Nur wenn DEBUG aktiv
-log.info('Event');               // Immer sichtbar
-log.warn('Warning', data);       // Orange
-log.error('Fehler', error);      // Rot + Stack Trace
+// ✅ RICHTIG: Cow für optionales Ownership
+use std::borrow::Cow;
+fn normalize(input: &str) -> Cow<'_, str> {
+    if input.contains('\0') {
+        Cow::Owned(input.replace('\0', ""))
+    } else {
+        Cow::Borrowed(input)  // Kein Alloc wenn nicht nötig
+    }
+}
 ```
 
-### Console Commands
-```javascript
-Logger.enable('WebGPU,FFmpeg')  // Module aktivieren
-Logger.enable('*')              // Alle aktivieren
-Logger.disable()                // Nur Errors
+### Release-Profil (bereits konfiguriert)
+```toml
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+```
 
-Logger.setLevel('DEBUG')        // Alle Level
-Logger.setLevel('WARN')         // Nur Warn+Error
+### Unsafe Code
+- **NIEMALS** `unsafe` ohne klaren Kommentar warum es sicher ist
+- FFI-Grenzen (NVDEC/NVENC, CUDA, Vulkan) sind die einzige Ausnahme
+- Immer `// SAFETY: ...` Kommentar bei `unsafe` Blöcken
+- RAII für alle GPU-Ressourcen (Drop-Implementierung Pflicht)
 
-Logger.search('device')         // Logs durchsuchen
-Logger.errors()                 // Nur Fehler
-Logger.dump(50)                 // Letzte 50 ausgeben
-Logger.summary()                // Übersicht für AI
+---
+
+## 7. Logging & Debugging
+
+### Tracing verwenden (native-helper)
+```rust
+use tracing::{debug, info, warn, error, instrument};
+
+#[instrument(skip(data))]
+fn process_frame(id: u32, data: &[u8]) -> Result<()> {
+    info!(frame_id = id, size = data.len(), "Processing frame");
+    debug!("Frame header: {:?}", &data[..16]);
+    // ...
+}
+```
+
+### Tracing initialisieren
+```rust
+tracing_subscriber::fmt()
+    .with_env_filter("masterselects_helper=debug,warn")
+    .init();
 ```
 
 ### Common Issues
 
 | Problem | Lösung |
 |---------|--------|
-| 15fps auf Linux | `chrome://flags/#enable-vulkan` aktivieren |
-| "Device mismatch" | HMR kaputt → Seite neu laden |
-| Schwarzes Canvas | `readyState >= 2` prüfen |
-| WebCodecs Fehler | Fällt automatisch auf HTMLVideoElement zurück |
+| FFmpeg Linking Fehler | `FFMPEG_DIR` und `LIBCLANG_PATH` prüfen |
+| Deadlock in async | Kein `Mutex::lock()` über `.await` Grenzen — `tokio::sync::Mutex` nutzen |
+| Segfault in FFmpeg | Frame-Lifetime prüfen, FFmpeg-Objekte nicht über Thread-Grenzen |
+| egui flackert | `request_repaint()` nach State-Änderung |
+| Langsamer Debug-Build | `cargo build --release` für Performance-Tests |
 
 ---
 
-## 6. Wichtige Dateien
+## 8. Testing
+
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_basic() {
+        // Unit Tests — .unwrap() ist hier OK
+        let result = parse_header(b"RIFF").unwrap();
+        assert_eq!(result.format, Format::Riff);
+    }
+
+    #[tokio::test]
+    async fn test_async_operation() {
+        let result = fetch_data("test").await.unwrap();
+        assert!(!result.is_empty());
+    }
+}
+
+// Integration Tests in tests/ Verzeichnis
+// tests/integration_test.rs
+```
+
+### Test-Befehle
+```bash
+cargo test                          # Alle Unit Tests
+cargo test --test integration       # Integration Tests
+cargo test -- --nocapture           # Mit stdout Output
+cargo test specific_test_name       # Einzelner Test
+```
+
+---
+
+## 9. Dependency Management
+
+### Crate-Auswahl Prinzipien
+1. **Bevorzuge** bekannte, gut-maintained Crates (tokio, serde, anyhow)
+2. **Prüfe** letzte Veröffentlichung, Maintenance-Status, Downloads
+3. **Minimiere** Feature-Flags — nur aktivieren was gebraucht wird
+4. **Auditiere** regelmäßig: `cargo audit`
+
+### Nützliche Cargo-Plugins
+```bash
+cargo install cargo-audit           # Vulnerability Scanner
+cargo install cargo-watch           # Auto-Rebuild bei Änderungen
+cargo install cargo-expand          # Macro-Expansion anzeigen
+cargo install cargo-flamegraph      # Performance Profiling
+```
+
+---
+
+## 10. Code Quality Toolchain
+
+```bash
+# Formatierung (muss vor Commit laufen)
+cargo fmt --all
+
+# Linting (keine Warnings erlaubt)
+cargo clippy --all-targets --all-features -- -D warnings
+
+# Dependency Audit
+cargo audit
+
+# Code-Qualität Checkliste:
+# ✅ cargo fmt
+# ✅ cargo clippy (0 warnings)
+# ✅ cargo test (0 failures)
+# ✅ cargo build --release (0 errors)
+```
+
+---
+
+## 11. Wichtige Dateien
 
 | Bereich | Datei |
 |---------|-------|
-| Version/Changelog | `src/version.ts` |
-| Engine Entry | `src/engine/WebGPUEngine.ts` |
-| Timeline Store | `src/stores/timeline/index.ts` |
-| Media Store | `src/stores/mediaStore/index.ts` |
-| Effects Registry | `src/effects/index.ts` |
-| Logger | `src/services/logger.ts` |
-| Project Storage | `src/services/project/core/ProjectCoreService.ts` |
-
-### Neuen Effect hinzufügen
-1. Shader in `src/effects/[category]/[name]/shader.wgsl`
-2. Index in `src/effects/[category]/[name]/index.ts`
-3. Export in `src/effects/[category]/index.ts`
-4. UI in `src/components/panels/PropertiesPanel.tsx`
+| **Architekturplan** | `docs/plans/native-engine-plan.md` |
+| Native UI Entry | `native-ui/src/main.rs` |
+| Native UI Config | `native-ui/Cargo.toml` |
+| Workspace Root | `Cargo.toml` (workspace) |
+| GPU Traits | `crates/common/src/traits.rs` |
+| CUDA Backend | `crates/gpu-hal/src/cuda/mod.rs` |
+| Vulkan Backend | `crates/gpu-hal/src/vulkan/mod.rs` |
+| Helper (Legacy) | `tools/native-helper/src/main.rs` |
+| Web Version | `src/version.ts` |
 
 ---
 
-## 7. Texture Types
+## 12. Agent-Arbeitsregeln
 
-| Source | GPU Type |
-|--------|----------|
-| Video (HTMLVideoElement) | `texture_external` (zero-copy) |
-| Video (VideoFrame) | `texture_external` (zero-copy) |
-| Image | `texture_2d<f32>` (copied once) |
-
----
-
-## 8. Render Pipeline
-
-```
-useEngine hook
-  └─► engine.start(callback)
-        └─► requestAnimationFrame loop
-              └─► engine.render(layers)
-                    ├─► Import textures
-                    ├─► Composite layers (ping-pong)
-                    └─► Output to canvas
-```
+1. **Trait-First:** Implementiere gegen Traits in `crates/common/`, nicht gegen konkrete Typen
+2. **Keine Cross-Crate-Änderungen:** Wenn du `common/` ändern musst, vorher abstimmen
+3. **Tests zuerst:** Jedes Modul braucht `#[cfg(test)] mod tests`
+4. **Feature-gated GPU Code:** CUDA hinter `#[cfg(feature = "cuda")]`, Vulkan hinter `#[cfg(feature = "vulkan")]`
+5. **Dual-Kernel-Regel:** Kein Effekt ist fertig ohne `.cu` UND `.comp` Variante
+6. **Kein FFmpeg:** Keine Abhängigkeit auf ffmpeg-sys, ffmpeg-next, oder ähnliche Crates. **Niemals.**
+7. **SAFETY-Kommentare:** Jeder `unsafe` Block braucht `// SAFETY:` Erklärung
+8. **Error Propagation:** `thiserror` in Crates, `anyhow` nur in `native-ui/`
+9. **Commit-Regel:** `cargo fmt && cargo clippy && cargo test` vor jedem Commit
 
 ---
 
-*Ausführliche Dokumentation: `docs/Features/README.md`*
+## 13. Phasen-Übersicht
+
+| Phase | Fokus | Status |
+|-------|-------|--------|
+| **Phase 0** | Proof-of-Concept: NVDEC → CUDA → egui + Vulkan → egui | **Aktuell** |
+| **Phase 1** | Foundation: Demuxer, Decoder, Timeline, Audio, Project | Geplant |
+| **Phase 2** | Compositing + 30+ Effects (CUDA + Vulkan Kernels) | Geplant |
+| **Phase 3** | Export (HW Encode + Mux) + Audio Complete + Undo/Redo | Geplant |
+| **Phase 4** | UI Integration: alle Panels mit echten Daten verbinden | Geplant |
+| **Phase 5** | Post-v1: AI Engine (ONNX Runtime) | Zukunft |
+
+> Details zu jeder Phase: [`docs/plans/native-engine-plan.md`](./docs/plans/native-engine-plan.md) §10
 
 ---
 
-## 9. React/Next.js Best Practices (Vercel Engineering)
+## 14. Web-App (Referenz)
 
-> Vollständige Dokumentation: [REACT-BEST-PRACTICES.md](./docs/REACT-BEST-PRACTICES.md) | [GitHub Source](https://github.com/vercel-labs/agent-skills/tree/main/skills/react-best-practices)
+Die Web-App unter `src/` nutzt TypeScript/React/WebGPU. Für Web-spezifische Patterns siehe `CLAUDE.md.backup`.
 
-### Prioritäten nach Impact
-1. **CRITICAL:** Eliminating Waterfalls, Bundle Size
-2. **HIGH:** Server-Side Performance
-3. **MEDIUM:** Client-Side Data, Re-renders, Rendering
-4. **LOW:** JavaScript Micro-Optimizations, Advanced Patterns
-
----
-
-### CRITICAL: Eliminating Waterfalls
-
-**Waterfalls sind der #1 Performance-Killer!**
-
-#### Promise.all() für unabhängige Operations
-```typescript
-// ❌ FALSCH: 3 sequentielle Round-Trips
-const user = await fetchUser()
-const posts = await fetchPosts()
-const comments = await fetchComments()
-
-// ✅ RICHTIG: 1 paralleler Round-Trip
-const [user, posts, comments] = await Promise.all([
-  fetchUser(),
-  fetchPosts(),
-  fetchComments()
-])
-```
-
-#### Defer Await Until Needed
-```typescript
-// ❌ FALSCH: blockiert beide Branches
-async function handleRequest(userId: string, skipProcessing: boolean) {
-  const userData = await fetchUserData(userId)
-  if (skipProcessing) return { skipped: true }
-  return processUserData(userData)
-}
-
-// ✅ RICHTIG: fetch nur wenn nötig
-async function handleRequest(userId: string, skipProcessing: boolean) {
-  if (skipProcessing) return { skipped: true }
-  const userData = await fetchUserData(userId)
-  return processUserData(userData)
-}
-```
-
-#### Strategic Suspense Boundaries
-```tsx
-// ❌ FALSCH: Ganzes Layout wartet auf Daten
-async function Page() {
-  const data = await fetchData() // Blockiert alles
-  return <div><Sidebar /><DataDisplay data={data} /><Footer /></div>
-}
-
-// ✅ RICHTIG: Layout sofort, Daten streamen
-function Page() {
-  return (
-    <div>
-      <Sidebar />
-      <Suspense fallback={<Skeleton />}>
-        <DataDisplay />
-      </Suspense>
-      <Footer />
-    </div>
-  )
-}
+```bash
+npm install && npm run dev   # http://localhost:5173
+npm run build                # Production build
+npm run lint                 # ESLint
 ```
 
 ---
 
-### CRITICAL: Bundle Size Optimization
-
-#### Avoid Barrel File Imports (200-800ms Import-Cost!)
-```tsx
-// ❌ FALSCH: Lädt 1,583 Module
-import { Check, X, Menu } from 'lucide-react'
-
-// ✅ RICHTIG: Lädt nur 3 Module
-import Check from 'lucide-react/dist/esm/icons/check'
-import X from 'lucide-react/dist/esm/icons/x'
-import Menu from 'lucide-react/dist/esm/icons/menu'
-
-// ✅ ALTERNATIVE (Next.js 13.5+):
-// next.config.js
-module.exports = {
-  experimental: {
-    optimizePackageImports: ['lucide-react', '@mui/material']
-  }
-}
-```
-
-#### Dynamic Imports für Heavy Components
-```tsx
-// ❌ FALSCH: Monaco im Main Bundle (~300KB)
-import { MonacoEditor } from './monaco-editor'
-
-// ✅ RICHTIG: Monaco on-demand
-import dynamic from 'next/dynamic'
-const MonacoEditor = dynamic(
-  () => import('./monaco-editor').then(m => m.MonacoEditor),
-  { ssr: false }
-)
-```
-
----
-
-### HIGH: Server-Side Performance
-
-#### React.cache() für Request-Deduplication
-```typescript
-import { cache } from 'react'
-
-export const getCurrentUser = cache(async () => {
-  const session = await auth()
-  if (!session?.user?.id) return null
-  return await db.user.findUnique({ where: { id: session.user.id } })
-})
-// Mehrere Calls → nur 1 Query pro Request
-```
-
-#### Minimize Serialization at RSC Boundaries
-```tsx
-// ❌ FALSCH: Serialisiert alle 50 Felder
-<Profile user={user} />
-
-// ✅ RICHTIG: Nur 1 Feld
-<Profile name={user.name} />
-```
-
----
-
-### MEDIUM: Re-render Optimization
-
-#### Functional setState (verhindert Stale Closures!)
-```typescript
-// ❌ FALSCH: Braucht items als Dependency
-const addItems = useCallback((newItems) => {
-  setItems([...items, ...newItems])
-}, [items])  // Wird bei jeder Änderung neu erstellt
-
-// ✅ RICHTIG: Stable Callback, kein Stale Closure
-const addItems = useCallback((newItems) => {
-  setItems(curr => [...curr, ...newItems])
-}, [])  // Keine Dependencies nötig
-```
-
-#### Lazy State Initialization
-```typescript
-// ❌ FALSCH: Läuft bei JEDEM Render
-const [index, setIndex] = useState(buildSearchIndex(items))
-
-// ✅ RICHTIG: Läuft nur einmal
-const [index, setIndex] = useState(() => buildSearchIndex(items))
-```
-
-#### toSorted() statt sort() (verhindert State-Mutation!)
-```typescript
-// ❌ FALSCH: Mutiert das Original-Array
-const sorted = users.sort((a, b) => a.name.localeCompare(b.name))
-
-// ✅ RICHTIG: Erstellt neues Array
-const sorted = users.toSorted((a, b) => a.name.localeCompare(b.name))
-```
-
----
-
-### Projekt-spezifische Ergänzungen
-
-Diese Best Practices ergänzen unsere bestehenden Critical Patterns:
-- **Stale Closure Fix** (§4) → Functional setState nutzen
-- **Zustand Slices** → `get()` in Callbacks statt State-Capture
-- **WebGPU Engine** → Heavy Components mit Dynamic Import laden
+*Backup der vorherigen Web-App CLAUDE.md: `CLAUDE.md.backup`*
