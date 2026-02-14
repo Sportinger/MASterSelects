@@ -1,0 +1,105 @@
+/**
+ * glow_composite.comp -- Glow Effect: Additive Composite Pass (Vulkan Compute)
+ *
+ * Final pass of the multi-pass glow effect. Additively blends the blurred
+ * glow buffer onto the original image. The glow buffer has already been
+ * thresholded and blurred by the previous passes.
+ *
+ * Formula:
+ *   out.rgb = original.rgb + glow.rgb * glow_intensity
+ *   out.a   = original.a
+ *
+ * Binding layout:
+ *   set 0, binding 0: Original RGBA (readonly storage buffer, uint-packed)
+ *   set 0, binding 1: Glow RGBA    (readonly storage buffer, uint-packed)
+ *   set 0, binding 2: Output RGBA  (writeonly storage buffer, uint-packed)
+ *
+ * Push constants:
+ *   width          : Image width in pixels (uint)
+ *   height         : Image height in pixels (uint)
+ *   glow_intensity : Multiplier for the glow contribution [0, 3]. 1 = default.
+ */
+
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// ---------------------------------------------------------------------------
+// Storage buffers
+// ---------------------------------------------------------------------------
+layout(set = 0, binding = 0) readonly buffer OriginalBuf {
+    uint data[];
+} original_buf;
+
+layout(set = 0, binding = 1) readonly buffer GlowBuf {
+    uint data[];
+} glow_buf;
+
+layout(set = 0, binding = 2) writeonly buffer OutputBuf {
+    uint data[];
+} output_buf;
+
+// ---------------------------------------------------------------------------
+// Push constants
+// ---------------------------------------------------------------------------
+layout(push_constant) uniform Params {
+    uint  width;
+    uint  height;
+    float glow_intensity;
+} params;
+
+// ---------------------------------------------------------------------------
+// Helpers: pixel I/O
+// ---------------------------------------------------------------------------
+vec4 readPixelFrom(readonly uint[] buf, uint x, uint y)
+{
+    uint idx = y * params.width + x;
+    uint packed = buf[idx];
+    return vec4(
+        float((packed >>  0) & 0xFFu) / 255.0,
+        float((packed >>  8) & 0xFFu) / 255.0,
+        float((packed >> 16) & 0xFFu) / 255.0,
+        float((packed >> 24) & 0xFFu) / 255.0
+    );
+}
+
+void writePixel(uint x, uint y, vec4 color)
+{
+    uint idx = y * params.width + x;
+    color = clamp(color, 0.0, 1.0);
+    uint packed = (uint(color.r * 255.0) <<  0) |
+                  (uint(color.g * 255.0) <<  8) |
+                  (uint(color.b * 255.0) << 16) |
+                  (uint(color.a * 255.0) << 24);
+    output_buf.data[idx] = packed;
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+void main()
+{
+    uint x = gl_GlobalInvocationID.x;
+    uint y = gl_GlobalInvocationID.y;
+
+    if (x >= params.width || y >= params.height)
+        return;
+
+    // -------------------------------------------------------------------
+    // 1. Read original and glow pixels
+    // -------------------------------------------------------------------
+    vec4 original = readPixelFrom(original_buf.data, x, y);
+    vec4 glow     = readPixelFrom(glow_buf.data, x, y);
+
+    // -------------------------------------------------------------------
+    // 2. Additive blend: original + glow * intensity
+    // -------------------------------------------------------------------
+    vec4 result;
+    result.rgb = original.rgb + glow.rgb * params.glow_intensity;
+    result.a   = original.a;
+
+    // -------------------------------------------------------------------
+    // 3. Write output (writePixel clamps to [0, 1])
+    // -------------------------------------------------------------------
+    writePixel(x, y, result);
+}

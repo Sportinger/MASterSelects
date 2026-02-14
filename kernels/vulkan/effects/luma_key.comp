@@ -1,0 +1,130 @@
+/**
+ * luma_key.comp -- Luminance Key (Vulkan Compute)
+ *
+ * Vulkan compute shader equivalent of the CUDA luma_key kernel.
+ * Removes pixels based on their luminance (brightness). Pixels below
+ * the threshold become transparent, with a soft transition zone.
+ * Can be inverted to keep dark pixels and remove bright ones.
+ *
+ * Luminance formula (BT.709):
+ *   luma = 0.2126 * R + 0.7152 * G + 0.0722 * B
+ *
+ * Binding layout:
+ *   set 0, binding 0: Input  RGBA (readonly storage buffer, uint-packed)
+ *   set 0, binding 1: Output RGBA (writeonly storage buffer, uint-packed)
+ *
+ * Push constants:
+ *   width     : Image width in pixels (uint)
+ *   height    : Image height in pixels (uint)
+ *   threshold : Luminance threshold [0, 1]. Below = transparent (or opaque if inverted).
+ *   softness  : Soft edge width [0, 1]. Transition zone around threshold.
+ *   invert    : Invert mode (0.0 = normal, 1.0 = inverted).
+ */
+
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// ---------------------------------------------------------------------------
+// Storage buffers
+// ---------------------------------------------------------------------------
+layout(set = 0, binding = 0) readonly buffer InputBuf {
+    uint data[];
+} input_buf;
+
+layout(set = 0, binding = 1) writeonly buffer OutputBuf {
+    uint data[];
+} output_buf;
+
+// ---------------------------------------------------------------------------
+// Push constants
+// ---------------------------------------------------------------------------
+layout(push_constant) uniform Params {
+    uint  width;
+    uint  height;
+    float threshold;
+    float softness;
+    float invert;
+} params;
+
+// ---------------------------------------------------------------------------
+// Helpers: pixel I/O
+// ---------------------------------------------------------------------------
+vec4 readPixel(uint x, uint y)
+{
+    uint idx = y * params.width + x;
+    uint packed = input_buf.data[idx];
+    return vec4(
+        float((packed >>  0) & 0xFFu) / 255.0,
+        float((packed >>  8) & 0xFFu) / 255.0,
+        float((packed >> 16) & 0xFFu) / 255.0,
+        float((packed >> 24) & 0xFFu) / 255.0
+    );
+}
+
+void writePixel(uint x, uint y, vec4 color)
+{
+    uint idx = y * params.width + x;
+    color = clamp(color, 0.0, 1.0);
+    uint packed = (uint(color.r * 255.0) <<  0) |
+                  (uint(color.g * 255.0) <<  8) |
+                  (uint(color.b * 255.0) << 16) |
+                  (uint(color.a * 255.0) << 24);
+    output_buf.data[idx] = packed;
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+void main()
+{
+    uint x = gl_GlobalInvocationID.x;
+    uint y = gl_GlobalInvocationID.y;
+
+    if (x >= params.width || y >= params.height)
+        return;
+
+    // -------------------------------------------------------------------
+    // 1. Read pixel
+    // -------------------------------------------------------------------
+    vec4 pixel = readPixel(x, y);
+
+    // -------------------------------------------------------------------
+    // 2. Compute luminance (BT.709)
+    // -------------------------------------------------------------------
+    float luma = 0.2126 * pixel.r + 0.7152 * pixel.g + 0.0722 * pixel.b;
+
+    // -------------------------------------------------------------------
+    // 3. Compute alpha mask based on threshold and softness
+    //    Normal mode:   luma < threshold -> transparent
+    //    Inverted mode: luma > threshold -> transparent
+    // -------------------------------------------------------------------
+    float half_soft = params.softness * 0.5;
+    float low  = params.threshold - half_soft;
+    float high = params.threshold + half_soft;
+
+    float mask;
+    if (params.softness > 0.0001)
+    {
+        mask = smoothstep(low, high, luma);
+    }
+    else
+    {
+        mask = (luma >= params.threshold) ? 1.0 : 0.0;
+    }
+
+    // -------------------------------------------------------------------
+    // 4. Apply inversion if requested
+    // -------------------------------------------------------------------
+    if (params.invert > 0.5)
+    {
+        mask = 1.0 - mask;
+    }
+
+    // -------------------------------------------------------------------
+    // 5. Apply mask to alpha, preserve RGB
+    // -------------------------------------------------------------------
+    pixel.a *= mask;
+
+    writePixel(x, y, pixel);
+}

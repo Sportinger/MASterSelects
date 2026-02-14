@@ -1,0 +1,192 @@
+/**
+ * hsl_adjust.comp -- HSL (Hue, Saturation, Lightness) Adjustment (Vulkan Compute)
+ *
+ * Vulkan compute shader equivalent of the CUDA hsl_adjust kernel.
+ * Converts each pixel from RGB to HSL, applies hue shift, saturation scale,
+ * and lightness offset, then converts back to RGB. Alpha is preserved.
+ *
+ * Binding layout:
+ *   set 0, binding 0: Input  RGBA (readonly storage buffer, uint-packed)
+ *   set 0, binding 1: Output RGBA (writeonly storage buffer, uint-packed)
+ *
+ * Push constants:
+ *   width      : Image width in pixels (uint)
+ *   height     : Image height in pixels (uint)
+ *   hue_shift  : Hue rotation in degrees [-180, 180]. 0 = no change.
+ *   saturation : Saturation multiplier [0, 3]. 1 = no change.
+ *   lightness  : Lightness offset [-1, 1]. 0 = no change.
+ */
+
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// ---------------------------------------------------------------------------
+// Storage buffers
+// ---------------------------------------------------------------------------
+layout(set = 0, binding = 0) readonly buffer InputBuf {
+    uint data[];
+} input_buf;
+
+layout(set = 0, binding = 1) writeonly buffer OutputBuf {
+    uint data[];
+} output_buf;
+
+// ---------------------------------------------------------------------------
+// Push constants
+// ---------------------------------------------------------------------------
+layout(push_constant) uniform Params {
+    uint  width;
+    uint  height;
+    float hue_shift;
+    float saturation;
+    float lightness;
+} params;
+
+// ---------------------------------------------------------------------------
+// Helpers: pixel I/O
+// ---------------------------------------------------------------------------
+vec4 readPixel(uint x, uint y)
+{
+    uint idx = y * params.width + x;
+    uint packed = input_buf.data[idx];
+    return vec4(
+        float((packed >>  0) & 0xFFu) / 255.0,
+        float((packed >>  8) & 0xFFu) / 255.0,
+        float((packed >> 16) & 0xFFu) / 255.0,
+        float((packed >> 24) & 0xFFu) / 255.0
+    );
+}
+
+void writePixel(uint x, uint y, vec4 color)
+{
+    uint idx = y * params.width + x;
+    color = clamp(color, 0.0, 1.0);
+    uint packed = (uint(color.r * 255.0) <<  0) |
+                  (uint(color.g * 255.0) <<  8) |
+                  (uint(color.b * 255.0) << 16) |
+                  (uint(color.a * 255.0) << 24);
+    output_buf.data[idx] = packed;
+}
+
+// ---------------------------------------------------------------------------
+// RGB -> HSL conversion
+// ---------------------------------------------------------------------------
+vec3 rgb_to_hsl(vec3 rgb)
+{
+    float r = rgb.r;
+    float g = rgb.g;
+    float b = rgb.b;
+
+    float max_c = max(max(r, g), b);
+    float min_c = min(min(r, g), b);
+    float delta = max_c - min_c;
+
+    float h = 0.0;
+    float s = 0.0;
+    float l = (max_c + min_c) * 0.5;
+
+    if (delta > 0.00001)
+    {
+        // Saturation
+        if (l < 0.5)
+            s = delta / (max_c + min_c);
+        else
+            s = delta / (2.0 - max_c - min_c);
+
+        // Hue
+        if (max_c == r)
+            h = (g - b) / delta + (g < b ? 6.0 : 0.0);
+        else if (max_c == g)
+            h = (b - r) / delta + 2.0;
+        else
+            h = (r - g) / delta + 4.0;
+
+        h /= 6.0;
+    }
+
+    return vec3(h, s, l);
+}
+
+// ---------------------------------------------------------------------------
+// Helper for HSL -> RGB conversion
+// ---------------------------------------------------------------------------
+float hue_to_rgb(float p, float q, float t)
+{
+    if (t < 0.0) t += 1.0;
+    if (t > 1.0) t -= 1.0;
+
+    if (t < 1.0 / 6.0)
+        return p + (q - p) * 6.0 * t;
+    if (t < 0.5)
+        return q;
+    if (t < 2.0 / 3.0)
+        return p + (q - p) * (2.0 / 3.0 - t) * 6.0;
+    return p;
+}
+
+// ---------------------------------------------------------------------------
+// HSL -> RGB conversion
+// ---------------------------------------------------------------------------
+vec3 hsl_to_rgb(vec3 hsl)
+{
+    float h = hsl.x;
+    float s = hsl.y;
+    float l = hsl.z;
+
+    if (s < 0.00001)
+    {
+        return vec3(l, l, l);
+    }
+
+    float q = (l < 0.5) ? (l * (1.0 + s)) : (l + s - l * s);
+    float p = 2.0 * l - q;
+
+    float r = hue_to_rgb(p, q, h + 1.0 / 3.0);
+    float g = hue_to_rgb(p, q, h);
+    float b = hue_to_rgb(p, q, h - 1.0 / 3.0);
+
+    return vec3(r, g, b);
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+void main()
+{
+    uint x = gl_GlobalInvocationID.x;
+    uint y = gl_GlobalInvocationID.y;
+
+    if (x >= params.width || y >= params.height)
+        return;
+
+    // -------------------------------------------------------------------
+    // 1. Read RGBA pixel
+    // -------------------------------------------------------------------
+    vec4 pixel = readPixel(x, y);
+
+    // -------------------------------------------------------------------
+    // 2. Convert RGB to HSL
+    // -------------------------------------------------------------------
+    vec3 hsl = rgb_to_hsl(pixel.rgb);
+
+    // -------------------------------------------------------------------
+    // 3. Apply adjustments
+    //    - Hue: shift in degrees, convert to [0, 1] range, wrap around
+    //    - Saturation: multiply
+    //    - Lightness: offset
+    // -------------------------------------------------------------------
+    hsl.x = fract(hsl.x + params.hue_shift / 360.0);
+    hsl.y = clamp(hsl.y * params.saturation, 0.0, 1.0);
+    hsl.z = clamp(hsl.z + params.lightness, 0.0, 1.0);
+
+    // -------------------------------------------------------------------
+    // 4. Convert back to RGB
+    // -------------------------------------------------------------------
+    vec3 rgb = hsl_to_rgb(hsl);
+
+    // -------------------------------------------------------------------
+    // 5. Write output (alpha preserved)
+    // -------------------------------------------------------------------
+    writePixel(x, y, vec4(rgb, pixel.a));
+}

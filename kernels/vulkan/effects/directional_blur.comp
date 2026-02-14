@@ -1,0 +1,120 @@
+/**
+ * directional_blur.comp -- Directional (Motion) Blur (Vulkan Compute)
+ *
+ * Vulkan compute shader equivalent of the CUDA directional_blur kernel.
+ * Samples along a direction vector defined by an angle and distance to
+ * produce a motion-blur effect. Alpha is blurred along with RGB.
+ *
+ * The shader takes evenly spaced samples along the direction vector
+ * centered on each pixel, then averages them.
+ *
+ * Binding layout:
+ *   set 0, binding 0: Input  RGBA (readonly storage buffer, uint-packed)
+ *   set 0, binding 1: Output RGBA (writeonly storage buffer, uint-packed)
+ *
+ * Push constants:
+ *   width     : Image width in pixels (uint)
+ *   height    : Image height in pixels (uint)
+ *   angle_rad : Blur direction angle in radians
+ *   distance  : Blur distance in pixels (number of samples)
+ */
+
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// ---------------------------------------------------------------------------
+// Storage buffers
+// ---------------------------------------------------------------------------
+layout(set = 0, binding = 0) readonly buffer InputBuf {
+    uint data[];
+} input_buf;
+
+layout(set = 0, binding = 1) writeonly buffer OutputBuf {
+    uint data[];
+} output_buf;
+
+// ---------------------------------------------------------------------------
+// Push constants
+// ---------------------------------------------------------------------------
+layout(push_constant) uniform Params {
+    uint  width;
+    uint  height;
+    float angle_rad;
+    float distance;
+} params;
+
+// ---------------------------------------------------------------------------
+// Helpers: pixel I/O
+// ---------------------------------------------------------------------------
+vec4 readPixelClamped(int px, int py)
+{
+    px = clamp(px, 0, int(params.width) - 1);
+    py = clamp(py, 0, int(params.height) - 1);
+    uint idx = uint(py) * params.width + uint(px);
+    uint packed = input_buf.data[idx];
+    return vec4(
+        float((packed >>  0) & 0xFFu) / 255.0,
+        float((packed >>  8) & 0xFFu) / 255.0,
+        float((packed >> 16) & 0xFFu) / 255.0,
+        float((packed >> 24) & 0xFFu) / 255.0
+    );
+}
+
+void writePixel(uint x, uint y, vec4 color)
+{
+    uint idx = y * params.width + x;
+    color = clamp(color, 0.0, 1.0);
+    uint packed = (uint(color.r * 255.0) <<  0) |
+                  (uint(color.g * 255.0) <<  8) |
+                  (uint(color.b * 255.0) << 16) |
+                  (uint(color.a * 255.0) << 24);
+    output_buf.data[idx] = packed;
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+void main()
+{
+    uint x = gl_GlobalInvocationID.x;
+    uint y = gl_GlobalInvocationID.y;
+
+    if (x >= params.width || y >= params.height)
+        return;
+
+    // -------------------------------------------------------------------
+    // 1. Compute direction vector
+    // -------------------------------------------------------------------
+    float dx = cos(params.angle_rad);
+    float dy = sin(params.angle_rad);
+
+    // -------------------------------------------------------------------
+    // 2. Number of samples along the blur direction
+    // -------------------------------------------------------------------
+    int num_samples = max(int(params.distance), 1);
+
+    // -------------------------------------------------------------------
+    // 3. Sample along the direction, centered on the pixel
+    // -------------------------------------------------------------------
+    vec4 accum = vec4(0.0);
+
+    for (int i = 0; i < num_samples; i++)
+    {
+        // Map i to [-distance/2, +distance/2]
+        float t = float(i) / float(num_samples - 1) - 0.5;
+        if (num_samples == 1) t = 0.0;
+
+        float sample_x = float(x) + dx * t * params.distance;
+        float sample_y = float(y) + dy * t * params.distance;
+
+        accum += readPixelClamped(int(sample_x + 0.5), int(sample_y + 0.5));
+    }
+
+    accum /= float(num_samples);
+
+    // -------------------------------------------------------------------
+    // 4. Write output
+    // -------------------------------------------------------------------
+    writePixel(x, y, accum);
+}

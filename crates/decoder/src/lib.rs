@@ -17,6 +17,9 @@
 //!   - [`nvdec::session`] — Safe decoder session with RAII
 //!   - [`nvdec::decoder`] — High-level `HwDecoder` implementation
 //! - [`manager`] — Decoder pool manager
+//! - [`pool`] — Bounded decoder pool with LRU eviction
+//! - [`prefetch`] — Look-ahead frame decoding queue
+//! - [`thumbnail`] — LRU thumbnail cache for timeline UI
 //!
 //! ## Usage
 //!
@@ -41,3 +44,11 @@
 
 pub mod manager;
 pub mod nvdec;
+pub mod pool;
+pub mod prefetch;
+pub mod thumbnail;
+
+// Re-export primary types from new modules.
+pub use pool::{DecoderPool, DecoderSlot, PoolStats};
+pub use prefetch::{PrefetchData, PrefetchFrame, PrefetchQueue, PrefetchStats};
+pub use thumbnail::{ThumbnailData, ThumbnailGenerator, ThumbnailKey, ThumbnailStats};

@@ -1,0 +1,13 @@
+[package]
+name = "ms-audio"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ms-common = { path = "../common" }
+symphonia = { workspace = true }
+cpal = { workspace = true }
+thiserror = { workspace = true }
+crossbeam = { workspace = true }
+parking_lot = { workspace = true }
+tracing = { workspace = true }

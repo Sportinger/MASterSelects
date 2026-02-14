@@ -1,0 +1,9 @@
+[package]
+name = "ms-compositor"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ms-common = { path = "../common" }
+thiserror = { workspace = true }
+tracing = { workspace = true }

@@ -21,7 +21,11 @@ use crate::bridge::PreviewBridge;
 use anyhow::{Context, Result};
 use crossbeam::channel::{self, Receiver, Sender, TryRecvError};
 use ms_common::{Rational, Resolution, VideoCodec};
-use std::path::PathBuf;
+use ms_demux::mkv::MkvDemuxer;
+use ms_demux::mp4::Mp4Demuxer;
+use ms_demux::probe::detect_format;
+use ms_demux::traits::Demuxer;
+use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -208,9 +212,11 @@ impl EngineOrchestrator {
     /// arrives, the engine transitions to `Paused` (waiting for the user
     /// to press play).
     ///
-    /// For Phase 0, since the actual demuxer/decoder crates may not be fully
-    /// functional yet, this uses a simulated decode thread that generates
-    /// animated frames to exercise the threading and channel pipeline.
+    /// The method probes the file using the `ms-demux` crate to extract
+    /// real metadata (resolution, fps, duration, codec). If probing fails
+    /// (e.g. the file doesn't exist or isn't a valid MP4), it falls back
+    /// to sensible defaults so the pipeline can still be exercised with
+    /// synthetic frames.
     pub fn open_file(&mut self, path: PathBuf) -> Result<()> {
         // Stop any existing pipeline first
         self.stop_pipeline();
@@ -225,16 +231,37 @@ impl EngineOrchestrator {
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| "unknown".to_string());
 
-        // TODO: In later phases, probe the file with the real demuxer to
-        // extract actual resolution, fps, duration, and codec info.
-        // For now, use sensible defaults.
-        let info = FileInfo {
-            path: path.clone(),
-            file_name,
-            resolution: Resolution::HD,
-            fps: Rational::FPS_30,
-            duration_secs: 10.0,
-            codec: VideoCodec::H264,
+        // Try to probe the file with the real demuxer for metadata.
+        // If it fails (file missing, not a valid MP4, etc.), fall back to
+        // defaults so the pipeline can still be exercised with synthetic frames.
+        let info = match probe_file_info(&path, &file_name) {
+            Ok(fi) => {
+                tracing::info!(
+                    "Engine: probed '{}' -> {}x{} @ {} fps, {:.2}s, {:?}",
+                    fi.file_name,
+                    fi.resolution.width,
+                    fi.resolution.height,
+                    fi.fps,
+                    fi.duration_secs,
+                    fi.codec,
+                );
+                fi
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Engine: could not probe '{}': {}. Using defaults.",
+                    file_name,
+                    e,
+                );
+                FileInfo {
+                    path: path.clone(),
+                    file_name,
+                    resolution: Resolution::HD,
+                    fps: Rational::FPS_30,
+                    duration_secs: 10.0,
+                    codec: VideoCodec::H264,
+                }
+            }
         };
         self.file_info = Some(info.clone());
 
@@ -580,22 +607,74 @@ impl Drop for EngineOrchestrator {
 }
 
 // ---------------------------------------------------------------------------
+// File probing — extract metadata via the real demuxer
+// ---------------------------------------------------------------------------
+
+/// Probe a media file and return metadata using the real `ms-demux` crate.
+///
+/// Supports MP4/MOV/M4V and MKV/WebM containers.
+fn probe_file_info(path: &Path, file_name: &str) -> Result<FileInfo> {
+    // Detect container format from extension
+    let format = detect_format(path).map_err(|e| anyhow::anyhow!("Unsupported format: {}", e))?;
+
+    match format {
+        ms_common::ContainerFormat::Mp4 => {
+            let demuxer =
+                Mp4Demuxer::open(path).map_err(|e| anyhow::anyhow!("Failed to open MP4: {}", e))?;
+
+            let container = demuxer.probe();
+            let video = container
+                .video_streams
+                .first()
+                .ok_or_else(|| anyhow::anyhow!("No video stream found"))?;
+
+            Ok(FileInfo {
+                path: path.to_path_buf(),
+                file_name: file_name.to_string(),
+                resolution: video.resolution,
+                fps: video.fps,
+                duration_secs: video.duration.0,
+                codec: video.codec,
+            })
+        }
+        ms_common::ContainerFormat::Mkv | ms_common::ContainerFormat::WebM => {
+            let demuxer = MkvDemuxer::open(path)
+                .map_err(|e| anyhow::anyhow!("Failed to open MKV: {}", e))?;
+
+            let container = demuxer.probe();
+            let video = container
+                .video_streams
+                .first()
+                .ok_or_else(|| anyhow::anyhow!("No video stream found"))?;
+
+            Ok(FileInfo {
+                path: path.to_path_buf(),
+                file_name: file_name.to_string(),
+                resolution: video.resolution,
+                fps: video.fps,
+                duration_secs: video.duration.0,
+                codec: video.codec,
+            })
+        }
+    }
+}
+
+// TODO: Add file dialog support via `rfd` crate when it's added as a dependency.
+// This would allow opening a native file picker from the UI.
+
+// ---------------------------------------------------------------------------
 // Decode thread — runs on a separate OS thread
 // ---------------------------------------------------------------------------
 
 /// Main loop for the decode thread.
 ///
-/// **Phase 0 (current):** Generates synthetic animated frames to exercise the
-/// full threading and channel pipeline without requiring actual video files.
+/// Attempts to open the real demuxer for the file. If successful, the decode
+/// loop reads real video packets and uses their PTS timing for frame pacing.
+/// Since NVDEC / Vulkan Video decode is not wired in yet, we still generate
+/// synthetic RGBA pixel data, but the timing comes from the actual container.
 ///
-/// **Future phases:** This will be replaced with:
-/// 1. Open file with the `ms-demux` crate's MP4/MKV parser
-/// 2. Extract NAL units (video packets)
-/// 3. Feed packets to `HwDecoder` (via `GpuBackend::create_decoder`)
-/// 4. Receive decoded `GpuFrame` (NV12 on GPU)
-/// 5. Run NV12->RGBA conversion kernel on GPU
-/// 6. Copy RGBA data to staging buffer
-/// 7. Send to main thread via the frame channel
+/// If the demuxer cannot open the file (e.g. file missing, invalid container),
+/// the thread falls back to fully synthetic frame generation.
 fn decode_thread_main(
     info: FileInfo,
     frame_tx: Sender<DecodedFrame>,
@@ -609,6 +688,164 @@ fn decode_thread_main(
         info.fps,
     );
 
+    // Try to open the real demuxer for this file
+    match try_open_demuxer(&info.path) {
+        Ok(mut demuxer) => {
+            tracing::info!(
+                "Decode thread: real demuxer opened for '{}'",
+                info.file_name,
+            );
+            real_decode_loop(&info, &mut demuxer, &frame_tx, &cmd_rx);
+        }
+        Err(e) => {
+            tracing::warn!(
+                "Decode thread: could not open demuxer for '{}': {}. Using synthetic frames.",
+                info.file_name,
+                e,
+            );
+            synthetic_decode_loop(&info, &frame_tx, &cmd_rx);
+        }
+    }
+}
+
+/// Try to open the appropriate demuxer for a given file path.
+///
+/// Supports MP4 and MKV/WebM. Returns the demuxer as a boxed trait
+/// object so the decode loop can work generically.
+fn try_open_demuxer(path: &Path) -> Result<Box<dyn Demuxer>> {
+    let format = detect_format(path).map_err(|e| anyhow::anyhow!("Unsupported format: {}", e))?;
+
+    match format {
+        ms_common::ContainerFormat::Mp4 => {
+            let demuxer =
+                Mp4Demuxer::open(path).map_err(|e| anyhow::anyhow!("Failed to open MP4: {}", e))?;
+            Ok(Box::new(demuxer))
+        }
+        ms_common::ContainerFormat::Mkv | ms_common::ContainerFormat::WebM => {
+            let demuxer = MkvDemuxer::open(path)
+                .map_err(|e| anyhow::anyhow!("Failed to open MKV: {}", e))?;
+            Ok(Box::new(demuxer))
+        }
+    }
+}
+
+/// Decode loop that reads real packets from the demuxer.
+///
+/// Uses real PTS timing from the container for frame pacing. Since the HW
+/// decoder (NVDEC / Vulkan Video) is not yet wired in, we generate synthetic
+/// RGBA pixel data but log the real packet info for debugging.
+fn real_decode_loop(
+    info: &FileInfo,
+    demuxer: &mut Box<dyn Demuxer>,
+    frame_tx: &Sender<DecodedFrame>,
+    cmd_rx: &Receiver<DecodeCommand>,
+) {
+    let width = info.resolution.width;
+    let height = info.resolution.height;
+    let fps = info.fps.as_f64();
+    let frame_duration = Duration::from_secs_f64(1.0 / fps);
+
+    let mut playing = false;
+    let mut frame_num: u64 = 0;
+
+    loop {
+        // Check for commands (non-blocking)
+        match cmd_rx.try_recv() {
+            Ok(DecodeCommand::Play) => {
+                playing = true;
+                tracing::debug!("Decode thread (real): play");
+            }
+            Ok(DecodeCommand::Pause) => {
+                playing = false;
+                tracing::debug!("Decode thread (real): pause");
+            }
+            Ok(DecodeCommand::Seek(time_secs)) => {
+                if let Err(e) = demuxer.seek(time_secs) {
+                    tracing::warn!("Decode thread (real): seek failed: {}", e);
+                }
+                frame_num = (time_secs * fps).round() as u64;
+                tracing::debug!(
+                    "Decode thread (real): seek to {:.2}s (frame ~{})",
+                    time_secs,
+                    frame_num,
+                );
+            }
+            Ok(DecodeCommand::Stop) => {
+                tracing::info!("Decode thread (real): stop command received");
+                return;
+            }
+            Err(crossbeam::channel::TryRecvError::Empty) => {}
+            Err(crossbeam::channel::TryRecvError::Disconnected) => {
+                tracing::info!("Decode thread (real): command channel disconnected, exiting");
+                return;
+            }
+        }
+
+        if !playing {
+            thread::sleep(Duration::from_millis(10));
+            continue;
+        }
+
+        // Read the next real video packet from the demuxer
+        match demuxer.next_video_packet() {
+            Some(packet) => {
+                let pts_secs = packet.pts.0;
+
+                tracing::debug!(
+                    "Decode thread (real): packet {} -> size={} bytes, pts={:.3}s, keyframe={}",
+                    frame_num,
+                    packet.data.len(),
+                    pts_secs,
+                    packet.is_keyframe,
+                );
+
+                // TODO: Feed packet.data to HW decoder (NVDEC/Vulkan Video)
+                // to get a real decoded GPU frame. For now, generate synthetic
+                // RGBA pixels but use the real PTS for timing.
+                let rgba_data = generate_synthetic_frame(width, height, frame_num, pts_secs);
+
+                let decoded = DecodedFrame {
+                    rgba_data,
+                    width,
+                    height,
+                    pts_secs,
+                };
+
+                match frame_tx.send(decoded) {
+                    Ok(()) => {}
+                    Err(_) => {
+                        tracing::info!("Decode thread (real): frame channel closed, exiting");
+                        return;
+                    }
+                }
+
+                frame_num += 1;
+
+                // Pace to target FPS. In a real pipeline the decode latency
+                // provides natural pacing; with synthetic frames we sleep.
+                thread::sleep(frame_duration);
+            }
+            None => {
+                // End of stream
+                tracing::info!(
+                    "Decode thread (real): end of stream after {} frames",
+                    frame_num,
+                );
+                playing = false;
+            }
+        }
+    }
+}
+
+/// Fully synthetic decode loop (fallback when demuxer is unavailable).
+///
+/// Generates animated test frames at the target FPS. This is the original
+/// Phase 0 behavior, preserved as a fallback.
+fn synthetic_decode_loop(
+    info: &FileInfo,
+    frame_tx: &Sender<DecodedFrame>,
+    cmd_rx: &Receiver<DecodeCommand>,
+) {
     let width = info.resolution.width;
     let height = info.resolution.height;
     let fps = info.fps.as_f64();
@@ -623,34 +860,32 @@ fn decode_thread_main(
         match cmd_rx.try_recv() {
             Ok(DecodeCommand::Play) => {
                 playing = true;
-                tracing::debug!("Decode thread: play");
+                tracing::debug!("Decode thread (synthetic): play");
             }
             Ok(DecodeCommand::Pause) => {
                 playing = false;
-                tracing::debug!("Decode thread: pause");
+                tracing::debug!("Decode thread (synthetic): pause");
             }
             Ok(DecodeCommand::Seek(time_secs)) => {
                 current_frame = (time_secs * fps).round() as u64;
                 tracing::debug!(
-                    "Decode thread: seek to {:.2}s (frame {})",
+                    "Decode thread (synthetic): seek to {:.2}s (frame {})",
                     time_secs,
-                    current_frame
+                    current_frame,
                 );
             }
             Ok(DecodeCommand::Stop) => {
-                tracing::info!("Decode thread: stop command received");
+                tracing::info!("Decode thread (synthetic): stop command received");
                 return;
             }
             Err(crossbeam::channel::TryRecvError::Empty) => {}
             Err(crossbeam::channel::TryRecvError::Disconnected) => {
-                tracing::info!("Decode thread: command channel disconnected, exiting");
+                tracing::info!("Decode thread (synthetic): command channel disconnected, exiting");
                 return;
             }
         }
 
         if !playing {
-            // When paused, sleep briefly to avoid busy-waiting, but keep
-            // checking for commands.
             thread::sleep(Duration::from_millis(10));
             continue;
         }
@@ -661,10 +896,6 @@ fn decode_thread_main(
             continue;
         }
 
-        // --- Phase 0: Generate a synthetic frame ---
-        // This exercises the full pipeline without needing real decode.
-        // The frame is a moving gradient that clearly shows the frame number,
-        // so we can verify frame sequencing is correct.
         let pts_secs = current_frame as f64 / fps;
         let rgba_data = generate_synthetic_frame(width, height, current_frame, pts_secs);
 
@@ -675,22 +906,15 @@ fn decode_thread_main(
             pts_secs,
         };
 
-        // Send to main thread. If the channel is full (back-pressure),
-        // this will block until there's room. If the receiver is dropped,
-        // the send will fail and we exit.
         match frame_tx.send(decoded) {
             Ok(()) => {}
             Err(_) => {
-                tracing::info!("Decode thread: frame channel closed, exiting");
+                tracing::info!("Decode thread (synthetic): frame channel closed, exiting");
                 return;
             }
         }
 
         current_frame += 1;
-
-        // Pace ourselves to roughly the target FPS.
-        // In a real pipeline, the decode time itself would provide some pacing,
-        // but for synthetic frames we need to sleep explicitly.
         thread::sleep(frame_duration);
     }
 }
@@ -956,6 +1180,45 @@ mod tests {
         assert!(engine.current_time_secs() >= 0.0);
 
         engine.stop();
+    }
+
+    #[test]
+    fn probe_recognizes_mkv_format() {
+        // probe_file_info should attempt to open an MKV file (not fall through
+        // to "unsupported format"). The error should mention MKV, not "not yet supported".
+        let result = probe_file_info(Path::new("nonexistent.mkv"), "nonexistent.mkv");
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("MKV"),
+            "Error should mention MKV, got: {err_msg}",
+        );
+    }
+
+    #[test]
+    fn probe_recognizes_webm_format() {
+        let result = probe_file_info(Path::new("nonexistent.webm"), "nonexistent.webm");
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("MKV"),
+            "Error should mention MKV (WebM uses MkvDemuxer), got: {err_msg}",
+        );
+    }
+
+    #[test]
+    fn try_open_demuxer_mkv_errors_on_missing_file() {
+        let result = try_open_demuxer(Path::new("nonexistent.mkv"));
+        assert!(result.is_err());
+        // Box<dyn Demuxer> doesn't implement Debug, so use match instead of unwrap_err()
+        let err_msg = match result {
+            Ok(_) => panic!("Expected error for nonexistent MKV file"),
+            Err(e) => e.to_string(),
+        };
+        assert!(
+            err_msg.contains("MKV"),
+            "Error should mention MKV, got: {err_msg}",
+        );
     }
 
     #[test]

@@ -1,0 +1,154 @@
+/**
+ * glow_blur_h.comp -- Glow Effect: Horizontal Blur Pass (Vulkan Compute)
+ *
+ * Second pass of the multi-pass glow effect. Performs horizontal Gaussian
+ * blur on the thresholded bright pixels from glow_threshold.comp.
+ *
+ * This is functionally identical to gaussian_blur_h.comp but exists as a
+ * separate file for the glow pipeline to allow independent parameterization.
+ *
+ * Binding layout:
+ *   set 0, binding 0: Input  RGBA (readonly storage buffer, uint-packed)
+ *   set 0, binding 1: Output RGBA (writeonly storage buffer, uint-packed)
+ *
+ * Push constants:
+ *   width  : Image width in pixels (uint)
+ *   height : Image height in pixels (uint)
+ *   radius : Blur radius in pixels (float, cast to int). Max 64.
+ *   sigma  : Gaussian sigma. If 0, computed as radius / 3.
+ */
+
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// ---------------------------------------------------------------------------
+// Storage buffers
+// ---------------------------------------------------------------------------
+layout(set = 0, binding = 0) readonly buffer InputBuf {
+    uint data[];
+} input_buf;
+
+layout(set = 0, binding = 1) writeonly buffer OutputBuf {
+    uint data[];
+} output_buf;
+
+// ---------------------------------------------------------------------------
+// Push constants
+// ---------------------------------------------------------------------------
+layout(push_constant) uniform Params {
+    uint  width;
+    uint  height;
+    float radius;
+    float sigma;
+} params;
+
+// ---------------------------------------------------------------------------
+// Shared memory for tile + halo (horizontal)
+// ---------------------------------------------------------------------------
+#define MAX_RADIUS 64
+#define TILE_W 16
+#define TILE_H 16
+#define SHARED_W (TILE_W + 2 * MAX_RADIUS)
+
+shared vec4 tile[TILE_H][SHARED_W];
+
+// ---------------------------------------------------------------------------
+// Helper: read RGBA pixel with bounds clamping
+// ---------------------------------------------------------------------------
+vec4 readPixelClamped(int px, int py)
+{
+    px = clamp(px, 0, int(params.width) - 1);
+    py = clamp(py, 0, int(params.height) - 1);
+    uint idx = uint(py) * params.width + uint(px);
+    uint packed = input_buf.data[idx];
+    return vec4(
+        float((packed >>  0) & 0xFFu) / 255.0,
+        float((packed >>  8) & 0xFFu) / 255.0,
+        float((packed >> 16) & 0xFFu) / 255.0,
+        float((packed >> 24) & 0xFFu) / 255.0
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Helper: write pixel
+// ---------------------------------------------------------------------------
+void writePixel(uint x, uint y, vec4 color)
+{
+    uint idx = y * params.width + x;
+    color = clamp(color, 0.0, 1.0);
+    uint packed = (uint(color.r * 255.0) <<  0) |
+                  (uint(color.g * 255.0) <<  8) |
+                  (uint(color.b * 255.0) << 16) |
+                  (uint(color.a * 255.0) << 24);
+    output_buf.data[idx] = packed;
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+void main()
+{
+    uint x = gl_GlobalInvocationID.x;
+    uint y = gl_GlobalInvocationID.y;
+
+    int iradius = clamp(int(params.radius), 0, MAX_RADIUS);
+    float sig = params.sigma > 0.0 ? params.sigma : max(float(iradius) / 3.0, 0.001);
+
+    // -------------------------------------------------------------------
+    // 1. Load tile + halo into shared memory
+    // -------------------------------------------------------------------
+    int lx = int(gl_LocalInvocationID.x);
+    int ly = int(gl_LocalInvocationID.y);
+    int tile_origin_x = int(gl_WorkGroupID.x) * TILE_W;
+    int tile_origin_y = int(gl_WorkGroupID.y) * TILE_H;
+
+    int global_y = tile_origin_y + ly;
+
+    // Load center region
+    int center_gx = tile_origin_x + lx;
+    tile[ly][lx + iradius] = readPixelClamped(center_gx, global_y);
+
+    // Load left halo
+    if (lx < iradius)
+    {
+        int halo_gx = tile_origin_x - iradius + lx;
+        tile[ly][lx] = readPixelClamped(halo_gx, global_y);
+    }
+
+    // Load right halo
+    if (lx >= TILE_W - iradius)
+    {
+        int halo_gx = tile_origin_x + TILE_W + (lx - (TILE_W - iradius));
+        tile[ly][lx + 2 * iradius] = readPixelClamped(halo_gx, global_y);
+    }
+
+    barrier();
+
+    // -------------------------------------------------------------------
+    // 2. Bounds check
+    // -------------------------------------------------------------------
+    if (x >= params.width || y >= params.height)
+        return;
+
+    // -------------------------------------------------------------------
+    // 3. Horizontal Gaussian blur
+    // -------------------------------------------------------------------
+    float weight_sum = 0.0;
+    vec4 accum = vec4(0.0);
+    float inv_two_sigma_sq = -1.0 / (2.0 * sig * sig);
+
+    for (int i = -iradius; i <= iradius; i++)
+    {
+        float w = exp(float(i * i) * inv_two_sigma_sq);
+        accum += tile[ly][lx + iradius + i] * w;
+        weight_sum += w;
+    }
+
+    accum /= weight_sum;
+
+    // -------------------------------------------------------------------
+    // 4. Write output
+    // -------------------------------------------------------------------
+    writePixel(x, y, accum);
+}

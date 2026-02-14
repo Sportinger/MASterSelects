@@ -1,10 +1,15 @@
 mod app;
 mod bridge;
+#[allow(dead_code)]
 mod engine;
+#[allow(dead_code)]
+mod export;
+#[allow(dead_code)]
 mod media_panel;
 mod preview_panel;
 mod properties_panel;
 mod theme;
+#[allow(dead_code)]
 mod timeline;
 mod toolbar;
 

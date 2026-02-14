@@ -1,0 +1,135 @@
+/**
+ * sharpen.comp -- Unsharp Mask Sharpening (Vulkan Compute)
+ *
+ * Vulkan compute shader equivalent of the CUDA sharpen kernel.
+ * Applies unsharp mask sharpening using a small convolution kernel.
+ * The shader computes a blurred version of the neighborhood, then
+ * amplifies the difference between the original and the blur.
+ *
+ * Formula:
+ *   blurred = weighted average of neighborhood
+ *   detail  = original - blurred
+ *   output  = original + detail * amount
+ *
+ * Binding layout:
+ *   set 0, binding 0: Input  RGBA (readonly storage buffer, uint-packed)
+ *   set 0, binding 1: Output RGBA (writeonly storage buffer, uint-packed)
+ *
+ * Push constants:
+ *   width  : Image width in pixels (uint)
+ *   height : Image height in pixels (uint)
+ *   amount : Sharpening strength [0, 5]. 0 = no sharpening. 1 = standard.
+ *   radius : Kernel radius in pixels (float, cast to int). 1 or 2 typical.
+ */
+
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// ---------------------------------------------------------------------------
+// Storage buffers
+// ---------------------------------------------------------------------------
+layout(set = 0, binding = 0) readonly buffer InputBuf {
+    uint data[];
+} input_buf;
+
+layout(set = 0, binding = 1) writeonly buffer OutputBuf {
+    uint data[];
+} output_buf;
+
+// ---------------------------------------------------------------------------
+// Push constants
+// ---------------------------------------------------------------------------
+layout(push_constant) uniform Params {
+    uint  width;
+    uint  height;
+    float amount;
+    float radius;
+} params;
+
+// ---------------------------------------------------------------------------
+// Helpers: pixel I/O
+// ---------------------------------------------------------------------------
+vec4 readPixel(uint x, uint y)
+{
+    uint idx = y * params.width + x;
+    uint packed = input_buf.data[idx];
+    return vec4(
+        float((packed >>  0) & 0xFFu) / 255.0,
+        float((packed >>  8) & 0xFFu) / 255.0,
+        float((packed >> 16) & 0xFFu) / 255.0,
+        float((packed >> 24) & 0xFFu) / 255.0
+    );
+}
+
+vec4 readPixelClamped(int px, int py)
+{
+    px = clamp(px, 0, int(params.width) - 1);
+    py = clamp(py, 0, int(params.height) - 1);
+    return readPixel(uint(px), uint(py));
+}
+
+void writePixel(uint x, uint y, vec4 color)
+{
+    uint idx = y * params.width + x;
+    color = clamp(color, 0.0, 1.0);
+    uint packed = (uint(color.r * 255.0) <<  0) |
+                  (uint(color.g * 255.0) <<  8) |
+                  (uint(color.b * 255.0) << 16) |
+                  (uint(color.a * 255.0) << 24);
+    output_buf.data[idx] = packed;
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+void main()
+{
+    uint x = gl_GlobalInvocationID.x;
+    uint y = gl_GlobalInvocationID.y;
+
+    if (x >= params.width || y >= params.height)
+        return;
+
+    // -------------------------------------------------------------------
+    // 1. Read the center pixel
+    // -------------------------------------------------------------------
+    vec4 center = readPixel(x, y);
+
+    // -------------------------------------------------------------------
+    // 2. Compute a local blur using a box filter of the given radius
+    //    This forms the "unsharp" mask
+    // -------------------------------------------------------------------
+    int iradius = max(int(params.radius), 1);
+    vec4 blur_sum = vec4(0.0);
+    float count = 0.0;
+
+    for (int ky = -iradius; ky <= iradius; ky++)
+    {
+        for (int kx = -iradius; kx <= iradius; kx++)
+        {
+            blur_sum += readPixelClamped(int(x) + kx, int(y) + ky);
+            count += 1.0;
+        }
+    }
+
+    vec4 blurred = blur_sum / count;
+
+    // -------------------------------------------------------------------
+    // 3. Compute detail (high-frequency component)
+    // -------------------------------------------------------------------
+    vec4 detail = center - blurred;
+
+    // -------------------------------------------------------------------
+    // 4. Apply sharpening: original + detail * amount
+    //    Alpha is preserved from the original
+    // -------------------------------------------------------------------
+    vec4 result;
+    result.rgb = center.rgb + detail.rgb * params.amount;
+    result.a   = center.a;
+
+    // -------------------------------------------------------------------
+    // 5. Write output (writePixel clamps to [0, 1])
+    // -------------------------------------------------------------------
+    writePixel(x, y, result);
+}

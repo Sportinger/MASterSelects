@@ -6,6 +6,14 @@ members = [
     "crates/gpu-hal",
     "crates/demux",
     "crates/decoder",
+    "crates/timeline-eval",
+    "crates/audio",
+    "crates/project",
+    "crates/app-state",
+    "crates/compositor",
+    "crates/effects",
+    "crates/encoder",
+    "crates/mux",
 ]
 
 [workspace.dependencies]
@@ -37,11 +45,21 @@ anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 
+# Audio
+symphonia = { version = "0.5", features = ["mp3", "aac", "flac", "wav", "ogg", "isomp4"] }
+cpal = "0.15"
+
+# Threading (additional)
+rayon = "1.10"
+
 # Byte Parsing (for Demuxer)
 byteorder = "1"
 
 # Dynamic library loading
 libloading = "0.8"
+
+# Native file dialog
+rfd = "0.15"
 
 [profile.release]
 opt-level = 3

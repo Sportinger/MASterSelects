@@ -1,0 +1,124 @@
+/**
+ * zoom_blur.comp -- Zoom Blur (Vulkan Compute)
+ *
+ * Vulkan compute shader equivalent of the CUDA zoom_blur kernel.
+ * Samples along the line from each pixel toward a center point to produce
+ * a zooming or tunneling blur effect. Alpha is blurred along with RGB.
+ *
+ * Binding layout:
+ *   set 0, binding 0: Input  RGBA (readonly storage buffer, uint-packed)
+ *   set 0, binding 1: Output RGBA (writeonly storage buffer, uint-packed)
+ *
+ * Push constants:
+ *   width    : Image width in pixels (uint)
+ *   height   : Image height in pixels (uint)
+ *   center_x : X coordinate of zoom center (normalized 0-1)
+ *   center_y : Y coordinate of zoom center (normalized 0-1)
+ *   strength : Blur strength [0, 1]. 0 = no blur.
+ */
+
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// ---------------------------------------------------------------------------
+// Storage buffers
+// ---------------------------------------------------------------------------
+layout(set = 0, binding = 0) readonly buffer InputBuf {
+    uint data[];
+} input_buf;
+
+layout(set = 0, binding = 1) writeonly buffer OutputBuf {
+    uint data[];
+} output_buf;
+
+// ---------------------------------------------------------------------------
+// Push constants
+// ---------------------------------------------------------------------------
+layout(push_constant) uniform Params {
+    uint  width;
+    uint  height;
+    float center_x;
+    float center_y;
+    float strength;
+} params;
+
+// ---------------------------------------------------------------------------
+// Helpers: pixel I/O
+// ---------------------------------------------------------------------------
+vec4 readPixelClamped(int px, int py)
+{
+    px = clamp(px, 0, int(params.width) - 1);
+    py = clamp(py, 0, int(params.height) - 1);
+    uint idx = uint(py) * params.width + uint(px);
+    uint packed = input_buf.data[idx];
+    return vec4(
+        float((packed >>  0) & 0xFFu) / 255.0,
+        float((packed >>  8) & 0xFFu) / 255.0,
+        float((packed >> 16) & 0xFFu) / 255.0,
+        float((packed >> 24) & 0xFFu) / 255.0
+    );
+}
+
+void writePixel(uint x, uint y, vec4 color)
+{
+    uint idx = y * params.width + x;
+    color = clamp(color, 0.0, 1.0);
+    uint packed = (uint(color.r * 255.0) <<  0) |
+                  (uint(color.g * 255.0) <<  8) |
+                  (uint(color.b * 255.0) << 16) |
+                  (uint(color.a * 255.0) << 24);
+    output_buf.data[idx] = packed;
+}
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+#define NUM_SAMPLES 32
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+void main()
+{
+    uint x = gl_GlobalInvocationID.x;
+    uint y = gl_GlobalInvocationID.y;
+
+    if (x >= params.width || y >= params.height)
+        return;
+
+    // -------------------------------------------------------------------
+    // 1. Compute center in pixel coordinates
+    // -------------------------------------------------------------------
+    float cx = params.center_x * float(params.width);
+    float cy = params.center_y * float(params.height);
+
+    // -------------------------------------------------------------------
+    // 2. Direction vector from pixel toward center
+    // -------------------------------------------------------------------
+    float dx = cx - float(x);
+    float dy = cy - float(y);
+
+    // -------------------------------------------------------------------
+    // 3. Sample along the line from pixel toward center
+    //    Each sample steps further along the direction vector
+    // -------------------------------------------------------------------
+    vec4 accum = vec4(0.0);
+
+    for (int i = 0; i < NUM_SAMPLES; i++)
+    {
+        float t = float(i) / float(NUM_SAMPLES) * params.strength;
+
+        float sample_x = float(x) + dx * t;
+        float sample_y = float(y) + dy * t;
+
+        accum += readPixelClamped(int(sample_x + 0.5), int(sample_y + 0.5));
+    }
+
+    accum /= float(NUM_SAMPLES);
+
+    // -------------------------------------------------------------------
+    // 4. Write output
+    // -------------------------------------------------------------------
+    writePixel(x, y, accum);
+}

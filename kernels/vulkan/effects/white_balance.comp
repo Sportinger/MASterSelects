@@ -1,0 +1,118 @@
+/**
+ * white_balance.comp -- White Balance / Color Temperature Adjustment (Vulkan Compute)
+ *
+ * Vulkan compute shader equivalent of the CUDA white_balance kernel.
+ * Adjusts color temperature and tint of an RGBA image by applying per-channel
+ * multipliers derived from the temperature and tint parameters.
+ * Alpha is preserved.
+ *
+ * Temperature shifts the blue-yellow axis:
+ *   Warm (positive) -> boost red/green, reduce blue
+ *   Cool (negative) -> boost blue, reduce red/green
+ *
+ * Tint shifts the green-magenta axis:
+ *   Positive -> boost green
+ *   Negative -> boost magenta (red + blue)
+ *
+ * Binding layout:
+ *   set 0, binding 0: Input  RGBA (readonly storage buffer, uint-packed)
+ *   set 0, binding 1: Output RGBA (writeonly storage buffer, uint-packed)
+ *
+ * Push constants:
+ *   width       : Image width in pixels (uint)
+ *   height      : Image height in pixels (uint)
+ *   temperature : Color temperature shift [-1, 1]. 0 = no change.
+ *                 Positive = warmer, negative = cooler.
+ *   tint        : Green-magenta tint shift [-1, 1]. 0 = no change.
+ *                 Positive = more green, negative = more magenta.
+ */
+
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// ---------------------------------------------------------------------------
+// Storage buffers
+// ---------------------------------------------------------------------------
+layout(set = 0, binding = 0) readonly buffer InputBuf {
+    uint data[];
+} input_buf;
+
+layout(set = 0, binding = 1) writeonly buffer OutputBuf {
+    uint data[];
+} output_buf;
+
+// ---------------------------------------------------------------------------
+// Push constants
+// ---------------------------------------------------------------------------
+layout(push_constant) uniform Params {
+    uint  width;
+    uint  height;
+    float temperature;
+    float tint;
+} params;
+
+// ---------------------------------------------------------------------------
+// Helpers: pixel I/O
+// ---------------------------------------------------------------------------
+vec4 readPixel(uint x, uint y)
+{
+    uint idx = y * params.width + x;
+    uint packed = input_buf.data[idx];
+    return vec4(
+        float((packed >>  0) & 0xFFu) / 255.0,
+        float((packed >>  8) & 0xFFu) / 255.0,
+        float((packed >> 16) & 0xFFu) / 255.0,
+        float((packed >> 24) & 0xFFu) / 255.0
+    );
+}
+
+void writePixel(uint x, uint y, vec4 color)
+{
+    uint idx = y * params.width + x;
+    color = clamp(color, 0.0, 1.0);
+    uint packed = (uint(color.r * 255.0) <<  0) |
+                  (uint(color.g * 255.0) <<  8) |
+                  (uint(color.b * 255.0) << 16) |
+                  (uint(color.a * 255.0) << 24);
+    output_buf.data[idx] = packed;
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+void main()
+{
+    uint x = gl_GlobalInvocationID.x;
+    uint y = gl_GlobalInvocationID.y;
+
+    if (x >= params.width || y >= params.height)
+        return;
+
+    // -------------------------------------------------------------------
+    // 1. Read RGBA pixel (normalized to [0, 1])
+    // -------------------------------------------------------------------
+    vec4 pixel = readPixel(x, y);
+
+    // -------------------------------------------------------------------
+    // 2. Compute per-channel multipliers from temperature and tint
+    //
+    //    Temperature: positive = warm (boost R, reduce B)
+    //    Tint:        positive = green, negative = magenta
+    // -------------------------------------------------------------------
+    float r_mult = 1.0 + params.temperature * 0.5;
+    float g_mult = 1.0 + params.tint * 0.5;
+    float b_mult = 1.0 - params.temperature * 0.5;
+
+    // -------------------------------------------------------------------
+    // 3. Apply multipliers
+    // -------------------------------------------------------------------
+    pixel.r = pixel.r * r_mult;
+    pixel.g = pixel.g * g_mult;
+    pixel.b = pixel.b * b_mult;
+
+    // -------------------------------------------------------------------
+    // 4. Write output (alpha preserved, writePixel clamps)
+    // -------------------------------------------------------------------
+    writePixel(x, y, pixel);
+}

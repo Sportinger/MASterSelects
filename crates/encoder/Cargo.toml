@@ -1,0 +1,15 @@
+[package]
+name = "ms-encoder"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+nvenc = ["libloading"]
+
+[dependencies]
+ms-common = { path = "../common" }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+libloading = { workspace = true, optional = true }
+crossbeam = { workspace = true }

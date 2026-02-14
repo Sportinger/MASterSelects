@@ -1,0 +1,105 @@
+/**
+ * exposure.comp -- Exposure & Gamma Adjustment (Vulkan Compute)
+ *
+ * Vulkan compute shader equivalent of the CUDA exposure kernel.
+ * Applies photographic exposure compensation and gamma correction.
+ * Alpha is preserved.
+ *
+ * Formula (per channel):
+ *   out = pow(in * pow(2.0, exposure), 1.0 / gamma)
+ *
+ * Binding layout:
+ *   set 0, binding 0: Input  RGBA (readonly storage buffer, uint-packed)
+ *   set 0, binding 1: Output RGBA (writeonly storage buffer, uint-packed)
+ *
+ * Push constants:
+ *   width    : Image width in pixels (uint)
+ *   height   : Image height in pixels (uint)
+ *   exposure : Exposure value in EV [-5, 5]. 0 = no change.
+ *   gamma    : Gamma value [0.1, 5.0]. 1 = no change.
+ */
+
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// ---------------------------------------------------------------------------
+// Storage buffers
+// ---------------------------------------------------------------------------
+layout(set = 0, binding = 0) readonly buffer InputBuf {
+    uint data[];
+} input_buf;
+
+layout(set = 0, binding = 1) writeonly buffer OutputBuf {
+    uint data[];
+} output_buf;
+
+// ---------------------------------------------------------------------------
+// Push constants
+// ---------------------------------------------------------------------------
+layout(push_constant) uniform Params {
+    uint  width;
+    uint  height;
+    float exposure;
+    float gamma;
+} params;
+
+// ---------------------------------------------------------------------------
+// Helpers: pixel I/O
+// ---------------------------------------------------------------------------
+vec4 readPixel(uint x, uint y)
+{
+    uint idx = y * params.width + x;
+    uint packed = input_buf.data[idx];
+    return vec4(
+        float((packed >>  0) & 0xFFu) / 255.0,
+        float((packed >>  8) & 0xFFu) / 255.0,
+        float((packed >> 16) & 0xFFu) / 255.0,
+        float((packed >> 24) & 0xFFu) / 255.0
+    );
+}
+
+void writePixel(uint x, uint y, vec4 color)
+{
+    uint idx = y * params.width + x;
+    color = clamp(color, 0.0, 1.0);
+    uint packed = (uint(color.r * 255.0) <<  0) |
+                  (uint(color.g * 255.0) <<  8) |
+                  (uint(color.b * 255.0) << 16) |
+                  (uint(color.a * 255.0) << 24);
+    output_buf.data[idx] = packed;
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+void main()
+{
+    uint x = gl_GlobalInvocationID.x;
+    uint y = gl_GlobalInvocationID.y;
+
+    if (x >= params.width || y >= params.height)
+        return;
+
+    // -------------------------------------------------------------------
+    // 1. Read RGBA pixel (normalized to [0, 1])
+    // -------------------------------------------------------------------
+    vec4 pixel = readPixel(x, y);
+
+    // -------------------------------------------------------------------
+    // 2. Apply exposure (EV stops) and gamma
+    //    Exposure multiplier = 2^exposure (photographic stops)
+    //    Gamma correction    = pow(x, 1/gamma)
+    // -------------------------------------------------------------------
+    float ev_mult   = pow(2.0, params.exposure);
+    float inv_gamma = 1.0 / max(params.gamma, 0.001);
+
+    pixel.r = pow(clamp(pixel.r * ev_mult, 0.0, 1.0), inv_gamma);
+    pixel.g = pow(clamp(pixel.g * ev_mult, 0.0, 1.0), inv_gamma);
+    pixel.b = pow(clamp(pixel.b * ev_mult, 0.0, 1.0), inv_gamma);
+
+    // -------------------------------------------------------------------
+    // 3. Write output (alpha preserved)
+    // -------------------------------------------------------------------
+    writePixel(x, y, pixel);
+}

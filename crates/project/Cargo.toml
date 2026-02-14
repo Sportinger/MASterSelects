@@ -1,0 +1,11 @@
+[package]
+name = "ms-project"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ms-common = { path = "../common" }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }

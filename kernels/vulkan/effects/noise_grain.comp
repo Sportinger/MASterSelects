@@ -1,0 +1,139 @@
+/**
+ * noise_grain.comp -- Film Grain / Noise Overlay (Vulkan Compute)
+ *
+ * Vulkan compute shader equivalent of the CUDA noise_grain kernel.
+ * Adds procedural film grain noise to the image. Supports both
+ * monochrome (luminance-only) and chromatic noise. Uses a hash-based
+ * PRNG (Wang hash) for fast, deterministic noise generation.
+ *
+ * Binding layout:
+ *   set 0, binding 0: Input  RGBA (readonly storage buffer, uint-packed)
+ *   set 0, binding 1: Output RGBA (writeonly storage buffer, uint-packed)
+ *
+ * Push constants:
+ *   width      : Image width in pixels (uint)
+ *   height     : Image height in pixels (uint)
+ *   amount     : Noise intensity [0, 1]. 0 = no noise.
+ *   monochrome : 0.0 = chromatic noise, 1.0 = monochrome noise.
+ *   seed       : Random seed (float, interpreted as uint via floatBitsToUint).
+ */
+
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// ---------------------------------------------------------------------------
+// Storage buffers
+// ---------------------------------------------------------------------------
+layout(set = 0, binding = 0) readonly buffer InputBuf {
+    uint data[];
+} input_buf;
+
+layout(set = 0, binding = 1) writeonly buffer OutputBuf {
+    uint data[];
+} output_buf;
+
+// ---------------------------------------------------------------------------
+// Push constants
+// ---------------------------------------------------------------------------
+layout(push_constant) uniform Params {
+    uint  width;
+    uint  height;
+    float amount;
+    float monochrome;
+    float seed;
+} params;
+
+// ---------------------------------------------------------------------------
+// Helpers: pixel I/O
+// ---------------------------------------------------------------------------
+vec4 readPixel(uint x, uint y)
+{
+    uint idx = y * params.width + x;
+    uint packed = input_buf.data[idx];
+    return vec4(
+        float((packed >>  0) & 0xFFu) / 255.0,
+        float((packed >>  8) & 0xFFu) / 255.0,
+        float((packed >> 16) & 0xFFu) / 255.0,
+        float((packed >> 24) & 0xFFu) / 255.0
+    );
+}
+
+void writePixel(uint x, uint y, vec4 color)
+{
+    uint idx = y * params.width + x;
+    color = clamp(color, 0.0, 1.0);
+    uint packed = (uint(color.r * 255.0) <<  0) |
+                  (uint(color.g * 255.0) <<  8) |
+                  (uint(color.b * 255.0) << 16) |
+                  (uint(color.a * 255.0) << 24);
+    output_buf.data[idx] = packed;
+}
+
+// ---------------------------------------------------------------------------
+// Wang hash: fast integer hash for noise generation
+// ---------------------------------------------------------------------------
+uint wang_hash(uint seed)
+{
+    seed = (seed ^ 61u) ^ (seed >> 16u);
+    seed *= 9u;
+    seed = seed ^ (seed >> 4u);
+    seed *= 0x27D4EB2Du;
+    seed = seed ^ (seed >> 15u);
+    return seed;
+}
+
+// ---------------------------------------------------------------------------
+// Convert hash to float in [-0.5, 0.5]
+// ---------------------------------------------------------------------------
+float hash_to_float(uint h)
+{
+    return float(h) / 4294967295.0 - 0.5;
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+void main()
+{
+    uint x = gl_GlobalInvocationID.x;
+    uint y = gl_GlobalInvocationID.y;
+
+    if (x >= params.width || y >= params.height)
+        return;
+
+    // -------------------------------------------------------------------
+    // 1. Read pixel
+    // -------------------------------------------------------------------
+    vec4 pixel = readPixel(x, y);
+
+    // -------------------------------------------------------------------
+    // 2. Generate noise using Wang hash
+    //    Use pixel position + seed for deterministic but varied noise
+    // -------------------------------------------------------------------
+    uint base_seed = (y * params.width + x) + floatBitsToUint(params.seed);
+
+    if (params.monochrome > 0.5)
+    {
+        // Monochrome: same noise value for R, G, B
+        float noise = hash_to_float(wang_hash(base_seed)) * params.amount;
+        pixel.r += noise;
+        pixel.g += noise;
+        pixel.b += noise;
+    }
+    else
+    {
+        // Chromatic: different noise per channel
+        float noise_r = hash_to_float(wang_hash(base_seed))            * params.amount;
+        float noise_g = hash_to_float(wang_hash(base_seed + 1u))      * params.amount;
+        float noise_b = hash_to_float(wang_hash(base_seed + 2u))      * params.amount;
+        pixel.r += noise_r;
+        pixel.g += noise_g;
+        pixel.b += noise_b;
+    }
+
+    // -------------------------------------------------------------------
+    // 3. Write output (alpha preserved, writePixel clamps)
+    // -------------------------------------------------------------------
+    writePixel(x, y, pixel);
+}

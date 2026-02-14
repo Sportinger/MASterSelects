@@ -11,8 +11,21 @@ anyhow = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 crossbeam = { workspace = true }
+parking_lot = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 ms-common = { path = "../crates/common" }
+ms-demux = { path = "../crates/demux" }
+ms-timeline-eval = { path = "../crates/timeline-eval" }
+ms-audio = { path = "../crates/audio" }
+ms-project = { path = "../crates/project" }
+ms-app-state = { path = "../crates/app-state" }
+ms-compositor = { path = "../crates/compositor" }
+ms-effects = { path = "../crates/effects" }
+
+# Native file dialog
+rfd = "0.15"
 
 [profile.release]
 opt-level = 2

@@ -1,0 +1,124 @@
+/**
+ * vignette.comp -- Vignette Effect (Vulkan Compute)
+ *
+ * Vulkan compute shader equivalent of the CUDA vignette kernel.
+ * Applies a distance-based edge darkening effect, simulating the light
+ * falloff of a camera lens. Alpha is preserved.
+ *
+ * The vignette is computed as a radial gradient from the image center.
+ * Pixels within the radius are unaffected; pixels outside are progressively
+ * darkened based on their distance from center, softness, and amount.
+ *
+ * Binding layout:
+ *   set 0, binding 0: Input  RGBA (readonly storage buffer, uint-packed)
+ *   set 0, binding 1: Output RGBA (writeonly storage buffer, uint-packed)
+ *
+ * Push constants:
+ *   width    : Image width in pixels (uint)
+ *   height   : Image height in pixels (uint)
+ *   amount   : Darkening intensity [0, 1]. 0 = no effect. 1 = full black at edges.
+ *   radius   : Inner radius where vignette begins [0, 1]. Fraction of half-diagonal.
+ *   softness : Width of the transition zone [0, 1]. Larger = softer falloff.
+ */
+
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// ---------------------------------------------------------------------------
+// Storage buffers
+// ---------------------------------------------------------------------------
+layout(set = 0, binding = 0) readonly buffer InputBuf {
+    uint data[];
+} input_buf;
+
+layout(set = 0, binding = 1) writeonly buffer OutputBuf {
+    uint data[];
+} output_buf;
+
+// ---------------------------------------------------------------------------
+// Push constants
+// ---------------------------------------------------------------------------
+layout(push_constant) uniform Params {
+    uint  width;
+    uint  height;
+    float amount;
+    float radius;
+    float softness;
+} params;
+
+// ---------------------------------------------------------------------------
+// Helpers: pixel I/O
+// ---------------------------------------------------------------------------
+vec4 readPixel(uint x, uint y)
+{
+    uint idx = y * params.width + x;
+    uint packed = input_buf.data[idx];
+    return vec4(
+        float((packed >>  0) & 0xFFu) / 255.0,
+        float((packed >>  8) & 0xFFu) / 255.0,
+        float((packed >> 16) & 0xFFu) / 255.0,
+        float((packed >> 24) & 0xFFu) / 255.0
+    );
+}
+
+void writePixel(uint x, uint y, vec4 color)
+{
+    uint idx = y * params.width + x;
+    color = clamp(color, 0.0, 1.0);
+    uint packed = (uint(color.r * 255.0) <<  0) |
+                  (uint(color.g * 255.0) <<  8) |
+                  (uint(color.b * 255.0) << 16) |
+                  (uint(color.a * 255.0) << 24);
+    output_buf.data[idx] = packed;
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+void main()
+{
+    uint x = gl_GlobalInvocationID.x;
+    uint y = gl_GlobalInvocationID.y;
+
+    if (x >= params.width || y >= params.height)
+        return;
+
+    // -------------------------------------------------------------------
+    // 1. Read pixel
+    // -------------------------------------------------------------------
+    vec4 pixel = readPixel(x, y);
+
+    // -------------------------------------------------------------------
+    // 2. Compute normalized distance from center
+    //    Normalized so that the corners are at distance ~1.0
+    // -------------------------------------------------------------------
+    float cx = float(params.width)  * 0.5;
+    float cy = float(params.height) * 0.5;
+
+    float dx = (float(x) - cx) / cx;
+    float dy = (float(y) - cy) / cy;
+
+    float dist = sqrt(dx * dx + dy * dy);
+
+    // -------------------------------------------------------------------
+    // 3. Compute vignette factor
+    //    Inside radius: factor = 1 (no darkening)
+    //    Outside radius + softness: factor = 1 - amount
+    //    Transition: smooth interpolation
+    // -------------------------------------------------------------------
+    float inner = params.radius;
+    float outer = params.radius + max(params.softness, 0.001);
+
+    float vignette = 1.0 - params.amount * smoothstep(inner, outer, dist);
+
+    // -------------------------------------------------------------------
+    // 4. Apply vignette to RGB, preserve alpha
+    // -------------------------------------------------------------------
+    pixel.rgb *= vignette;
+
+    // -------------------------------------------------------------------
+    // 5. Write output
+    // -------------------------------------------------------------------
+    writePixel(x, y, pixel);
+}

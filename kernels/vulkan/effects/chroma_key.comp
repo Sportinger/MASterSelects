@@ -1,0 +1,146 @@
+/**
+ * chroma_key.comp -- Chroma Key (Green/Blue Screen) (Vulkan Compute)
+ *
+ * Vulkan compute shader equivalent of the CUDA chroma_key kernel.
+ * Removes a specified key color from the image by modifying the alpha channel.
+ * Color distance is computed in YCbCr space for better perceptual keying.
+ *
+ * Process:
+ *   1. Convert pixel RGB and key color RGB to YCbCr
+ *   2. Compute chroma distance (Cb/Cr only, ignoring luminance)
+ *   3. Map distance through tolerance/softness to alpha mask
+ *   4. Multiply existing alpha by the mask
+ *
+ * Binding layout:
+ *   set 0, binding 0: Input  RGBA (readonly storage buffer, uint-packed)
+ *   set 0, binding 1: Output RGBA (writeonly storage buffer, uint-packed)
+ *
+ * Push constants:
+ *   width     : Image width in pixels (uint)
+ *   height    : Image height in pixels (uint)
+ *   key_r     : Key color red component [0, 1]
+ *   key_g     : Key color green component [0, 1]
+ *   key_b     : Key color blue component [0, 1]
+ *   key_a     : Unused (padding for alignment)
+ *   tolerance : Color distance threshold [0, 1]. Below = fully transparent.
+ *   softness  : Soft edge width [0, 1]. Transition zone above tolerance.
+ */
+
+#version 450
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// ---------------------------------------------------------------------------
+// Storage buffers
+// ---------------------------------------------------------------------------
+layout(set = 0, binding = 0) readonly buffer InputBuf {
+    uint data[];
+} input_buf;
+
+layout(set = 0, binding = 1) writeonly buffer OutputBuf {
+    uint data[];
+} output_buf;
+
+// ---------------------------------------------------------------------------
+// Push constants
+// ---------------------------------------------------------------------------
+layout(push_constant) uniform Params {
+    uint  width;
+    uint  height;
+    float key_r;
+    float key_g;
+    float key_b;
+    float key_a;
+    float tolerance;
+    float softness;
+} params;
+
+// ---------------------------------------------------------------------------
+// Helpers: pixel I/O
+// ---------------------------------------------------------------------------
+vec4 readPixel(uint x, uint y)
+{
+    uint idx = y * params.width + x;
+    uint packed = input_buf.data[idx];
+    return vec4(
+        float((packed >>  0) & 0xFFu) / 255.0,
+        float((packed >>  8) & 0xFFu) / 255.0,
+        float((packed >> 16) & 0xFFu) / 255.0,
+        float((packed >> 24) & 0xFFu) / 255.0
+    );
+}
+
+void writePixel(uint x, uint y, vec4 color)
+{
+    uint idx = y * params.width + x;
+    color = clamp(color, 0.0, 1.0);
+    uint packed = (uint(color.r * 255.0) <<  0) |
+                  (uint(color.g * 255.0) <<  8) |
+                  (uint(color.b * 255.0) << 16) |
+                  (uint(color.a * 255.0) << 24);
+    output_buf.data[idx] = packed;
+}
+
+// ---------------------------------------------------------------------------
+// Helper: RGB to YCbCr (BT.601)
+// ---------------------------------------------------------------------------
+vec3 rgb_to_ycbcr(vec3 rgb)
+{
+    float y  =  0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b;
+    float cb = -0.169 * rgb.r - 0.331 * rgb.g + 0.500 * rgb.b + 0.5;
+    float cr =  0.500 * rgb.r - 0.419 * rgb.g - 0.081 * rgb.b + 0.5;
+    return vec3(y, cb, cr);
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+void main()
+{
+    uint x = gl_GlobalInvocationID.x;
+    uint y = gl_GlobalInvocationID.y;
+
+    if (x >= params.width || y >= params.height)
+        return;
+
+    // -------------------------------------------------------------------
+    // 1. Read pixel
+    // -------------------------------------------------------------------
+    vec4 pixel = readPixel(x, y);
+
+    // -------------------------------------------------------------------
+    // 2. Convert pixel and key color to YCbCr
+    // -------------------------------------------------------------------
+    vec3 pixel_ycbcr = rgb_to_ycbcr(pixel.rgb);
+    vec3 key_ycbcr   = rgb_to_ycbcr(vec3(params.key_r, params.key_g, params.key_b));
+
+    // -------------------------------------------------------------------
+    // 3. Compute chroma distance (Cb/Cr only)
+    // -------------------------------------------------------------------
+    float dcb = pixel_ycbcr.y - key_ycbcr.y;
+    float dcr = pixel_ycbcr.z - key_ycbcr.z;
+    float chroma_dist = sqrt(dcb * dcb + dcr * dcr);
+
+    // -------------------------------------------------------------------
+    // 4. Map distance to alpha mask via tolerance and softness
+    //    Below tolerance      -> fully transparent (mask = 0)
+    //    Above tolerance+soft -> fully opaque (mask = 1)
+    //    In between           -> linear ramp
+    // -------------------------------------------------------------------
+    float mask = 1.0;
+    if (chroma_dist < params.tolerance)
+    {
+        mask = 0.0;
+    }
+    else if (params.softness > 0.0 && chroma_dist < params.tolerance + params.softness)
+    {
+        mask = (chroma_dist - params.tolerance) / params.softness;
+    }
+
+    // -------------------------------------------------------------------
+    // 5. Apply mask to alpha, preserve RGB
+    // -------------------------------------------------------------------
+    pixel.a *= mask;
+
+    writePixel(x, y, pixel);
+}
