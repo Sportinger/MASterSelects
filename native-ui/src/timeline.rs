@@ -1,4 +1,4 @@
-use egui::{self, Color32, Rect, CornerRadius, Stroke, Vec2, Pos2, FontId, Align2, ScrollArea};
+use egui::{self, Align2, Color32, CornerRadius, FontId, Pos2, Rect, ScrollArea, Stroke, Vec2};
 
 // ---------------------------------------------------------------------------
 // Data types
@@ -83,14 +83,12 @@ impl Default for TimelineState {
                     muted: false,
                     solo: false,
                     expanded: true,
-                    clips: vec![
-                        Clip {
-                            name: "Anthropic Found Why AIs Go Insane.mp4".into(),
-                            start: 19.0,
-                            duration: 10.0,
-                            color: Color32::from_rgb(0x2a, 0x5a, 0x9e),
-                        },
-                    ],
+                    clips: vec![Clip {
+                        name: "Anthropic Found Why AIs Go Insane.mp4".into(),
+                        start: 19.0,
+                        duration: 10.0,
+                        color: Color32::from_rgb(0x2a, 0x5a, 0x9e),
+                    }],
                 },
                 Track {
                     name: "Audio".into(),
@@ -128,7 +126,8 @@ impl Default for TimelineState {
                 "2026-02-09 13-42-01".into(),
                 "DK7A5405".into(),
                 "Nehmt es mit Humor albania fyp frdic foreyou".into(),
-                "NEW FlutterFlow Designer - Complete Overview Tutorial BETTER Than I Expected".into(),
+                "NEW FlutterFlow Designer - Complete Overview Tutorial BETTER Than I Expected"
+                    .into(),
                 "rotating_rectangle".into(),
                 "Comp 8".into(),
             ],
@@ -221,11 +220,9 @@ fn transport_button(ui: &mut egui::Ui, label: &str, active: bool) -> bool {
 
 /// Draw a text-only button (for add track buttons etc.) and return true when clicked.
 fn text_button(ui: &mut egui::Ui, label: &str, color: Color32) -> bool {
-    let galley = ui.painter().layout_no_wrap(
-        label.to_string(),
-        FontId::proportional(11.0),
-        color,
-    );
+    let galley = ui
+        .painter()
+        .layout_no_wrap(label.to_string(), FontId::proportional(11.0), color);
     let desired = Vec2::new(galley.size().x + 12.0, 20.0);
     let (rect, response) = ui.allocate_exact_size(desired, egui::Sense::click());
     let painter = ui.painter();
@@ -293,7 +290,8 @@ pub fn show_timeline(ui: &mut egui::Ui, state: &mut TimelineState) {
 
         // Thin separator
         let sep_rect = ui.allocate_space(Vec2::new(ui.available_width(), 1.0)).1;
-        ui.painter().rect_filled(sep_rect, CornerRadius::ZERO, TRACK_SEP);
+        ui.painter()
+            .rect_filled(sep_rect, CornerRadius::ZERO, TRACK_SEP);
 
         // 3. Main timeline area (ruler + track headers + lanes + playhead)
         show_main_area(ui, state);
@@ -374,11 +372,8 @@ fn show_comp_tabs(ui: &mut egui::Ui, state: &mut TimelineState) {
                         Color32::TRANSPARENT
                     };
 
-                    ui.painter().rect_filled(
-                        tab_rect,
-                        CornerRadius::same(3),
-                        bg,
-                    );
+                    ui.painter()
+                        .rect_filled(tab_rect, CornerRadius::same(3), bg);
 
                     let text_color = if is_active {
                         Color32::from_rgb(0xdd, 0xdd, 0xdd)
@@ -468,7 +463,11 @@ fn show_transport(ui: &mut egui::Ui, state: &mut TimelineState) {
     left.add_space(2.0);
 
     // Play button (blue when playing)
-    let play_label = if state.playing { "\u{23F8}" } else { "\u{25B6}" };
+    let play_label = if state.playing {
+        "\u{23F8}"
+    } else {
+        "\u{25B6}"
+    };
     if transport_button(&mut left, play_label, state.playing) {
         state.playing = !state.playing;
     }
@@ -527,9 +526,14 @@ fn show_transport(ui: &mut egui::Ui, state: &mut TimelineState) {
             Color32::from_rgb(0xcc, 0x66, 0x33)
         };
         let (dot_rect, _) = left.allocate_exact_size(Vec2::new(8.0, 8.0), egui::Sense::hover());
-        left.painter().circle_filled(dot_rect.center(), 3.0, indicator_color);
+        left.painter()
+            .circle_filled(dot_rect.center(), 3.0, indicator_color);
 
-        let ram_label = if state.ram_preview { "RAM ON" } else { "RAM OFF" };
+        let ram_label = if state.ram_preview {
+            "RAM ON"
+        } else {
+            "RAM OFF"
+        };
         left.label(
             egui::RichText::new(ram_label)
                 .font(FontId::proportional(9.0))
@@ -547,7 +551,8 @@ fn show_transport(ui: &mut egui::Ui, state: &mut TimelineState) {
             Color32::from_rgb(0x66, 0x66, 0x66)
         };
         let (dot_rect, _) = left.allocate_exact_size(Vec2::new(8.0, 8.0), egui::Sense::hover());
-        left.painter().circle_filled(dot_rect.center(), 3.0, warmup_color);
+        left.painter()
+            .circle_filled(dot_rect.center(), 3.0, warmup_color);
 
         left.label(
             egui::RichText::new("Warmup")
@@ -559,7 +564,11 @@ fn show_transport(ui: &mut egui::Ui, state: &mut TimelineState) {
     left.add_space(6.0);
 
     // View dropdown
-    let _ = text_button(&mut left, "View \u{25BE}", Color32::from_rgb(0x88, 0x88, 0x88));
+    let _ = text_button(
+        &mut left,
+        "View \u{25BE}",
+        Color32::from_rgb(0x88, 0x88, 0x88),
+    );
 
     // ── Right side: add track buttons ───────────────────────────────────────
     let right_rect = Rect::from_min_size(
@@ -585,7 +594,15 @@ fn show_transport(ui: &mut egui::Ui, state: &mut TimelineState) {
     // + Audio Track
     if text_button(&mut right, "+ Audio Track", ADD_TRACK_TEXT) {
         state.tracks.push(Track {
-            name: format!("Audio {}", state.tracks.iter().filter(|t| t.track_type == TrackType::Audio).count() + 1),
+            name: format!(
+                "Audio {}",
+                state
+                    .tracks
+                    .iter()
+                    .filter(|t| t.track_type == TrackType::Audio)
+                    .count()
+                    + 1
+            ),
             track_type: TrackType::Audio,
             visible: true,
             muted: false,
@@ -599,15 +616,26 @@ fn show_transport(ui: &mut egui::Ui, state: &mut TimelineState) {
 
     // + Video Track
     if text_button(&mut right, "+ Video Track", ADD_TRACK_TEXT) {
-        state.tracks.insert(0, Track {
-            name: format!("Video {}", state.tracks.iter().filter(|t| t.track_type == TrackType::Video).count() + 1),
-            track_type: TrackType::Video,
-            visible: true,
-            muted: false,
-            solo: false,
-            expanded: true,
-            clips: vec![],
-        });
+        state.tracks.insert(
+            0,
+            Track {
+                name: format!(
+                    "Video {}",
+                    state
+                        .tracks
+                        .iter()
+                        .filter(|t| t.track_type == TrackType::Video)
+                        .count()
+                        + 1
+                ),
+                track_type: TrackType::Video,
+                visible: true,
+                muted: false,
+                solo: false,
+                expanded: true,
+                clips: vec![],
+            },
+        );
     }
 }
 
@@ -630,14 +658,13 @@ fn show_main_area(ui: &mut egui::Ui, state: &mut TimelineState) {
     let total_content_w = state.total_duration * pps;
 
     // Allocate the full area
-    let area_rect =
-        ui.allocate_space(Vec2::new(avail.width(), content_height.max(avail.height()))).1;
+    let area_rect = ui
+        .allocate_space(Vec2::new(avail.width(), content_height.max(avail.height())))
+        .1;
 
     // ── Ruler left column (Time label + F/M buttons) ────────────────────
-    let ruler_header_rect = Rect::from_min_size(
-        area_rect.min,
-        Vec2::new(TRACK_HEADER_WIDTH, RULER_HEIGHT),
-    );
+    let ruler_header_rect =
+        Rect::from_min_size(area_rect.min, Vec2::new(TRACK_HEADER_WIDTH, RULER_HEIGHT));
 
     ui.painter()
         .rect_filled(ruler_header_rect, CornerRadius::ZERO, RULER_BG);
@@ -653,21 +680,36 @@ fn show_main_area(ui: &mut egui::Ui, state: &mut TimelineState) {
 
     // F and M toggle buttons
     let f_rect = Rect::from_min_size(
-        Pos2::new(ruler_header_rect.max.x - 40.0, ruler_header_rect.min.y + 3.0),
+        Pos2::new(
+            ruler_header_rect.max.x - 40.0,
+            ruler_header_rect.min.y + 3.0,
+        ),
         Vec2::new(16.0, 14.0),
     );
     let m_rect = Rect::from_min_size(
-        Pos2::new(ruler_header_rect.max.x - 20.0, ruler_header_rect.min.y + 3.0),
+        Pos2::new(
+            ruler_header_rect.max.x - 20.0,
+            ruler_header_rect.min.y + 3.0,
+        ),
         Vec2::new(16.0, 14.0),
     );
 
     let f_resp = ui.interact(f_rect, ui.id().with("ruler_f_btn"), egui::Sense::click());
     let m_resp = ui.interact(m_rect, ui.id().with("ruler_m_btn"), egui::Sense::click());
 
-    let f_bg = if f_resp.hovered() { BTN_HOVER } else { Color32::TRANSPARENT };
-    let m_bg = if m_resp.hovered() { BTN_HOVER } else { Color32::TRANSPARENT };
+    let f_bg = if f_resp.hovered() {
+        BTN_HOVER
+    } else {
+        Color32::TRANSPARENT
+    };
+    let m_bg = if m_resp.hovered() {
+        BTN_HOVER
+    } else {
+        Color32::TRANSPARENT
+    };
 
-    ui.painter().rect_filled(f_rect, CornerRadius::same(2), f_bg);
+    ui.painter()
+        .rect_filled(f_rect, CornerRadius::same(2), f_bg);
     ui.painter().text(
         f_rect.center(),
         Align2::CENTER_CENTER,
@@ -676,7 +718,8 @@ fn show_main_area(ui: &mut egui::Ui, state: &mut TimelineState) {
         Color32::from_rgb(0x66, 0x66, 0x66),
     );
 
-    ui.painter().rect_filled(m_rect, CornerRadius::same(2), m_bg);
+    ui.painter()
+        .rect_filled(m_rect, CornerRadius::same(2), m_bg);
     ui.painter().text(
         m_rect.center(),
         Align2::CENTER_CENTER,
@@ -727,10 +770,8 @@ fn show_main_area(ui: &mut egui::Ui, state: &mut TimelineState) {
         .auto_shrink([false, false])
         .show(&mut lanes_ui, |scroll_ui| {
             // Reserve the full scrollable width
-            let (_resp_id, scroll_rect) = scroll_ui.allocate_space(Vec2::new(
-                total_content_w.max(lanes_width),
-                content_height,
-            ));
+            let (_resp_id, scroll_rect) = scroll_ui
+                .allocate_space(Vec2::new(total_content_w.max(lanes_width), content_height));
 
             let painter = scroll_ui.painter();
             let origin = scroll_rect.min;
@@ -740,7 +781,13 @@ fn show_main_area(ui: &mut egui::Ui, state: &mut TimelineState) {
                 Rect::from_min_size(origin, Vec2::new(scroll_rect.width(), RULER_HEIGHT));
             painter.rect_filled(ruler_rect, CornerRadius::ZERO, RULER_BG);
 
-            draw_ruler(painter, origin, pps, state.total_duration, scroll_rect.width());
+            draw_ruler(
+                painter,
+                origin,
+                pps,
+                state.total_duration,
+                scroll_rect.width(),
+            );
 
             // ── Track lanes background ─────────────────────────────
             let lanes_top = origin.y + RULER_HEIGHT;
@@ -865,10 +912,8 @@ fn show_main_area(ui: &mut egui::Ui, state: &mut TimelineState) {
             }
 
             // ── Click to seek ──────────────────────────────────────
-            let interact_rect = Rect::from_min_size(
-                origin,
-                Vec2::new(scroll_rect.width(), RULER_HEIGHT),
-            );
+            let interact_rect =
+                Rect::from_min_size(origin, Vec2::new(scroll_rect.width(), RULER_HEIGHT));
             let ruler_response = scroll_ui.interact(
                 interact_rect,
                 scroll_ui.id().with("ruler_seek"),
@@ -951,10 +996,8 @@ fn draw_track_headers(ui: &mut egui::Ui, state: &mut TimelineState, rect: Rect) 
         btn_x -= btn_size + 2.0;
         if state.tracks[i].track_type == TrackType::Audio {
             // Mute/speaker button for audio tracks
-            let mute_rect =
-                Rect::from_min_size(Pos2::new(btn_x, btn_y), Vec2::splat(btn_size));
-            let mute_resp =
-                ui.interact(mute_rect, ui.id().with(("mute", i)), egui::Sense::click());
+            let mute_rect = Rect::from_min_size(Pos2::new(btn_x, btn_y), Vec2::splat(btn_size));
+            let mute_resp = ui.interact(mute_rect, ui.id().with(("mute", i)), egui::Sense::click());
             if mute_resp.clicked() {
                 state.tracks[i].muted = !state.tracks[i].muted;
             }
@@ -984,10 +1027,8 @@ fn draw_track_headers(ui: &mut egui::Ui, state: &mut TimelineState, rect: Rect) 
             );
         } else {
             // Eye/visibility for video tracks
-            let eye_rect =
-                Rect::from_min_size(Pos2::new(btn_x, btn_y), Vec2::splat(btn_size));
-            let eye_resp =
-                ui.interact(eye_rect, ui.id().with(("eye", i)), egui::Sense::click());
+            let eye_rect = Rect::from_min_size(Pos2::new(btn_x, btn_y), Vec2::splat(btn_size));
+            let eye_resp = ui.interact(eye_rect, ui.id().with(("eye", i)), egui::Sense::click());
             if eye_resp.clicked() {
                 state.tracks[i].visible = !state.tracks[i].visible;
             }
@@ -1017,10 +1058,8 @@ fn draw_track_headers(ui: &mut egui::Ui, state: &mut TimelineState, rect: Rect) 
 
         // Solo button
         btn_x -= btn_size + 2.0;
-        let solo_rect =
-            Rect::from_min_size(Pos2::new(btn_x, btn_y), Vec2::splat(btn_size));
-        let solo_resp =
-            ui.interact(solo_rect, ui.id().with(("solo", i)), egui::Sense::click());
+        let solo_rect = Rect::from_min_size(Pos2::new(btn_x, btn_y), Vec2::splat(btn_size));
+        let solo_resp = ui.interact(solo_rect, ui.id().with(("solo", i)), egui::Sense::click());
         if solo_resp.clicked() {
             state.tracks[i].solo = !state.tracks[i].solo;
         }
@@ -1063,10 +1102,7 @@ fn draw_waveform(painter: &egui::Painter, clip_rect: Rect) {
         let h = (phase.sin().abs() * amplitude).max(1.0);
 
         painter.line_segment(
-            [
-                Pos2::new(x, center_y - h),
-                Pos2::new(x, center_y + h),
-            ],
+            [Pos2::new(x, center_y - h), Pos2::new(x, center_y + h)],
             Stroke::new(1.0, waveform_color),
         );
 
@@ -1101,8 +1137,8 @@ fn draw_ruler(painter: &egui::Painter, origin: Pos2, pps: f32, duration: f32, wi
             break;
         }
 
-        let is_major = (t / major_interval).fract().abs() < 0.01
-            || (t / major_interval).fract().abs() > 0.99;
+        let is_major =
+            (t / major_interval).fract().abs() < 0.01 || (t / major_interval).fract().abs() > 0.99;
 
         if is_major {
             // Major tick + label

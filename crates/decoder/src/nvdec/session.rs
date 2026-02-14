@@ -32,10 +32,9 @@ use tracing::{debug, error, info, warn};
 use ms_common::{DecodeError, VideoCodec};
 
 use super::ffi::{
-    check_cuvid_result, packet_flags, CuVideoFormat, CudaVideoCodec,
-    CudaVideoDeinterlaceMode, CudaVideoSurfaceFormat, CuvidDecodeCreateInfo,
-    CuvidParserDispInfo, CuvidParserParams, CuvidPicParams, CuvidProcParams,
-    CuvidSourceDataPacket, CUvideodecoder, CUvideoparser, NvcuvidLibrary,
+    check_cuvid_result, packet_flags, CUvideodecoder, CUvideoparser, CuVideoFormat, CudaVideoCodec,
+    CudaVideoDeinterlaceMode, CudaVideoSurfaceFormat, CuvidDecodeCreateInfo, CuvidParserDispInfo,
+    CuvidParserParams, CuvidPicParams, CuvidProcParams, CuvidSourceDataPacket, NvcuvidLibrary,
     CUDA_SUCCESS,
 };
 
@@ -136,9 +135,8 @@ impl Drop for MappedFrame {
             // cuvidUnmapVideoFrame64 releases the GPU mapping created by
             // cuvidMapVideoFrame64. This call is idempotent — unmapping an
             // already-unmapped frame is a no-op in the NVDEC driver.
-            let result = unsafe {
-                (self.lib.cuvidUnmapVideoFrame64)(self.decoder_handle, self.device_ptr)
-            };
+            let result =
+                unsafe { (self.lib.cuvidUnmapVideoFrame64)(self.decoder_handle, self.device_ptr) };
             if result != CUDA_SUCCESS {
                 error!(
                     error_code = result,
@@ -208,10 +206,7 @@ unsafe impl Send for CallbackState {}
 /// `user_data` pointer must be a valid `*const Mutex<CallbackState>` that
 /// outlives the parser. The `format` pointer is valid for the duration
 /// of this callback.
-unsafe extern "C" fn sequence_callback(
-    user_data: *mut c_void,
-    format: *mut CuVideoFormat,
-) -> i32 {
+unsafe extern "C" fn sequence_callback(user_data: *mut c_void, format: *mut CuVideoFormat) -> i32 {
     // SAFETY: user_data is a pointer to our Box<Mutex<CallbackState>> which
     // lives as long as the NvDecSession. The parser guarantees this callback
     // is only invoked while the parser exists.
@@ -330,8 +325,7 @@ unsafe extern "C" fn decode_picture_callback(
 
     if state.decoder.is_null() {
         error!("Decode callback called but no decoder exists (SPS not yet parsed?)");
-        state.last_error =
-            Some("Decode callback invoked before decoder was created".to_string());
+        state.last_error = Some("Decode callback invoked before decoder was created".to_string());
         return 0;
     }
 
@@ -480,8 +474,8 @@ impl NvDecSession {
         num_decode_surfaces: u32,
         max_display_delay: u32,
     ) -> Result<Self, DecodeError> {
-        let cuda_codec = CudaVideoCodec::from_common(codec)
-            .ok_or(DecodeError::UnsupportedCodec(codec))?;
+        let cuda_codec =
+            CudaVideoCodec::from_common(codec).ok_or(DecodeError::UnsupportedCodec(codec))?;
 
         // Clamp surfaces to a sane minimum. The NVDEC driver needs at least
         // min_num_decode_surfaces (reported by the sequence callback), but we
@@ -527,13 +521,10 @@ impl NvDecSession {
         // pointer points to our Box<Mutex<CallbackState>> which lives as long
         // as this NvDecSession (the Box is a field of the struct).
         // cuvidCreateVideoParser writes the parser handle to `parser`.
-        let result = unsafe {
-            (lib.cuvidCreateVideoParser)(&mut parser, &mut parser_params)
-        };
+        let result = unsafe { (lib.cuvidCreateVideoParser)(&mut parser, &mut parser_params) };
 
-        check_cuvid_result(result, "cuvidCreateVideoParser").map_err(|reason| {
-            DecodeError::HwDecoderInit { codec, reason }
-        })?;
+        check_cuvid_result(result, "cuvidCreateVideoParser")
+            .map_err(|reason| DecodeError::HwDecoderInit { codec, reason })?;
 
         info!(
             codec = codec.display_name(),
@@ -581,13 +572,10 @@ impl NvDecSession {
         // The packet.payload pointer is valid for the duration of this call
         // because `data` is borrowed and cuvidParseVideoData processes it
         // synchronously before returning.
-        let result = unsafe {
-            (self.lib.cuvidParseVideoData)(self.parser, &mut packet)
-        };
+        let result = unsafe { (self.lib.cuvidParseVideoData)(self.parser, &mut packet) };
 
-        check_cuvid_result(result, "cuvidParseVideoData").map_err(|reason| {
-            DecodeError::DecodeFailed { frame: 0, reason }
-        })?;
+        check_cuvid_result(result, "cuvidParseVideoData")
+            .map_err(|reason| DecodeError::DecodeFailed { frame: 0, reason })?;
 
         // Check if any callback reported an error during parsing.
         let state = self.callback_state.lock();
@@ -616,13 +604,10 @@ impl NvDecSession {
 
         // SAFETY: parser is valid. A null payload with the EOS flag is
         // the documented way to flush the CUVID parser pipeline.
-        let result = unsafe {
-            (self.lib.cuvidParseVideoData)(self.parser, &mut packet)
-        };
+        let result = unsafe { (self.lib.cuvidParseVideoData)(self.parser, &mut packet) };
 
-        check_cuvid_result(result, "cuvidParseVideoData (flush)").map_err(|reason| {
-            DecodeError::DecodeFailed { frame: 0, reason }
-        })?;
+        check_cuvid_result(result, "cuvidParseVideoData (flush)")
+            .map_err(|reason| DecodeError::DecodeFailed { frame: 0, reason })?;
 
         Ok(())
     }
@@ -658,13 +643,10 @@ impl NvDecSession {
 
         // SAFETY: parser is valid. A null payload with the DISCONTINUITY flag
         // tells the parser to reset its internal bitstream state.
-        let result = unsafe {
-            (self.lib.cuvidParseVideoData)(self.parser, &mut packet)
-        };
+        let result = unsafe { (self.lib.cuvidParseVideoData)(self.parser, &mut packet) };
 
-        check_cuvid_result(result, "cuvidParseVideoData (discontinuity)").map_err(
-            |reason| DecodeError::DecodeFailed { frame: 0, reason },
-        )?;
+        check_cuvid_result(result, "cuvidParseVideoData (discontinuity)")
+            .map_err(|reason| DecodeError::DecodeFailed { frame: 0, reason })?;
 
         info!("NVDEC session reset for seek");
         Ok(())

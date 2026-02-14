@@ -362,7 +362,11 @@ impl ms_common::GpuBackend for VulkanBackend {
         // so callers can free individual buffers through GpuBuffer handles.
         std::mem::forget(buffer);
 
-        debug!(size = size, handle = gpu_buf.handle, "GpuBackend::alloc_buffer");
+        debug!(
+            size = size,
+            handle = gpu_buf.handle,
+            "GpuBackend::alloc_buffer"
+        );
         Ok(gpu_buf)
     }
 
@@ -398,19 +402,14 @@ impl ms_common::GpuBackend for VulkanBackend {
         Ok(gpu_tex)
     }
 
-    fn alloc_staging(
-        &self,
-        size: usize,
-    ) -> Result<ms_common::StagingBuffer, ms_common::GpuError> {
+    fn alloc_staging(&self, size: usize) -> Result<ms_common::StagingBuffer, ms_common::GpuError> {
         // Allocate a CpuToGpu staging buffer by default. Callers needing
         // GpuToCpu should use `alloc_readback_staging` directly.
         let staging = self
             .alloc_upload_staging(size)
             .map_err(ms_common::GpuError::from)?;
 
-        let host_ptr = staging
-            .mapped_ptr()
-            .unwrap_or(std::ptr::null_mut());
+        let host_ptr = staging.mapped_ptr().unwrap_or(std::ptr::null_mut());
         let handle = staging.handle();
 
         let staging_buf = ms_common::StagingBuffer {
@@ -444,8 +443,7 @@ impl ms_common::GpuBackend for VulkanBackend {
     fn synchronize(&self, _stream: &ms_common::GpuStream) -> Result<(), ms_common::GpuError> {
         // Synchronize by waiting for the device to become idle.
         // A more fine-grained approach would track per-stream fences.
-        self.device_wait_idle()
-            .map_err(ms_common::GpuError::from)
+        self.device_wait_idle().map_err(ms_common::GpuError::from)
     }
 
     // -- Kernel dispatch (stub) --

@@ -2,11 +2,11 @@ use eframe::egui;
 
 use crate::bridge::PreviewBridge;
 use crate::engine::EngineOrchestrator;
-use crate::toolbar::ToolbarState;
 use crate::media_panel::MediaPanelState;
 use crate::preview_panel::PreviewPanelState;
 use crate::properties_panel::PropertiesPanelState;
 use crate::timeline::TimelineState;
+use crate::toolbar::ToolbarState;
 
 pub struct MasterSelectsApp {
     pub toolbar: ToolbarState,

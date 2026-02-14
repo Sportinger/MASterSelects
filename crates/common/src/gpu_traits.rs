@@ -95,16 +95,10 @@ pub trait GpuBackend: Send + Sync {
     // -- Hardware decode/encode --
 
     /// Create a hardware video decoder.
-    fn create_decoder(
-        &self,
-        config: &DecoderConfig,
-    ) -> Result<Box<dyn HwDecoder>, DecodeError>;
+    fn create_decoder(&self, config: &DecoderConfig) -> Result<Box<dyn HwDecoder>, DecodeError>;
 
     /// Create a hardware video encoder.
-    fn create_encoder(
-        &self,
-        config: &EncoderConfig,
-    ) -> Result<Box<dyn HwEncoder>, EncodeError>;
+    fn create_encoder(&self, config: &EncoderConfig) -> Result<Box<dyn HwEncoder>, EncodeError>;
 
     // -- Display bridge --
 

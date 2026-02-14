@@ -121,15 +121,16 @@ impl DecoderManager {
         id: DecoderId,
         config: &DecoderCreateConfig,
     ) -> Result<&mut NvDecoder, DecodeError> {
-        let lib = self.nvdec_lib.as_ref().ok_or_else(|| {
-            DecodeError::HwDecoderInit {
+        let lib = self
+            .nvdec_lib
+            .as_ref()
+            .ok_or_else(|| DecodeError::HwDecoderInit {
                 codec: config.codec,
                 reason: self
                     .nvdec_load_error
                     .clone()
                     .unwrap_or_else(|| "NVDEC not available".to_string()),
-            }
-        })?;
+            })?;
 
         let decoder = NvDecoder::with_config(
             lib.clone(),

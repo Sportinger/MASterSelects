@@ -78,6 +78,21 @@ impl Drop for RawModule {
 unsafe impl Send for RawModule {}
 unsafe impl Sync for RawModule {}
 
+/// Newtype wrapper around `CUfunction` to implement `Send` and `Sync`.
+///
+/// CUDA function handles are valid across threads as long as the owning
+/// module and context are alive. We ensure this through the `KernelManager`
+/// which holds `Arc<RawModule>` (and thus `Arc<CudaContext>`).
+#[derive(Debug, Clone, Copy)]
+struct SendCUfunction(sys::CUfunction);
+
+// SAFETY: CUfunction is a pointer into the CUDA driver's internal state.
+// It is safe to send/share across threads as long as:
+// 1. The owning CUmodule is not unloaded (guaranteed by Arc<RawModule>).
+// 2. The CUDA context is bound before use (guaranteed by bind_to_thread calls).
+unsafe impl Send for SendCUfunction {}
+unsafe impl Sync for SendCUfunction {}
+
 // ---------------------------------------------------------------------------
 // KernelManager
 // ---------------------------------------------------------------------------
@@ -107,7 +122,7 @@ pub struct KernelManager {
     /// Loaded raw modules, keyed by module name.
     modules: RwLock<HashMap<String, Arc<RawModule>>>,
     /// Cached raw function handles, keyed by (module_name, function_name).
-    functions: RwLock<HashMap<(String, String), sys::CUfunction>>,
+    functions: RwLock<HashMap<(String, String), SendCUfunction>>,
     /// Optional base directory for loading PTX files from disk.
     ptx_search_dir: Option<PathBuf>,
 }
@@ -202,10 +217,12 @@ impl KernelManager {
         }
 
         // Bind CUDA context to current thread
-        self.ctx.bind_to_thread().map_err(|e| CudaError::ModuleLoadFailed {
-            name: name.to_string(),
-            reason: format!("Failed to bind CUDA context: {e}"),
-        })?;
+        self.ctx
+            .bind_to_thread()
+            .map_err(|e| CudaError::ModuleLoadFailed {
+                name: name.to_string(),
+                reason: format!("Failed to bind CUDA context: {e}"),
+            })?;
 
         // SAFETY:
         // 1. null_terminated contains valid, null-terminated PTX text.
@@ -248,7 +265,7 @@ impl KernelManager {
 
         // Check cache first
         if let Some(func) = self.functions.read().get(&cache_key) {
-            return Ok(*func);
+            return Ok(func.0);
         }
 
         // Load from module
@@ -266,10 +283,12 @@ impl KernelManager {
         })?;
 
         // Bind context for the raw API call
-        self.ctx.bind_to_thread().map_err(|e| CudaError::KernelNotFound {
-            module: module_name.to_string(),
-            func: format!("{function_name} (context bind failed: {e})"),
-        })?;
+        self.ctx
+            .bind_to_thread()
+            .map_err(|e| CudaError::KernelNotFound {
+                module: module_name.to_string(),
+                func: format!("{function_name} (context bind failed: {e})"),
+            })?;
 
         // SAFETY:
         // 1. raw_module.cu_module is a valid module handle from cuModuleLoadData.
@@ -294,7 +313,9 @@ impl KernelManager {
             function = function_name,
             "Cached CUDA kernel function (raw handle)"
         );
-        self.functions.write().insert(cache_key, func);
+        self.functions
+            .write()
+            .insert(cache_key, SendCUfunction(func));
         Ok(func)
     }
 
@@ -323,12 +344,13 @@ impl KernelManager {
             return Ok(());
         }
 
-        let ptx_dir = self.ptx_search_dir.as_ref().ok_or_else(|| {
-            CudaError::ModuleLoadFailed {
+        let ptx_dir = self
+            .ptx_search_dir
+            .as_ref()
+            .ok_or_else(|| CudaError::ModuleLoadFailed {
                 name: module_name.clone(),
                 reason: "Module not loaded and no PTX search directory configured".to_string(),
-            }
-        })?;
+            })?;
 
         let ptx_path = ptx_dir.join(&module_name);
         self.load_ptx_file(&module_name, &ptx_path)
@@ -420,10 +442,11 @@ impl KernelManager {
     /// # Safety
     ///
     /// The caller must ensure that:
+    /// - `stream` is a valid `CUstream` handle (or null for the default stream).
     /// - `args` match the kernel's parameter list in number, order, and type.
     /// - Device pointers in `args` point to valid, allocated GPU memory.
     /// - GPU memory referenced by `args` will not be freed before the kernel completes.
-    pub fn launch(
+    pub unsafe fn launch(
         &self,
         kernel_id: &KernelId,
         grid: [u32; 3],
@@ -431,6 +454,7 @@ impl KernelManager {
         args: &KernelArgs,
         stream: sys::CUstream,
     ) -> Result<(), CudaError> {
+        // SAFETY: Caller guarantees stream validity and argument correctness.
         self.launch_with_shared_mem(kernel_id, grid, block, 0, args, stream)
     }
 
@@ -438,7 +462,15 @@ impl KernelManager {
     ///
     /// Like [`launch`](Self::launch), but allows specifying the amount of
     /// dynamic shared memory per thread block.
-    pub fn launch_with_shared_mem(
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that:
+    /// - `stream` is a valid `CUstream` handle (or null for the default stream).
+    /// - `args` match the kernel's parameter list in number, order, and type.
+    /// - Device pointers in `args` point to valid, allocated GPU memory.
+    /// - GPU memory referenced by `args` will not be freed before the kernel completes.
+    pub unsafe fn launch_with_shared_mem(
         &self,
         kernel_id: &KernelId,
         grid: [u32; 3],
@@ -469,10 +501,12 @@ impl KernelManager {
         let mut arg_ptrs = arg_storage.as_void_ptrs();
 
         // Step 4: Bind context and launch via raw CUDA driver API.
-        self.ctx.bind_to_thread().map_err(|e| CudaError::KernelLaunchFailed {
-            kernel: entry_point.to_string(),
-            reason: format!("Failed to bind context: {e}"),
-        })?;
+        self.ctx
+            .bind_to_thread()
+            .map_err(|e| CudaError::KernelLaunchFailed {
+                kernel: entry_point.to_string(),
+                reason: format!("Failed to bind context: {e}"),
+            })?;
 
         // SAFETY:
         // - `func` was obtained from cuModuleGetFunction on a valid module.
@@ -484,8 +518,12 @@ impl KernelManager {
         unsafe {
             let result = sys::cuLaunchKernel(
                 func,
-                grid[0], grid[1], grid[2],
-                block[0], block[1], block[2],
+                grid[0],
+                grid[1],
+                grid[2],
+                block[0],
+                block[1],
+                block[2],
                 shared_mem_bytes,
                 stream,
                 arg_ptrs.as_mut_ptr(),
@@ -608,24 +646,12 @@ impl ArgStorage {
         self.order
             .iter()
             .map(|slot| match slot {
-                ArgSlot::Ptr(i) => {
-                    (&mut self.ptrs[*i]) as *mut u64 as *mut c_void
-                }
-                ArgSlot::U32(i) => {
-                    (&mut self.u32s[*i]) as *mut u32 as *mut c_void
-                }
-                ArgSlot::I32(i) => {
-                    (&mut self.i32s[*i]) as *mut i32 as *mut c_void
-                }
-                ArgSlot::F32(i) => {
-                    (&mut self.f32s[*i]) as *mut f32 as *mut c_void
-                }
-                ArgSlot::Vec2(i) => {
-                    (&mut self.vec2s[*i]) as *mut [f32; 2] as *mut c_void
-                }
-                ArgSlot::Vec4(i) => {
-                    (&mut self.vec4s[*i]) as *mut [f32; 4] as *mut c_void
-                }
+                ArgSlot::Ptr(i) => (&mut self.ptrs[*i]) as *mut u64 as *mut c_void,
+                ArgSlot::U32(i) => (&mut self.u32s[*i]) as *mut u32 as *mut c_void,
+                ArgSlot::I32(i) => (&mut self.i32s[*i]) as *mut i32 as *mut c_void,
+                ArgSlot::F32(i) => (&mut self.f32s[*i]) as *mut f32 as *mut c_void,
+                ArgSlot::Vec2(i) => (&mut self.vec2s[*i]) as *mut [f32; 2] as *mut c_void,
+                ArgSlot::Vec4(i) => (&mut self.vec4s[*i]) as *mut [f32; 4] as *mut c_void,
             })
             .collect()
     }
@@ -703,7 +729,14 @@ impl Nv12ToRgbaParams {
 /// * `km` - The kernel manager (must have the nv12_to_rgba PTX loaded).
 /// * `params` - NV12-to-RGBA conversion parameters.
 /// * `stream` - The raw CUDA stream handle to launch on.
-pub fn dispatch_nv12_to_rgba(
+///
+/// # Safety
+///
+/// The caller must ensure that:
+/// - `stream` is a valid `CUstream` handle (or null for the default stream).
+/// - Device pointers in `params` point to valid, allocated GPU memory.
+/// - GPU memory referenced by `params` will not be freed before the kernel completes.
+pub unsafe fn dispatch_nv12_to_rgba(
     km: &KernelManager,
     params: &Nv12ToRgbaParams,
     stream: sys::CUstream,
@@ -711,10 +744,7 @@ pub fn dispatch_nv12_to_rgba(
     if params.width <= 0 || params.height <= 0 {
         return Err(CudaError::InvalidKernelArgs {
             kernel: "nv12_to_rgba".to_string(),
-            reason: format!(
-                "Invalid dimensions: {}x{}",
-                params.width, params.height
-            ),
+            reason: format!("Invalid dimensions: {}x{}", params.width, params.height),
         });
     }
 
@@ -793,7 +823,14 @@ impl AlphaBlendParams {
 /// * `km` - The kernel manager (must have the alpha_blend PTX loaded).
 /// * `params` - Alpha blend parameters.
 /// * `stream` - The raw CUDA stream handle to launch on.
-pub fn dispatch_alpha_blend(
+///
+/// # Safety
+///
+/// The caller must ensure that:
+/// - `stream` is a valid `CUstream` handle (or null for the default stream).
+/// - Device pointers in `params` point to valid, allocated GPU memory.
+/// - GPU memory referenced by `params` will not be freed before the kernel completes.
+pub unsafe fn dispatch_alpha_blend(
     km: &KernelManager,
     params: &AlphaBlendParams,
     stream: sys::CUstream,
@@ -801,10 +838,7 @@ pub fn dispatch_alpha_blend(
     if params.width <= 0 || params.height <= 0 {
         return Err(CudaError::InvalidKernelArgs {
             kernel: "alpha_blend".to_string(),
-            reason: format!(
-                "Invalid dimensions: {}x{}",
-                params.width, params.height
-            ),
+            reason: format!("Invalid dimensions: {}x{}", params.width, params.height),
         });
     }
 

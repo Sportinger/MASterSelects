@@ -140,11 +140,23 @@ pub fn apply_theme(ctx: &egui::Context) {
     // Override text styles with our desired sizes
     use egui::{FontFamily, FontId, TextStyle};
     let mut text_styles = std::collections::BTreeMap::new();
-    text_styles.insert(TextStyle::Small, FontId::new(10.0, FontFamily::Proportional));
+    text_styles.insert(
+        TextStyle::Small,
+        FontId::new(10.0, FontFamily::Proportional),
+    );
     text_styles.insert(TextStyle::Body, FontId::new(12.0, FontFamily::Proportional));
-    text_styles.insert(TextStyle::Monospace, FontId::new(12.0, FontFamily::Monospace));
-    text_styles.insert(TextStyle::Button, FontId::new(12.0, FontFamily::Proportional));
-    text_styles.insert(TextStyle::Heading, FontId::new(16.0, FontFamily::Proportional));
+    text_styles.insert(
+        TextStyle::Monospace,
+        FontId::new(12.0, FontFamily::Monospace),
+    );
+    text_styles.insert(
+        TextStyle::Button,
+        FontId::new(12.0, FontFamily::Proportional),
+    );
+    text_styles.insert(
+        TextStyle::Heading,
+        FontId::new(16.0, FontFamily::Proportional),
+    );
     ctx.set_style(egui::Style {
         text_styles,
         ..ctx.style().as_ref().clone()

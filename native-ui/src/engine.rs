@@ -364,11 +364,7 @@ impl EngineOrchestrator {
             }
             EngineState::Error(msg) => {
                 // Show an error pattern (red-tinted test pattern)
-                let frame = self.generate_error_frame(
-                    self.preview_width,
-                    self.preview_height,
-                    msg,
-                );
+                let frame = self.generate_error_frame(self.preview_width, self.preview_height, msg);
                 bridge.update_from_rgba_bytes(ctx, &frame, self.preview_width, self.preview_height);
             }
         }
@@ -494,7 +490,11 @@ impl EngineOrchestrator {
                 let checker = if nx > 0.35 && nx < 0.65 && ny > 0.35 && ny < 0.65 {
                     let cx = (x as f32 / 32.0).floor() as i32;
                     let cy = (y as f32 / 32.0).floor() as i32;
-                    if (cx + cy) % 2 == 0 { 0.9_f32 } else { 0.6 }
+                    if (cx + cy) % 2 == 0 {
+                        0.9_f32
+                    } else {
+                        0.6
+                    }
                 } else {
                     1.0
                 };
@@ -723,7 +723,11 @@ fn generate_synthetic_frame(width: u32, height: u32, frame_num: u64, pts_secs: f
             let bar_intensity = (1.0 - bar_dist * 10.0).clamp(0.0, 0.3);
 
             // Subtle grid overlay
-            let grid = if (x % 64 < 2) || (y % 64 < 2) { 0.1_f32 } else { 0.0 };
+            let grid = if (x % 64 < 2) || (y % 64 < 2) {
+                0.1_f32
+            } else {
+                0.0
+            };
 
             let final_r = (r + bar_intensity + grid).clamp(0.0, 1.0);
             let final_g = (g + bar_intensity + grid).clamp(0.0, 1.0);

@@ -545,11 +545,7 @@ impl Drop for VulkanImage {
             // has already been freed above.
             self.device.destroy_image(self.image, None);
         }
-        debug!(
-            width = self.width,
-            height = self.height,
-            "Freed GPU image"
-        );
+        debug!(width = self.width, height = self.height, "Freed GPU image");
     }
 }
 

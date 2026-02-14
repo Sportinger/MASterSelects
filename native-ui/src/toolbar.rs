@@ -40,7 +40,11 @@ pub fn show_toolbar(ctx: &egui::Context, state: &mut ToolbarState) {
                     .frame(false)
                     .margin(egui::Margin::symmetric(4, 0));
                 ui.add(text_edit);
-                ui.label(RichText::new("\u{25be}").color(PROJECT_NAME_COLOR).size(10.0));
+                ui.label(
+                    RichText::new("\u{25be}")
+                        .color(PROJECT_NAME_COLOR)
+                        .size(10.0),
+                );
 
                 ui.add_space(12.0);
 
@@ -171,16 +175,8 @@ pub fn show_toolbar(ctx: &egui::Context, state: &mut ToolbarState) {
                     ui.add_space(center_offset);
                 }
 
-                ui.label(
-                    RichText::new(wip_text)
-                        .color(WIP_COLOR)
-                        .size(11.5),
-                );
-                ui.label(
-                    RichText::new(version_text)
-                        .color(WIP_DIM_COLOR)
-                        .size(11.0),
-                );
+                ui.label(RichText::new(wip_text).color(WIP_COLOR).size(11.5));
+                ui.label(RichText::new(version_text).color(WIP_DIM_COLOR).size(11.0));
 
                 // 4. Right side — GPU status
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -189,11 +185,7 @@ pub fn show_toolbar(ctx: &egui::Context, state: &mut ToolbarState) {
                             .color(GPU_TEXT_COLOR)
                             .size(11.5),
                     );
-                    ui.label(
-                        RichText::new("\u{25cf}")
-                            .color(GPU_DOT_COLOR)
-                            .size(11.0),
-                    );
+                    ui.label(RichText::new("\u{25cf}").color(GPU_DOT_COLOR).size(11.0));
                 });
             });
         });

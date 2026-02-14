@@ -98,8 +98,7 @@ impl VulkanContext {
         };
 
         // Select physical device
-        let (physical_device, properties, memory_props) =
-            Self::select_physical_device(&instance)?;
+        let (physical_device, properties, memory_props) = Self::select_physical_device(&instance)?;
 
         let device_name = decode_device_name(&properties.device_name);
         info!(
@@ -164,7 +163,10 @@ impl VulkanContext {
                 if found {
                     debug!("Found Khronos validation layer");
                 } else {
-                    debug!("Khronos validation layer not found among {} layers", layers.len());
+                    debug!(
+                        "Khronos validation layer not found among {} layers",
+                        layers.len()
+                    );
                 }
 
                 found
@@ -347,7 +349,10 @@ impl VulkanContext {
     }
 
     /// Check if a physical device has at least one compute-capable queue family.
-    fn device_has_compute_queue(instance: &ash::Instance, physical_device: vk::PhysicalDevice) -> bool {
+    fn device_has_compute_queue(
+        instance: &ash::Instance,
+        physical_device: vk::PhysicalDevice,
+    ) -> bool {
         let queue_families = unsafe {
             // SAFETY: Instance is valid, physical_device was enumerated from it.
             instance.get_physical_device_queue_family_properties(physical_device)
@@ -794,9 +799,6 @@ mod tests {
         let score_4gb = VulkanContext::score_device(&props, &mem_props_4gb);
         let score_8gb = VulkanContext::score_device(&props, &mem_props_8gb);
 
-        assert!(
-            score_8gb > score_4gb,
-            "More VRAM should score higher"
-        );
+        assert!(score_8gb > score_4gb, "More VRAM should score higher");
     }
 }

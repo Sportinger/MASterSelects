@@ -117,10 +117,7 @@ impl EffectInstance {
     }
 
     pub fn get_param(&self, name: &str) -> Option<&ParamValue> {
-        self.params
-            .iter()
-            .find(|(n, _)| n == name)
-            .map(|(_, v)| v)
+        self.params.iter().find(|(n, _)| n == name).map(|(_, v)| v)
     }
 }
 

@@ -115,20 +115,16 @@ pub fn available_spirv_shaders() -> &'static [&'static str] {
 #[cfg(all(feature = "cuda", not(no_cuda_kernels)))]
 mod cuda_kernels {
     /// Embedded PTX for nv12_to_rgba kernel (entry point: `nv12_to_rgba`).
-    static NV12_TO_RGBA: &[u8] =
-        include_bytes!(concat!(env!("OUT_DIR"), "/ptx/nv12_to_rgba.ptx"));
+    static NV12_TO_RGBA: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/ptx/nv12_to_rgba.ptx"));
 
     /// Embedded PTX for composite kernel (entry point: `alpha_blend`).
-    static COMPOSITE: &[u8] =
-        include_bytes!(concat!(env!("OUT_DIR"), "/ptx/composite.ptx"));
+    static COMPOSITE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/ptx/composite.ptx"));
 
     /// Embedded PTX for blend kernel (entry point: `blend_rgba`).
-    static BLEND: &[u8] =
-        include_bytes!(concat!(env!("OUT_DIR"), "/ptx/blend.ptx"));
+    static BLEND: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/ptx/blend.ptx"));
 
     /// Embedded PTX for transform kernel (entry point: `transform_rgba`).
-    static TRANSFORM: &[u8] =
-        include_bytes!(concat!(env!("OUT_DIR"), "/ptx/transform.ptx"));
+    static TRANSFORM: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/ptx/transform.ptx"));
 
     /// All available kernel names.
     pub static NAMES: &[&str] = &["nv12_to_rgba", "composite", "blend", "transform"];
@@ -152,20 +148,16 @@ mod cuda_kernels {
 #[cfg(all(feature = "vulkan", not(no_vulkan_kernels)))]
 mod vulkan_kernels {
     /// Embedded SPIR-V for nv12_to_rgba shader.
-    static NV12_TO_RGBA: &[u8] =
-        include_bytes!(concat!(env!("OUT_DIR"), "/spv/nv12_to_rgba.spv"));
+    static NV12_TO_RGBA: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/spv/nv12_to_rgba.spv"));
 
     /// Embedded SPIR-V for composite shader.
-    static COMPOSITE: &[u8] =
-        include_bytes!(concat!(env!("OUT_DIR"), "/spv/composite.spv"));
+    static COMPOSITE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/spv/composite.spv"));
 
     /// Embedded SPIR-V for blend shader.
-    static BLEND: &[u8] =
-        include_bytes!(concat!(env!("OUT_DIR"), "/spv/blend.spv"));
+    static BLEND: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/spv/blend.spv"));
 
     /// Embedded SPIR-V for transform shader.
-    static TRANSFORM: &[u8] =
-        include_bytes!(concat!(env!("OUT_DIR"), "/spv/transform.spv"));
+    static TRANSFORM: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/spv/transform.spv"));
 
     /// All available shader names.
     pub static NAMES: &[&str] = &["nv12_to_rgba", "composite", "blend", "transform"];

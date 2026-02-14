@@ -104,11 +104,7 @@ impl PreviewBridge {
                 handle.set(color_image, TextureOptions::LINEAR);
             }
             None => {
-                let handle = ctx.load_texture(
-                    "preview_frame",
-                    color_image,
-                    TextureOptions::LINEAR,
-                );
+                let handle = ctx.load_texture("preview_frame", color_image, TextureOptions::LINEAR);
                 self.texture_handle = Some(handle);
             }
         }
@@ -126,9 +122,7 @@ impl PreviewBridge {
             self.frame_times.drain(0..self.frame_times.len() - 60);
         }
         if self.frame_times.len() >= 2 {
-            let window_duration = now
-                .duration_since(self.frame_times[0])
-                .as_secs_f64();
+            let window_duration = now.duration_since(self.frame_times[0]).as_secs_f64();
             if window_duration > 0.0 {
                 self.fps = (self.frame_times.len() - 1) as f64 / window_duration;
             }

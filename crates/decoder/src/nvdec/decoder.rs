@@ -432,10 +432,7 @@ mod tests {
             pitch: 2048,
             pts: TimeCode::ZERO,
         };
-        assert_eq!(
-            frame.device_ptr_uv,
-            Some(frame.device_ptr + 1080 * 2048)
-        );
+        assert_eq!(frame.device_ptr_uv, Some(frame.device_ptr + 1080 * 2048));
     }
 
     #[test]

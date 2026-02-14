@@ -807,11 +807,7 @@ mod tests {
         let cache = PipelineCache::new();
         assert!(cache.get_kernel(&KernelId::Nv12ToRgba).is_none());
         assert!(cache.get_kernel(&KernelId::AlphaBlend).is_none());
-        assert!(
-            cache
-                .get_kernel(&KernelId::Effect("blur".into()))
-                .is_none()
-        );
+        assert!(cache.get_kernel(&KernelId::Effect("blur".into())).is_none());
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use egui::{self, Color32, RichText, CornerRadius, Stroke, Vec2};
+use egui::{self, Color32, CornerRadius, RichText, Stroke, Vec2};
 
 // ---------------------------------------------------------------------------
 // Types
@@ -201,7 +201,10 @@ fn show_tab_bar(ui: &mut egui::Ui, state: &mut PropertiesPanelState) {
         for (label, tab) in &tabs {
             let active = state.active_tab == *tab;
             let text = if active {
-                RichText::new(*label).color(Color32::WHITE).strong().size(12.0)
+                RichText::new(*label)
+                    .color(Color32::WHITE)
+                    .strong()
+                    .size(12.0)
             } else {
                 RichText::new(*label).color(COL_LABEL).size(12.0)
             };
@@ -297,7 +300,10 @@ fn show_transform_section(ui: &mut egui::Ui, state: &mut PropertiesPanelState) {
         .num_columns(3)
         .spacing([6.0, 4.0])
         .show(ui, |ui| {
-            for (i, axis) in ["Position X", "Position Y", "Position Z"].iter().enumerate() {
+            for (i, axis) in ["Position X", "Position Y", "Position Z"]
+                .iter()
+                .enumerate()
+            {
                 prop_label(ui, axis);
                 ui.add(
                     egui::DragValue::new(&mut state.position[i])
@@ -348,19 +354,20 @@ fn show_transform_section(ui: &mut egui::Ui, state: &mut PropertiesPanelState) {
 
 fn show_effects_section(ui: &mut egui::Ui, state: &mut PropertiesPanelState) {
     egui::CollapsingHeader::new(
-        RichText::new("Effects").color(COL_SECTION).strong().size(13.0),
+        RichText::new("Effects")
+            .color(COL_SECTION)
+            .strong()
+            .size(13.0),
     )
     .default_open(true)
     .show(ui, |ui| {
         // Add Effect button
         if ui
             .add(
-                egui::Button::new(
-                    RichText::new("+ Add Effect").color(Color32::WHITE).strong(),
-                )
-                .fill(COL_ACCENT)
-                .corner_radius(CornerRadius::same(4))
-                .min_size(Vec2::new(ui.available_width(), 28.0)),
+                egui::Button::new(RichText::new("+ Add Effect").color(Color32::WHITE).strong())
+                    .fill(COL_ACCENT)
+                    .corner_radius(CornerRadius::same(4))
+                    .min_size(Vec2::new(ui.available_width(), 28.0)),
             )
             .clicked()
         {
@@ -394,10 +401,8 @@ fn show_effects_section(ui: &mut egui::Ui, state: &mut PropertiesPanelState) {
                         };
                         if ui
                             .add(
-                                egui::Button::new(
-                                    RichText::new(arrow).color(COL_LABEL).size(10.0),
-                                )
-                                .frame(false),
+                                egui::Button::new(RichText::new(arrow).color(COL_LABEL).size(10.0))
+                                    .frame(false),
                             )
                             .clicked()
                         {
@@ -408,30 +413,21 @@ fn show_effects_section(ui: &mut egui::Ui, state: &mut PropertiesPanelState) {
                         ui.checkbox(&mut effect.enabled, "");
 
                         // Name
-                        ui.label(
-                            RichText::new(&effect.name)
-                                .color(Color32::WHITE)
-                                .size(12.0),
-                        );
+                        ui.label(RichText::new(&effect.name).color(Color32::WHITE).size(12.0));
 
-                        ui.with_layout(
-                            egui::Layout::right_to_left(egui::Align::Center),
-                            |ui| {
-                                if ui
-                                    .add(
-                                        egui::Button::new(
-                                            RichText::new("\u{2715}")
-                                                .color(COL_LABEL)
-                                                .size(12.0),
-                                        )
-                                        .frame(false),
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new("\u{2715}").color(COL_LABEL).size(12.0),
                                     )
-                                    .clicked()
-                                {
-                                    delete_index = Some(idx);
-                                }
-                            },
-                        );
+                                    .frame(false),
+                                )
+                                .clicked()
+                            {
+                                delete_index = Some(idx);
+                            }
+                        });
                     });
                 });
 
@@ -470,19 +466,20 @@ fn show_effects_section(ui: &mut egui::Ui, state: &mut PropertiesPanelState) {
 
 fn show_masks_section(ui: &mut egui::Ui, state: &mut PropertiesPanelState) {
     egui::CollapsingHeader::new(
-        RichText::new("Masks").color(COL_SECTION).strong().size(13.0),
+        RichText::new("Masks")
+            .color(COL_SECTION)
+            .strong()
+            .size(13.0),
     )
     .default_open(true)
     .show(ui, |ui| {
         // Add Mask button
         if ui
             .add(
-                egui::Button::new(
-                    RichText::new("+ Add Mask").color(Color32::WHITE).strong(),
-                )
-                .fill(COL_ACCENT)
-                .corner_radius(CornerRadius::same(4))
-                .min_size(Vec2::new(ui.available_width(), 28.0)),
+                egui::Button::new(RichText::new("+ Add Mask").color(Color32::WHITE).strong())
+                    .fill(COL_ACCENT)
+                    .corner_radius(CornerRadius::same(4))
+                    .min_size(Vec2::new(ui.available_width(), 28.0)),
             )
             .clicked()
         {
@@ -516,24 +513,19 @@ fn show_masks_section(ui: &mut egui::Ui, state: &mut PropertiesPanelState) {
                                 .strong()
                                 .size(12.0),
                         );
-                        ui.with_layout(
-                            egui::Layout::right_to_left(egui::Align::Center),
-                            |ui| {
-                                if ui
-                                    .add(
-                                        egui::Button::new(
-                                            RichText::new("\u{2715}")
-                                                .color(COL_LABEL)
-                                                .size(12.0),
-                                        )
-                                        .frame(false),
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new("\u{2715}").color(COL_LABEL).size(12.0),
                                     )
-                                    .clicked()
-                                {
-                                    delete_index = Some(idx);
-                                }
-                            },
-                        );
+                                    .frame(false),
+                                )
+                                .clicked()
+                            {
+                                delete_index = Some(idx);
+                            }
+                        });
                     });
 
                     ui.add_space(4.0);
@@ -692,8 +684,7 @@ fn show_export_tab(ui: &mut egui::Ui, state: &mut PropertiesPanelState) {
         let bitrates: [u32; 4] = [128, 192, 256, 320];
         egui::ComboBox::from_id_salt("export_abr")
             .selected_text(
-                RichText::new(format!("{} kbps", state.export_audio_bitrate))
-                    .color(Color32::WHITE),
+                RichText::new(format!("{} kbps", state.export_audio_bitrate)).color(Color32::WHITE),
             )
             .show_ui(ui, |ui| {
                 for b in &bitrates {
@@ -753,7 +744,11 @@ fn show_waveform_tab(ui: &mut egui::Ui) {
     let rect = response.rect;
 
     // Dark background for scope
-    painter.rect_filled(rect, CornerRadius::same(4), Color32::from_rgb(0x0a, 0x0a, 0x0a));
+    painter.rect_filled(
+        rect,
+        CornerRadius::same(4),
+        Color32::from_rgb(0x0a, 0x0a, 0x0a),
+    );
     painter.rect_stroke(
         rect,
         CornerRadius::same(4),
@@ -777,7 +772,11 @@ fn show_histogram_tab(ui: &mut egui::Ui) {
     let rect = response.rect;
 
     // Dark background for scope
-    painter.rect_filled(rect, CornerRadius::same(4), Color32::from_rgb(0x0a, 0x0a, 0x0a));
+    painter.rect_filled(
+        rect,
+        CornerRadius::same(4),
+        Color32::from_rgb(0x0a, 0x0a, 0x0a),
+    );
     painter.rect_stroke(
         rect,
         CornerRadius::same(4),
@@ -828,10 +827,8 @@ fn draw_histogram(painter: &egui::Painter, rect: egui::Rect) {
             let height_factor = (1.0 - center_dist * center_dist) * 0.8 + 0.05;
             let h = rect.height() * height_factor * (0.5 + 0.5 * hash as f32 / 100.0);
             let x = rect.left() + b as f32 * bin_w;
-            let bar_rect = egui::Rect::from_min_size(
-                egui::pos2(x, rect.bottom() - h),
-                Vec2::new(bin_w, h),
-            );
+            let bar_rect =
+                egui::Rect::from_min_size(egui::pos2(x, rect.bottom() - h), Vec2::new(bin_w, h));
             painter.rect_filled(bar_rect, CornerRadius::ZERO, *color);
         }
     }

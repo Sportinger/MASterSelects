@@ -314,8 +314,8 @@ impl GpuBackend for CudaBackend {
     // -- Memory allocation --
 
     fn alloc_buffer(&self, size: usize) -> Result<GpuBuffer, GpuError> {
-        let buf = DeviceBuffer::alloc_zeros(self.default_stream.inner(), size)
-            .map_err(GpuError::from)?;
+        let buf =
+            DeviceBuffer::alloc_zeros(self.default_stream.inner(), size).map_err(GpuError::from)?;
         Ok(self.register_buffer(buf))
     }
 
@@ -324,7 +324,7 @@ impl GpuBackend for CudaBackend {
         width: u32,
         height: u32,
         format: PixelFormat,
-        ) -> Result<GpuTexture, GpuError> {
+    ) -> Result<GpuTexture, GpuError> {
         // Textures are backed by linear device buffers on CUDA.
         // Pitch = width * bytes_per_pixel, aligned to 256 bytes for coalesced access.
         let bpp = format.bytes_per_pixel();
@@ -361,9 +361,8 @@ impl GpuBackend for CudaBackend {
         // SAFETY: The staging buffer will be written to by CUDA memcpy operations
         // before being read by the CPU. We never read uninitialized data because
         // all reads go through copy_to_staging which writes first.
-        let pinned = unsafe {
-            PinnedBuffer::alloc(self.context.context(), size).map_err(GpuError::from)?
-        };
+        let pinned =
+            unsafe { PinnedBuffer::alloc(self.context.context(), size).map_err(GpuError::from)? };
 
         let handle = next_handle();
         let host_ptr = pinned
@@ -431,9 +430,15 @@ impl GpuBackend for CudaBackend {
 
         // Delegate to the KernelManager which handles module loading,
         // function lookup, argument marshaling, and launch via raw CUDA API.
-        self.kernels
-            .launch(kernel_id, grid, block, args, cu_stream)
-            .map_err(GpuError::from)?;
+        //
+        // SAFETY: cu_stream is obtained from a valid CudaStream that was created
+        // by this backend. The caller of dispatch_kernel is responsible for ensuring
+        // args match the kernel signature and device pointers are valid.
+        unsafe {
+            self.kernels
+                .launch(kernel_id, grid, block, args, cu_stream)
+                .map_err(GpuError::from)?;
+        }
 
         debug!(
             kernel = kernel_id.entry_point(),
@@ -526,10 +531,7 @@ impl GpuBackend for CudaBackend {
 
     // -- Hardware decode/encode --
 
-    fn create_decoder(
-        &self,
-        config: &DecoderConfig,
-    ) -> Result<Box<dyn HwDecoder>, DecodeError> {
+    fn create_decoder(&self, config: &DecoderConfig) -> Result<Box<dyn HwDecoder>, DecodeError> {
         // NVDEC FFI bindings are not yet implemented. Return an error indicating
         // the decoder crate is not ready.
         Err(DecodeError::HwDecoderInit {
@@ -538,10 +540,7 @@ impl GpuBackend for CudaBackend {
         })
     }
 
-    fn create_encoder(
-        &self,
-        config: &EncoderConfig,
-    ) -> Result<Box<dyn HwEncoder>, EncodeError> {
+    fn create_encoder(&self, config: &EncoderConfig) -> Result<Box<dyn HwEncoder>, EncodeError> {
         // NVENC FFI bindings are not yet implemented. Return an error indicating
         // the encoder crate is not ready.
         Err(EncodeError::HwEncoderInit(format!(
@@ -558,6 +557,8 @@ impl GpuBackend for CudaBackend {
         dst: &StagingBuffer,
         stream: &GpuStream,
     ) -> Result<(), GpuError> {
+        let _ = stream; // acknowledged — using synchronous copy
+
         // Look up the device buffer backing the texture
         let buffers = self.buffers.read();
         let device_buf = buffers.get(&src.handle).ok_or_else(|| {
@@ -567,19 +568,7 @@ impl GpuBackend for CudaBackend {
             ))
         })?;
 
-        // Look up the staging buffer
-        let mut staging_buffers = self.staging_buffers.write();
-        let pinned = staging_buffers.get_mut(&dst.backend_id.into()).or_else(|| {
-            // The StagingBuffer doesn't use handle in the same way — search by pointer match
-            None
-        });
-
-        // Since StagingBuffer doesn't carry its registry handle, we copy
-        // directly from device to the host pointer via raw CUDA memcpy.
         let copy_size = std::cmp::min(device_buf.size(), dst.size);
-
-        let _ = stream; // acknowledged
-        let _ = pinned; // we use the raw host_ptr instead
 
         // Bind context to current thread for raw CUDA calls
         self.context
@@ -587,28 +576,28 @@ impl GpuBackend for CudaBackend {
             .bind_to_thread()
             .map_err(|e| GpuError::TransferFailed(format!("Failed to bind context: {e}")))?;
 
+        // Copy from device to the staging buffer's pinned host memory.
         // SAFETY:
         // 1. device_buf.device_ptr() returns a valid CUdeviceptr for an allocated buffer.
         // 2. dst.host_ptr was obtained from PinnedBuffer::alloc and points to valid
         //    page-locked memory of at least dst.size bytes.
         // 3. copy_size does not exceed either buffer's size.
-        // 4. We perform a synchronous copy (null stream) to ensure data is available
-        //    when this function returns.
+        // 4. We perform a synchronous copy (default stream) to ensure data is
+        //    available when this function returns.
         unsafe {
             let result = cudarc::driver::sys::cuMemcpyDtoH_v2(
                 dst.host_ptr as *mut std::ffi::c_void,
                 device_buf.device_ptr(),
                 copy_size,
             );
-            result.result().map_err(|e| {
-                GpuError::TransferFailed(format!("cuMemcpyDtoH failed: {e:?}"))
-            })?;
+            result
+                .result()
+                .map_err(|e| GpuError::TransferFailed(format!("cuMemcpyDtoH failed: {e:?}")))?;
         }
 
         debug!(
             texture_handle = src.handle,
-            copy_size,
-            "Copied texture to staging buffer"
+            copy_size, "Copied texture to staging buffer"
         );
 
         Ok(())

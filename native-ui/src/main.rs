@@ -1,12 +1,12 @@
+mod app;
 mod bridge;
 mod engine;
-mod theme;
-mod toolbar;
 mod media_panel;
 mod preview_panel;
 mod properties_panel;
+mod theme;
 mod timeline;
-mod app;
+mod toolbar;
 
 use app::MasterSelectsApp;
 

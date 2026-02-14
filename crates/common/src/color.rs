@@ -26,8 +26,8 @@ impl PixelFormat {
             Self::Rgba8 | Self::Bgra8 => 4,
             Self::Rgba16F => 8,
             Self::Rgba32F => 16,
-            Self::Nv12 => 1,  // Y plane only; UV is separate
-            Self::P010 => 2,  // 10-bit Y in 16-bit container
+            Self::Nv12 => 1, // Y plane only; UV is separate
+            Self::P010 => 2, // 10-bit Y in 16-bit container
         }
     }
 
@@ -38,7 +38,7 @@ impl PixelFormat {
     pub fn channel_count(self) -> u32 {
         match self {
             Self::Nv12 | Self::P010 => 3, // YUV
-            _ => 4,                        // RGBA
+            _ => 4,                       // RGBA
         }
     }
 }

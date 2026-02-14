@@ -575,8 +575,10 @@ pub struct NvcuvidLibrary {
     _lib: Library,
 
     // -- Decoder functions --
-    pub cuvidCreateDecoder:
-        unsafe extern "C" fn(decoder: *mut CUvideodecoder, params: *mut CuvidDecodeCreateInfo) -> CUresult,
+    pub cuvidCreateDecoder: unsafe extern "C" fn(
+        decoder: *mut CUvideodecoder,
+        params: *mut CuvidDecodeCreateInfo,
+    ) -> CUresult,
     pub cuvidDestroyDecoder: unsafe extern "C" fn(decoder: CUvideodecoder) -> CUresult,
     pub cuvidDecodePicture:
         unsafe extern "C" fn(decoder: CUvideodecoder, params: *mut CuvidPicParams) -> CUresult,
@@ -591,8 +593,10 @@ pub struct NvcuvidLibrary {
         unsafe extern "C" fn(decoder: CUvideodecoder, dev_ptr: CUdeviceptr) -> CUresult,
 
     // -- Parser functions --
-    pub cuvidCreateVideoParser:
-        unsafe extern "C" fn(parser: *mut CUvideoparser, params: *mut CuvidParserParams) -> CUresult,
+    pub cuvidCreateVideoParser: unsafe extern "C" fn(
+        parser: *mut CUvideoparser,
+        params: *mut CuvidParserParams,
+    ) -> CUresult,
     pub cuvidDestroyVideoParser: unsafe extern "C" fn(parser: CUvideoparser) -> CUresult,
     pub cuvidParseVideoData:
         unsafe extern "C" fn(parser: CUvideoparser, packet: *mut CuvidSourceDataPacket) -> CUresult,
@@ -638,23 +642,28 @@ impl NvcuvidLibrary {
         // local variable. This drops the borrow on `lib` before we move it
         // into the struct.
         unsafe {
-            let fn_create_decoder = *lib
-                .get::<unsafe extern "C" fn(*mut CUvideodecoder, *mut CuvidDecodeCreateInfo) -> CUresult>(
-                    b"cuvidCreateDecoder\0",
-                )
-                .map_err(|e| NvcuvidLoadError::SymbolNotFound(format!("cuvidCreateDecoder: {e}")))?;
+            let fn_create_decoder =
+                *lib.get::<unsafe extern "C" fn(
+                    *mut CUvideodecoder,
+                    *mut CuvidDecodeCreateInfo,
+                ) -> CUresult>(b"cuvidCreateDecoder\0")
+                    .map_err(|e| {
+                        NvcuvidLoadError::SymbolNotFound(format!("cuvidCreateDecoder: {e}"))
+                    })?;
 
             let fn_destroy_decoder = *lib
-                .get::<unsafe extern "C" fn(CUvideodecoder) -> CUresult>(
-                    b"cuvidDestroyDecoder\0",
-                )
-                .map_err(|e| NvcuvidLoadError::SymbolNotFound(format!("cuvidDestroyDecoder: {e}")))?;
+                .get::<unsafe extern "C" fn(CUvideodecoder) -> CUresult>(b"cuvidDestroyDecoder\0")
+                .map_err(|e| {
+                    NvcuvidLoadError::SymbolNotFound(format!("cuvidDestroyDecoder: {e}"))
+                })?;
 
             let fn_decode_picture = *lib
                 .get::<unsafe extern "C" fn(CUvideodecoder, *mut CuvidPicParams) -> CUresult>(
                     b"cuvidDecodePicture\0",
                 )
-                .map_err(|e| NvcuvidLoadError::SymbolNotFound(format!("cuvidDecodePicture: {e}")))?;
+                .map_err(|e| {
+                    NvcuvidLoadError::SymbolNotFound(format!("cuvidDecodePicture: {e}"))
+                })?;
 
             let fn_map_frame = *lib
                 .get::<unsafe extern "C" fn(
@@ -664,13 +673,17 @@ impl NvcuvidLibrary {
                     *mut u32,
                     *mut CuvidProcParams,
                 ) -> CUresult>(b"cuvidMapVideoFrame64\0")
-                .map_err(|e| NvcuvidLoadError::SymbolNotFound(format!("cuvidMapVideoFrame64: {e}")))?;
+                .map_err(|e| {
+                    NvcuvidLoadError::SymbolNotFound(format!("cuvidMapVideoFrame64: {e}"))
+                })?;
 
             let fn_unmap_frame = *lib
                 .get::<unsafe extern "C" fn(CUvideodecoder, CUdeviceptr) -> CUresult>(
                     b"cuvidUnmapVideoFrame64\0",
                 )
-                .map_err(|e| NvcuvidLoadError::SymbolNotFound(format!("cuvidUnmapVideoFrame64: {e}")))?;
+                .map_err(|e| {
+                    NvcuvidLoadError::SymbolNotFound(format!("cuvidUnmapVideoFrame64: {e}"))
+                })?;
 
             let fn_create_parser = *lib
                 .get::<unsafe extern "C" fn(*mut CUvideoparser, *mut CuvidParserParams) -> CUresult>(
@@ -682,13 +695,17 @@ impl NvcuvidLibrary {
                 .get::<unsafe extern "C" fn(CUvideoparser) -> CUresult>(
                     b"cuvidDestroyVideoParser\0",
                 )
-                .map_err(|e| NvcuvidLoadError::SymbolNotFound(format!("cuvidDestroyVideoParser: {e}")))?;
+                .map_err(|e| {
+                    NvcuvidLoadError::SymbolNotFound(format!("cuvidDestroyVideoParser: {e}"))
+                })?;
 
             let fn_parse_data = *lib
                 .get::<unsafe extern "C" fn(CUvideoparser, *mut CuvidSourceDataPacket) -> CUresult>(
                     b"cuvidParseVideoData\0",
                 )
-                .map_err(|e| NvcuvidLoadError::SymbolNotFound(format!("cuvidParseVideoData: {e}")))?;
+                .map_err(|e| {
+                    NvcuvidLoadError::SymbolNotFound(format!("cuvidParseVideoData: {e}"))
+                })?;
 
             debug!("All NVDEC symbols loaded successfully");
 
@@ -713,10 +730,7 @@ impl NvcuvidLibrary {
         // SAFETY: Loading a user-specified shared library. The caller asserts
         // this is a valid nvcuvid library.
         let lib = unsafe { Library::new(path) }.map_err(|e| {
-            NvcuvidLoadError::LibraryNotFound(format!(
-                "Failed to load {}: {e}",
-                path.display()
-            ))
+            NvcuvidLoadError::LibraryNotFound(format!("Failed to load {}: {e}", path.display()))
         })?;
 
         // Delegate to the internal loader with the opened library

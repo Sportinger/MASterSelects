@@ -170,9 +170,7 @@ pub fn read_box_header<R: Read + Seek>(reader: &mut R) -> Result<Option<BoxHeade
 pub fn skip_box<R: Read + Seek>(reader: &mut R, header: &BoxHeader) -> Result<(), DemuxError> {
     match header.end_offset() {
         Some(end) => {
-            reader
-                .seek(SeekFrom::Start(end))
-                .map_err(DemuxError::Io)?;
+            reader.seek(SeekFrom::Start(end)).map_err(DemuxError::Io)?;
             Ok(())
         }
         None => {
@@ -360,10 +358,7 @@ pub fn parse_hdlr<R: Read + Seek>(
         name
     );
 
-    Ok(HdlrBox {
-        handler_type,
-        name,
-    })
+    Ok(HdlrBox { handler_type, name })
 }
 
 // ─── tkhd Box ───────────────────────────────────────────────────────
@@ -493,10 +488,11 @@ pub fn parse_stsd<R: Read + Seek>(
     debug!("stsd: {} entries", entry_count);
 
     for _ in 0..entry_count {
-        let entry_header = read_box_header(reader)?.ok_or_else(|| DemuxError::InvalidStructure {
-            offset: reader.stream_position().unwrap_or(0),
-            reason: "Unexpected EOF in stsd entries".into(),
-        })?;
+        let entry_header =
+            read_box_header(reader)?.ok_or_else(|| DemuxError::InvalidStructure {
+                offset: reader.stream_position().unwrap_or(0),
+                reason: "Unexpected EOF in stsd entries".into(),
+            })?;
 
         match entry_header.box_type {
             AVC1 | AVC3 => {
@@ -538,10 +534,12 @@ fn parse_avc_sample_entry<R: Read + Seek>(
     reader: &mut R,
     header: &BoxHeader,
 ) -> Result<VideoSampleDesc, DemuxError> {
-    let entry_end = header.end_offset().ok_or_else(|| DemuxError::InvalidStructure {
-        offset: header.offset,
-        reason: "AVC sample entry has no definite size".into(),
-    })?;
+    let entry_end = header
+        .end_offset()
+        .ok_or_else(|| DemuxError::InvalidStructure {
+            offset: header.offset,
+            reason: "AVC sample entry has no definite size".into(),
+        })?;
 
     // Skip: reserved (6), data_ref_index (2)
     let mut skip = [0u8; 8];
@@ -595,10 +593,12 @@ fn parse_hevc_sample_entry<R: Read + Seek>(
     reader: &mut R,
     header: &BoxHeader,
 ) -> Result<VideoSampleDesc, DemuxError> {
-    let entry_end = header.end_offset().ok_or_else(|| DemuxError::InvalidStructure {
-        offset: header.offset,
-        reason: "HEVC sample entry has no definite size".into(),
-    })?;
+    let entry_end = header
+        .end_offset()
+        .ok_or_else(|| DemuxError::InvalidStructure {
+            offset: header.offset,
+            reason: "HEVC sample entry has no definite size".into(),
+        })?;
 
     // Skip: reserved (6), data_ref_index (2)
     let mut skip = [0u8; 8];
@@ -729,10 +729,12 @@ fn parse_mp4a_sample_entry<R: Read + Seek>(
     reader: &mut R,
     header: &BoxHeader,
 ) -> Result<AudioSampleDesc, DemuxError> {
-    let entry_end = header.end_offset().ok_or_else(|| DemuxError::InvalidStructure {
-        offset: header.offset,
-        reason: "mp4a sample entry has no definite size".into(),
-    })?;
+    let entry_end = header
+        .end_offset()
+        .ok_or_else(|| DemuxError::InvalidStructure {
+            offset: header.offset,
+            reason: "mp4a sample entry has no definite size".into(),
+        })?;
 
     // reserved (6) + data_ref_index (2)
     let mut skip = [0u8; 8];
@@ -815,10 +817,12 @@ fn parse_opus_sample_entry<R: Read + Seek>(
     reader: &mut R,
     header: &BoxHeader,
 ) -> Result<AudioSampleDesc, DemuxError> {
-    let entry_end = header.end_offset().ok_or_else(|| DemuxError::InvalidStructure {
-        offset: header.offset,
-        reason: "Opus sample entry has no definite size".into(),
-    })?;
+    let entry_end = header
+        .end_offset()
+        .ok_or_else(|| DemuxError::InvalidStructure {
+            offset: header.offset,
+            reason: "Opus sample entry has no definite size".into(),
+        })?;
 
     // reserved (6) + data_ref_index (2)
     let mut skip = [0u8; 8];
@@ -879,14 +883,13 @@ fn parse_opus_sample_entry<R: Read + Seek>(
 /// The esds box contains an ES_Descriptor (ISO 14496-1, section 8.3.3)
 /// which wraps a DecoderConfigDescriptor containing DecoderSpecificInfo
 /// (the AudioSpecificConfig for AAC).
-fn parse_esds<R: Read + Seek>(
-    reader: &mut R,
-    header: &BoxHeader,
-) -> Result<AacConfig, DemuxError> {
-    let box_end = header.end_offset().ok_or_else(|| DemuxError::InvalidStructure {
-        offset: header.offset,
-        reason: "esds box has no definite size".into(),
-    })?;
+fn parse_esds<R: Read + Seek>(reader: &mut R, header: &BoxHeader) -> Result<AacConfig, DemuxError> {
+    let box_end = header
+        .end_offset()
+        .ok_or_else(|| DemuxError::InvalidStructure {
+            offset: header.offset,
+            reason: "esds box has no definite size".into(),
+        })?;
 
     // version (1) + flags (3)
     let mut vf = [0u8; 4];
@@ -1037,10 +1040,12 @@ fn parse_dops<R: Read + Seek>(
     reader: &mut R,
     header: &BoxHeader,
 ) -> Result<OpusConfig, DemuxError> {
-    let box_end = header.end_offset().ok_or_else(|| DemuxError::InvalidStructure {
-        offset: header.offset,
-        reason: "dOps box has no definite size".into(),
-    })?;
+    let box_end = header
+        .end_offset()
+        .ok_or_else(|| DemuxError::InvalidStructure {
+            offset: header.offset,
+            reason: "dOps box has no definite size".into(),
+        })?;
 
     let version = reader.read_u8().map_err(DemuxError::Io)?;
     let output_channel_count = reader.read_u8().map_err(DemuxError::Io)?;
@@ -1394,18 +1399,14 @@ pub fn parse_moov<R: Read + Seek>(
                 mvhd_data = Some(parse_mvhd(reader)?);
                 // Seek to end of mvhd box
                 if let Some(end) = child.end_offset() {
-                    reader
-                        .seek(SeekFrom::Start(end))
-                        .map_err(DemuxError::Io)?;
+                    reader.seek(SeekFrom::Start(end)).map_err(DemuxError::Io)?;
                 }
             }
-            TRAK => {
-                match parse_trak(reader, &child)? {
-                    TrackParseResult::Video(vt) => video_tracks.push(vt),
-                    TrackParseResult::Audio(at) => audio_tracks.push(at),
-                    TrackParseResult::Other => {}
-                }
-            }
+            TRAK => match parse_trak(reader, &child)? {
+                TrackParseResult::Video(vt) => video_tracks.push(vt),
+                TrackParseResult::Audio(at) => audio_tracks.push(at),
+                TrackParseResult::Other => {}
+            },
             _ => {
                 skip_box(reader, &child)?;
             }
@@ -1635,9 +1636,7 @@ fn parse_trak_children<R: Read + Seek>(
             TKHD => {
                 *tkhd_data = Some(parse_tkhd(reader)?);
                 if let Some(end) = child.end_offset() {
-                    reader
-                        .seek(SeekFrom::Start(end))
-                        .map_err(DemuxError::Io)?;
+                    reader.seek(SeekFrom::Start(end)).map_err(DemuxError::Io)?;
                 }
             }
             // Containers: recurse into them
@@ -1662,9 +1661,7 @@ fn parse_trak_children<R: Read + Seek>(
             MDHD => {
                 *mdhd_data = Some(parse_mdhd(reader)?);
                 if let Some(end) = child.end_offset() {
-                    reader
-                        .seek(SeekFrom::Start(end))
-                        .map_err(DemuxError::Io)?;
+                    reader.seek(SeekFrom::Start(end)).map_err(DemuxError::Io)?;
                 }
             }
             HDLR => {
@@ -1682,57 +1679,43 @@ fn parse_trak_children<R: Read + Seek>(
             STTS => {
                 *stts_entries = Some(parse_stts(reader)?);
                 if let Some(end) = child.end_offset() {
-                    reader
-                        .seek(SeekFrom::Start(end))
-                        .map_err(DemuxError::Io)?;
+                    reader.seek(SeekFrom::Start(end)).map_err(DemuxError::Io)?;
                 }
             }
             CTTS => {
                 *ctts_entries = parse_ctts(reader)?;
                 if let Some(end) = child.end_offset() {
-                    reader
-                        .seek(SeekFrom::Start(end))
-                        .map_err(DemuxError::Io)?;
+                    reader.seek(SeekFrom::Start(end)).map_err(DemuxError::Io)?;
                 }
             }
             STSC => {
                 *stsc_entries = Some(parse_stsc(reader)?);
                 if let Some(end) = child.end_offset() {
-                    reader
-                        .seek(SeekFrom::Start(end))
-                        .map_err(DemuxError::Io)?;
+                    reader.seek(SeekFrom::Start(end)).map_err(DemuxError::Io)?;
                 }
             }
             STSZ => {
                 *stsz_data = Some(parse_stsz(reader)?);
                 if let Some(end) = child.end_offset() {
-                    reader
-                        .seek(SeekFrom::Start(end))
-                        .map_err(DemuxError::Io)?;
+                    reader.seek(SeekFrom::Start(end)).map_err(DemuxError::Io)?;
                 }
             }
             STCO => {
                 *chunk_offsets = Some(parse_stco(reader)?);
                 if let Some(end) = child.end_offset() {
-                    reader
-                        .seek(SeekFrom::Start(end))
-                        .map_err(DemuxError::Io)?;
+                    reader.seek(SeekFrom::Start(end)).map_err(DemuxError::Io)?;
                 }
             }
             CO64 => {
                 *chunk_offsets = Some(parse_co64(reader)?);
                 if let Some(end) = child.end_offset() {
-                    reader
-                        .seek(SeekFrom::Start(end))
-                        .map_err(DemuxError::Io)?;
+                    reader.seek(SeekFrom::Start(end)).map_err(DemuxError::Io)?;
                 }
             }
             STSS => {
                 *sync_samples = parse_stss(reader)?;
                 if let Some(end) = child.end_offset() {
-                    reader
-                        .seek(SeekFrom::Start(end))
-                        .map_err(DemuxError::Io)?;
+                    reader.seek(SeekFrom::Start(end)).map_err(DemuxError::Io)?;
                 }
             }
             _ => {
@@ -1880,7 +1863,7 @@ mod tests {
         let mut payload = Vec::new();
         payload.extend_from_slice(&[0, 0, 0, 0]); // version + flags
         payload.extend_from_slice(&2u32.to_be_bytes()); // entry_count
-        // Entry 1: 100 samples, delta=512
+                                                        // Entry 1: 100 samples, delta=512
         payload.extend_from_slice(&100u32.to_be_bytes());
         payload.extend_from_slice(&512u32.to_be_bytes());
         // Entry 2: 50 samples, delta=1024
@@ -1902,7 +1885,7 @@ mod tests {
         let mut payload = Vec::new();
         payload.extend_from_slice(&[0, 0, 0, 0]); // version + flags
         payload.extend_from_slice(&2u32.to_be_bytes()); // entry_count
-        // Entry 1: first_chunk=1, samples_per_chunk=10, desc_index=1
+                                                        // Entry 1: first_chunk=1, samples_per_chunk=10, desc_index=1
         payload.extend_from_slice(&1u32.to_be_bytes());
         payload.extend_from_slice(&10u32.to_be_bytes());
         payload.extend_from_slice(&1u32.to_be_bytes());
@@ -2004,7 +1987,7 @@ mod tests {
         payload.push(0); // version 0
         payload.extend_from_slice(&[0, 0, 0]); // flags
         payload.extend_from_slice(&2u32.to_be_bytes()); // entry_count
-        // Entry 1: count=5, offset=1024
+                                                        // Entry 1: count=5, offset=1024
         payload.extend_from_slice(&5u32.to_be_bytes());
         payload.extend_from_slice(&1024u32.to_be_bytes());
         // Entry 2: count=3, offset=2048
@@ -2174,19 +2157,19 @@ mod tests {
         // length (will compute)
         let es_inner_start = data.len();
         data.push(0); // placeholder
-        // ES_ID + stream_priority
+                      // ES_ID + stream_priority
         data.extend_from_slice(&[0x00, 0x01, 0x00]);
         // DecoderConfigDescriptor
         data.push(0x04);
         let dec_inner_start = data.len();
         data.push(0); // placeholder
-        // 13 bytes of config
+                      // 13 bytes of config
         data.push(0x40); // objectTypeIndication
         data.push(0x15); // streamType
         data.extend_from_slice(&[0x00, 0x00, 0x00]); // bufferSizeDB
         data.extend_from_slice(&[0x00, 0x01, 0xF4, 0x00]); // maxBitrate
         data.extend_from_slice(&[0x00, 0x01, 0xF4, 0x00]); // avgBitrate
-        // DecoderSpecificInfo
+                                                           // DecoderSpecificInfo
         data.push(0x05);
         data.push(asc.len() as u8);
         data.extend_from_slice(&asc);

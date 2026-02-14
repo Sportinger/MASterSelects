@@ -314,12 +314,7 @@ impl<'a> ComputeRecorder<'a> {
     ///
     /// The data is uploaded inline with the command buffer and is available
     /// to the shader immediately (no buffer allocation needed).
-    pub fn push_constants(
-        &self,
-        pipeline_layout: vk::PipelineLayout,
-        offset: u32,
-        data: &[u8],
-    ) {
+    pub fn push_constants(&self, pipeline_layout: vk::PipelineLayout, offset: u32, data: &[u8]) {
         unsafe {
             // SAFETY: Device and command buffer are valid and in recording state.
             // Pipeline layout is valid. Data slice is valid for its length.

@@ -309,15 +309,17 @@ fn show_tab_bar(ui: &mut egui::Ui, state: &mut MediaPanelState) {
 
             // Allocate space for the tab text
             let galley = ui.fonts(|f| {
-                f.layout_no_wrap(tab.label().to_string(), egui::FontId::proportional(12.0), text_color)
+                f.layout_no_wrap(
+                    tab.label().to_string(),
+                    egui::FontId::proportional(12.0),
+                    text_color,
+                )
             });
             let text_width = galley.size().x;
             let tab_width = text_width + 20.0; // padding on each side
 
-            let (rect, response) = ui.allocate_exact_size(
-                Vec2::new(tab_width, tab_height),
-                Sense::click(),
-            );
+            let (rect, response) =
+                ui.allocate_exact_size(Vec2::new(tab_width, tab_height), Sense::click());
 
             if response.clicked() {
                 state.active_tab = tab.clone();
@@ -354,7 +356,8 @@ fn show_tab_bar(ui: &mut egui::Ui, state: &mut MediaPanelState) {
                 );
                 // Overdraw with brighter text on hover
                 ui.painter().rect_filled(rect, 0.0, COLOR_BG);
-                ui.painter().galley(hover_pos, hover_galley, Color32::from_rgb(0xaa, 0xaa, 0xaa));
+                ui.painter()
+                    .galley(hover_pos, hover_galley, Color32::from_rgb(0xaa, 0xaa, 0xaa));
             }
         }
     });
@@ -401,10 +404,8 @@ fn show_header_row(ui: &mut egui::Ui, total_items: usize) {
     let row_height = 24.0;
     let avail_width = ui.available_width();
 
-    let (rect, _response) = ui.allocate_exact_size(
-        Vec2::new(avail_width, row_height),
-        Sense::hover(),
-    );
+    let (rect, _response) =
+        ui.allocate_exact_size(Vec2::new(avail_width, row_height), Sense::hover());
 
     let y = rect.center().y;
 
@@ -412,13 +413,10 @@ fn show_header_row(ui: &mut egui::Ui, total_items: usize) {
     let project_font = egui::FontId::proportional(13.0);
     let items_font = egui::FontId::proportional(11.0);
 
-    let project_galley = ui.fonts(|f| {
-        f.layout_no_wrap("Project".to_string(), project_font.clone(), Color32::WHITE)
-    });
+    let project_galley =
+        ui.fonts(|f| f.layout_no_wrap("Project".to_string(), project_font.clone(), Color32::WHITE));
     let items_text = format!("{} items", total_items);
-    let items_galley = ui.fonts(|f| {
-        f.layout_no_wrap(items_text, items_font.clone(), COLOR_DIM)
-    });
+    let items_galley = ui.fonts(|f| f.layout_no_wrap(items_text, items_font.clone(), COLOR_DIM));
 
     let project_x = rect.min.x + 10.0;
     ui.painter().galley(
@@ -438,12 +436,10 @@ fn show_header_row(ui: &mut egui::Ui, total_items: usize) {
     let add_text = "+ Add \u{25BE}";
     let import_font = egui::FontId::proportional(11.0);
 
-    let add_galley = ui.fonts(|f| {
-        f.layout_no_wrap(add_text.to_string(), import_font.clone(), COLOR_DIM)
-    });
-    let import_galley = ui.fonts(|f| {
-        f.layout_no_wrap("Import".to_string(), import_font.clone(), COLOR_DIM)
-    });
+    let add_galley =
+        ui.fonts(|f| f.layout_no_wrap(add_text.to_string(), import_font.clone(), COLOR_DIM));
+    let import_galley =
+        ui.fonts(|f| f.layout_no_wrap("Import".to_string(), import_font.clone(), COLOR_DIM));
 
     let add_x = rect.max.x - 10.0 - add_galley.size().x;
     ui.painter().galley(
@@ -528,10 +524,8 @@ fn show_media_row(ui: &mut egui::Ui, item: &MediaItem, state: &mut MediaPanelSta
     let avail_width = ui.available_width();
     let is_folder = item.kind == MediaKind::Folder;
 
-    let (rect, response) = ui.allocate_exact_size(
-        Vec2::new(avail_width, row_height),
-        Sense::click(),
-    );
+    let (rect, response) =
+        ui.allocate_exact_size(Vec2::new(avail_width, row_height), Sense::click());
 
     // Hover highlight
     if response.hovered() {
@@ -651,10 +645,6 @@ fn show_placeholder_tab(ui: &mut egui::Ui, state: &MediaPanelState) {
     let label = state.active_tab.label();
 
     ui.centered_and_justified(|ui| {
-        ui.label(
-            RichText::new(label)
-                .size(14.0)
-                .color(COLOR_DIM),
-        );
+        ui.label(RichText::new(label).size(14.0).color(COLOR_DIM));
     });
 }

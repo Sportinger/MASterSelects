@@ -1,4 +1,4 @@
-use egui::{self, Color32, Pos2, Rect, CornerRadius, Stroke, Vec2};
+use egui::{self, Color32, CornerRadius, Pos2, Rect, Stroke, Vec2};
 
 use crate::bridge::PreviewBridge;
 
@@ -44,7 +44,11 @@ impl Default for PreviewPanelState {
     }
 }
 
-pub fn show_preview_panel(ui: &mut egui::Ui, state: &mut PreviewPanelState, bridge: &PreviewBridge) {
+pub fn show_preview_panel(
+    ui: &mut egui::Ui,
+    state: &mut PreviewPanelState,
+    bridge: &PreviewBridge,
+) {
     let panel_bg = Color32::from_rgb(0x0a, 0x0a, 0x0a);
     let canvas_bg = Color32::from_rgb(0x00, 0x00, 0x00);
     let canvas_border = Color32::from_rgb(0x22, 0x22, 0x22);
@@ -55,7 +59,8 @@ pub fn show_preview_panel(ui: &mut egui::Ui, state: &mut PreviewPanelState, brid
     let text_color = Color32::from_rgb(0xcc, 0xcc, 0xcc);
 
     let panel_rect = ui.available_rect_before_wrap();
-    ui.painter().rect_filled(panel_rect, CornerRadius::ZERO, panel_bg);
+    ui.painter()
+        .rect_filled(panel_rect, CornerRadius::ZERO, panel_bg);
 
     let full_rect = ui.max_rect();
 
@@ -63,10 +68,8 @@ pub fn show_preview_panel(ui: &mut egui::Ui, state: &mut PreviewPanelState, brid
     // TOP BAR
     // =====================================================================
     let top_bar_height = 32.0;
-    let top_bar_rect = Rect::from_min_size(
-        full_rect.min,
-        Vec2::new(full_rect.width(), top_bar_height),
-    );
+    let top_bar_rect =
+        Rect::from_min_size(full_rect.min, Vec2::new(full_rect.width(), top_bar_height));
 
     // -- Top-left controls --
     {
@@ -82,14 +85,20 @@ pub fn show_preview_panel(ui: &mut egui::Ui, state: &mut PreviewPanelState, brid
         controls_ui.spacing_mut().item_spacing = Vec2::new(3.0, 0.0);
 
         // "Edit" toggle button
-        let edit_btn_fill = if state.edit_mode { accent_color } else { button_bg };
+        let edit_btn_fill = if state.edit_mode {
+            accent_color
+        } else {
+            button_bg
+        };
         let edit_btn_text_color = if state.edit_mode {
             Color32::WHITE
         } else {
             text_color
         };
         let edit_btn = egui::Button::new(
-            egui::RichText::new("Edit").color(edit_btn_text_color).size(11.0),
+            egui::RichText::new("Edit")
+                .color(edit_btn_text_color)
+                .size(11.0),
         )
         .fill(edit_btn_fill)
         .corner_radius(CornerRadius::same(4));
@@ -102,7 +111,9 @@ pub fn show_preview_panel(ui: &mut egui::Ui, state: &mut PreviewPanelState, brid
 
         // "Active" dropdown button
         let active_btn = egui::Button::new(
-            egui::RichText::new("Active \u{25BE}").color(text_color).size(11.0),
+            egui::RichText::new("Active \u{25BE}")
+                .color(text_color)
+                .size(11.0),
         )
         .fill(button_bg)
         .corner_radius(CornerRadius::same(4));
@@ -111,19 +122,16 @@ pub fn show_preview_panel(ui: &mut egui::Ui, state: &mut PreviewPanelState, brid
         controls_ui.add_space(6.0);
 
         // "+" zoom button
-        let zoom_in_btn = egui::Button::new(
-            egui::RichText::new("+").color(text_color).size(12.0),
-        )
-        .fill(button_bg)
-        .corner_radius(CornerRadius::same(3));
+        let zoom_in_btn = egui::Button::new(egui::RichText::new("+").color(text_color).size(12.0))
+            .fill(button_bg)
+            .corner_radius(CornerRadius::same(3));
         controls_ui.add_sized(Vec2::new(22.0, 22.0), zoom_in_btn);
 
         // "-" zoom button
-        let zoom_out_btn = egui::Button::new(
-            egui::RichText::new("\u{2212}").color(text_color).size(12.0),
-        )
-        .fill(button_bg)
-        .corner_radius(CornerRadius::same(3));
+        let zoom_out_btn =
+            egui::Button::new(egui::RichText::new("\u{2212}").color(text_color).size(12.0))
+                .fill(button_bg)
+                .corner_radius(CornerRadius::same(3));
         controls_ui.add_sized(Vec2::new(22.0, 22.0), zoom_out_btn);
     }
 
@@ -137,10 +145,7 @@ pub fn show_preview_panel(ui: &mut egui::Ui, state: &mut PreviewPanelState, brid
         let preview_stats = bridge.stats();
         let fps_text = format!("{:.0} FPS", preview_stats.fps);
         let time_text = format!("{:.1}ms", preview_stats.last_frame_time_ms);
-        let res_text = format!(
-            "[{}\u{00d7}{}]",
-            preview_stats.width, preview_stats.height,
-        );
+        let res_text = format!("[{}\u{00d7}{}]", preview_stats.width, preview_stats.height,);
         let frame_text = format!("F{}", preview_stats.frames_displayed);
 
         // Build segments right-to-left so we can position them
@@ -158,11 +163,8 @@ pub fn show_preview_panel(ui: &mut egui::Ui, state: &mut PreviewPanelState, brid
         let total_width: f32 = segments
             .iter()
             .map(|(text, _)| {
-                let galley = painter.layout_no_wrap(
-                    text.clone(),
-                    stats_font.clone(),
-                    Color32::WHITE,
-                );
+                let galley =
+                    painter.layout_no_wrap(text.clone(), stats_font.clone(), Color32::WHITE);
                 galley.size().x
             })
             .sum();
@@ -170,11 +172,7 @@ pub fn show_preview_panel(ui: &mut egui::Ui, state: &mut PreviewPanelState, brid
         // Draw left-to-right starting from calculated position
         let mut x = right_edge - total_width;
         for (text, color) in &segments {
-            let galley = painter.layout_no_wrap(
-                text.clone(),
-                stats_font.clone(),
-                *color,
-            );
+            let galley = painter.layout_no_wrap(text.clone(), stats_font.clone(), *color);
             let w = galley.size().x;
             painter.galley(Pos2::new(x, stats_y), galley, *color);
             x += w;
@@ -196,16 +194,13 @@ pub fn show_preview_panel(ui: &mut egui::Ui, state: &mut PreviewPanelState, brid
             bottom_bar_rect.min + Vec2::new(8.0, 4.0),
             Vec2::new(28.0, bottom_bar_height - 8.0),
         );
-        let mut gear_ui = ui.new_child(
-            egui::UiBuilder::new()
-                .max_rect(gear_rect)
-                .layout(egui::Layout::centered_and_justified(egui::Direction::LeftToRight)),
-        );
-        let gear_btn = egui::Button::new(
-            egui::RichText::new("\u{2699}").color(text_color).size(14.0),
-        )
-        .fill(Color32::TRANSPARENT)
-        .corner_radius(CornerRadius::same(3));
+        let mut gear_ui = ui.new_child(egui::UiBuilder::new().max_rect(gear_rect).layout(
+            egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
+        ));
+        let gear_btn =
+            egui::Button::new(egui::RichText::new("\u{2699}").color(text_color).size(14.0))
+                .fill(Color32::TRANSPARENT)
+                .corner_radius(CornerRadius::same(3));
         gear_ui.add(gear_btn);
     }
 
@@ -229,13 +224,10 @@ pub fn show_preview_panel(ui: &mut egui::Ui, state: &mut PreviewPanelState, brid
 
         // Style the combo box
         combo_ui.visuals_mut().widgets.inactive.weak_bg_fill = button_bg;
-        combo_ui.visuals_mut().widgets.hovered.weak_bg_fill =
-            Color32::from_rgb(0x35, 0x35, 0x35);
+        combo_ui.visuals_mut().widgets.hovered.weak_bg_fill = Color32::from_rgb(0x35, 0x35, 0x35);
         combo_ui.visuals_mut().widgets.active.weak_bg_fill = button_bg;
-        combo_ui.visuals_mut().widgets.inactive.fg_stroke =
-            Stroke::new(1.0, text_color);
-        combo_ui.visuals_mut().widgets.hovered.fg_stroke =
-            Stroke::new(1.0, text_color);
+        combo_ui.visuals_mut().widgets.inactive.fg_stroke = Stroke::new(1.0, text_color);
+        combo_ui.visuals_mut().widgets.hovered.fg_stroke = Stroke::new(1.0, text_color);
         combo_ui.visuals_mut().widgets.inactive.corner_radius = CornerRadius::same(4);
         combo_ui.visuals_mut().widgets.hovered.corner_radius = CornerRadius::same(4);
 
@@ -253,11 +245,10 @@ pub fn show_preview_panel(ui: &mut egui::Ui, state: &mut PreviewPanelState, brid
             });
 
         // Close "x" button
-        let close_btn = egui::Button::new(
-            egui::RichText::new("\u{00d7}").color(stats_gray).size(12.0),
-        )
-        .fill(button_bg)
-        .corner_radius(CornerRadius::same(3));
+        let close_btn =
+            egui::Button::new(egui::RichText::new("\u{00d7}").color(stats_gray).size(12.0))
+                .fill(button_bg)
+                .corner_radius(CornerRadius::same(3));
         combo_ui.add_sized(Vec2::new(close_btn_width, 22.0), close_btn);
     }
 
@@ -301,8 +292,7 @@ pub fn show_preview_panel(ui: &mut egui::Ui, state: &mut PreviewPanelState, brid
         };
 
         let canvas_center = canvas_available.center();
-        let canvas_rect =
-            Rect::from_center_size(canvas_center, Vec2::new(canvas_w, canvas_h));
+        let canvas_rect = Rect::from_center_size(canvas_center, Vec2::new(canvas_w, canvas_h));
 
         let painter = ui.painter();
 

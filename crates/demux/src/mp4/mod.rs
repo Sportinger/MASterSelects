@@ -8,8 +8,8 @@ pub mod boxes;
 pub mod sample;
 
 use boxes::{
-    parse_ftyp, parse_moov, read_box_header, skip_box, AVC1, AVC3, FTYP, HEV1, HVC1, MOOV, MP4A,
-    OPUS, ParsedAudioTrack, ParsedMoov, ParsedVideoTrack,
+    parse_ftyp, parse_moov, read_box_header, skip_box, ParsedAudioTrack, ParsedMoov,
+    ParsedVideoTrack, AVC1, AVC3, FTYP, HEV1, HVC1, MOOV, MP4A, OPUS,
 };
 use ms_common::{
     AudioCodec, AudioPacket, AudioStreamInfo, ContainerInfo, DemuxError, PixelFormat, Rational,
@@ -151,8 +151,7 @@ impl Mp4Demuxer {
     /// Get a reference to the active audio track, if present.
     #[allow(dead_code)]
     fn audio_track(&self) -> Option<&ParsedAudioTrack> {
-        self.audio_track_idx
-            .map(|idx| &self.moov.audio_tracks[idx])
+        self.audio_track_idx.map(|idx| &self.moov.audio_tracks[idx])
     }
 
     /// Determine the AudioCodec from the sample description FourCC.
@@ -211,9 +210,7 @@ impl Mp4Demuxer {
         // Prepend SPS/PPS on keyframes
         if is_keyframe {
             if let Some(avcc) = &track.sample_desc.avcc {
-                if let (Some(sps), Some(pps)) =
-                    (avcc.sps_list.first(), avcc.pps_list.first())
-                {
+                if let (Some(sps), Some(pps)) = (avcc.sps_list.first(), avcc.pps_list.first()) {
                     return Ok(nal::prepend_sps_pps(sps, pps, &annexb_data));
                 }
             }
@@ -356,9 +353,7 @@ impl Demuxer for Mp4Demuxer {
 
 /// Scan top-level boxes and parse the moov box.
 fn find_and_parse_moov<R: Read + Seek>(reader: &mut R) -> Result<ParsedMoov, DemuxError> {
-    reader
-        .seek(SeekFrom::Start(0))
-        .map_err(DemuxError::Io)?;
+    reader.seek(SeekFrom::Start(0)).map_err(DemuxError::Io)?;
 
     loop {
         let header = match read_box_header(reader)? {
@@ -376,9 +371,7 @@ fn find_and_parse_moov<R: Read + Seek>(reader: &mut R) -> Result<ParsedMoov, Dem
                 let _ftyp = parse_ftyp(reader, &header)?;
                 // Seek to end of ftyp box
                 if let Some(end) = header.end_offset() {
-                    reader
-                        .seek(SeekFrom::Start(end))
-                        .map_err(DemuxError::Io)?;
+                    reader.seek(SeekFrom::Start(end)).map_err(DemuxError::Io)?;
                 }
             }
             MOOV => {
@@ -486,7 +479,13 @@ fn build_container_info(moov: &ParsedMoov) -> ContainerInfo {
                 .sample_desc
                 .aac_config
                 .as_ref()
-                .and_then(|c| if c.sample_rate > 0 { Some(c.sample_rate) } else { None })
+                .and_then(|c| {
+                    if c.sample_rate > 0 {
+                        Some(c.sample_rate)
+                    } else {
+                        None
+                    }
+                })
                 .unwrap_or(track.sample_desc.sample_rate);
 
             // Use channel count from AAC config if available, otherwise from sample entry

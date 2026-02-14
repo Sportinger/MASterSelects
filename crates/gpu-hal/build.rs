@@ -20,7 +20,8 @@ fn main() {
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR not set"));
 
     // Workspace root is two levels up from crates/gpu-hal/
-    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set"));
+    let manifest_dir =
+        PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set"));
     let workspace_root = manifest_dir
         .parent()
         .and_then(|p| p.parent())
@@ -66,9 +67,13 @@ fn find_nvcc() -> Option<PathBuf> {
 
     // Try PATH
     let nvcc_name = nvcc_binary_name();
-    if let Ok(output) = Command::new(if cfg!(target_os = "windows") { "where" } else { "which" })
-        .arg(&nvcc_name)
-        .output()
+    if let Ok(output) = Command::new(if cfg!(target_os = "windows") {
+        "where"
+    } else {
+        "which"
+    })
+    .arg(nvcc_name)
+    .output()
     {
         if output.status.success() {
             let path_str = String::from_utf8_lossy(&output.stdout);
@@ -118,7 +123,10 @@ fn compile_cuda_kernels(kernel_dir: &Path, out_dir: &Path) {
 
     let cu_files = collect_files(kernel_dir, "cu");
     if cu_files.is_empty() {
-        println!("cargo:warning=No .cu files found in {}", kernel_dir.display());
+        println!(
+            "cargo:warning=No .cu files found in {}",
+            kernel_dir.display()
+        );
         println!("cargo:rustc-cfg=no_cuda_kernels");
         return;
     }
@@ -162,9 +170,7 @@ fn compile_cuda_kernels(kernel_dir: &Path, out_dir: &Path) {
 
         match status {
             Ok(s) if s.success() => {
-                println!(
-                    "cargo:warning=Successfully compiled CUDA kernel: {stem}.ptx"
-                );
+                println!("cargo:warning=Successfully compiled CUDA kernel: {stem}.ptx");
             }
             Ok(s) => {
                 println!(
@@ -174,16 +180,16 @@ fn compile_cuda_kernels(kernel_dir: &Path, out_dir: &Path) {
                 all_succeeded = false;
             }
             Err(e) => {
-                println!(
-                    "cargo:warning=Failed to run nvcc for {stem}.cu: {e}"
-                );
+                println!("cargo:warning=Failed to run nvcc for {stem}.cu: {e}");
                 all_succeeded = false;
             }
         }
     }
 
     if !all_succeeded {
-        println!("cargo:warning=Some CUDA kernels failed to compile. Falling back to no-kernel mode.");
+        println!(
+            "cargo:warning=Some CUDA kernels failed to compile. Falling back to no-kernel mode."
+        );
         println!("cargo:rustc-cfg=no_cuda_kernels");
     }
 
@@ -216,9 +222,13 @@ fn find_glslc() -> Option<PathBuf> {
 
     // Try PATH
     let glslc_name = glslc_binary_name();
-    if let Ok(output) = Command::new(if cfg!(target_os = "windows") { "where" } else { "which" })
-        .arg(glslc_name)
-        .output()
+    if let Ok(output) = Command::new(if cfg!(target_os = "windows") {
+        "where"
+    } else {
+        "which"
+    })
+    .arg(glslc_name)
+    .output()
     {
         if output.status.success() {
             let path_str = String::from_utf8_lossy(&output.stdout);
@@ -311,9 +321,7 @@ fn compile_vulkan_shaders(kernel_dir: &Path, out_dir: &Path) {
 
         match status {
             Ok(s) if s.success() => {
-                println!(
-                    "cargo:warning=Successfully compiled Vulkan shader: {stem}.spv"
-                );
+                println!("cargo:warning=Successfully compiled Vulkan shader: {stem}.spv");
             }
             Ok(s) => {
                 println!(
@@ -323,16 +331,16 @@ fn compile_vulkan_shaders(kernel_dir: &Path, out_dir: &Path) {
                 all_succeeded = false;
             }
             Err(e) => {
-                println!(
-                    "cargo:warning=Failed to run glslc for {stem}.comp: {e}"
-                );
+                println!("cargo:warning=Failed to run glslc for {stem}.comp: {e}");
                 all_succeeded = false;
             }
         }
     }
 
     if !all_succeeded {
-        println!("cargo:warning=Some Vulkan shaders failed to compile. Falling back to no-kernel mode.");
+        println!(
+            "cargo:warning=Some Vulkan shaders failed to compile. Falling back to no-kernel mode."
+        );
         println!("cargo:rustc-cfg=no_vulkan_kernels");
     }
 
