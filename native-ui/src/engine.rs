@@ -20,12 +20,19 @@
 use crate::bridge::PreviewBridge;
 use anyhow::{Context, Result};
 use crossbeam::channel::{self, Receiver, Sender, TryRecvError};
-use ms_common::{Rational, Resolution, VideoCodec};
+use ms_common::kernel::{KernelArgs, KernelId};
+use ms_common::{HwDecoder, Rational, Resolution, VideoCodec};
+use ms_decoder::nvdec::{NvDecoder, NvcuvidLibrary};
+use ms_decoder::software::nv12_to_rgba;
 use ms_demux::mkv::MkvDemuxer;
 use ms_demux::mp4::Mp4Demuxer;
 use ms_demux::probe::detect_format;
 use ms_demux::traits::Demuxer;
+use ms_gpu_hal::cuda::kernel::KernelManager;
+use std::ffi::c_void;
+use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -104,6 +111,14 @@ enum DecodeCommand {
     Stop,
 }
 
+/// GPU info message sent once from the decode thread to the main thread.
+struct GpuInfoMsg {
+    /// GPU device name (e.g. "NVIDIA GeForce RTX 5080").
+    gpu_name: String,
+    /// Whether NVDEC hardware decode is active.
+    nvdec_active: bool,
+}
+
 // ---------------------------------------------------------------------------
 // Engine Orchestrator
 // ---------------------------------------------------------------------------
@@ -152,6 +167,14 @@ pub struct EngineOrchestrator {
     last_frame_width: u32,
     /// Height of the last frame.
     last_frame_height: u32,
+
+    // -- GPU pipeline info --
+    /// GPU device name (populated when decode pipeline initializes).
+    gpu_info: Option<String>,
+    /// Whether GPU hardware decode is active in the decode thread.
+    gpu_decode_active: bool,
+    /// One-shot receiver for GPU info from the decode thread.
+    gpu_info_rx: Option<Receiver<GpuInfoMsg>>,
 }
 
 impl EngineOrchestrator {
@@ -172,6 +195,9 @@ impl EngineOrchestrator {
             last_frame: None,
             last_frame_width: 0,
             last_frame_height: 0,
+            gpu_info: None,
+            gpu_decode_active: false,
+            gpu_info_rx: None,
         }
     }
 
@@ -199,6 +225,28 @@ impl EngineOrchestrator {
         self.file_info
             .as_ref()
             .map_or(0.0, |info| info.duration_secs)
+    }
+
+    /// Human-readable GPU device name.
+    ///
+    /// Returns "GPU: detecting..." before the first file is opened,
+    /// or the detected device name / "None" afterward.
+    pub fn gpu_name(&self) -> &str {
+        match &self.gpu_info {
+            Some(name) => name,
+            None => "GPU: detecting...",
+        }
+    }
+
+    /// Whether the decode thread is using GPU hardware decode.
+    pub fn gpu_decode_active(&self) -> bool {
+        self.gpu_decode_active
+    }
+
+    /// Update GPU info from the decode thread.
+    pub fn set_gpu_info(&mut self, name: String, decode_active: bool) {
+        self.gpu_info = Some(name);
+        self.gpu_decode_active = decode_active;
     }
 
     // -----------------------------------------------------------------------
@@ -268,18 +316,21 @@ impl EngineOrchestrator {
         // Create bounded channels:
         // - frame channel: small ring buffer (4 frames max to limit memory)
         // - command channel: unbounded (commands are tiny)
+        // - gpu info channel: one-shot (decode thread sends GPU info once)
         let (frame_tx, frame_rx) = channel::bounded::<DecodedFrame>(4);
         let (cmd_tx, cmd_rx) = channel::unbounded::<DecodeCommand>();
+        let (gpu_info_tx, gpu_info_rx) = channel::bounded::<GpuInfoMsg>(1);
 
         self.frame_rx = Some(frame_rx);
         self.cmd_tx = Some(cmd_tx);
+        self.gpu_info_rx = Some(gpu_info_rx);
 
         // Spawn decode thread
         let thread_info = info;
         let handle = thread::Builder::new()
             .name("decode-worker".to_string())
             .spawn(move || {
-                decode_thread_main(thread_info, frame_tx, cmd_rx);
+                decode_thread_main(thread_info, frame_tx, cmd_rx, gpu_info_tx);
             })
             .context("Failed to spawn decode thread")?;
 
@@ -371,6 +422,20 @@ impl EngineOrchestrator {
     /// Called once per egui frame. This method never blocks. It polls the
     /// decode channel for new frames and uploads the result to the bridge.
     pub fn update(&mut self, ctx: &egui::Context, bridge: &mut PreviewBridge) {
+        // Poll for GPU info from the decode thread (arrives once after init)
+        if let Some(rx) = &self.gpu_info_rx {
+            if let Ok(info) = rx.try_recv() {
+                tracing::info!(
+                    gpu = %info.gpu_name,
+                    nvdec = info.nvdec_active,
+                    "GPU info received from decode thread"
+                );
+                self.gpu_info = Some(info.gpu_name);
+                self.gpu_decode_active = info.nvdec_active;
+                self.gpu_info_rx = None; // One-shot: drop after receiving
+            }
+        }
+
         match &self.state {
             EngineState::Playing => {
                 self.update_playback_time();
@@ -659,26 +724,22 @@ fn probe_file_info(path: &Path, file_name: &str) -> Result<FileInfo> {
     }
 }
 
-// TODO: Add file dialog support via `rfd` crate when it's added as a dependency.
-// This would allow opening a native file picker from the UI.
-
 // ---------------------------------------------------------------------------
 // Decode thread — runs on a separate OS thread
 // ---------------------------------------------------------------------------
 
 /// Main loop for the decode thread.
 ///
-/// Attempts to open the real demuxer for the file. If successful, the decode
-/// loop reads real video packets and uses their PTS timing for frame pacing.
-/// Since NVDEC / Vulkan Video decode is not wired in yet, we still generate
-/// synthetic RGBA pixel data, but the timing comes from the actual container.
-///
-/// If the demuxer cannot open the file (e.g. file missing, invalid container),
-/// the thread falls back to fully synthetic frame generation.
+/// Attempts to initialize NVDEC hardware decode and open a real demuxer.
+/// Falls back gracefully through several levels:
+/// 1. NVDEC + real demuxer (full hardware decode pipeline)
+/// 2. Real demuxer + synthetic frames (timing from container, no decode)
+/// 3. Fully synthetic frames (fallback for non-video files)
 fn decode_thread_main(
     info: FileInfo,
     frame_tx: Sender<DecodedFrame>,
     cmd_rx: Receiver<DecodeCommand>,
+    gpu_info_tx: Sender<GpuInfoMsg>,
 ) {
     tracing::info!(
         "Decode thread started for '{}' ({}x{} @ {} fps)",
@@ -688,22 +749,77 @@ fn decode_thread_main(
         info.fps,
     );
 
-    // Try to open the real demuxer for this file
-    match try_open_demuxer(&info.path) {
-        Ok(mut demuxer) => {
-            tracing::info!(
-                "Decode thread: real demuxer opened for '{}'",
-                info.file_name,
-            );
-            real_decode_loop(&info, &mut demuxer, &frame_tx, &cmd_rx);
+    // Try to initialize CUDA context + NVDEC on this thread
+    let nvdec = try_init_nvdec(info.codec);
+
+    match nvdec {
+        Ok(init) => {
+            // Report GPU info back to main thread
+            let _ = gpu_info_tx.send(GpuInfoMsg {
+                gpu_name: init.gpu_name.clone(),
+                nvdec_active: true,
+            });
+
+            // Try to open real demuxer
+            match try_open_demuxer(&info.path) {
+                Ok(mut demuxer) => {
+                    tracing::info!(
+                        "NVDEC decode active on {} for '{}' (GPU kernel: {})",
+                        init.gpu_name,
+                        info.file_name,
+                        if init.kernel_mgr.is_some() {
+                            "enabled"
+                        } else {
+                            "disabled, using CPU fallback"
+                        },
+                    );
+                    nvdec_decode_loop(
+                        &info,
+                        &mut demuxer,
+                        init.decoder,
+                        &init.cuda_ctx,
+                        init.kernel_mgr.as_ref(),
+                        &frame_tx,
+                        &cmd_rx,
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Could not open demuxer for '{}': {}. Using synthetic frames.",
+                        info.file_name,
+                        e,
+                    );
+                    synthetic_decode_loop(&info, &frame_tx, &cmd_rx);
+                }
+            }
         }
         Err(e) => {
-            tracing::warn!(
-                "Decode thread: could not open demuxer for '{}': {}. Using synthetic frames.",
-                info.file_name,
-                e,
-            );
-            synthetic_decode_loop(&info, &frame_tx, &cmd_rx);
+            tracing::warn!("NVDEC not available: {}. Using software path.", e);
+
+            // Report no GPU decode
+            let _ = gpu_info_tx.send(GpuInfoMsg {
+                gpu_name: "None (software)".to_string(),
+                nvdec_active: false,
+            });
+
+            // Fall back to demuxer + synthetic frames
+            match try_open_demuxer(&info.path) {
+                Ok(mut demuxer) => {
+                    tracing::info!(
+                        "Decode thread: real demuxer opened for '{}' (software path)",
+                        info.file_name,
+                    );
+                    real_decode_loop(&info, &mut demuxer, &frame_tx, &cmd_rx);
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Could not open demuxer for '{}': {}. Using synthetic frames.",
+                        info.file_name,
+                        e,
+                    );
+                    synthetic_decode_loop(&info, &frame_tx, &cmd_rx);
+                }
+            }
         }
     }
 }
@@ -729,11 +845,561 @@ fn try_open_demuxer(path: &Path) -> Result<Box<dyn Demuxer>> {
     }
 }
 
-/// Decode loop that reads real packets from the demuxer.
+// ---------------------------------------------------------------------------
+// NVDEC + CUDA kernel initialization
+// ---------------------------------------------------------------------------
+
+/// Result of NVDEC initialization.
+///
+/// Contains everything the decode thread needs to run the GPU decode pipeline.
+struct NvdecInitResult {
+    cuda_ctx: Arc<cudarc::driver::safe::CudaContext>,
+    decoder: NvDecoder,
+    gpu_name: String,
+    /// Kernel manager with the NV12->RGBA PTX loaded (None if kernel loading failed).
+    kernel_mgr: Option<KernelManager>,
+}
+
+/// Try to initialize a CUDA context and NVDEC decoder on the current thread.
+///
+/// Returns the CUDA context, an NvDecoder, the GPU device name, and optionally
+/// a KernelManager with the NV12->RGBA PTX kernel loaded. If the kernel fails
+/// to load, the decode loop will fall back to the CPU conversion path.
+fn try_init_nvdec(codec: VideoCodec) -> Result<NvdecInitResult> {
+    // 1. Create CUDA context on device 0
+    let cuda_ctx = cudarc::driver::safe::CudaContext::new(0)
+        .map_err(|e| anyhow::anyhow!("CUDA context init failed: {e}"))?;
+
+    // Bind to this thread so NVDEC can use it
+    cuda_ctx
+        .bind_to_thread()
+        .map_err(|e| anyhow::anyhow!("CUDA bind_to_thread failed: {e}"))?;
+
+    let gpu_name = cuda_ctx
+        .name()
+        .unwrap_or_else(|_| "Unknown NVIDIA GPU".to_string());
+
+    tracing::info!("CUDA context initialized on '{gpu_name}'");
+
+    // 2. Load NVDEC library (nvcuvid.dll)
+    let nvdec_lib = Arc::new(
+        NvcuvidLibrary::load()
+            .map_err(|e| anyhow::anyhow!("Failed to load nvcuvid: {e}"))?,
+    );
+
+    tracing::info!("NVDEC library loaded successfully");
+
+    // 3. Create decoder for the detected codec
+    let decoder = NvDecoder::new(nvdec_lib, codec)
+        .map_err(|e| anyhow::anyhow!("NvDecoder creation failed: {e}"))?;
+
+    tracing::info!(codec = codec.display_name(), "NvDecoder created");
+
+    // 4. Try to load the NV12->RGBA CUDA kernel for GPU color conversion.
+    //    If this fails we fall back to CPU conversion (the Phase 0 path).
+    let kernel_mgr = try_load_nv12_kernel(&cuda_ctx);
+
+    Ok(NvdecInitResult {
+        cuda_ctx,
+        decoder,
+        gpu_name,
+        kernel_mgr,
+    })
+}
+
+/// Try to create a KernelManager and load the NV12->RGBA PTX kernel.
+///
+/// Uses the embedded PTX bytecode from ms-gpu-hal (compiled at build time
+/// by gpu-hal's build.rs from `kernels/cuda/nv12_to_rgba.cu`).
+///
+/// Returns `Some(KernelManager)` on success, `None` if the PTX is not
+/// available or fails to load (in which case the CPU fallback will be used).
+fn try_load_nv12_kernel(
+    cuda_ctx: &Arc<cudarc::driver::safe::CudaContext>,
+) -> Option<KernelManager> {
+    // Get the embedded PTX bytecode compiled from nv12_to_rgba.cu
+    let ptx_bytes = match ms_gpu_hal::kernels::get_ptx("nv12_to_rgba") {
+        Some(bytes) => bytes,
+        None => {
+            tracing::warn!(
+                "NV12->RGBA PTX not available (nvcc was not found at build time). \
+                 Falling back to CPU color conversion."
+            );
+            return None;
+        }
+    };
+
+    let km = KernelManager::new(cuda_ctx.clone());
+
+    // Load the PTX module. The module name must match KernelId::Nv12ToRgba.cuda_module_name()
+    // which returns "nv12_to_rgba.ptx".
+    let module_name = KernelId::Nv12ToRgba.cuda_module_name();
+    if let Err(e) = km.load_ptx_bytes(&module_name, ptx_bytes) {
+        tracing::warn!(
+            error = %e,
+            "Failed to load NV12->RGBA PTX module. Falling back to CPU color conversion."
+        );
+        return None;
+    }
+
+    // Verify we can resolve the kernel function entry point
+    match km.get_kernel_function(&KernelId::Nv12ToRgba) {
+        Ok(_func) => {
+            tracing::info!(
+                "NV12->RGBA CUDA kernel loaded successfully -- GPU color conversion enabled"
+            );
+            Some(km)
+        }
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                "Failed to resolve nv12_to_rgba kernel function. Falling back to CPU."
+            );
+            None
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// GPU RGBA output buffer (persistent, reused across frames)
+// ---------------------------------------------------------------------------
+
+/// Persistent GPU RGBA output buffer, allocated once and reused across frames.
+///
+/// This avoids re-allocating GPU memory for every frame. The buffer is freed
+/// via `cuMemFree` on drop.
+struct GpuRgbaBuffer {
+    /// Device pointer to the RGBA buffer.
+    device_ptr: u64,
+    /// Width in pixels.
+    width: u32,
+    /// Height in pixels.
+    height: u32,
+    /// Total byte size (width * height * 4).
+    byte_size: usize,
+}
+
+impl GpuRgbaBuffer {
+    /// Allocate a GPU RGBA buffer for the given frame dimensions.
+    fn alloc(width: u32, height: u32) -> Result<Self> {
+        let byte_size = width as usize * height as usize * 4;
+        let device_ptr = unsafe {
+            let mut ptr = MaybeUninit::uninit();
+            // SAFETY: We are allocating device memory of the requested size.
+            // The CUDA context must be bound to the current thread (guaranteed
+            // by the caller in nvdec_decode_loop).
+            let result = cudarc::driver::sys::cuMemAlloc_v2(ptr.as_mut_ptr(), byte_size);
+            result
+                .result()
+                .map_err(|e| anyhow::anyhow!("cuMemAlloc for RGBA buffer failed: {e:?}"))?;
+            ptr.assume_init()
+        };
+
+        tracing::info!(
+            width,
+            height,
+            byte_size,
+            device_ptr = format_args!("0x{:x}", device_ptr),
+            "Allocated GPU RGBA output buffer"
+        );
+
+        Ok(Self {
+            device_ptr,
+            width,
+            height,
+            byte_size,
+        })
+    }
+
+    /// Check if this buffer matches the given dimensions.
+    fn matches(&self, width: u32, height: u32) -> bool {
+        self.width == width && self.height == height
+    }
+}
+
+impl Drop for GpuRgbaBuffer {
+    fn drop(&mut self) {
+        if self.device_ptr != 0 {
+            // SAFETY: device_ptr was obtained from cuMemAlloc_v2 and has not
+            // been freed yet. Best-effort free; ignore errors during drop.
+            unsafe {
+                let _ = cudarc::driver::sys::cuMemFree_v2(self.device_ptr);
+            }
+            tracing::debug!(
+                device_ptr = format_args!("0x{:x}", self.device_ptr),
+                "Freed GPU RGBA output buffer"
+            );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// NVDEC decode loop
+// ---------------------------------------------------------------------------
+
+/// NVDEC hardware decode loop -- real packets decoded on GPU.
+///
+/// For each video packet from the demuxer:
+/// 1. Feed packet data to NVDEC (via NvDecoder)
+/// 2. If a decoded NV12 frame is ready:
+///    a. If GPU kernel is available: dispatch NV12->RGBA kernel on GPU,
+///       then copy RGBA from GPU to CPU.
+///    b. If GPU kernel is not available (fallback): copy NV12 from GPU to CPU,
+///       then convert NV12->RGBA on CPU.
+/// 3. Send the RGBA frame through the channel for display
+fn nvdec_decode_loop(
+    info: &FileInfo,
+    demuxer: &mut Box<dyn Demuxer>,
+    mut decoder: NvDecoder,
+    cuda_ctx: &Arc<cudarc::driver::safe::CudaContext>,
+    kernel_mgr: Option<&KernelManager>,
+    frame_tx: &Sender<DecodedFrame>,
+    cmd_rx: &Receiver<DecodeCommand>,
+) {
+    let fps = info.fps.as_f64();
+    let frame_duration = Duration::from_secs_f64(1.0 / fps);
+
+    let mut playing = false;
+    let mut frame_num: u64 = 0;
+
+    // Re-bind CUDA context to this thread (safety: we're on the decode thread)
+    if let Err(e) = cuda_ctx.bind_to_thread() {
+        tracing::error!("Failed to bind CUDA context: {e}");
+        return;
+    }
+
+    // Persistent GPU RGBA output buffer (allocated on first frame, reused).
+    // Only used when kernel_mgr is available.
+    let mut rgba_gpu_buf: Option<GpuRgbaBuffer> = None;
+
+    loop {
+        // Check for commands (non-blocking)
+        match cmd_rx.try_recv() {
+            Ok(DecodeCommand::Play) => {
+                playing = true;
+                tracing::debug!("Decode thread (NVDEC): play");
+            }
+            Ok(DecodeCommand::Pause) => {
+                playing = false;
+                tracing::debug!("Decode thread (NVDEC): pause");
+            }
+            Ok(DecodeCommand::Seek(time_secs)) => {
+                // Reset decoder state for seeking
+                if let Err(e) = decoder.reset() {
+                    tracing::warn!("NVDEC reset on seek failed: {e}");
+                }
+                if let Err(e) = demuxer.seek(time_secs) {
+                    tracing::warn!("Demuxer seek failed: {e}");
+                }
+                frame_num = (time_secs * fps).round() as u64;
+                tracing::debug!(
+                    "Decode thread (NVDEC): seek to {:.2}s (frame ~{})",
+                    time_secs,
+                    frame_num,
+                );
+            }
+            Ok(DecodeCommand::Stop) => {
+                tracing::info!("Decode thread (NVDEC): stop command received");
+                return;
+            }
+            Err(crossbeam::channel::TryRecvError::Empty) => {}
+            Err(crossbeam::channel::TryRecvError::Disconnected) => {
+                tracing::info!("Decode thread (NVDEC): command channel disconnected, exiting");
+                return;
+            }
+        }
+
+        if !playing {
+            thread::sleep(Duration::from_millis(10));
+            continue;
+        }
+
+        // Read the next real video packet from the demuxer
+        match demuxer.next_video_packet() {
+            Some(packet) => {
+                let pts_secs = packet.pts.0;
+
+                // Feed packet to NVDEC
+                match decoder.decode(&packet) {
+                    Ok(Some(gpu_frame)) => {
+                        // Decoded frame available on GPU (NV12 format)
+                        let width = gpu_frame.resolution.width;
+                        let height = gpu_frame.resolution.height;
+                        let pitch = gpu_frame.pitch;
+
+                        let convert_result = if let Some(km) = kernel_mgr {
+                            // GPU path: NV12->RGBA kernel on GPU, then copy RGBA to CPU
+                            gpu_nv12_to_rgba_and_readback(km, &gpu_frame, &mut rgba_gpu_buf)
+                        } else {
+                            // CPU fallback: copy NV12 to CPU, then convert on CPU
+                            cpu_nv12_copy_and_convert(gpu_frame.device_ptr, width, height, pitch)
+                        };
+
+                        match convert_result {
+                            Ok(rgba_data) => {
+                                // Release the NVDEC surface now that we have the data
+                                decoder.release_frame(&gpu_frame);
+
+                                let decoded = DecodedFrame {
+                                    rgba_data,
+                                    width,
+                                    height,
+                                    pts_secs,
+                                };
+
+                                if frame_tx.send(decoded).is_err() {
+                                    tracing::info!(
+                                        "Decode thread (NVDEC): frame channel closed, exiting"
+                                    );
+                                    return;
+                                }
+
+                                frame_num += 1;
+
+                                if frame_num % 100 == 0 {
+                                    tracing::debug!(
+                                        "NVDEC: decoded {} frames, pts={:.2}s ({})",
+                                        frame_num,
+                                        pts_secs,
+                                        if kernel_mgr.is_some() {
+                                            "GPU kernel"
+                                        } else {
+                                            "CPU fallback"
+                                        },
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                tracing::error!("NV12->RGBA conversion failed: {e}");
+                                // Release surface even on error
+                                decoder.release_frame(&gpu_frame);
+                            }
+                        }
+                    }
+                    Ok(None) => {
+                        // No decoded frame yet (normal for B-frame reordering)
+                        tracing::trace!("NVDEC: no output for packet {frame_num}");
+                    }
+                    Err(e) => {
+                        tracing::error!("NVDEC decode error: {e}");
+                    }
+                }
+
+                // Pace to target FPS
+                thread::sleep(frame_duration);
+            }
+            None => {
+                // End of stream -- flush remaining frames from decoder
+                tracing::info!("Decode thread (NVDEC): end of stream, flushing decoder");
+                match decoder.flush() {
+                    Ok(frames) => {
+                        for gpu_frame in &frames {
+                            let width = gpu_frame.resolution.width;
+                            let height = gpu_frame.resolution.height;
+                            let pitch = gpu_frame.pitch;
+
+                            let convert_result = if let Some(km) = kernel_mgr {
+                                gpu_nv12_to_rgba_and_readback(km, gpu_frame, &mut rgba_gpu_buf)
+                            } else {
+                                cpu_nv12_copy_and_convert(
+                                    gpu_frame.device_ptr,
+                                    width,
+                                    height,
+                                    pitch,
+                                )
+                            };
+
+                            if let Ok(rgba_data) = convert_result {
+                                decoder.release_frame(gpu_frame);
+
+                                let decoded = DecodedFrame {
+                                    rgba_data,
+                                    width,
+                                    height,
+                                    pts_secs: gpu_frame.pts.as_secs(),
+                                };
+
+                                if frame_tx.send(decoded).is_err() {
+                                    return;
+                                }
+                                frame_num += 1;
+                            } else {
+                                decoder.release_frame(gpu_frame);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("NVDEC flush failed: {e}");
+                    }
+                }
+                tracing::info!(
+                    "Decode thread (NVDEC): finished after {} frames",
+                    frame_num,
+                );
+                playing = false;
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// NV12 -> RGBA conversion (GPU kernel path + CPU fallback)
+// ---------------------------------------------------------------------------
+
+/// Convert NV12 to RGBA on GPU using the CUDA kernel, then readback RGBA to CPU.
+///
+/// This is the fast path: the NV12->RGBA conversion runs entirely on GPU,
+/// and we only copy the final RGBA data to CPU. The NV12 data never leaves
+/// the GPU.
+///
+/// Steps:
+/// 1. Ensure the GPU RGBA output buffer is allocated (and matches frame size)
+/// 2. Dispatch the nv12_to_rgba CUDA kernel (NV12 device ptrs -> RGBA device buffer)
+/// 3. Synchronize (kernel runs on default stream / stream 0)
+/// 4. cuMemcpyDtoH the RGBA result to a host Vec<u8>
+fn gpu_nv12_to_rgba_and_readback(
+    km: &KernelManager,
+    gpu_frame: &ms_common::packet::GpuFrame,
+    rgba_buf: &mut Option<GpuRgbaBuffer>,
+) -> Result<Vec<u8>> {
+    let width = gpu_frame.resolution.width;
+    let height = gpu_frame.resolution.height;
+    let pitch = gpu_frame.pitch;
+
+    // 1. Ensure RGBA output buffer is allocated and matches the frame size.
+    //    If the resolution changed (rare), reallocate.
+    if rgba_buf.as_ref().map_or(true, |b| !b.matches(width, height)) {
+        *rgba_buf = Some(
+            GpuRgbaBuffer::alloc(width, height)
+                .context("Failed to allocate GPU RGBA output buffer")?,
+        );
+    }
+    let buf = rgba_buf.as_ref().expect("RGBA buffer just allocated");
+
+    // 2. Build kernel arguments.
+    //    The NV12 frame has Y plane at device_ptr and UV plane offset by height * pitch.
+    let y_plane_ptr = gpu_frame.device_ptr;
+    let uv_plane_ptr = gpu_frame
+        .device_ptr_uv
+        .unwrap_or_else(|| y_plane_ptr + height as u64 * pitch as u64);
+    let out_pitch = width as i32 * 4; // RGBA: 4 bytes per pixel, tightly packed
+
+    let args = KernelArgs::new()
+        .push_ptr(y_plane_ptr)
+        .push_ptr(uv_plane_ptr)
+        .push_ptr(buf.device_ptr)
+        .push_i32(width as i32)
+        .push_i32(height as i32)
+        .push_i32(pitch as i32)
+        .push_i32(pitch as i32) // uv_pitch == y_pitch for NVDEC NV12 output
+        .push_i32(out_pitch);
+
+    // 3. Compute launch grid (16x16 blocks).
+    let block_x: u32 = 16;
+    let block_y: u32 = 16;
+    let grid_x = width.div_ceil(block_x);
+    let grid_y = height.div_ceil(block_y);
+
+    // 4. Launch the kernel on the default CUDA stream (stream 0 / null).
+    //
+    // SAFETY:
+    // - We pass null as the stream handle, which means the default stream.
+    // - y_plane_ptr and uv_plane_ptr are valid device pointers from NVDEC's
+    //   cuvidMapVideoFrame64, valid as long as the MappedFrame guard is alive
+    //   (guaranteed by the caller who holds the GpuFrame).
+    // - buf.device_ptr is a valid device pointer from cuMemAlloc_v2.
+    // - The argument types and count match the nv12_to_rgba kernel signature.
+    unsafe {
+        km.launch(
+            &KernelId::Nv12ToRgba,
+            [grid_x, grid_y, 1],
+            [block_x, block_y, 1],
+            &args,
+            std::ptr::null_mut(), // default stream
+        )
+        .map_err(|e| anyhow::anyhow!("NV12->RGBA kernel launch failed: {e}"))?;
+    }
+
+    // 5. Synchronize default stream to ensure the kernel has completed.
+    unsafe {
+        let result = cudarc::driver::sys::cuStreamSynchronize(std::ptr::null_mut());
+        result
+            .result()
+            .map_err(|e| anyhow::anyhow!("cuStreamSynchronize failed: {e:?}"))?;
+    }
+
+    // 6. Copy the RGBA result from GPU to CPU.
+    let mut rgba_host = vec![0u8; buf.byte_size];
+
+    // SAFETY: buf.device_ptr is valid GPU memory of buf.byte_size bytes containing
+    // RGBA data written by the kernel. rgba_host is a freshly allocated buffer of
+    // exactly buf.byte_size bytes. The synchronous copy ensures data is available.
+    unsafe {
+        let result = cudarc::driver::sys::cuMemcpyDtoH_v2(
+            rgba_host.as_mut_ptr() as *mut c_void,
+            buf.device_ptr,
+            buf.byte_size,
+        );
+        result
+            .result()
+            .map_err(|e| anyhow::anyhow!("cuMemcpyDtoH (RGBA readback) failed: {e:?}"))?;
+    }
+
+    Ok(rgba_host)
+}
+
+/// CPU fallback: Copy NV12 frame data from GPU to CPU and convert to RGBA on CPU.
+///
+/// This is the Phase 0 approach used when the CUDA NV12->RGBA kernel is not
+/// available (e.g., nvcc was not found at build time).
+fn cpu_nv12_copy_and_convert(
+    device_ptr: u64,
+    width: u32,
+    height: u32,
+    pitch: u32,
+) -> Result<Vec<u8>> {
+    let y_size = pitch as usize * height as usize;
+    let uv_size = pitch as usize * (height as usize / 2);
+    let total_nv12_size = y_size + uv_size;
+
+    // Allocate host buffer for the NV12 data
+    let mut nv12_host = vec![0u8; total_nv12_size];
+
+    // Copy NV12 (Y + UV planes) from GPU to CPU
+    // SAFETY: device_ptr is a valid CUdeviceptr from NVDEC's cuvidMapVideoFrame64.
+    // nv12_host is a newly allocated buffer of exactly total_nv12_size bytes.
+    // We perform a synchronous copy so the data is available immediately.
+    unsafe {
+        let result = cudarc::driver::sys::cuMemcpyDtoH_v2(
+            nv12_host.as_mut_ptr() as *mut c_void,
+            device_ptr,
+            total_nv12_size,
+        );
+        result
+            .result()
+            .map_err(|e| anyhow::anyhow!("cuMemcpyDtoH failed: {e:?}"))?;
+    }
+
+    // Split into Y and UV planes
+    let y_plane = &nv12_host[..y_size];
+    let uv_plane = &nv12_host[y_size..];
+
+    // Convert NV12 to RGBA using BT.709 CPU conversion
+    let rgba = nv12_to_rgba(y_plane, uv_plane, width, height, pitch, pitch)
+        .map_err(|e| anyhow::anyhow!("NV12->RGBA conversion failed: {e}"))?;
+
+    Ok(rgba)
+}
+
+// ---------------------------------------------------------------------------
+// Software decode loops (fallbacks)
+// ---------------------------------------------------------------------------
+
+/// Decode loop that reads real packets from the demuxer (software path).
 ///
 /// Uses real PTS timing from the container for frame pacing. Since the HW
-/// decoder (NVDEC / Vulkan Video) is not yet wired in, we generate synthetic
-/// RGBA pixel data but log the real packet info for debugging.
+/// decoder is not available, we generate synthetic RGBA pixels but use the
+/// real PTS for timing.
 fn real_decode_loop(
     info: &FileInfo,
     demuxer: &mut Box<dyn Demuxer>,
@@ -799,9 +1465,8 @@ fn real_decode_loop(
                     packet.is_keyframe,
                 );
 
-                // TODO: Feed packet.data to HW decoder (NVDEC/Vulkan Video)
-                // to get a real decoded GPU frame. For now, generate synthetic
-                // RGBA pixels but use the real PTS for timing.
+                // Software fallback: generate synthetic RGBA pixels but use the
+                // real PTS for timing. (NVDEC path is in nvdec_decode_loop.)
                 let rgba_data = generate_synthetic_frame(width, height, frame_num, pts_secs);
 
                 let decoded = DecodedFrame {
@@ -821,8 +1486,7 @@ fn real_decode_loop(
 
                 frame_num += 1;
 
-                // Pace to target FPS. In a real pipeline the decode latency
-                // provides natural pacing; with synthetic frames we sleep.
+                // Pace to target FPS
                 thread::sleep(frame_duration);
             }
             None => {
@@ -1184,8 +1848,6 @@ mod tests {
 
     #[test]
     fn probe_recognizes_mkv_format() {
-        // probe_file_info should attempt to open an MKV file (not fall through
-        // to "unsupported format"). The error should mention MKV, not "not yet supported".
         let result = probe_file_info(Path::new("nonexistent.mkv"), "nonexistent.mkv");
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
@@ -1210,7 +1872,6 @@ mod tests {
     fn try_open_demuxer_mkv_errors_on_missing_file() {
         let result = try_open_demuxer(Path::new("nonexistent.mkv"));
         assert!(result.is_err());
-        // Box<dyn Demuxer> doesn't implement Debug, so use match instead of unwrap_err()
         let err_msg = match result {
             Ok(_) => panic!("Expected error for nonexistent MKV file"),
             Err(e) => e.to_string(),
@@ -1234,9 +1895,10 @@ mod tests {
 
         let (frame_tx, frame_rx) = channel::bounded::<DecodedFrame>(4);
         let (cmd_tx, cmd_rx) = channel::unbounded::<DecodeCommand>();
+        let (gpu_info_tx, _gpu_info_rx) = channel::bounded::<GpuInfoMsg>(1);
 
         let handle = thread::spawn(move || {
-            decode_thread_main(info, frame_tx, cmd_rx);
+            decode_thread_main(info, frame_tx, cmd_rx, gpu_info_tx);
         });
 
         // Tell it to play

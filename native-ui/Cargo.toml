@@ -17,12 +17,19 @@ serde_json = { workspace = true }
 
 ms-common = { path = "../crates/common" }
 ms-demux = { path = "../crates/demux" }
+ms-decoder = { path = "../crates/decoder" }
 ms-timeline-eval = { path = "../crates/timeline-eval" }
 ms-audio = { path = "../crates/audio" }
 ms-project = { path = "../crates/project" }
 ms-app-state = { path = "../crates/app-state" }
 ms-compositor = { path = "../crates/compositor" }
 ms-effects = { path = "../crates/effects" }
+ms-encoder = { path = "../crates/encoder" }
+ms-mux = { path = "../crates/mux" }
+
+# GPU — CUDA (for NVDEC decode thread GPU<->CPU transfers + NV12->RGBA kernel)
+cudarc = { workspace = true }
+ms-gpu-hal = { path = "../crates/gpu-hal", default-features = false, features = ["cuda"] }
 
 # Native file dialog
 rfd = "0.15"

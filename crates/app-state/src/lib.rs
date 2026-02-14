@@ -36,4 +36,4 @@ pub use history::{HistoryEntry, HistoryManager};
 pub use playback::{PlaybackMode, PlaybackState};
 pub use selection::SelectionState;
 pub use snapshot::{AppSnapshot, SelectionSnapshot};
-pub use state::{AppState, ClipState, MarkerState, MediaEntry, TrackState};
+pub use state::{AppState, ClipEffect, ClipMask, ClipState, MarkerState, MediaEntry, TrackState};

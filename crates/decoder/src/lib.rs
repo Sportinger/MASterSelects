@@ -46,9 +46,12 @@ pub mod manager;
 pub mod nvdec;
 pub mod pool;
 pub mod prefetch;
+pub mod software;
 pub mod thumbnail;
+pub mod vulkan_video;
 
 // Re-export primary types from new modules.
 pub use pool::{DecoderPool, DecoderSlot, PoolStats};
 pub use prefetch::{PrefetchData, PrefetchFrame, PrefetchQueue, PrefetchStats};
 pub use thumbnail::{ThumbnailData, ThumbnailGenerator, ThumbnailKey, ThumbnailStats};
+pub use vulkan_video::VulkanVideoDecoder;

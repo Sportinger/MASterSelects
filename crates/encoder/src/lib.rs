@@ -1,8 +1,8 @@
 //! `ms-encoder` -- Hardware video encoding management.
 //!
-//! Provides hardware-accelerated video encoding through NVIDIA's NVENC API.
-//! The NVENC library is loaded dynamically at runtime, allowing graceful
-//! fallback on systems without NVIDIA hardware.
+//! Provides hardware-accelerated video encoding through NVIDIA's NVENC API
+//! and Vulkan Video encode extensions. Libraries are loaded dynamically at
+//! runtime, allowing graceful fallback on systems without supported hardware.
 //!
 //! # Architecture
 //!
@@ -13,6 +13,8 @@
 //!   - [`nvenc::params`] -- Parameter builders mapping common config to NVENC structs
 //!   - [`nvenc::buffer`] -- Input/output buffer pool management
 //!   - [`nvenc::NvEncoder`] -- High-level `HwEncoder` implementation
+//! - [`vulkan_video`] -- Vulkan Video hardware encoder (AMD/Intel/NVIDIA)
+//!   - [`vulkan_video::encoder`] -- `HwEncoder` implementation (stub)
 //! - [`session`] -- Encoder session with frame counting and PTS tracking
 //! - [`export`] -- Export pipeline (timeline eval -> compositor -> encoder -> muxer)
 //!
@@ -64,3 +66,6 @@ pub mod export;
 #[cfg(feature = "nvenc")]
 pub mod nvenc;
 pub mod session;
+pub mod vulkan_video;
+
+pub use vulkan_video::VulkanVideoEncoder;

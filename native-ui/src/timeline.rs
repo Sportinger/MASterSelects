@@ -1,6 +1,19 @@
 use egui::{self, Align2, Color32, CornerRadius, FontId, Pos2, Rect, ScrollArea, Stroke, Vec2};
 
 // ---------------------------------------------------------------------------
+// Action enum -- polled by app.rs each frame
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub enum TimelineAction {
+    AddVideoTrack,
+    AddAudioTrack,
+    PlayPause,
+    Stop,
+    Seek(f32),
+}
+
+// ---------------------------------------------------------------------------
 // Data types
 // ---------------------------------------------------------------------------
 
@@ -17,6 +30,8 @@ pub struct TimelineState {
     pub scroll_offset: f32,
     pub ram_preview: bool,
     pub warmup: bool,
+    // Action signal — polled by app.rs each frame
+    pub action: Option<TimelineAction>,
 }
 
 pub struct Track {
@@ -51,31 +66,10 @@ impl Default for TimelineState {
         Self {
             playing: false,
             looping: false,
-            current_time: 16.09,
-            total_duration: 599.31,
+            current_time: 0.0,
+            total_duration: 0.0,
             zoom: 1.0,
             tracks: vec![
-                Track {
-                    name: "Video 2".into(),
-                    track_type: TrackType::Video,
-                    visible: true,
-                    muted: false,
-                    solo: false,
-                    expanded: true,
-                    clips: {
-                        let mut clips = Vec::new();
-                        // Multiple short clips from 0s to ~17s, each ~1s
-                        for i in 0..17 {
-                            clips.push(Clip {
-                                name: "O...".into(),
-                                start: i as f32 * 1.0,
-                                duration: 0.7,
-                                color: Color32::from_rgb(0x3a, 0x7b, 0xd5),
-                            });
-                        }
-                        clips
-                    },
-                },
                 Track {
                     name: "Video 1".into(),
                     track_type: TrackType::Video,
@@ -83,58 +77,25 @@ impl Default for TimelineState {
                     muted: false,
                     solo: false,
                     expanded: true,
-                    clips: vec![Clip {
-                        name: "Anthropic Found Why AIs Go Insane.mp4".into(),
-                        start: 19.0,
-                        duration: 10.0,
-                        color: Color32::from_rgb(0x2a, 0x5a, 0x9e),
-                    }],
+                    clips: vec![],
                 },
                 Track {
-                    name: "Audio".into(),
+                    name: "Audio 1".into(),
                     track_type: TrackType::Audio,
                     visible: true,
                     muted: false,
                     solo: false,
                     expanded: true,
-                    clips: vec![
-                        Clip {
-                            name: "clip1".into(),
-                            start: 0.0,
-                            duration: 1.5,
-                            color: Color32::from_rgb(0x2e, 0xcc, 0x71),
-                        },
-                        Clip {
-                            name: "clip2".into(),
-                            start: 1.8,
-                            duration: 1.2,
-                            color: Color32::from_rgb(0x2e, 0xcc, 0x71),
-                        },
-                        Clip {
-                            name: "Anthropic Found Why AIs Go Insane.mp4 (Audio)".into(),
-                            start: 19.0,
-                            duration: 10.0,
-                            color: Color32::from_rgb(0x27, 0xae, 0x60),
-                        },
-                    ],
+                    clips: vec![],
                 },
             ],
             playhead_pos: 0.0,
-            comp_tabs: vec![
-                "Comp 1".into(),
-                "Comp 2".into(),
-                "2026-02-09 13-42-01".into(),
-                "DK7A5405".into(),
-                "Nehmt es mit Humor albania fyp frdic foreyou".into(),
-                "NEW FlutterFlow Designer - Complete Overview Tutorial BETTER Than I Expected"
-                    .into(),
-                "rotating_rectangle".into(),
-                "Comp 8".into(),
-            ],
-            active_comp: 7,
+            comp_tabs: vec!["Comp 1".into()],
+            active_comp: 0,
             scroll_offset: 0.0,
             ram_preview: false,
-            warmup: true,
+            warmup: false,
+            action: None,
         }
     }
 }
@@ -272,6 +233,9 @@ fn small_button(ui: &mut egui::Ui, label: &str) -> bool {
 // ---------------------------------------------------------------------------
 
 pub fn show_timeline(ui: &mut egui::Ui, state: &mut TimelineState) {
+    // Clear previous frame's action
+    state.action = None;
+
     let panel_rect = ui.available_rect_before_wrap();
 
     // Fill the whole panel background
@@ -456,8 +420,7 @@ fn show_transport(ui: &mut egui::Ui, state: &mut TimelineState) {
 
     // Stop button
     if transport_button(&mut left, "\u{23F9}", false) {
-        state.playing = false;
-        state.current_time = 0.0;
+        state.action = Some(TimelineAction::Stop);
     }
 
     left.add_space(2.0);
@@ -469,14 +432,15 @@ fn show_transport(ui: &mut egui::Ui, state: &mut TimelineState) {
         "\u{25B6}"
     };
     if transport_button(&mut left, play_label, state.playing) {
-        state.playing = !state.playing;
+        state.action = Some(TimelineAction::PlayPause);
     }
 
     left.add_space(2.0);
 
     // Forward button
     if transport_button(&mut left, "\u{23E9}", false) {
-        state.current_time = (state.current_time + 5.0).min(state.total_duration);
+        let new_time = (state.current_time + 5.0).min(state.total_duration);
+        state.action = Some(TimelineAction::Seek(new_time));
     }
 
     left.add_space(8.0);
@@ -593,49 +557,14 @@ fn show_transport(ui: &mut egui::Ui, state: &mut TimelineState) {
 
     // + Audio Track
     if text_button(&mut right, "+ Audio Track", ADD_TRACK_TEXT) {
-        state.tracks.push(Track {
-            name: format!(
-                "Audio {}",
-                state
-                    .tracks
-                    .iter()
-                    .filter(|t| t.track_type == TrackType::Audio)
-                    .count()
-                    + 1
-            ),
-            track_type: TrackType::Audio,
-            visible: true,
-            muted: false,
-            solo: false,
-            expanded: true,
-            clips: vec![],
-        });
+        state.action = Some(TimelineAction::AddAudioTrack);
     }
 
     right.add_space(4.0);
 
     // + Video Track
     if text_button(&mut right, "+ Video Track", ADD_TRACK_TEXT) {
-        state.tracks.insert(
-            0,
-            Track {
-                name: format!(
-                    "Video {}",
-                    state
-                        .tracks
-                        .iter()
-                        .filter(|t| t.track_type == TrackType::Video)
-                        .count()
-                        + 1
-                ),
-                track_type: TrackType::Video,
-                visible: true,
-                muted: false,
-                solo: false,
-                expanded: true,
-                clips: vec![],
-            },
-        );
+        state.action = Some(TimelineAction::AddVideoTrack);
     }
 }
 
@@ -922,7 +851,7 @@ fn show_main_area(ui: &mut egui::Ui, state: &mut TimelineState) {
             if ruler_response.clicked() {
                 if let Some(pos) = ruler_response.interact_pointer_pos() {
                     let new_time = ((pos.x - origin.x) / pps).clamp(0.0, state.total_duration);
-                    state.current_time = new_time;
+                    state.action = Some(TimelineAction::Seek(new_time));
                 }
             }
         });

@@ -1,22 +1,25 @@
-//! Export pipeline — renders timeline to an output file.
+//! Export pipeline -- renders timeline to an output file.
 //!
 //! Architecture:
 //! ```text
 //! ExportPipeline
-//! ├── ExportConfig (output settings)
-//! ├── ExportState (progress tracking)
-//! └── export_thread
-//!     ├── for frame in 0..total_frames:
-//!     │   ├── evaluate timeline @ time
-//!     │   ├── composite layers → RGBA
-//!     │   ├── encode frame (placeholder)
-//!     │   └── mux to container (placeholder)
-//!     └── finalize
+//! +-- ExportConfig (output settings)
+//! +-- ExportState (progress tracking)
+//! +-- export_thread
+//!     +-- for frame in 0..total_frames:
+//!     |   +-- evaluate timeline @ time
+//!     |   +-- composite layers -> RGBA
+//!     |   +-- encode frame (ms-encoder)
+//!     |   +-- mux to container (ms-mux)
+//!     +-- flush encoder
+//!     +-- finalize muxer
 //! ```
 //!
-//! The encoder and muxer crates (`ms-encoder`, `ms-mux`) are being developed
-//! in parallel. This module provides the full pipeline skeleton with placeholder
-//! steps for encoding and muxing that will be wired up once those crates land.
+//! The export thread creates an [`EncoderSession`] from `ms-encoder` and an
+//! [`Mp4Muxer`] from `ms-mux`. Each frame is encoded via the `HwEncoder`
+//! trait and the resulting packet is written to the muxer. When no real HW
+//! backend is available the encoder produces placeholder (empty) packets,
+//! allowing the full pipeline to exercise the control flow.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -26,7 +29,16 @@ use std::time::Instant;
 
 use anyhow::{Context, Result};
 use crossbeam::channel::{self, Receiver, Sender};
-use ms_common::{AudioCodec, ContainerFormat, Rational, Resolution, VideoCodec};
+use ms_common::config::{EncoderBitrate, EncoderPreset, EncoderProfile};
+use ms_common::gpu_traits::HwEncoder;
+use ms_common::packet::GpuFrame;
+use ms_common::{
+    AudioCodec, ContainerFormat, EncoderConfig, PixelFormat, Rational, Resolution, TimeCode,
+    VideoCodec,
+};
+use ms_encoder::session::EncoderSession;
+use ms_mux::{Mp4Muxer, MuxerConfig, VideoTrackConfig};
+use tracing::{debug, error, info};
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -194,7 +206,7 @@ pub struct ExportPipeline {
 
 impl ExportPipeline {
     /// Create a new pipeline with the given configuration.
-    /// Does **not** start exporting — call [`start`](Self::start) for that.
+    /// Does **not** start exporting -- call [`start`](Self::start) for that.
     pub fn new(config: ExportConfig) -> Self {
         let total_frames = config.total_frames();
         Self {
@@ -332,7 +344,7 @@ impl Drop for ExportPipeline {
 /// Entry point for the export background thread.
 ///
 /// Walks through every frame of the timeline, evaluates, composites,
-/// and (when the crates are ready) encodes + muxes each frame.
+/// encodes via `ms-encoder`, and muxes via `ms-mux`.
 fn export_thread(
     config: ExportConfig,
     cancel_flag: Arc<AtomicBool>,
@@ -352,14 +364,92 @@ fn export_thread(
         &start,
     );
 
-    // TODO: Initialize encoder (ms-encoder) when available
-    //   let encoder_cfg = EncoderConfig { codec: config.video_codec, ... };
-    //   let mut encoder = HwEncoder::new(encoder_cfg)?;
-    //
-    // TODO: Initialize muxer (ms-mux) when available
-    //   let mut muxer = Muxer::new(&config.output_path, config.container)?;
-    //   let video_track = muxer.add_video_track(...)?;
-    //   let audio_track = muxer.add_audio_track(...)?;
+    // Initialize encoder session (ms-encoder)
+    let encoder_cfg = EncoderConfig {
+        codec: config.video_codec,
+        resolution: config.resolution,
+        fps: config.fps,
+        bitrate: EncoderBitrate::Vbr {
+            target: config.bitrate_bps(),
+            max: (config.bitrate_bps() as f64 * 1.5) as u64,
+        },
+        preset: EncoderPreset::Medium,
+        profile: EncoderProfile::High,
+    };
+
+    let mut encoder = match EncoderSession::new(&encoder_cfg) {
+        Ok(enc) => {
+            info!(
+                codec = encoder_cfg.codec.display_name(),
+                has_backend = enc.has_backend(),
+                "Encoder session initialized"
+            );
+            enc
+        }
+        Err(e) => {
+            error!("Failed to initialize encoder: {e}");
+            send_progress(
+                &progress_tx,
+                ExportState::Failed(format!("Encoder init failed: {e}")),
+                0,
+                total_frames,
+                &start,
+            );
+            return;
+        }
+    };
+
+    // Initialize muxer (ms-mux)
+    let mut muxer = match Mp4Muxer::new(MuxerConfig {
+        output_path: config.output_path.clone(),
+    }) {
+        Ok(m) => {
+            info!(output = %config.output_path.display(), "MP4 muxer initialized");
+            m
+        }
+        Err(e) => {
+            error!("Failed to initialize muxer: {e}");
+            send_progress(
+                &progress_tx,
+                ExportState::Failed(format!("Muxer init failed: {e}")),
+                0,
+                total_frames,
+                &start,
+            );
+            return;
+        }
+    };
+
+    // Add video track to the muxer.
+    // SPS/PPS are normally extracted from the encoder or the video stream.
+    // When no real HW encoder backend is active, we provide minimal placeholder
+    // parameter sets so the muxer can write valid box headers.
+    let placeholder_sps = vec![0x67, 0x42, 0xC0, 0x1F, 0xDA, 0x02, 0x80, 0xF6];
+    let placeholder_pps = vec![0x68, 0xCE, 0x38, 0x80];
+
+    let video_track_id = match muxer.add_video_track(VideoTrackConfig {
+        codec: config.video_codec,
+        resolution: config.resolution,
+        fps: config.fps,
+        sps: placeholder_sps,
+        pps: placeholder_pps,
+    }) {
+        Ok(id) => {
+            info!(track_id = id, "Video track added to muxer");
+            id
+        }
+        Err(e) => {
+            error!("Failed to add video track: {e}");
+            send_progress(
+                &progress_tx,
+                ExportState::Failed(format!("Failed to add video track: {e}")),
+                0,
+                total_frames,
+                &start,
+            );
+            return;
+        }
+    };
 
     // --- Rendering ---------------------------------------------------------
     send_progress(
@@ -383,7 +473,7 @@ fn export_thread(
             return;
         }
 
-        let _time_secs = frame_num as f64 * frame_duration;
+        let time_secs = frame_num as f64 * frame_duration;
 
         // Step 1: Evaluate timeline at this time
         // TODO: let time = TimeCode::from_secs(time_secs);
@@ -392,14 +482,47 @@ fn export_thread(
         // Step 2: Composite layers into a single RGBA frame
         // TODO: let rgba_frame = compositor.composite(&layers, config.resolution)?;
 
-        // Step 3: Encode frame
-        // TODO: let packet = encoder.encode(&rgba_frame)?;
+        // For now, create a placeholder GpuFrame representing the compositor
+        // output. In production, the compositor will return a real GPU-resident
+        // frame; here we use a null device pointer which the stub encoder
+        // handles gracefully.
+        let gpu_frame = GpuFrame {
+            device_ptr: 0, // placeholder -- no real GPU buffer yet
+            device_ptr_uv: None,
+            resolution: config.resolution,
+            format: PixelFormat::Rgba8,
+            pitch: config.resolution.width * 4,
+            pts: TimeCode::from_secs(time_secs),
+        };
 
-        // Step 4: Mux encoded packet into container
-        // TODO: muxer.write_video_sample(video_track, &packet)?;
+        // Step 3: Encode frame via ms-encoder
+        let packet = match encoder.encode(&gpu_frame) {
+            Ok(pkt) => pkt,
+            Err(e) => {
+                error!(frame = frame_num, "Encode failed: {e}");
+                send_progress(
+                    &progress_tx,
+                    ExportState::Failed(format!("Encode failed at frame {frame_num}: {e}")),
+                    frame_num,
+                    total_frames,
+                    &start,
+                );
+                return;
+            }
+        };
 
-        // Simulate work until real pipeline is wired up
-        std::thread::sleep(std::time::Duration::from_micros(100));
+        // Step 4: Mux encoded packet into container via ms-mux
+        if let Err(e) = muxer.write_video_sample(video_track_id, &packet) {
+            error!(frame = frame_num, "Mux write failed: {e}");
+            send_progress(
+                &progress_tx,
+                ExportState::Failed(format!("Mux write failed at frame {frame_num}: {e}")),
+                frame_num,
+                total_frames,
+                &start,
+            );
+            return;
+        }
 
         current_frame.store(frame_num + 1, Ordering::Relaxed);
 
@@ -413,6 +536,14 @@ fn export_thread(
                 &start,
             );
         }
+
+        debug!(
+            frame = frame_num,
+            pts = time_secs,
+            packet_bytes = packet.data.len(),
+            keyframe = packet.is_keyframe,
+            "Frame encoded and muxed"
+        );
     }
 
     // --- Encoding flush ----------------------------------------------------
@@ -423,10 +554,47 @@ fn export_thread(
         total_frames,
         &start,
     );
-    // TODO: encoder.flush()?;
-    // TODO: while let Some(packet) = encoder.receive()? {
-    //     muxer.write_video_sample(video_track, &packet)?;
-    // }
+
+    // Flush any remaining packets buffered in the encoder
+    match encoder.flush() {
+        Ok(flushed_packets) => {
+            info!(flushed = flushed_packets.len(), "Encoder flush complete");
+            for packet in &flushed_packets {
+                if let Err(e) = muxer.write_video_sample(video_track_id, packet) {
+                    error!("Mux write failed during flush: {e}");
+                    send_progress(
+                        &progress_tx,
+                        ExportState::Failed(format!("Mux write failed during flush: {e}")),
+                        total_frames,
+                        total_frames,
+                        &start,
+                    );
+                    return;
+                }
+            }
+        }
+        Err(e) => {
+            error!("Encoder flush failed: {e}");
+            send_progress(
+                &progress_tx,
+                ExportState::Failed(format!("Encoder flush failed: {e}")),
+                total_frames,
+                total_frames,
+                &start,
+            );
+            return;
+        }
+    }
+
+    // Log encoder statistics
+    let stats = encoder.stats();
+    info!(
+        frames = stats.frames_encoded,
+        keyframes = stats.keyframes,
+        bytes = stats.bytes_written,
+        avg_bitrate_bps = stats.avg_bitrate_bps,
+        "Encoder session stats"
+    );
 
     // --- Finalizing --------------------------------------------------------
     send_progress(
@@ -436,7 +604,25 @@ fn export_thread(
         total_frames,
         &start,
     );
-    // TODO: muxer.finalize()?;
+
+    // Finalize the MP4 container (writes moov box and closes the file)
+    if let Err(e) = muxer.finalize() {
+        error!("Muxer finalize failed: {e}");
+        send_progress(
+            &progress_tx,
+            ExportState::Failed(format!("Muxer finalize failed: {e}")),
+            total_frames,
+            total_frames,
+            &start,
+        );
+        return;
+    }
+
+    info!(
+        output = %config.output_path.display(),
+        elapsed_secs = start.elapsed().as_secs_f64(),
+        "Export finalized successfully"
+    );
 
     // --- Complete ----------------------------------------------------------
     send_progress(
@@ -632,7 +818,7 @@ mod tests {
 
     #[test]
     fn estimate_remaining_basic() {
-        // Processed 100 of 300 frames in 5 seconds → 200 frames left at 20 fps → 10s
+        // Processed 100 of 300 frames in 5 seconds -> 200 frames left at 20 fps -> 10s
         let est = estimate_remaining(100, 300, 5.0);
         assert!((est - 10.0).abs() < 1e-9);
     }
@@ -750,7 +936,7 @@ mod tests {
         }
 
         // We should have seen the Rendering state at least once
-        // (or it completed so fast we missed it — in that case just check completion)
+        // (or it completed so fast we missed it -- in that case just check completion)
         let final_p = pipeline.poll_progress();
         assert_eq!(final_p.state, ExportState::Complete);
         // It's possible the export finished so fast we skipped Rendering in polls,
@@ -799,7 +985,7 @@ mod tests {
             fps: Rational::FPS_29_97,
             ..Default::default()
         };
-        // 10.0 * (30000/1001) = 299.7002997... → ceil = 300
+        // 10.0 * (30000/1001) = 299.7002997... -> ceil = 300
         assert_eq!(cfg.total_frames(), 300);
     }
 

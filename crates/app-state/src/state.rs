@@ -63,6 +63,53 @@ pub struct TrackState {
     pub locked: bool,
 }
 
+/// An effect applied to a clip.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ClipEffect {
+    /// Effect name / type identifier.
+    pub name: String,
+    /// Whether the effect is enabled.
+    pub enabled: bool,
+    /// Parameter values as (name, value, min, max) tuples.
+    pub params: Vec<(String, f32, f32, f32)>,
+}
+
+/// A mask applied to a clip.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ClipMask {
+    /// Mask display name.
+    pub name: String,
+    /// Whether the mask is enabled.
+    pub enabled: bool,
+    /// Mask opacity (0.0 - 100.0).
+    pub opacity: f32,
+    /// Mask feather amount.
+    pub feather: f32,
+    /// Whether the mask is inverted.
+    pub inverted: bool,
+}
+
+/// Serde default helpers for new ClipState fields.
+fn default_position() -> [f32; 2] {
+    [0.0, 0.0]
+}
+
+fn default_scale() -> [f32; 2] {
+    [100.0, 100.0]
+}
+
+fn default_rotation() -> f32 {
+    0.0
+}
+
+fn default_effects() -> Vec<ClipEffect> {
+    Vec::new()
+}
+
+fn default_masks() -> Vec<ClipMask> {
+    Vec::new()
+}
+
 /// State of a single clip on a track.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ClipState {
@@ -82,6 +129,21 @@ pub struct ClipState {
     pub opacity: f32,
     /// Blend mode name (matches BlendMode variants as strings for serialization).
     pub blend_mode: String,
+    /// Clip position offset [x, y] in pixels.
+    #[serde(default = "default_position")]
+    pub position: [f32; 2],
+    /// Clip scale [x, y] as percentages (100.0 = original size).
+    #[serde(default = "default_scale")]
+    pub scale: [f32; 2],
+    /// Clip rotation in degrees.
+    #[serde(default = "default_rotation")]
+    pub rotation: f32,
+    /// Effects applied to this clip.
+    #[serde(default = "default_effects")]
+    pub effects: Vec<ClipEffect>,
+    /// Masks applied to this clip.
+    #[serde(default = "default_masks")]
+    pub masks: Vec<ClipMask>,
 }
 
 impl ClipState {
@@ -285,6 +347,11 @@ mod tests {
             source_out: end - start,
             opacity: 1.0,
             blend_mode: "Normal".to_string(),
+            position: [0.0, 0.0],
+            scale: [100.0, 100.0],
+            rotation: 0.0,
+            effects: Vec::new(),
+            masks: Vec::new(),
         }
     }
 
@@ -492,6 +559,11 @@ mod tests {
             source_out: 18.0,
             opacity: 1.0,
             blend_mode: "Normal".to_string(),
+            position: [0.0, 0.0],
+            scale: [100.0, 100.0],
+            rotation: 0.0,
+            effects: Vec::new(),
+            masks: Vec::new(),
         };
         assert!((clip.source_duration() - 8.0).abs() < f64::EPSILON);
     }
@@ -527,5 +599,26 @@ mod tests {
         assert_eq!(restored.markers.len(), 1);
         assert_eq!(restored.fps, Rational::FPS_24);
         assert_eq!(restored.resolution, Resolution::UHD);
+    }
+
+    #[test]
+    fn deserialize_without_new_fields_uses_defaults() {
+        // Simulate an old JSON that doesn't have position/scale/rotation/effects/masks
+        let json = r#"{
+            "id": "c1",
+            "source_id": "src",
+            "timeline_start": 0.0,
+            "timeline_end": 5.0,
+            "source_in": 0.0,
+            "source_out": 5.0,
+            "opacity": 1.0,
+            "blend_mode": "Normal"
+        }"#;
+        let clip: ClipState = serde_json::from_str(json).unwrap();
+        assert_eq!(clip.position, [0.0, 0.0]);
+        assert_eq!(clip.scale, [100.0, 100.0]);
+        assert!((clip.rotation - 0.0).abs() < f32::EPSILON);
+        assert!(clip.effects.is_empty());
+        assert!(clip.masks.is_empty());
     }
 }

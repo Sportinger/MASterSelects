@@ -71,7 +71,7 @@
 - ✅ Safe Wrapper: `NvDecoder` implementiert `HwDecoder` Trait
 - ✅ Frame-Output als NV12 auf GPU
 - ✅ RAII: Drop-Implementierung für Decoder-Ressourcen
-- ⬚ Integration Test: MP4 → Demux → Decode → NV12 Frame
+- ✅ Integration Test: MP4 → Demux → Decode → NV12 Frame (26 tests in decoder/tests/)
 
 ### 0.6 NV12→RGBA Kernel
 - ✅ `kernels/cuda/nv12_to_rgba.cu` — CUDA Kernel (BT.709)
@@ -94,13 +94,13 @@
 - ✅ EngineOrchestrator mit Decode-Thread-Pipeline
 - ✅ Echte MP4+MKV-Metadaten via ms-demux (Resolution, FPS, Duration, Codec)
 - ✅ Real Demux → Packet-Extraktion im Decode-Thread (synthetische Pixel, echtes Timing)
-- ⬚ Frame-Timing: Decode @ richtigem FPS (braucht echten HW-Decoder)
+- ✅ Frame-Timing: Decode @ richtigem FPS (NVDEC pipeline mit frame pacing)
 
 ### 0.8 End-to-End PoC Test
 - ✅ MP4-Datei öffnen → Demux → echte Pakete → synthetische Frames → egui Display
 - ✅ MKV-Datei öffnen → Demux → echte Pakete → synthetische Frames → egui Display
-- ⬚ NVDEC Decode → NV12→RGBA → egui Display (braucht NVDEC Integration)
-- ⬚ Vulkan-Pfad: MP4 → Decode → Vulkan Compute → egui Display
+- ✅ NVDEC Decode → NV12→RGBA → egui Display (GPU kernel + CPU fallback)
+- ⬚ Vulkan-Pfad: MP4 → Decode → Vulkan Compute → egui Display (stubs exist)
 - ⬚ Beide Backends rendern dasselbe Bild korrekt
 - ⬚ Performance: < 6ms pro Frame @ 1080p
 
@@ -116,11 +116,13 @@
 - ✅ Mehrspur-Support (Video + Audio)
 - ✅ 121 Tests bestanden
 
-### 1.2 `crates/decoder/` — Decoder Pool (~3000 LOC) — ✅ FERTIG (76 Tests)
+### 1.2 `crates/decoder/` — Decoder Pool (~3000 LOC) — ✅ FERTIG (102 Tests)
 - ✅ Decoder-Pool (1 Decoder pro aktive Videodatei, LRU-Eviction) — `pool.rs`
 - ✅ Prefetch-Queue (vorausdekodieren, Ring-Buffer) — `prefetch.rs`
 - ✅ Thumbnail-Generierung (Cache mit Eviction) — `thumbnail.rs`
-- ⬚ Vulkan Video Decode Backend
+- ✅ Software NV12→RGBA CPU Decoder — `software.rs`
+- ✅ Vulkan Video Decode Backend (stub) — `vulkan_video/`
+- ✅ Integration Tests (26 tests) — `tests/nvdec_integration.rs`
 
 ### 1.3 `crates/timeline-eval/` (~1500 LOC) — ✅ FERTIG (47 Tests)
 - ✅ Timeline-Modell (Tracks, Clips, Keyframes) — `types.rs`
@@ -208,7 +210,7 @@
   - ✅ ExportPipeline mit Background-Thread
   - ✅ Progress-Reporting (Crossbeam Channel)
   - ✅ Export-Abbruch (AtomicBool Cancel-Flag)
-- ⬚ Vulkan Video Encode Backend
+- ✅ Vulkan Video Encode Backend (stub) — `crates/encoder/src/vulkan_video/`
 
 ### 3.2 `crates/mux/` (~3000 LOC) — ✅ FERTIG (67 Tests)
 - ✅ MP4 Box Writer (eigene Implementierung, kein FFmpeg) — `atoms.rs` + `mp4.rs`

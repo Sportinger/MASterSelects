@@ -10,6 +10,8 @@ vulkan = ["dep:ash", "dep:gpu-allocator"]
 
 [dependencies]
 ms-common = { path = "../common" }
+ms-decoder = { path = "../decoder" }
+ms-encoder = { path = "../encoder" }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 parking_lot = { workspace = true }

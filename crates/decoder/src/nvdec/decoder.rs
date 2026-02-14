@@ -414,7 +414,7 @@ mod tests {
     fn timestamp_roundtrip() {
         // Verify timestamp survives the encode/decode roundtrip:
         // seconds -> microseconds -> seconds
-        let original_secs = 3.14159;
+        let original_secs = 7.123_456;
         let as_us = (original_secs * 1_000_000.0) as i64;
         let recovered = TimeCode::from_secs(as_us as f64 / 1_000_000.0);
         // Allow 1 microsecond of precision loss

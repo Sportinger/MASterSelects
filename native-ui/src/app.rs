@@ -2,15 +2,18 @@ use eframe::egui;
 
 use crate::bridge::PreviewBridge;
 use crate::engine::EngineOrchestrator;
-use crate::media_panel::MediaPanelState;
+use crate::media_panel::{MediaFile, MediaKind, MediaPanelState};
 use crate::preview_panel::PreviewPanelState;
-use crate::properties_panel::PropertiesPanelState;
+use crate::properties_panel::{PropertiesAction, PropertiesPanelState};
 use crate::timeline::TimelineState;
 use crate::toolbar::ToolbarState;
 
-use ms_app_state::{AppState, HistoryManager};
+use ms_app_state::{AppSnapshot, AppState, ClipEffect, ClipMask, HistoryManager};
 use ms_effects::EffectRegistry;
 use ms_project::{AutoSaver, ProjectFile, ProjectSettings, RecentProjects};
+
+use crate::timeline::{TimelineAction, Track, TrackType};
+use crate::toolbar::ToolbarAction;
 
 use std::path::PathBuf;
 use std::time::Instant;
@@ -79,7 +82,57 @@ impl MasterSelectsApp {
             .add_filter("All", &["*"])
             .pick_file()
         {
+            self.capture_snapshot("Import media");
             self.engine.open_file(path.clone()).ok();
+
+            // Add file to the media panel
+            let file_name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "unknown".to_string());
+
+            let ext = path
+                .extension()
+                .map(|e| e.to_string_lossy().to_lowercase())
+                .unwrap_or_default();
+
+            let kind = match ext.as_str() {
+                "mp3" | "wav" | "flac" | "aac" | "ogg" => MediaKind::Audio,
+                _ => MediaKind::Video,
+            };
+
+            // Get metadata from engine if available
+            let (duration, resolution, fps) = if let Some(info) = self.engine.file_info() {
+                let dur_secs = info.duration_secs;
+                let mm = dur_secs as u32 / 60;
+                let ss = dur_secs as u32 % 60;
+                (
+                    format!("{}:{:02}", mm, ss),
+                    format!("{}\u{00D7}{}", info.resolution.width, info.resolution.height),
+                    format!("{:.2}", info.fps.as_f64()),
+                )
+            } else {
+                ("--".to_string(), "--".to_string(), "--".to_string())
+            };
+
+            // Avoid duplicates
+            let already_added = self
+                .media_panel
+                .files
+                .iter()
+                .any(|f| f.path == path.display().to_string());
+
+            if !already_added {
+                self.media_panel.files.push(MediaFile {
+                    name: file_name,
+                    path: path.display().to_string(),
+                    kind,
+                    duration,
+                    resolution,
+                    fps,
+                });
+            }
+
             self.set_status(format!("Opened: {}", path.display()));
         }
     }
@@ -164,6 +217,63 @@ impl MasterSelectsApp {
     }
 
     // -----------------------------------------------------------------------
+    // Engine ↔ Timeline sync
+    // -----------------------------------------------------------------------
+
+    /// Sync timeline transport state and toolbar from the engine each frame.
+    fn sync_timeline_from_engine(&mut self) {
+        // Sync playback state
+        self.timeline.playing = matches!(
+            self.engine.state(),
+            crate::engine::EngineState::Playing
+        );
+
+        // Sync current time and duration from engine
+        self.timeline.current_time = self.engine.current_time_secs() as f32;
+        self.timeline.total_duration = self.engine.duration_secs() as f32;
+
+        // Sync toolbar engine info
+        self.toolbar.gpu_name = self.engine.gpu_name().to_string();
+        self.toolbar.engine_state = match self.engine.state() {
+            crate::engine::EngineState::Playing => crate::toolbar::EngineState::Playing,
+            crate::engine::EngineState::Paused => crate::toolbar::EngineState::Paused,
+            _ => crate::toolbar::EngineState::Idle,
+        };
+
+        // Add a clip to the timeline when a file is loaded
+        if let Some(info) = self.engine.file_info() {
+            // Check if we already have this file as a clip in Video 1
+            let has_clip = self
+                .timeline
+                .tracks
+                .iter()
+                .any(|t| t.clips.iter().any(|c| c.name == info.file_name));
+
+            if !has_clip {
+                // Add clip to the first video track
+                if let Some(video_track) = self
+                    .timeline
+                    .tracks
+                    .iter_mut()
+                    .find(|t| t.track_type == crate::timeline::TrackType::Video)
+                {
+                    video_track.clips.push(crate::timeline::Clip {
+                        name: info.file_name.clone(),
+                        start: 0.0,
+                        duration: info.duration_secs as f32,
+                        color: egui::Color32::from_rgb(0x2a, 0x5a, 0x9e),
+                    });
+                }
+
+                // Update timeline duration
+                if info.duration_secs as f32 > self.timeline.total_duration {
+                    self.timeline.total_duration = info.duration_secs as f32;
+                }
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // Undo / Redo
     // -----------------------------------------------------------------------
 
@@ -171,6 +281,7 @@ impl MasterSelectsApp {
     pub fn undo(&mut self) {
         if let Some(snapshot) = self.history.undo() {
             snapshot.restore(&mut self.app_state);
+            self.sync_properties_from_state();
             self.set_status("Undo".to_string());
         }
     }
@@ -179,6 +290,7 @@ impl MasterSelectsApp {
     pub fn redo(&mut self) {
         if let Some(snapshot) = self.history.redo() {
             snapshot.restore(&mut self.app_state);
+            self.sync_properties_from_state();
             self.set_status("Redo".to_string());
         }
     }
@@ -289,6 +401,340 @@ impl MasterSelectsApp {
                         self.auto_saver.mark_saved();
                         self.set_status("Auto-saved".to_string());
                     }
+                }
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Snapshot helper
+    // -----------------------------------------------------------------------
+
+    /// Capture a snapshot of the current app state and push it to history.
+    /// Call this BEFORE the mutation so undo restores the pre-mutation state.
+    fn capture_snapshot(&mut self, label: &str) {
+        let snapshot = AppSnapshot::capture(&self.app_state);
+        self.history.push(label, snapshot);
+        self.app_state.mark_dirty();
+    }
+
+    // -----------------------------------------------------------------------
+    // Selected-clip mutation helpers
+    // -----------------------------------------------------------------------
+
+    /// Apply a mutation to the first selected clip in AppState.
+    /// Captures a history snapshot before the mutation and marks the project dirty.
+    fn apply_to_selected_clip(
+        &mut self,
+        label: &str,
+        f: impl FnOnce(&mut ms_app_state::ClipState),
+    ) {
+        let selected = self.app_state.selection.selected_clips().to_vec();
+        if let Some(clip_id) = selected.first() {
+            // Capture snapshot before the change for undo
+            let snapshot = AppSnapshot::capture(&self.app_state);
+            self.history.push(label, snapshot);
+
+            if let Some(clip) = self.app_state.find_clip_mut(clip_id) {
+                f(clip);
+            }
+            self.app_state.mark_dirty();
+        }
+    }
+
+    /// Apply a mutation to the first selected clip without pushing a history entry.
+    /// Used during drag operations where batch grouping handles history.
+    fn apply_to_selected_clip_no_history(
+        &mut self,
+        f: impl FnOnce(&mut ms_app_state::ClipState),
+    ) {
+        let selected = self.app_state.selection.selected_clips().to_vec();
+        if let Some(clip_id) = selected.first() {
+            if let Some(clip) = self.app_state.find_clip_mut(clip_id) {
+                f(clip);
+            }
+            self.app_state.mark_dirty();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Sync properties panel from AppState
+    // -----------------------------------------------------------------------
+
+    /// Sync the properties panel's local UI state from the selected clip in AppState.
+    /// Called after undo/redo or when selection changes.
+    fn sync_properties_from_state(&mut self) {
+        let selected = self.app_state.selection.selected_clips().to_vec();
+        if let Some(clip_id) = selected.first() {
+            if let Some((_, clip)) = self.app_state.find_clip(clip_id) {
+                self.properties.clip_selected = true;
+                self.properties.opacity = clip.opacity * 100.0; // AppState 0-1, UI 0-100
+                self.properties.blend_mode = clip.blend_mode.clone();
+                self.properties.position = [clip.position[0], clip.position[1], 0.0];
+                self.properties.scale = clip.scale;
+                self.properties.rotation = clip.rotation;
+
+                // Sync effects
+                self.properties.effects = clip
+                    .effects
+                    .iter()
+                    .map(|e| crate::properties_panel::EffectEntry {
+                        name: e.name.clone(),
+                        enabled: e.enabled,
+                        expanded: true,
+                        params: e.params.clone(),
+                    })
+                    .collect();
+
+                // Sync masks
+                self.properties.masks = clip
+                    .masks
+                    .iter()
+                    .map(|m| crate::properties_panel::MaskEntry {
+                        name: m.name.clone(),
+                        enabled: m.enabled,
+                        opacity: m.opacity,
+                        feather: m.feather,
+                        inverted: m.inverted,
+                    })
+                    .collect();
+            } else {
+                self.properties.clip_selected = false;
+            }
+        } else {
+            self.properties.clip_selected = false;
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Action processing (polled each frame after panels render)
+    // -----------------------------------------------------------------------
+
+    fn process_toolbar_actions(&mut self) {
+        let action = self.toolbar.action.take();
+        if let Some(action) = action {
+            match action {
+                ToolbarAction::NewProject => self.new_project(),
+                ToolbarAction::OpenProject => self.open_project(),
+                ToolbarAction::SaveProject => self.save_project(),
+                ToolbarAction::SaveProjectAs => self.save_project_as(),
+                ToolbarAction::ImportMedia => self.open_media_file(),
+                ToolbarAction::Undo => self.undo(),
+                ToolbarAction::Redo => self.redo(),
+                ToolbarAction::ExportStart => {
+                    self.set_status("Export started".to_string());
+                }
+                ToolbarAction::Play => self.engine.toggle_play_pause(),
+                ToolbarAction::Pause => self.engine.toggle_play_pause(),
+                ToolbarAction::Stop => {
+                    self.set_status("Stopped".to_string());
+                }
+            }
+        }
+    }
+
+    fn process_timeline_actions(&mut self) {
+        let action = self.timeline.action.take();
+        if let Some(action) = action {
+            match action {
+                TimelineAction::AddVideoTrack => {
+                    self.capture_snapshot("Add video track");
+                    let count = self
+                        .timeline
+                        .tracks
+                        .iter()
+                        .filter(|t| t.track_type == TrackType::Video)
+                        .count();
+                    self.timeline.tracks.insert(
+                        0,
+                        Track {
+                            name: format!("Video {}", count + 1),
+                            track_type: TrackType::Video,
+                            visible: true,
+                            muted: false,
+                            solo: false,
+                            expanded: true,
+                            clips: vec![],
+                        },
+                    );
+                    self.set_status("Added video track".to_string());
+                }
+                TimelineAction::AddAudioTrack => {
+                    self.capture_snapshot("Add audio track");
+                    let count = self
+                        .timeline
+                        .tracks
+                        .iter()
+                        .filter(|t| t.track_type == TrackType::Audio)
+                        .count();
+                    self.timeline.tracks.push(Track {
+                        name: format!("Audio {}", count + 1),
+                        track_type: TrackType::Audio,
+                        visible: true,
+                        muted: false,
+                        solo: false,
+                        expanded: true,
+                        clips: vec![],
+                    });
+                    self.set_status("Added audio track".to_string());
+                }
+                TimelineAction::PlayPause => {
+                    self.engine.toggle_play_pause();
+                }
+                TimelineAction::Stop => {
+                    self.engine.stop();
+                    self.set_status("Stopped".to_string());
+                }
+                TimelineAction::Seek(time) => {
+                    self.engine.seek(time as f64);
+                }
+            }
+        }
+    }
+
+    fn process_properties_actions(&mut self) {
+        let actions = self.properties.drain_actions();
+        for action in actions {
+            match action {
+                PropertiesAction::DragStart(label) => {
+                    let snapshot = AppSnapshot::capture(&self.app_state);
+                    self.history.start_batch(&label, snapshot);
+                }
+                PropertiesAction::DragEnd => {
+                    self.history.end_batch();
+                    self.app_state.mark_dirty();
+                }
+                PropertiesAction::SetOpacity(val) => {
+                    if self.history.is_batching() {
+                        self.apply_to_selected_clip_no_history(|clip| {
+                            clip.opacity = val / 100.0; // UI 0-100, AppState 0-1
+                        });
+                    } else {
+                        self.apply_to_selected_clip("Set Opacity", |clip| {
+                            clip.opacity = val / 100.0;
+                        });
+                    }
+                }
+                PropertiesAction::SetBlendMode(mode) => {
+                    self.apply_to_selected_clip("Set Blend Mode", |clip| {
+                        clip.blend_mode = mode;
+                    });
+                }
+                PropertiesAction::SetPosition(x, y, _z) => {
+                    if self.history.is_batching() {
+                        self.apply_to_selected_clip_no_history(|clip| {
+                            clip.position = [x, y];
+                        });
+                    } else {
+                        self.apply_to_selected_clip("Set Position", |clip| {
+                            clip.position = [x, y];
+                        });
+                    }
+                }
+                PropertiesAction::SetScale(sx, sy) => {
+                    if self.history.is_batching() {
+                        self.apply_to_selected_clip_no_history(|clip| {
+                            clip.scale = [sx, sy];
+                        });
+                    } else {
+                        self.apply_to_selected_clip("Set Scale", |clip| {
+                            clip.scale = [sx, sy];
+                        });
+                    }
+                }
+                PropertiesAction::SetRotation(deg) => {
+                    if self.history.is_batching() {
+                        self.apply_to_selected_clip_no_history(|clip| {
+                            clip.rotation = deg;
+                        });
+                    } else {
+                        self.apply_to_selected_clip("Set Rotation", |clip| {
+                            clip.rotation = deg;
+                        });
+                    }
+                }
+                PropertiesAction::AddEffect(name) => {
+                    self.apply_to_selected_clip("Add Effect", |clip| {
+                        clip.effects.push(ClipEffect {
+                            name,
+                            enabled: true,
+                            params: vec![("Amount".to_string(), 50.0, 0.0, 100.0)],
+                        });
+                    });
+                }
+                PropertiesAction::RemoveEffect(idx) => {
+                    self.apply_to_selected_clip("Remove Effect", |clip| {
+                        if idx < clip.effects.len() {
+                            clip.effects.remove(idx);
+                        }
+                    });
+                }
+                PropertiesAction::ToggleEffect(idx, enabled) => {
+                    self.apply_to_selected_clip("Toggle Effect", |clip| {
+                        if let Some(effect) = clip.effects.get_mut(idx) {
+                            effect.enabled = enabled;
+                        }
+                    });
+                }
+                PropertiesAction::SetEffectParam(effect_idx, param_idx, value) => {
+                    self.apply_to_selected_clip("Set Effect Param", |clip| {
+                        if let Some(effect) = clip.effects.get_mut(effect_idx) {
+                            if let Some(param) = effect.params.get_mut(param_idx) {
+                                param.1 = value;
+                            }
+                        }
+                    });
+                }
+                PropertiesAction::AddMask => {
+                    self.apply_to_selected_clip("Add Mask", |clip| {
+                        let idx = clip.masks.len() + 1;
+                        clip.masks.push(ClipMask {
+                            name: format!("Mask {idx}"),
+                            enabled: true,
+                            opacity: 100.0,
+                            feather: 0.0,
+                            inverted: false,
+                        });
+                    });
+                }
+                PropertiesAction::RemoveMask(idx) => {
+                    self.apply_to_selected_clip("Remove Mask", |clip| {
+                        if idx < clip.masks.len() {
+                            clip.masks.remove(idx);
+                        }
+                    });
+                }
+                PropertiesAction::ToggleMask(idx, enabled) => {
+                    self.apply_to_selected_clip("Toggle Mask", |clip| {
+                        if let Some(mask) = clip.masks.get_mut(idx) {
+                            mask.enabled = enabled;
+                        }
+                    });
+                }
+                PropertiesAction::SetMaskOpacity(idx, val) => {
+                    self.apply_to_selected_clip("Set Mask Opacity", |clip| {
+                        if let Some(mask) = clip.masks.get_mut(idx) {
+                            mask.opacity = val;
+                        }
+                    });
+                }
+                PropertiesAction::SetMaskFeather(idx, val) => {
+                    self.apply_to_selected_clip("Set Mask Feather", |clip| {
+                        if let Some(mask) = clip.masks.get_mut(idx) {
+                            mask.feather = val;
+                        }
+                    });
+                }
+                PropertiesAction::ToggleMaskInvert(idx) => {
+                    self.apply_to_selected_clip("Toggle Mask Invert", |clip| {
+                        if let Some(mask) = clip.masks.get_mut(idx) {
+                            mask.inverted = !mask.inverted;
+                        }
+                    });
+                }
+                PropertiesAction::StartExport => {
+                    self.set_status("Export started".to_string());
+                    // TODO: wire to actual export pipeline
                 }
             }
         }
@@ -442,5 +888,19 @@ impl eframe::App for MasterSelectsApp {
                     &self.bridge,
                 );
             });
+
+        // 10. Process panel actions (snapshot captures happen here)
+        self.process_toolbar_actions();
+        self.process_timeline_actions();
+        self.process_properties_actions();
+
+        // 11. Handle media panel import requests
+        if self.media_panel.import_requested {
+            self.media_panel.import_requested = false;
+            self.open_media_file();
+        }
+
+        // 12. Sync timeline transport state with engine
+        self.sync_timeline_from_engine();
     }
 }

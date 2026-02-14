@@ -1,6 +1,37 @@
 use egui::{self, Color32, CornerRadius, RichText, Stroke, Vec2};
 
 // ---------------------------------------------------------------------------
+// Action enum -- polled by app.rs each frame
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub enum PropertiesAction {
+    // Drag batch signals
+    DragStart(String),
+    DragEnd,
+    // Transform
+    SetOpacity(f32),
+    SetBlendMode(String),
+    SetPosition(f32, f32, f32),
+    SetScale(f32, f32),
+    SetRotation(f32),
+    // Effects
+    AddEffect(String),
+    RemoveEffect(usize),
+    ToggleEffect(usize, bool),
+    SetEffectParam(usize, usize, f32),
+    // Masks
+    AddMask,
+    RemoveMask(usize),
+    ToggleMask(usize, bool),
+    SetMaskOpacity(usize, f32),
+    SetMaskFeather(usize, f32),
+    ToggleMaskInvert(usize),
+    // Export
+    StartExport,
+}
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -55,6 +86,20 @@ pub struct PropertiesPanelState {
     // Export – audio
     pub export_sample_rate: u32,
     pub export_audio_bitrate: u32,
+    // Action queue — polled by app.rs each frame
+    pub action_queue: Vec<PropertiesAction>,
+}
+
+impl PropertiesPanelState {
+    /// Queue an action for app.rs to process this frame.
+    pub fn emit(&mut self, action: PropertiesAction) {
+        self.action_queue.push(action);
+    }
+
+    /// Drain all queued actions (called by app.rs each frame).
+    pub fn drain_actions(&mut self) -> Vec<PropertiesAction> {
+        std::mem::take(&mut self.action_queue)
+    }
 }
 
 impl Default for PropertiesPanelState {
@@ -67,34 +112,8 @@ impl Default for PropertiesPanelState {
             position: [960.0, 540.0, 0.0],
             scale: [100.0, 100.0],
             rotation: 0.0,
-            effects: vec![
-                EffectEntry {
-                    name: "Gaussian Blur".to_string(),
-                    enabled: true,
-                    expanded: true,
-                    params: vec![
-                        ("Radius".to_string(), 5.0, 0.0, 100.0),
-                        ("Quality".to_string(), 3.0, 1.0, 5.0),
-                    ],
-                },
-                EffectEntry {
-                    name: "Color Correction".to_string(),
-                    enabled: true,
-                    expanded: false,
-                    params: vec![
-                        ("Brightness".to_string(), 0.0, -100.0, 100.0),
-                        ("Contrast".to_string(), 0.0, -100.0, 100.0),
-                        ("Saturation".to_string(), 0.0, -100.0, 100.0),
-                    ],
-                },
-            ],
-            masks: vec![MaskEntry {
-                name: "Mask 1".to_string(),
-                enabled: true,
-                opacity: 100.0,
-                feather: 0.0,
-                inverted: false,
-            }],
+            effects: vec![],
+            masks: vec![],
             export_container: "MP4".to_string(),
             export_codec: "H.264".to_string(),
             export_width: 1920,
@@ -104,6 +123,7 @@ impl Default for PropertiesPanelState {
             export_progress: 0.0,
             export_sample_rate: 48000,
             export_audio_bitrate: 256,
+            action_queue: Vec::new(),
         }
     }
 }
@@ -263,6 +283,7 @@ fn show_transform_section(ui: &mut egui::Ui, state: &mut PropertiesPanelState) {
     ui.add_space(4.0);
 
     // ── Blend Mode ───────────────────────────────────────────────────────
+    let prev_blend = state.blend_mode.clone();
     ui.horizontal(|ui| {
         prop_label(ui, "Blend Mode");
         let blend_modes = ["Normal", "Multiply", "Screen", "Overlay", "Add", "Subtract"];
@@ -279,17 +300,29 @@ fn show_transform_section(ui: &mut egui::Ui, state: &mut PropertiesPanelState) {
                 }
             });
     });
+    if state.blend_mode != prev_blend {
+        state.emit(PropertiesAction::SetBlendMode(state.blend_mode.clone()));
+    }
 
     ui.add_space(4.0);
 
     // ── Opacity ──────────────────────────────────────────────────────────
     ui.horizontal(|ui| {
         prop_label(ui, "Opacity");
-        ui.add(
+        let resp = ui.add(
             egui::Slider::new(&mut state.opacity, 0.0..=100.0)
                 .suffix("%")
                 .text_color(Color32::WHITE),
         );
+        if resp.drag_started() {
+            state.emit(PropertiesAction::DragStart("Opacity".to_string()));
+        }
+        if resp.changed() {
+            state.emit(PropertiesAction::SetOpacity(state.opacity));
+        }
+        if resp.drag_stopped() {
+            state.emit(PropertiesAction::DragEnd);
+        }
         keyframe_button(ui, "kf_opacity", false);
     });
 
@@ -305,11 +338,24 @@ fn show_transform_section(ui: &mut egui::Ui, state: &mut PropertiesPanelState) {
                 .enumerate()
             {
                 prop_label(ui, axis);
-                ui.add(
+                let resp = ui.add(
                     egui::DragValue::new(&mut state.position[i])
                         .speed(1.0)
                         .range(-10000.0..=10000.0),
                 );
+                if resp.drag_started() {
+                    state.emit(PropertiesAction::DragStart(format!("{axis}")));
+                }
+                if resp.changed() {
+                    state.emit(PropertiesAction::SetPosition(
+                        state.position[0],
+                        state.position[1],
+                        state.position[2],
+                    ));
+                }
+                if resp.drag_stopped() {
+                    state.emit(PropertiesAction::DragEnd);
+                }
                 keyframe_button(ui, &format!("kf_pos_{i}"), false);
                 ui.end_row();
             }
@@ -324,11 +370,20 @@ fn show_transform_section(ui: &mut egui::Ui, state: &mut PropertiesPanelState) {
         .show(ui, |ui| {
             for (i, axis) in ["Scale X", "Scale Y"].iter().enumerate() {
                 prop_label(ui, axis);
-                ui.add(
+                let resp = ui.add(
                     egui::Slider::new(&mut state.scale[i], 0.0..=200.0)
                         .suffix("%")
                         .text_color(Color32::WHITE),
                 );
+                if resp.drag_started() {
+                    state.emit(PropertiesAction::DragStart(format!("{axis}")));
+                }
+                if resp.changed() {
+                    state.emit(PropertiesAction::SetScale(state.scale[0], state.scale[1]));
+                }
+                if resp.drag_stopped() {
+                    state.emit(PropertiesAction::DragEnd);
+                }
                 keyframe_button(ui, &format!("kf_scale_{i}"), false);
                 ui.end_row();
             }
@@ -339,11 +394,20 @@ fn show_transform_section(ui: &mut egui::Ui, state: &mut PropertiesPanelState) {
     // ── Rotation ─────────────────────────────────────────────────────────
     ui.horizontal(|ui| {
         prop_label(ui, "Rotation");
-        ui.add(
+        let resp = ui.add(
             egui::Slider::new(&mut state.rotation, -360.0..=360.0)
                 .suffix("\u{00B0}")
                 .text_color(Color32::WHITE),
         );
+        if resp.drag_started() {
+            state.emit(PropertiesAction::DragStart("Rotation".to_string()));
+        }
+        if resp.changed() {
+            state.emit(PropertiesAction::SetRotation(state.rotation));
+        }
+        if resp.drag_stopped() {
+            state.emit(PropertiesAction::DragEnd);
+        }
         keyframe_button(ui, "kf_rotation", false);
     });
 }
@@ -371,17 +435,20 @@ fn show_effects_section(ui: &mut egui::Ui, state: &mut PropertiesPanelState) {
             )
             .clicked()
         {
+            let effect_name = format!("New Effect {}", state.effects.len() + 1);
             state.effects.push(EffectEntry {
-                name: format!("New Effect {}", state.effects.len() + 1),
+                name: effect_name.clone(),
                 enabled: true,
                 expanded: true,
                 params: vec![("Amount".to_string(), 50.0, 0.0, 100.0)],
             });
+            state.emit(PropertiesAction::AddEffect(effect_name));
         }
 
         ui.add_space(6.0);
 
         let mut delete_index: Option<usize> = None;
+        let mut deferred_fx: Vec<PropertiesAction> = Vec::new();
 
         for (idx, effect) in state.effects.iter_mut().enumerate() {
             ui.push_id(format!("effect_{idx}"), |ui| {
@@ -410,7 +477,12 @@ fn show_effects_section(ui: &mut egui::Ui, state: &mut PropertiesPanelState) {
                         }
 
                         // Enable checkbox
+                        let prev_enabled = effect.enabled;
                         ui.checkbox(&mut effect.enabled, "");
+                        if effect.enabled != prev_enabled {
+                            deferred_fx
+                                .push(PropertiesAction::ToggleEffect(idx, effect.enabled));
+                        }
 
                         // Name
                         ui.label(RichText::new(&effect.name).color(Color32::WHITE).size(12.0));
@@ -438,13 +510,29 @@ fn show_effects_section(ui: &mut egui::Ui, state: &mut PropertiesPanelState) {
                         .inner_margin(egui::Margin::symmetric(12, 6));
 
                     params_frame.show(ui, |ui| {
-                        for (name, value, min, max) in effect.params.iter_mut() {
+                        for (param_idx, (name, value, min, max)) in
+                            effect.params.iter_mut().enumerate()
+                        {
                             ui.horizontal(|ui| {
                                 prop_label(ui, name);
-                                ui.add(
+                                let resp = ui.add(
                                     egui::Slider::new(value, *min..=*max)
                                         .text_color(Color32::WHITE),
                                 );
+                                if resp.drag_started() {
+                                    deferred_fx.push(PropertiesAction::DragStart(format!(
+                                        "Effect {} {}",
+                                        idx, name
+                                    )));
+                                }
+                                if resp.changed() {
+                                    deferred_fx.push(PropertiesAction::SetEffectParam(
+                                        idx, param_idx, *value,
+                                    ));
+                                }
+                                if resp.drag_stopped() {
+                                    deferred_fx.push(PropertiesAction::DragEnd);
+                                }
                             });
                         }
                     });
@@ -454,8 +542,13 @@ fn show_effects_section(ui: &mut egui::Ui, state: &mut PropertiesPanelState) {
             });
         }
 
+        for action in deferred_fx {
+            state.emit(action);
+        }
+
         if let Some(idx) = delete_index {
             state.effects.remove(idx);
+            state.emit(PropertiesAction::RemoveEffect(idx));
         }
     });
 }
@@ -490,11 +583,13 @@ fn show_masks_section(ui: &mut egui::Ui, state: &mut PropertiesPanelState) {
                 feather: 0.0,
                 inverted: false,
             });
+            state.emit(PropertiesAction::AddMask);
         }
 
         ui.add_space(6.0);
 
         let mut delete_index: Option<usize> = None;
+        let mut deferred_mask: Vec<PropertiesAction> = Vec::new();
 
         for (idx, mask) in state.masks.iter_mut().enumerate() {
             ui.push_id(format!("mask_{idx}"), |ui| {
@@ -506,7 +601,12 @@ fn show_masks_section(ui: &mut egui::Ui, state: &mut PropertiesPanelState) {
                 mask_frame.show(ui, |ui| {
                     // Header
                     ui.horizontal(|ui| {
+                        let prev_enabled = mask.enabled;
                         ui.checkbox(&mut mask.enabled, "");
+                        if mask.enabled != prev_enabled {
+                            deferred_mask
+                                .push(PropertiesAction::ToggleMask(idx, mask.enabled));
+                        }
                         ui.label(
                             RichText::new(&mask.name)
                                 .color(Color32::WHITE)
@@ -533,26 +633,56 @@ fn show_masks_section(ui: &mut egui::Ui, state: &mut PropertiesPanelState) {
                     // Opacity
                     ui.horizontal(|ui| {
                         prop_label(ui, "Opacity");
-                        ui.add(
+                        let resp = ui.add(
                             egui::Slider::new(&mut mask.opacity, 0.0..=100.0)
                                 .suffix("%")
                                 .text_color(Color32::WHITE),
                         );
+                        if resp.drag_started() {
+                            deferred_mask.push(PropertiesAction::DragStart(format!(
+                                "Mask {} Opacity",
+                                idx
+                            )));
+                        }
+                        if resp.changed() {
+                            deferred_mask
+                                .push(PropertiesAction::SetMaskOpacity(idx, mask.opacity));
+                        }
+                        if resp.drag_stopped() {
+                            deferred_mask.push(PropertiesAction::DragEnd);
+                        }
                     });
 
                     // Feather
                     ui.horizontal(|ui| {
                         prop_label(ui, "Feather");
-                        ui.add(
+                        let resp = ui.add(
                             egui::Slider::new(&mut mask.feather, 0.0..=50.0)
                                 .text_color(Color32::WHITE),
                         );
+                        if resp.drag_started() {
+                            deferred_mask.push(PropertiesAction::DragStart(format!(
+                                "Mask {} Feather",
+                                idx
+                            )));
+                        }
+                        if resp.changed() {
+                            deferred_mask
+                                .push(PropertiesAction::SetMaskFeather(idx, mask.feather));
+                        }
+                        if resp.drag_stopped() {
+                            deferred_mask.push(PropertiesAction::DragEnd);
+                        }
                     });
 
                     // Inverted
                     ui.horizontal(|ui| {
                         prop_label(ui, "Inverted");
+                        let prev_inverted = mask.inverted;
                         ui.checkbox(&mut mask.inverted, "");
+                        if mask.inverted != prev_inverted {
+                            deferred_mask.push(PropertiesAction::ToggleMaskInvert(idx));
+                        }
                     });
                 });
 
@@ -560,8 +690,13 @@ fn show_masks_section(ui: &mut egui::Ui, state: &mut PropertiesPanelState) {
             });
         }
 
+        for action in deferred_mask {
+            state.emit(action);
+        }
+
         if let Some(idx) = delete_index {
             state.masks.remove(idx);
+            state.emit(PropertiesAction::RemoveMask(idx));
         }
     });
 }
@@ -715,7 +850,7 @@ fn show_export_tab(ui: &mut egui::Ui, state: &mut PropertiesPanelState) {
         )
         .clicked()
     {
-        // Export action would be handled externally
+        state.emit(PropertiesAction::StartExport);
     }
 
     ui.add_space(6.0);

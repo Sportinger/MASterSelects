@@ -538,27 +538,43 @@ impl ms_common::GpuBackend for VulkanBackend {
         Ok(())
     }
 
-    // -- Hardware decode/encode (stubs) --
+    // -- Hardware decode/encode (Vulkan Video stubs) --
 
     fn create_decoder(
         &self,
         config: &ms_common::DecoderConfig,
     ) -> Result<Box<dyn ms_common::HwDecoder>, ms_common::DecodeError> {
-        // TODO(phase-1): Implement Vulkan Video decode.
-        Err(ms_common::DecodeError::HwDecoderInit {
-            codec: config.codec,
-            reason: "Vulkan Video decode not yet implemented".into(),
-        })
+        // Vulkan Video decode is not yet available at runtime.
+        // When VulkanVideoDecoder::is_available() returns true in a future
+        // release, this will create a real decoder session backed by
+        // VK_KHR_video_decode_queue.
+        if ms_decoder::VulkanVideoDecoder::is_available() {
+            let decoder = ms_decoder::VulkanVideoDecoder::new(config)?;
+            Ok(Box::new(decoder))
+        } else {
+            Err(ms_common::DecodeError::HwDecoderInit {
+                codec: config.codec,
+                reason: "Vulkan Video decode not available on this system".into(),
+            })
+        }
     }
 
     fn create_encoder(
         &self,
-        _config: &ms_common::EncoderConfig,
+        config: &ms_common::EncoderConfig,
     ) -> Result<Box<dyn ms_common::HwEncoder>, ms_common::EncodeError> {
-        // TODO(phase-3): Implement Vulkan Video encode.
-        Err(ms_common::EncodeError::HwEncoderInit(
-            "Vulkan Video encode not yet implemented".into(),
-        ))
+        // Vulkan Video encode is not yet available at runtime.
+        // When VulkanVideoEncoder::is_available() returns true in a future
+        // release, this will create a real encoder session backed by
+        // VK_KHR_video_encode_queue.
+        if ms_encoder::VulkanVideoEncoder::is_available() {
+            let encoder = ms_encoder::VulkanVideoEncoder::new(config)?;
+            Ok(Box::new(encoder))
+        } else {
+            Err(ms_common::EncodeError::HwEncoderInit(
+                "Vulkan Video encode not available on this system".into(),
+            ))
+        }
     }
 
     // -- Display bridge (stub) --
