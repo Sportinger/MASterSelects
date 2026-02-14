@@ -1,11 +1,13 @@
 // Texture creation and caching for images and video frames
 
 import { Logger } from '../../services/logger';
+import type { GpuMemoryManager } from '../gpuMemory/GpuMemoryManager';
 
 const log = Logger.create('TextureManager');
 
 export class TextureManager {
   private device: GPUDevice;
+  private gpuMemoryManager: GpuMemoryManager | null = null;
 
   // Cached image textures (created from HTMLImageElement)
   private imageTextures: Map<HTMLImageElement, GPUTexture> = new Map();
@@ -26,6 +28,10 @@ export class TextureManager {
 
   constructor(device: GPUDevice) {
     this.device = device;
+  }
+
+  setGpuMemoryManager(manager: GpuMemoryManager): void {
+    this.gpuMemoryManager = manager;
   }
 
   // Create GPU texture from HTMLImageElement
@@ -54,6 +60,7 @@ export class TextureManager {
       );
 
       this.imageTextures.set(image, texture);
+      this.gpuMemoryManager?.registerExternal(`img_${width}x${height}_${this.imageTextures.size}`, texture, width * height * 4, 'imageTexture');
       return texture;
     } catch (e) {
       log.error('Failed to create image texture', e);
@@ -87,6 +94,7 @@ export class TextureManager {
       );
 
       this.canvasTextures.set(canvas, texture);
+      this.gpuMemoryManager?.registerExternal(`canvas_${width}x${height}_${this.canvasTextures.size}`, texture, width * height * 4, 'dynamicTexture');
       return texture;
     } catch (e) {
       log.error('Failed to create canvas texture', e);
@@ -170,6 +178,7 @@ export class TextureManager {
       if (key) {
         const view = texture.createView();
         this.dynamicTextures.set(key, { texture, view, width, height });
+        this.gpuMemoryManager?.registerExternal(`dyn_${key}`, texture, width * height * 4, 'dynamicTexture');
       }
 
       return texture;
@@ -190,6 +199,7 @@ export class TextureManager {
     if (entry) {
       entry.texture.destroy();
       this.dynamicTextures.delete(key);
+      this.gpuMemoryManager?.unregisterExternal(`dyn_${key}`);
     }
   }
 

@@ -522,9 +522,23 @@ export class ParallelDecodeManager {
           // First 2 attempts: just wait briefly for async output callback
           await new Promise(r => setTimeout(r, 8));
         } else if (clipDecoder.decoder.decodeQueueSize > 0) {
-          // Flush decoder queue to force output
+          // Flush decoder queue to force output — with timeout to prevent infinite hang
           log.debug(`"${clipDecoder.clipName}": Flushing decoder (attempt ${attempt + 1}, queue=${clipDecoder.decoder.decodeQueueSize})`);
-          await clipDecoder.decoder.flush();
+          try {
+            await Promise.race([
+              clipDecoder.decoder.flush(),
+              new Promise<void>((_, reject) => setTimeout(() => reject(new Error('flush timeout')), 3000))
+            ]);
+          } catch {
+            log.warn(`"${clipDecoder.clipName}": Decoder flush timed out after 3s, resetting decoder`);
+            try {
+              clipDecoder.decoder.reset();
+              await clipDecoder.decoder.configure(clipDecoder.codecConfig);
+            } catch {
+              log.warn(`"${clipDecoder.clipName}": Reset failed, recreating decoder`);
+              await this.recreateDecoder(clipDecoder);
+            }
+          }
           clipDecoder.needsKeyframe = true;
         } else if (!clipDecoder.isDecoding) {
           // Queue is empty but frame not found — re-decode with forceFlush

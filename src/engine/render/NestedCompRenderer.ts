@@ -147,8 +147,8 @@ export class NestedCompRenderer {
     const nestedPingView = texturePair.pingView;
     const nestedPongView = texturePair.pongView;
 
-    // Collect layer data
-    const nestedLayerData = this.collectNestedLayerData(nestedLayers);
+    // Collect layer data (pass encoder+sampler for recursive nested comp rendering)
+    const nestedLayerData = this.collectNestedLayerData(nestedLayers, commandEncoder, sampler);
 
     // Debug: Log nested layer collection results
     log.debug('preRender', {
@@ -276,12 +276,33 @@ export class NestedCompRenderer {
     return compTexture.view;
   }
 
-  private collectNestedLayerData(layers: Layer[]): LayerRenderData[] {
+  private collectNestedLayerData(
+    layers: Layer[],
+    commandEncoder?: GPUCommandEncoder,
+    sampler?: GPUSampler
+  ): LayerRenderData[] {
     const result: LayerRenderData[] = [];
 
     for (let i = layers.length - 1; i >= 0; i--) {
       const layer = layers[i];
       if (!layer?.visible || !layer.source || layer.opacity === 0) continue;
+
+      // Nested composition within nested composition (multi-level nesting)
+      if (layer.source.nestedComposition && commandEncoder && sampler) {
+        const nc = layer.source.nestedComposition;
+        const view = this.preRender(
+          nc.compositionId, nc.layers, nc.width, nc.height,
+          commandEncoder, sampler, nc.currentTime
+        );
+        if (view) {
+          result.push({
+            layer, isVideo: false, externalTexture: null,
+            textureView: view,
+            sourceWidth: nc.width, sourceHeight: nc.height,
+          });
+          continue;
+        }
+      }
 
       // NativeDecoder (turbo mode — ImageBitmap-based)
       if (layer.source.nativeDecoder) {

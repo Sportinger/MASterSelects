@@ -8,8 +8,14 @@ import type { TimelineClip, TimelineTrack, Layer, Keyframe } from '../types';
 import type { MediaFile, Composition, MediaFolder, TextItem, SolidItem } from './mediaStore/types';
 import type { TimelineMarker } from './timeline/types';
 import type { DockNode } from '../types/dock';
+import { SnapshotManager } from '../engine/structuralSharing/SnapshotManager';
+import type { HistorySnapshotV2 } from '../engine/structuralSharing/types';
 
 const log = Logger.create('History');
+
+// Singleton SnapshotManager for structural sharing
+const snapshotManager = new SnapshotManager();
+let lastV2Snapshot: HistorySnapshotV2 | undefined;
 
 // Snapshot of undoable state from all stores
 interface StateSnapshot {
@@ -177,27 +183,34 @@ function createSnapshot(label: string): StateSnapshot {
   const media = getMediaState?.() || ({} as any);
   const dock = getDockState?.() || ({} as any);
 
-  // Convert Map<string, Keyframe[]> to plain object for cloning
-  const keyframesObj: Record<string, Keyframe[]> = {};
-  if (timeline.clipKeyframes instanceof Map) {
-    timeline.clipKeyframes.forEach((kfs: Keyframe[], clipId: string) => {
-      keyframesObj[clipId] = deepClone(kfs);
-    });
-  }
+  // Structural sharing: only clone changed clips, share unchanged refs
+  const currentKeyframes: Map<string, Keyframe[]> = timeline.clipKeyframes instanceof Map
+    ? timeline.clipKeyframes
+    : new Map();
+
+  const v2Snapshot = snapshotManager.createSnapshot(
+    label,
+    timeline.clips || [],
+    timeline.tracks || [],
+    currentKeyframes,
+    timeline.markers || [],
+    lastV2Snapshot
+  );
+  lastV2Snapshot = v2Snapshot;
 
   return {
-    timestamp: Date.now(),
+    timestamp: v2Snapshot.timestamp,
     label,
     timeline: {
-      clips: deepClone(timeline.clips || []),
-      tracks: deepClone(timeline.tracks || []),
+      clips: v2Snapshot.clips as any, // SerializedClipState[] used as TimelineClip[] (serialized subset)
+      tracks: v2Snapshot.tracks,
       selectedClipIds: timeline.selectedClipIds ? [...timeline.selectedClipIds] : [],
       zoom: timeline.zoom || 50,
       scrollX: timeline.scrollX || 0,
       layers: deepClone((timeline.layers || []).filter(Boolean)),
       selectedLayerId: timeline.selectedLayerId || null,
-      clipKeyframes: keyframesObj,
-      markers: deepClone(timeline.markers || []),
+      clipKeyframes: v2Snapshot.clipKeyframes,
+      markers: v2Snapshot.markers,
     },
     media: {
       files: deepClone(media.files || []),
@@ -462,3 +475,9 @@ export const undo = () => useHistoryStore.getState().undo();
 export const redo = () => useHistoryStore.getState().redo();
 export const startBatch = (label: string) => useHistoryStore.getState().startBatch(label);
 export const endBatch = () => useHistoryStore.getState().endBatch();
+
+/** Track a clip as changed for structural sharing (call before captureSnapshot) */
+export const trackClipChange = (clipId: string) => snapshotManager.trackChange(clipId);
+
+/** Track multiple clip changes for structural sharing */
+export const trackClipChanges = (clipIds: string[]) => snapshotManager.trackChanges(clipIds);

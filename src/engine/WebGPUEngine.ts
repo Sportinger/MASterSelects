@@ -30,6 +30,7 @@ import { LayerCollector } from './render/LayerCollector';
 import { Compositor } from './render/Compositor';
 import { NestedCompRenderer } from './render/NestedCompRenderer';
 import { RenderDispatcher } from './render/RenderDispatcher';
+import { GpuMemoryManager } from './gpuMemory/GpuMemoryManager';
 
 export class WebGPUEngine {
   // Core context
@@ -57,6 +58,9 @@ export class WebGPUEngine {
   private effectsPipeline: EffectsPipeline | null = null;
   private outputPipeline: OutputPipeline | null = null;
   private slicePipeline: SlicePipeline | null = null;
+
+  // GPU memory tracking
+  private gpuMemoryManager: GpuMemoryManager | null = null;
 
   // Resources
   private sampler: GPUSampler | null = null;
@@ -109,8 +113,13 @@ export class WebGPUEngine {
     const device = this.context.getDevice();
     if (!device) return;
 
+    // GPU memory tracking
+    this.gpuMemoryManager = new GpuMemoryManager(device);
+    this.performanceStats.setGpuMemoryManager(this.gpuMemoryManager);
+
     // Initialize managers
     this.textureManager = new TextureManager(device);
+    this.textureManager.setGpuMemoryManager(this.gpuMemoryManager);
     this.maskTextureManager = new MaskTextureManager(device);
     this.cacheManager.initialize(device);
 
@@ -132,6 +141,7 @@ export class WebGPUEngine {
 
     // Initialize extracted modules
     this.renderTargetManager = new RenderTargetManager(device);
+    this.renderTargetManager.setGpuMemoryManager(this.gpuMemoryManager);
 
     // Create black texture first (tiny - 1x1 pixel)
     this.renderTargetManager.createBlackTexture((r, g, b, a) =>

@@ -84,8 +84,101 @@ export class VideoSyncManager {
       }
     }
 
+    // Preload upcoming clips (seek video to start position before they become active)
+    if (ctx.isPlaying) {
+      this.preloadUpcomingClips(ctx);
+    }
+
     // Sync background layer video elements
     layerPlaybackManager.syncVideoElements(ctx.playheadPosition, ctx.isPlaying);
+  }
+
+  // Track which clips are being pre-rolled to avoid redundant play() calls
+  private prerollingClips = new Set<string>();
+
+  /**
+   * Preload video elements for clips about to become active.
+   * Two-phase strategy:
+   *   - 2s+ out: seek to start position and pause (buffering)
+   *   - <0.5s out: start playing muted so decoder is warm (preroll)
+   * This eliminates the 1-2 frame stutter on clip transitions.
+   */
+  private preloadUpcomingClips(ctx: FrameContext): void {
+    const lookaheadSec = 2;
+    const prerollSec = 0.5; // Start playing muted when clip is <0.5s away
+    const lookaheadEnd = ctx.playheadPosition + lookaheadSec;
+
+    for (const clip of ctx.clips) {
+      // Only care about clips that START within the lookahead window
+      if (clip.startTime <= ctx.playheadPosition || clip.startTime > lookaheadEnd) continue;
+
+      const timeUntilStart = clip.startTime - ctx.playheadPosition;
+
+      if (clip.source?.videoElement) {
+        this.preloadVideoElement(clip.id, clip.source.videoElement, clip, timeUntilStart, prerollSec);
+      }
+
+      if (clip.source?.nativeDecoder) {
+        const targetTime = clip.reversed ? clip.outPoint : clip.inPoint;
+        const fps = clip.source.nativeDecoder.fps || 25;
+        const targetFrame = Math.round(targetTime * fps);
+        clip.source.nativeDecoder.seekToFrame(targetFrame, false).catch(() => {});
+      }
+
+      // Preload nested comp video elements
+      if (clip.isComposition && clip.nestedClips) {
+        for (const nestedClip of clip.nestedClips) {
+          if (!nestedClip.source?.videoElement) continue;
+          this.preloadVideoElement(nestedClip.id, nestedClip.source.videoElement, nestedClip, timeUntilStart, prerollSec);
+        }
+      }
+    }
+
+    // Clean up preroll tracking for clips that are now active
+    for (const clipId of this.prerollingClips) {
+      const clip = ctx.clips.find(c => c.id === clipId);
+      if (clip && ctx.playheadPosition >= clip.startTime) {
+        this.prerollingClips.delete(clipId);
+      }
+    }
+  }
+
+  /**
+   * Preload a single video element.
+   * Phase 1 (>0.5s): seek to inPoint + pause (buffer ahead)
+   * Phase 2 (<0.5s): play muted from inPoint (decoder warm-up)
+   */
+  private preloadVideoElement(
+    clipId: string,
+    video: HTMLVideoElement,
+    clip: TimelineClip,
+    timeUntilStart: number,
+    prerollSec: number
+  ): void {
+    const targetTime = clip.reversed ? clip.outPoint : clip.inPoint;
+    const timeDiff = Math.abs(video.currentTime - targetTime);
+
+    if (timeUntilStart <= prerollSec) {
+      // Phase 2: Preroll — play muted so decoder is warm
+      if (!this.prerollingClips.has(clipId)) {
+        // Seek to start position first if needed
+        if (timeDiff > 0.1 && !video.seeking) {
+          video.currentTime = targetTime;
+        }
+        video.muted = true;
+        video.play().then(() => {
+          this.prerollingClips.add(clipId);
+        }).catch(() => {});
+      }
+    } else {
+      // Phase 1: Seek and pause (buffer ahead of time)
+      if (timeDiff > 0.1 && !video.seeking) {
+        video.currentTime = targetTime;
+      }
+      if (!video.paused) {
+        video.pause();
+      }
+    }
   }
 
   /**

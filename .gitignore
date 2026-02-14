@@ -59,10 +59,15 @@ ffmpeg-wasm-build/build.log
 public/test-videos/
 
 # Rust build artifacts
+target/
 tools/helpers/*/target/
 tools/native-helper/target/
 helpers/*/target/
 masterselects-helper/
+
+# Ralph (AI tool config)
+.ralph/
+.ralphrc
 
 # Native helper - bundled FFmpeg binaries (too large for git)
 tools/native-helper/ffmpeg/

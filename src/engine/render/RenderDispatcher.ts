@@ -19,6 +19,12 @@ import { useRenderTargetStore } from '../../stores/renderTargetStore';
 import { useSliceStore } from '../../stores/sliceStore';
 import { reportRenderTime } from '../../services/performanceMonitor';
 import { Logger } from '../../services/logger';
+import { flags } from '../featureFlags';
+import { SceneGraphBuilder } from '../sceneGraph/SceneGraphBuilder';
+import { SceneGraphEvaluator } from '../sceneGraph/SceneGraphEvaluator';
+import { RenderGraphBuilder } from '../renderGraph/RenderGraphBuilder';
+import { RenderGraphExecutor } from '../renderGraph/RenderGraphExecutor';
+import { useTimelineStore } from '../../stores/timeline';
 
 const log = Logger.create('RenderDispatcher');
 
@@ -52,6 +58,12 @@ export class RenderDispatcher {
   lastRenderHadContent = false;
   private deps: RenderDeps;
 
+  // Render Graph instances (lazy-initialized when flag is enabled)
+  private sceneGraphBuilder = new SceneGraphBuilder();
+  private sceneGraphEvaluator = new SceneGraphEvaluator();
+  private renderGraphBuilder = new RenderGraphBuilder();
+  private renderGraphExecutor = new RenderGraphExecutor();
+
   constructor(deps: RenderDeps) {
     this.deps = deps;
   }
@@ -61,6 +73,12 @@ export class RenderDispatcher {
   render(layers: Layer[]): void {
     const d = this.deps;
     if (d.isRecovering()) return;
+
+    // Render Graph path: build scene graph → evaluate → build render graph → execute
+    if (flags.useRenderGraph) {
+      this.renderViaRenderGraph();
+      return;
+    }
 
     const device = d.getDevice();
     if (!device || !d.compositorPipeline || !d.outputPipeline || !d.sampler) return;
@@ -490,5 +508,41 @@ export class RenderDispatcher {
       log.warn('Failed to render cached frame', e);
       return false;
     }
+  }
+
+  // === RENDER GRAPH PATH ===
+
+  private renderViaRenderGraph(): void {
+    const d = this.deps;
+    const device = d.getDevice();
+    if (!device || !d.renderTargetManager) return;
+
+    const { width, height } = d.renderTargetManager.getResolution();
+    const t0 = performance.now();
+
+    // Build scene graph from current store state
+    const graph = this.sceneGraphBuilder.build();
+
+    // Evaluate at current playhead position
+    const playheadPosition = useTimelineStore.getState().playheadPosition;
+    const evaluated = this.sceneGraphEvaluator.evaluate(graph, playheadPosition);
+
+    if (evaluated.length === 0) {
+      this.lastRenderHadContent = false;
+      this.renderEmptyFrame(device);
+      d.performanceStats.setLayerCount(0);
+      return;
+    }
+    this.lastRenderHadContent = true;
+
+    // Build and execute render graph
+    const renderGraph = this.renderGraphBuilder.build(evaluated, width, height);
+    this.renderGraphExecutor.execute(renderGraph, d);
+
+    // Stats
+    const totalTime = performance.now() - t0;
+    d.performanceStats.setLayerCount(evaluated.length);
+    d.performanceStats.updateStats();
+    reportRenderTime(totalTime);
   }
 }

@@ -2,11 +2,13 @@
 
 import { Logger } from '../../services/logger';
 import type { RenderTargets } from './types';
+import type { GpuMemoryManager } from '../gpuMemory/GpuMemoryManager';
 
 const log = Logger.create('RenderTargetManager');
 
 export class RenderTargetManager {
   private device: GPUDevice;
+  private gpuMemoryManager: GpuMemoryManager | null = null;
   private pingTexture: GPUTexture | null = null;
   private pongTexture: GPUTexture | null = null;
   private pingView: GPUTextureView | null = null;
@@ -28,6 +30,10 @@ export class RenderTargetManager {
 
   constructor(device: GPUDevice) {
     this.device = device;
+  }
+
+  setGpuMemoryManager(manager: GpuMemoryManager): void {
+    this.gpuMemoryManager = manager;
   }
 
   createPingPongTextures(): void {
@@ -112,6 +118,9 @@ export class RenderTargetManager {
         this.effectTempView2 = this.effectTempTexture2.createView();
       }
 
+      // Register all textures with GPU memory manager for VRAM tracking
+      this.registerTexturesWithMemoryManager();
+
       log.info('Ping-pong textures created successfully');
     } catch (e) {
       log.error('Failed to create ping-pong textures', e);
@@ -176,6 +185,25 @@ export class RenderTargetManager {
     this.effectTempTexture2 = null;
     this.effectTempView = null;
     this.effectTempView2 = null;
+  }
+
+  private registerTexturesWithMemoryManager(): void {
+    if (!this.gpuMemoryManager) return;
+    const w = this.outputWidth;
+    const h = this.outputHeight;
+    const texBytes = w * h * 4; // rgba8unorm = 4 bpp
+
+    // Unregister old first
+    for (const id of ['rt_ping', 'rt_pong', 'rt_indPing', 'rt_indPong', 'rt_effectTmp1', 'rt_effectTmp2']) {
+      this.gpuMemoryManager.unregisterExternal(id);
+    }
+
+    if (this.pingTexture) this.gpuMemoryManager.registerExternal('rt_ping', this.pingTexture, texBytes, 'pingPong');
+    if (this.pongTexture) this.gpuMemoryManager.registerExternal('rt_pong', this.pongTexture, texBytes, 'pingPong');
+    if (this.independentPingTexture) this.gpuMemoryManager.registerExternal('rt_indPing', this.independentPingTexture, texBytes, 'pingPong');
+    if (this.independentPongTexture) this.gpuMemoryManager.registerExternal('rt_indPong', this.independentPongTexture, texBytes, 'pingPong');
+    if (this.effectTempTexture) this.gpuMemoryManager.registerExternal('rt_effectTmp1', this.effectTempTexture, texBytes, 'effectTemp');
+    if (this.effectTempTexture2) this.gpuMemoryManager.registerExternal('rt_effectTmp2', this.effectTempTexture2, texBytes, 'effectTemp');
   }
 
   destroy(): void {
