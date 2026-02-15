@@ -386,6 +386,12 @@ export function useEngine() {
           return;
         }
 
+        // Continuous playback: for contiguous same-source clips (simple cuts),
+        // hand off the playing video element to the next clip so the decoder
+        // plays through the cut point without pause/seek — like DaVinci Resolve.
+        // Must run BEFORE buildLayersFromStore so the Layer gets the correct video.
+        layerBuilder.prepareContinuousPlayback();
+
         // Build layers directly from stores (single source of truth)
         const layers = layerBuilder.buildLayersFromStore();
 

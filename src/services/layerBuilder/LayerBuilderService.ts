@@ -129,6 +129,15 @@ export class LayerBuilderService {
   // ==================== VIDEO & AUDIO SYNC (delegated) ====================
 
   /**
+   * Prepare continuous playback for contiguous same-source clips.
+   * Swaps video elements so clips inherit the playing video from the previous clip.
+   * Call BEFORE buildLayersFromStore().
+   */
+  prepareContinuousPlayback(): void {
+    this.videoSyncManager.prepareContinuousPlayback();
+  }
+
+  /**
    * Finalize prerolled clips before render — pauses prerolled videos
    * and seeks to correct position so first render frame is correct.
    * Call BEFORE engine.render().

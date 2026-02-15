@@ -39,6 +39,15 @@ export class VideoSyncManager {
   private sortedClipsByStart: TimelineClip[] = [];
   private lastClipsRef: TimelineClip[] = [];
 
+  // Continuous playback: track which clip was active per track to detect transitions
+  // and hand off video elements for contiguous same-source clips (like DaVinci's approach)
+  private trackPlaybackState = new Map<string, {
+    clipId: string;
+    sourceMediaFileId: string;
+    outPoint: number;
+    endTime: number;
+  }>();
+
   /**
    * Pre-render step: finalize prerolled clips that are now active.
    * Seeks prerolled videos to correct position and unmutes BEFORE render.
@@ -73,6 +82,73 @@ export class VideoSyncManager {
       }
 
       this.prerollingClips.delete(clipId);
+    }
+  }
+
+  /**
+   * Continuous playback optimization for contiguous same-source clips.
+   *
+   * When clip B follows clip A on the same track from the same source file,
+   * and they're contiguous in both timeline and source time (i.e., a simple cut),
+   * we swap video elements: clip B inherits clip A's playing video element.
+   * The video keeps playing through the cut point — zero seek, zero stutter.
+   *
+   * This mimics how DaVinci Resolve handles cuts: one decoder per source file
+   * that plays through cut points without interruption.
+   *
+   * Must be called BEFORE buildLayersFromStore() so the Layer gets the correct video.
+   */
+  prepareContinuousPlayback(): void {
+    const ctx = createFrameContext();
+
+    if (!ctx.isPlaying) {
+      this.trackPlaybackState.clear();
+      return;
+    }
+
+    for (const clip of ctx.clipsAtTime) {
+      if (!clip.source?.videoElement || clip.source.type !== 'video') continue;
+      if (clip.reversed) continue; // Don't optimize reversed clips
+
+      const sourceId = clip.source.mediaFileId || clip.mediaFileId || '';
+      const prev = this.trackPlaybackState.get(clip.trackId);
+
+      if (prev && prev.clipId !== clip.id && sourceId !== '') {
+        // Transition detected — check if same source + contiguous
+        const isSameSource = sourceId === prev.sourceMediaFileId;
+        const isContiguousTimeline = Math.abs(prev.endTime - clip.startTime) < 0.001;
+        const isContiguousSource = Math.abs(prev.outPoint - clip.inPoint) < 0.02; // ~1 frame tolerance
+
+        if (isSameSource && isContiguousTimeline && isContiguousSource) {
+          // Find previous clip to swap video elements
+          const prevClip = ctx.clips.find(c => c.id === prev.clipId);
+          if (prevClip?.source?.videoElement) {
+            // SWAP: give the playing video to the new clip.
+            // The playing video is already at the correct position (outPoint of prev ≈ inPoint of clip).
+            // The new clip's idle video goes to the previous clip (will be paused by sync loop).
+            const playingVideo = prevClip.source.videoElement;
+            const playingWC = prevClip.source.webCodecsPlayer;
+            const idleVideo = clip.source.videoElement;
+            const idleWC = clip.source.webCodecsPlayer;
+
+            clip.source.videoElement = playingVideo;
+            clip.source.webCodecsPlayer = playingWC;
+            prevClip.source.videoElement = idleVideo;
+            prevClip.source.webCodecsPlayer = idleWC;
+
+            // Cancel preroll — video is already playing at the correct position
+            this.prerollingClips.delete(clip.id);
+          }
+        }
+      }
+
+      // Update tracking for current active clip
+      this.trackPlaybackState.set(clip.trackId, {
+        clipId: clip.id,
+        sourceMediaFileId: sourceId,
+        outPoint: clip.outPoint,
+        endTime: clip.startTime + clip.duration,
+      });
     }
   }
 
@@ -169,6 +245,26 @@ export class VideoSyncManager {
       if (clip.startTime > lookaheadEnd) break; // Sorted: all remaining are past lookahead
 
       const timeUntilStart = clip.startTime - ctx.playheadPosition;
+
+      // Skip preload for clips that will receive continuous playback handoff:
+      // same source + contiguous with the currently active clip on the same track.
+      // The video element will just keep playing through the cut point.
+      if (clip.source?.videoElement && !clip.reversed) {
+        const activeClip = ctx.clipsByTrackId.get(clip.trackId);
+        if (activeClip?.source?.videoElement) {
+          const activeSourceId = activeClip.source.mediaFileId || activeClip.mediaFileId || '';
+          const upcomingSourceId = clip.source.mediaFileId || clip.mediaFileId || '';
+          if (activeSourceId !== '' && activeSourceId === upcomingSourceId) {
+            const isContiguousTimeline = Math.abs(
+              (activeClip.startTime + activeClip.duration) - clip.startTime
+            ) < 0.001;
+            const isContiguousSource = Math.abs(activeClip.outPoint - clip.inPoint) < 0.02;
+            if (isContiguousTimeline && isContiguousSource) {
+              continue; // Skip — video will play through from active clip
+            }
+          }
+        }
+      }
 
       if (clip.source?.videoElement) {
         this.preloadVideoElement(clip.id, clip.source.videoElement, clip, timeUntilStart, prerollSec);
