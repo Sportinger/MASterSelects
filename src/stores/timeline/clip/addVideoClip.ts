@@ -8,18 +8,13 @@ import { useSettingsStore } from '../../settingsStore';
 import { NativeDecoder } from '../../../services/nativeHelper';
 import { NativeHelperClient } from '../../../services/nativeHelper/NativeHelperClient';
 import {
-  initWebCodecsPlayer,
-  warmUpVideoDecoder,
-  createVideoElement,
+  initWebCodecsFullMode,
   createAudioElement,
-  waitForVideoMetadata,
 } from '../helpers/webCodecsHelpers';
 import { shouldSkipWaveform, generateWaveformForFile } from '../helpers/waveformHelpers';
 import { generateLinkedClipIds } from '../helpers/idGenerator';
 import { blobUrlManager } from '../helpers/blobUrlManager';
 import { updateClipById } from '../helpers/clipStateHelpers';
-import { detectVideoAudio } from '../helpers/audioDetection';
-import { getMP4MetadataFast, estimateDurationFromFileSize } from '../helpers/mp4MetadataHelper';
 import { Logger } from '../../../services/logger';
 import { thumbnailCache } from '../../../services/thumbnailCache';
 
@@ -122,7 +117,6 @@ export async function loadVideoMedia(params: LoadVideoMediaParams): Promise<void
   const useNativeDecoder = nativeDecodeEnabled && nativeHelperConnected;
 
   let nativeDecoder: NativeDecoder | null = null;
-  let video: HTMLVideoElement | null = null;
   let naturalDuration = 5; // default estimate
 
   // Try Native Helper for professional codecs (ProRes, DNxHD)
@@ -183,117 +177,55 @@ export async function loadVideoMedia(params: LoadVideoMediaParams): Promise<void
     }
   }
 
-  // Fallback to HTMLVideoElement if not using native decoder
+  // Fallback to WebCodecs Full Mode if not using native decoder
   if (!nativeDecoder) {
-    video = createVideoElement(file);
-    // Track the blob URL for cleanup
-    blobUrlManager.create(clipId, file, 'video');
+    try {
+      const { player, audioPlayer } = await initWebCodecsFullMode(file);
+      naturalDuration = player.duration;
 
-    // Race: MP4Box container parsing vs HTMLVideoElement metadata
-    // MP4Box reads from both start+end of file to handle camera MOV files
-    // where the moov atom is at the end (not web-optimized)
-    const [mp4Meta, _] = await Promise.all([
-      getMP4MetadataFast(file, 6000),
-      waitForVideoMetadata(video, 8000),
-    ]);
+      // Calculate native pixel scale so content appears at actual size
+      const nativeScale = (player.width && player.height)
+        ? calculateNativeScale(player.width, player.height)
+        : { x: 1, y: 1 };
 
-    // Prefer MP4Box duration (works with any codec, reads moov from end)
-    // Fall back to video element, then file size estimate
-    if (mp4Meta?.duration && mp4Meta.duration > 0) {
-      naturalDuration = mp4Meta.duration;
-      log.debug('Using MP4Box duration', { file: file.name, duration: naturalDuration.toFixed(2) });
-    } else if (video.duration && isFinite(video.duration)) {
-      naturalDuration = video.duration;
-      log.debug('Using video element duration', { file: file.name, duration: naturalDuration.toFixed(2) });
-    } else {
-      // Last resort: estimate from file size
-      naturalDuration = estimateDurationFromFileSize(file);
-      log.warn('Duration unknown, estimated from file size', { file: file.name, duration: naturalDuration.toFixed(2), size: file.size });
-    }
-
-    // Calculate native pixel scale so content appears at actual size
-    const nativeScale = (video.videoWidth && video.videoHeight)
-      ? calculateNativeScale(video.videoWidth, video.videoHeight)
-      : { x: 1, y: 1 };
-
-    // Set isLoading: false immediately so clip becomes interactive
-    updateClip(clipId, {
-      duration: naturalDuration,
-      outPoint: naturalDuration,
-      source: { type: 'video', videoElement: video, naturalDuration, mediaFileId },
-      transform: { ...DEFAULT_TRANSFORM, scale: nativeScale },
-      isLoading: false,
-    });
-
-    if (audioClipId) {
-      updateClip(audioClipId, { duration: naturalDuration, outPoint: naturalDuration });
-    }
-
-    // Audio detection in background (non-blocking)
-    // Use MP4Box result if available, otherwise detect separately
-    if (mp4Meta) {
-      if (!mp4Meta.hasAudio && audioClipId) {
-        log.debug('MP4Box: no audio tracks, removing audio clip', { file: file.name });
-        setClips(clips => clips.filter(c => c.id !== audioClipId));
-        blobUrlManager.revokeAll(audioClipId);
-      }
-    } else {
-      detectVideoAudio(file).then(videoHasAudio => {
-        if (!videoHasAudio) {
-          log.debug('Video has no audio tracks', { file: file.name });
-          if (audioClipId) {
-            log.debug('Removing audio clip for video without audio', { file: file.name });
-            setClips(clips => clips.filter(c => c.id !== audioClipId));
-            blobUrlManager.revokeAll(audioClipId);
-          }
-        }
+      log.debug('WebCodecs Full Mode ready', {
+        file: file.name,
+        width: player.width,
+        height: player.height,
+        duration: naturalDuration.toFixed(2),
+        hasAudio: player.hasAudioTrack(),
       });
-    }
 
-    // If video element eventually loads real metadata, update duration
-    // (covers the file-size-estimate fallback case)
-    if (!video.duration || !isFinite(video.duration)) {
-      video.addEventListener('loadedmetadata', () => {
-        if (video!.duration && isFinite(video!.duration) && video!.duration !== naturalDuration) {
-          const realDuration = video!.duration;
-          log.debug('Late metadata arrived, updating duration', { file: file.name, from: naturalDuration.toFixed(2), to: realDuration.toFixed(2) });
-          setClips(clips => clips.map(c => {
-            if (c.id !== clipId) return c;
-            return {
-              ...c,
-              duration: realDuration,
-              outPoint: realDuration,
-              source: c.source ? { ...c.source, naturalDuration: realDuration } : c.source,
-            };
-          }));
-          // Also update audio clip duration
-          if (audioClipId) {
-            setClips(clips => clips.map(c => {
-              if (c.id !== audioClipId) return c;
-              return { ...c, duration: realDuration, outPoint: realDuration };
-            }));
-          }
-        }
-      }, { once: true });
-    }
+      // Set isLoading: false immediately so clip becomes interactive
+      updateClip(clipId, {
+        duration: naturalDuration,
+        outPoint: naturalDuration,
+        source: {
+          type: 'video',
+          webCodecsPlayer: player,
+          audioPlayer: audioPlayer ?? undefined,
+          naturalDuration,
+          mediaFileId,
+        },
+        transform: { ...DEFAULT_TRANSFORM, scale: nativeScale },
+        isLoading: false,
+      });
 
-    // Warm up video decoder in background (non-blocking)
-    warmUpVideoDecoder(video).then(() => {
-      log.debug('Decoder warmed up', { file: file.name });
-    });
-
-    // Initialize WebCodecsPlayer for hardware-accelerated decoding (non-blocking)
-    initWebCodecsPlayer(video, file.name).then(webCodecsPlayer => {
-      if (webCodecsPlayer) {
-        setClips(clips => clips.map(c => {
-          if (c.id !== clipId || !c.source) return c;
-          return {
-            ...c,
-            source: { ...c.source, webCodecsPlayer },
-          };
-        }));
+      if (audioClipId) {
+        updateClip(audioClipId, { duration: naturalDuration, outPoint: naturalDuration });
       }
-    });
+
+      // Audio detection: use WebCodecsPlayer's MP4Box info
+      if (!player.hasAudioTrack() && audioClipId) {
+        log.debug('WebCodecs: no audio tracks, removing audio clip', { file: file.name });
+        setClips(clips => clips.filter(c => c.id !== audioClipId));
+      }
+    } catch (err) {
+      log.error('WebCodecs Full Mode failed', err);
+      // Don't fall back to HTMLVideoElement — this is a fatal error for the clip
+      updateClip(clipId, { isLoading: false });
+      return;
+    }
   }
 
   // Preload thumbnails into on-demand cache (non-blocking)
@@ -303,8 +235,10 @@ export async function loadVideoMedia(params: LoadVideoMediaParams): Promise<void
   }
 
   // Load audio for linked clip (skip for NativeDecoder - browser can't decode ProRes/DNxHD audio)
-  // For browser path, audio clip is already created and will be removed by background detectVideoAudio if no audio
+  // For WebCodecs path, audio is already loaded via initWebCodecsFullMode
   if (audioClipId && !nativeDecoder) {
+    // Get the audioPlayer we already created during initWebCodecsFullMode
+    // Also need to set up the audio clip source and generate waveform
     loadLinkedAudio(file, audioClipId, naturalDuration, mediaFileId, waveformsEnabled, updateClip, setClips);
   } else if (audioClipId && nativeDecoder) {
     log.debug('Skipping audio decoding for NativeDecoder file (audio clip kept)', { file: file.name });

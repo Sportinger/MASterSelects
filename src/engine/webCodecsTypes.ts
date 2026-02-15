@@ -21,12 +21,21 @@ export interface MP4VideoTrack {
   video: { width: number; height: number };
 }
 
+export interface MP4AudioTrack {
+  id: number;
+  codec: string;
+  duration: number;
+  timescale: number;
+  nb_samples: number;
+  audio: { sample_rate: number; channel_count: number };
+}
+
 export interface MP4ArrayBuffer extends ArrayBuffer {
   fileStart: number;
 }
 
 export interface MP4File {
-  onReady: (info: { videoTracks: MP4VideoTrack[] }) => void;
+  onReady: (info: { videoTracks: MP4VideoTrack[]; audioTracks?: MP4AudioTrack[] }) => void;
   onSamples: (trackId: number, ref: any, samples: Sample[]) => void;
   onError: (error: string) => void;
   appendBuffer: (buffer: MP4ArrayBuffer) => number;

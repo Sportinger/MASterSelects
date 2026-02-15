@@ -11,6 +11,7 @@ const MP4Box = (MP4BoxModule as any).default || MP4BoxModule;
 import type { Sample, MP4VideoTrack, MP4ArrayBuffer, MP4File } from './webCodecsTypes';
 import { WebCodecsExportMode } from './WebCodecsExportMode';
 import type { ExportModePlayer } from './WebCodecsExportMode';
+import type { AudioTrackInfo } from './WebCodecsAudioPlayer';
 
 export interface WebCodecsPlayerOptions {
   loop?: boolean;
@@ -37,6 +38,9 @@ export class WebCodecsPlayer implements ExportModePlayer {
   private animationId: number | null = null;
   private videoTrack: MP4VideoTrack | null = null;
   private codecConfig: VideoDecoderConfig | null = null;
+
+  // Audio track info extracted from MP4Box
+  private audioTrackInfo: AudioTrackInfo | null = null;
 
   // Simple mode (VideoFrame from HTMLVideoElement)
   private useSimpleMode = false;
@@ -74,6 +78,10 @@ export class WebCodecsPlayer implements ExportModePlayer {
   setCurrentFrame(frame: VideoFrame | null): void { this.currentFrame = frame; }
   isSimpleMode(): boolean { return this.useSimpleMode; }
   getVideoElement(): HTMLVideoElement | null { return this.videoElement; }
+
+  // Audio track info accessors
+  hasAudioTrack(): boolean { return this.audioTrackInfo !== null; }
+  getAudioTrackInfo(): AudioTrackInfo | null { return this.audioTrackInfo; }
 
   constructor(options: WebCodecsPlayerOptions = {}) {
     this.exportMode = new WebCodecsExportMode(this);
@@ -320,7 +328,7 @@ export class WebCodecsPlayer implements ExportModePlayer {
       let resolved = false;
 
       mp4File.onReady = (info) => {
-        log.info(`MP4 onReady: ${info.videoTracks.length} video tracks`);
+        log.info(`MP4 onReady: ${info.videoTracks.length} video tracks, ${info.audioTracks?.length ?? 0} audio tracks`);
         const videoTrack = info.videoTracks[0];
         if (!videoTrack) {
           clearTimeout(timeout);
@@ -329,6 +337,18 @@ export class WebCodecsPlayer implements ExportModePlayer {
         }
 
         this.videoTrack = videoTrack;
+
+        // Extract audio track info if present
+        if (info.audioTracks && info.audioTracks.length > 0) {
+          const audioTrack = info.audioTracks[0];
+          this.audioTrackInfo = {
+            codec: audioTrack.codec,
+            sampleRate: audioTrack.audio?.sample_rate ?? 48000,
+            channels: audioTrack.audio?.channel_count ?? 2,
+            duration: audioTrack.duration / audioTrack.timescale,
+          };
+          log.debug('Audio track found', this.audioTrackInfo);
+        }
         this.width = videoTrack.video.width;
         this.height = videoTrack.video.height;
         this.frameRate = videoTrack.nb_samples / (videoTrack.duration / videoTrack.timescale);

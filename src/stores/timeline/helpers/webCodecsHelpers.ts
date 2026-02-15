@@ -2,6 +2,7 @@
 // Handles WebCodecsPlayer setup and video decoder warm-up
 
 import { WebCodecsPlayer } from '../../../engine/WebCodecsPlayer';
+import { WebCodecsAudioPlayer } from '../../../engine/WebCodecsAudioPlayer';
 import { Logger } from '../../../services/logger';
 
 const log = Logger.create('WebCodecsHelpers');
@@ -160,4 +161,31 @@ export function waitForVideoReady(video: HTMLVideoElement, timeout = 2000): Prom
     };
     video.addEventListener('canplaythrough', handler, { once: true });
   });
+}
+
+/**
+ * Initialize WebCodecs Full Mode from a File.
+ * Uses MP4Box + VideoDecoder (no HTMLVideoElement).
+ * Returns the player and optionally an audio player if the file has audio.
+ */
+export async function initWebCodecsFullMode(
+  file: File
+): Promise<{ player: WebCodecsPlayer; audioPlayer: WebCodecsAudioPlayer | null }> {
+  const player = new WebCodecsPlayer({ loop: false });
+  const arrayBuffer = await file.arrayBuffer();
+  await player.loadArrayBuffer(arrayBuffer);
+
+  let audioPlayer: WebCodecsAudioPlayer | null = null;
+  if (player.hasAudioTrack()) {
+    try {
+      audioPlayer = new WebCodecsAudioPlayer();
+      await audioPlayer.loadFromArrayBuffer(arrayBuffer);
+      log.info('WebCodecs audio player loaded', { file: file.name });
+    } catch (e) {
+      log.warn('WebCodecs audio decode failed', e);
+      audioPlayer = null;
+    }
+  }
+
+  return { player, audioPlayer };
 }
