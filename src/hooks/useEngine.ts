@@ -32,6 +32,8 @@ export function useEngine() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const isEngineReady = useEngineStore((state) => state.isEngineReady);
   const isPlaying = useTimelineStore((state) => state.isPlaying);
+  const isPlayingRef = useRef(isPlaying);
+  isPlayingRef.current = isPlaying;
   const initRef = useRef(false);
 
   // Initialize engine - only once
@@ -411,7 +413,7 @@ export function useEngine() {
         // Cache rendered frame for instant scrubbing (like Premiere's playback caching)
         // Only cache if RAM preview is enabled and we're playing (not generating RAM preview)
         const { ramPreviewEnabled, addCachedFrame } = useTimelineStore.getState();
-        if (ramPreviewEnabled && isPlaying) {
+        if (ramPreviewEnabled && isPlayingRef.current) {
           engine.cacheCompositeFrame(currentPlayhead).then(() => {
             addCachedFrame(currentPlayhead);
           });
@@ -435,7 +437,8 @@ export function useEngine() {
     return () => {
       engine.stop();
     };
-  }, [isEngineReady, isPlaying]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- isPlaying via ref to avoid engine restart
+  }, [isEngineReady]);
 
   // Subscribe to state changes that require re-render (wake from idle)
   useEffect(() => {
