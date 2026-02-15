@@ -391,6 +391,11 @@ export function useEngine() {
         // can reuse them instead of re-evaluating and re-seeking videos
         renderScheduler.setActiveCompLayers(layers);
 
+        // Finalize prerolled clips BEFORE render — pauses prerolled videos
+        // and seeks to correct position so the first render frame of a new clip
+        // shows the correct frame instead of one 0.5s ahead from preroll
+        layerBuilder.finalizePrerolls();
+
         // Render FIRST, before seeking video elements
         // This ensures we always have a displayable frame even after page reload
         // when the scrubbing cache is empty. The video is at its previous position

@@ -36,6 +36,41 @@ export class VideoSyncManager {
   private latestSeekTargets: Record<string, number> = {};
 
   /**
+   * Pre-render step: finalize prerolled clips that are now active.
+   * Pauses prerolled videos and seeks to correct position BEFORE render,
+   * so the first render frame of a new clip shows the correct frame
+   * instead of a frame 0.5s ahead from the preroll playback.
+   *
+   * Must be called BEFORE engine.render() in the render callback.
+   */
+  finalizePrerolls(): void {
+    if (this.prerollingClips.size === 0) return;
+
+    const ctx = createFrameContext();
+    if (!ctx.isPlaying) return;
+
+    for (const clipId of this.prerollingClips) {
+      // Find if this clip is now at the playhead
+      const clip = ctx.clipsAtTime.find(c => c.id === clipId);
+      if (!clip?.source?.videoElement) continue;
+
+      const video = clip.source.videoElement;
+      const timeInfo = getClipTimeInfo(ctx, clip);
+
+      // Clip is now active — stop preroll and seek to correct position
+      video.pause();
+      video.muted = false;
+
+      const timeDiff = Math.abs(video.currentTime - timeInfo.clipTime);
+      if (timeDiff > 0.05) {
+        video.currentTime = timeInfo.clipTime;
+      }
+
+      this.prerollingClips.delete(clipId);
+    }
+  }
+
+  /**
    * Sync video elements to current playhead
    */
   syncVideoElements(): void {
@@ -179,6 +214,15 @@ export class VideoSyncManager {
       // Phase 1: Seek and pause (buffer ahead of time)
       if (timeDiff > 0.1 && !video.seeking) {
         video.currentTime = targetTime;
+        // Cache frame at inPoint after seek completes — this frame will be
+        // used by tryHTMLVideo when the clip transitions from preroll to active,
+        // preventing a wrong-frame flash on the first render
+        video.addEventListener('seeked', () => {
+          if (video.readyState >= 2) {
+            engine.ensureVideoFrameCached(video);
+            engine.cacheFrameAtTime(video, video.currentTime);
+          }
+        }, { once: true });
       }
       if (!video.paused) {
         video.pause();

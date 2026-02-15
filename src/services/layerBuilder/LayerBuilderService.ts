@@ -129,6 +129,15 @@ export class LayerBuilderService {
   // ==================== VIDEO & AUDIO SYNC (delegated) ====================
 
   /**
+   * Finalize prerolled clips before render — pauses prerolled videos
+   * and seeks to correct position so first render frame is correct.
+   * Call BEFORE engine.render().
+   */
+  finalizePrerolls(): void {
+    this.videoSyncManager.finalizePrerolls();
+  }
+
+  /**
    * Sync video elements to current playhead
    */
   syncVideoElements(): void {
