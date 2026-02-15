@@ -48,11 +48,15 @@ async function seekSequentialMode(
 
       for (const nestedClip of clip.nestedClips) {
         if (nestedTime >= nestedClip.startTime && nestedTime < nestedClip.startTime + nestedClip.duration) {
-          if (nestedClip.source?.videoElement) {
-            const nestedLocalTime = nestedTime - nestedClip.startTime;
-            const nestedClipTime = nestedClip.reversed
-              ? nestedClip.outPoint - nestedLocalTime
-              : nestedLocalTime + nestedClip.inPoint;
+          const nestedLocalTime = nestedTime - nestedClip.startTime;
+          const nestedClipTime = nestedClip.reversed
+            ? nestedClip.outPoint - nestedLocalTime
+            : nestedLocalTime + nestedClip.inPoint;
+
+          if (nestedClip.source?.webCodecsPlayer && !nestedClip.source.videoElement) {
+            // WebCodecs Full Mode: seek via player
+            seekPromises.push(nestedClip.source.webCodecsPlayer.seekAsync(nestedClipTime).then(() => {}));
+          } else if (nestedClip.source?.videoElement) {
             seekPromises.push(seekVideo(nestedClip.source.videoElement, nestedClipTime));
           }
         }
@@ -61,7 +65,7 @@ async function seekSequentialMode(
     }
 
     // Handle regular video clips
-    if (clip.source?.type === 'video' && clip.source.videoElement) {
+    if (clip.source?.type === 'video' && (clip.source.videoElement || clip.source.webCodecsPlayer)) {
       const clipLocalTime = time - clip.startTime;
 
       // Calculate clip time (handles speed keyframes and reversed clips)
@@ -83,7 +87,10 @@ async function seekSequentialMode(
       if (clipState?.isSequential && clipState.webCodecsPlayer) {
         // FAST MODE: WebCodecs sequential decoding
         seekPromises.push(clipState.webCodecsPlayer.seekDuringExport(clipTime));
-      } else {
+      } else if (clip.source.webCodecsPlayer && !clip.source.videoElement) {
+        // WebCodecs Full Mode: seek via player (no HTMLVideoElement)
+        seekPromises.push(clip.source.webCodecsPlayer.seekAsync(clipTime).then(() => {}));
+      } else if (clip.source.videoElement) {
         // PRECISE MODE: HTMLVideoElement seeking
         seekPromises.push(seekVideo(clip.source.videoElement, clipTime));
       }

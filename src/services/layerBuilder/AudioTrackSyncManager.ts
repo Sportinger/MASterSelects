@@ -242,6 +242,11 @@ export class AudioTrackSyncManager {
         }
       }
 
+      // Pause WebCodecs audio players for inactive clips
+      if (clip.source?.audioPlayer && !isAtPlayhead) {
+        clip.source.audioPlayer.pause();
+      }
+
       if (clip.mixdownAudio && !isAtPlayhead && !clip.mixdownAudio.paused) {
         audioRoutingManager.fadeOutAndPause(clip.mixdownAudio);
       }
@@ -264,6 +269,10 @@ export class AudioTrackSyncManager {
       }
       if (clip.source?.videoElement && !clip.source.videoElement.muted) {
         clip.source.videoElement.muted = true;
+      }
+      // Pause WebCodecs audio players
+      if (clip.source?.audioPlayer) {
+        clip.source.audioPlayer.pause();
       }
       if (clip.mixdownAudio && !clip.mixdownAudio.paused) {
         audioRoutingManager.fadeOutAndPause(clip.mixdownAudio);

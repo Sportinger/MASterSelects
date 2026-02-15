@@ -105,10 +105,10 @@ async function initializeFastMode(
       });
       log.debug(`Clip ${clip.name}: Composition with nested clips`);
 
-      // Collect nested video clips
+      // Collect nested video clips (WebCodecs Full Mode or HTMLVideoElement)
       if (clip.nestedClips) {
         for (const nestedClip of clip.nestedClips) {
-          if (nestedClip.source?.type === 'video' && nestedClip.source.videoElement) {
+          if (nestedClip.source?.type === 'video' && (nestedClip.source.videoElement || nestedClip.source.webCodecsPlayer)) {
             nestedVideoClips.push({ clip: nestedClip, parentClip: clip });
           }
         }
@@ -315,17 +315,20 @@ async function initializeParallelDecoding(
   }
   endPrefetch();
 
-  // Also seek all HTMLVideoElements to their correct start positions as fallback
-  // This ensures correct frame if parallel decoder fails and falls back to video element
+  // Also seek all video sources to their correct start positions as fallback
+  // This ensures correct frame if parallel decoder fails and falls back to video element/WebCodecs
   const seekPromises: Promise<void>[] = [];
   for (const clip of clips) {
-    if (clip.source?.videoElement) {
-      const video = clip.source.videoElement;
-      const clipLocalTime = Math.max(0, _startTime - clip.startTime);
-      const sourceTime = clip.reversed
-        ? clip.outPoint - clipLocalTime
-        : clip.inPoint + clipLocalTime;
+    const clipLocalTime = Math.max(0, _startTime - clip.startTime);
+    const sourceTime = clip.reversed
+      ? clip.outPoint - clipLocalTime
+      : clip.inPoint + clipLocalTime;
 
+    if (clip.source?.webCodecsPlayer && !clip.source.videoElement) {
+      // WebCodecs Full Mode: seek via player
+      seekPromises.push(clip.source.webCodecsPlayer.seekAsync(sourceTime).then(() => {}));
+    } else if (clip.source?.videoElement) {
+      const video = clip.source.videoElement;
       seekPromises.push(new Promise<void>((resolve) => {
         const targetTime = Math.max(0, Math.min(sourceTime, video.duration || 0));
         if (Math.abs(video.currentTime - targetTime) < 0.01) {
@@ -350,7 +353,7 @@ async function initializeParallelDecoding(
     await Promise.all(seekPromises);
     // Wait for frames to be ready after seek
     await new Promise(r => setTimeout(r, 50));
-    log.info(`Seeked ${seekPromises.length} video elements to start positions as fallback`);
+    log.info(`Seeked ${seekPromises.length} video sources to start positions as fallback`);
   }
 
   // Mark clips as using parallel decoding
