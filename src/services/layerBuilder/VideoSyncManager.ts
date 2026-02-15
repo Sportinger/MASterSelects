@@ -7,6 +7,9 @@ import { LAYER_BUILDER_CONSTANTS } from './types';
 import { createFrameContext, getClipTimeInfo, getMediaFileForClip } from './FrameContext';
 import { layerPlaybackManager } from '../layerPlaybackManager';
 import { engine } from '../../engine/WebGPUEngine';
+import { Logger } from '../logger';
+
+const log = Logger.create('VideoSync');
 
 export class VideoSyncManager {
   // Native decoder state
@@ -110,22 +113,30 @@ export class VideoSyncManager {
       if (!clip.source?.videoElement || clip.source.type !== 'video') continue;
       if (clip.reversed) continue; // Don't optimize reversed clips
 
-      const sourceId = clip.source.mediaFileId || clip.mediaFileId || '';
       const prev = this.trackPlaybackState.get(clip.trackId);
 
-      if (prev && prev.clipId !== clip.id && sourceId !== '') {
-        // Transition detected — check if same source + contiguous
-        const isSameSource = sourceId === prev.sourceMediaFileId;
-        const isContiguousTimeline = Math.abs(prev.endTime - clip.startTime) < 0.001;
-        const isContiguousSource = Math.abs(prev.outPoint - clip.inPoint) < 0.02; // ~1 frame tolerance
+      if (prev && prev.clipId !== clip.id) {
+        // Transition detected — find previous clip for source comparison
+        const prevClip = ctx.clips.find(c => c.id === prev.clipId);
+        if (prevClip?.source?.videoElement) {
+          // Check same source: File object identity is most reliable after split
+          // (both clips share the same File reference). Fall back to mediaFileId.
+          const isSameFile = clip.file && prevClip.file && clip.file === prevClip.file;
+          const isSameMediaId = (
+            (clip.source.mediaFileId && prevClip.source?.mediaFileId &&
+              clip.source.mediaFileId === prevClip.source.mediaFileId) ||
+            (clip.mediaFileId && prevClip.mediaFileId &&
+              clip.mediaFileId === prevClip.mediaFileId)
+          );
+          const isSameSource = isSameFile || isSameMediaId;
 
-        if (isSameSource && isContiguousTimeline && isContiguousSource) {
-          // Find previous clip to swap video elements
-          const prevClip = ctx.clips.find(c => c.id === prev.clipId);
-          if (prevClip?.source?.videoElement) {
+          const isContiguousTimeline = Math.abs(prev.endTime - clip.startTime) < 0.001;
+          const isContiguousSource = Math.abs(prev.outPoint - clip.inPoint) < 0.02; // ~1 frame
+
+          if (isSameSource && isContiguousTimeline && isContiguousSource) {
             // SWAP: give the playing video to the new clip.
-            // The playing video is already at the correct position (outPoint of prev ≈ inPoint of clip).
-            // The new clip's idle video goes to the previous clip (will be paused by sync loop).
+            // The playing video is already at the correct position
+            // (outPoint of prev ≈ inPoint of clip).
             const playingVideo = prevClip.source.videoElement;
             const playingWC = prevClip.source.webCodecsPlayer;
             const idleVideo = clip.source.videoElement;
@@ -138,11 +149,27 @@ export class VideoSyncManager {
 
             // Cancel preroll — video is already playing at the correct position
             this.prerollingClips.delete(clip.id);
+
+            log.debug('Continuous playback handoff', {
+              from: prevClip.name || prev.clipId,
+              to: clip.name || clip.id,
+              videoTime: playingVideo.currentTime.toFixed(3),
+              clipInPoint: clip.inPoint.toFixed(3),
+            });
+          } else if (!isSameSource) {
+            log.debug('Transition: different source', {
+              file: !!isSameFile,
+              mediaId: !!isSameMediaId,
+              clipFile: !!clip.file,
+              prevFile: !!prevClip.file,
+              sameRef: clip.file === prevClip.file,
+            });
           }
         }
       }
 
       // Update tracking for current active clip
+      const sourceId = clip.source.mediaFileId || clip.mediaFileId || '';
       this.trackPlaybackState.set(clip.trackId, {
         clipId: clip.id,
         sourceMediaFileId: sourceId,
@@ -252,9 +279,14 @@ export class VideoSyncManager {
       if (clip.source?.videoElement && !clip.reversed) {
         const activeClip = ctx.clipsByTrackId.get(clip.trackId);
         if (activeClip?.source?.videoElement) {
-          const activeSourceId = activeClip.source.mediaFileId || activeClip.mediaFileId || '';
-          const upcomingSourceId = clip.source.mediaFileId || clip.mediaFileId || '';
-          if (activeSourceId !== '' && activeSourceId === upcomingSourceId) {
+          const isSameFile = clip.file && activeClip.file && clip.file === activeClip.file;
+          const isSameMediaId = (
+            (clip.source.mediaFileId && activeClip.source?.mediaFileId &&
+              clip.source.mediaFileId === activeClip.source.mediaFileId) ||
+            (clip.mediaFileId && activeClip.mediaFileId &&
+              clip.mediaFileId === activeClip.mediaFileId)
+          );
+          if (isSameFile || isSameMediaId) {
             const isContiguousTimeline = Math.abs(
               (activeClip.startTime + activeClip.duration) - clip.startTime
             ) < 0.001;
