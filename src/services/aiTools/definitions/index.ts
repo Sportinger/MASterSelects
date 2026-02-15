@@ -7,6 +7,7 @@ import { analysisToolDefinitions } from './analysis';
 import { previewToolDefinitions } from './preview';
 import { mediaToolDefinitions } from './media';
 import { batchToolDefinitions } from './batch';
+import { youtubeToolDefinitions } from './youtube';
 
 // Combined tool definitions array (OpenAI function calling format)
 export const AI_TOOLS = [
@@ -17,6 +18,7 @@ export const AI_TOOLS = [
   ...analysisToolDefinitions,
   ...mediaToolDefinitions,
   ...batchToolDefinitions,
+  ...youtubeToolDefinitions,
 ];
 
 // Re-export individual definition sets for selective use
@@ -28,4 +30,5 @@ export {
   previewToolDefinitions,
   mediaToolDefinitions,
   batchToolDefinitions,
+  youtubeToolDefinitions,
 };

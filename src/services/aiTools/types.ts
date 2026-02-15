@@ -15,6 +15,8 @@ export const MODIFYING_TOOLS = new Set([
   'createMediaFolder', 'renameMediaItem', 'deleteMediaItem', 'moveMediaItems',
   'createComposition',
   'executeBatch',
+  // YouTube
+  'downloadAndImportVideo',
 ]);
 
 // Tool definition type (OpenAI function calling format)

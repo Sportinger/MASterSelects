@@ -59,6 +59,13 @@ import {
   handleSelectMediaItems,
 } from './media';
 
+import {
+  handleSearchYouTube,
+  handleListVideoFormats,
+  handleDownloadAndImportVideo,
+  handleGetYouTubeVideos,
+} from './youtube';
+
 // Handler registry - maps tool names to handler functions
 const timelineHandlers: Record<string, (args: Record<string, unknown>, store: ReturnType<typeof useTimelineStore.getState>) => Promise<ToolResult>> = {
   getTimelineState: handleGetTimelineState,
@@ -102,6 +109,14 @@ const mediaHandlers: Record<string, (args: Record<string, unknown>, store: Retur
   selectMediaItems: handleSelectMediaItems,
 };
 
+// YouTube handlers - self-contained, fetch their own stores
+const youtubeHandlers: Record<string, (args: Record<string, unknown>) => Promise<ToolResult>> = {
+  searchYouTube: handleSearchYouTube,
+  listVideoFormats: handleListVideoFormats,
+  downloadAndImportVideo: handleDownloadAndImportVideo,
+  getYouTubeVideos: handleGetYouTubeVideos,
+};
+
 /**
  * Execute a tool by name
  * Dispatches to the appropriate handler based on tool name
@@ -120,6 +135,11 @@ export async function executeToolInternal(
   // Check media handlers
   if (toolName in mediaHandlers) {
     return mediaHandlers[toolName](args, mediaStore);
+  }
+
+  // Check YouTube handlers
+  if (toolName in youtubeHandlers) {
+    return youtubeHandlers[toolName](args);
   }
 
   // Unknown tool
@@ -170,4 +190,9 @@ export {
   handleMoveMediaItems,
   handleCreateComposition,
   handleSelectMediaItems,
+  // YouTube
+  handleSearchYouTube,
+  handleListVideoFormats,
+  handleDownloadAndImportVideo,
+  handleGetYouTubeVideos,
 };

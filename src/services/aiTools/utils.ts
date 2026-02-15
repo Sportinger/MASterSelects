@@ -1,6 +1,8 @@
 // AI Tools Utilities
 
 import { useTimelineStore } from '../../stores/timeline';
+import { useSettingsStore } from '../../stores/settingsStore';
+import { NativeHelperClient } from '../nativeHelper';
 import { engine } from '../../engine/WebGPUEngine';
 import type { TimelineClip, TimelineTrack } from '../../stores/timeline/types';
 import type { ToolResult } from './types';
@@ -175,5 +177,13 @@ export function getQuickTimelineSummary(): string {
     }
   }
 
-  return `Timeline: ${videoTracks.length} video tracks (${videoClips.length} clips), ${audioTracks.length} audio tracks (${audioClips.length} clips). Playhead at ${playheadPosition.toFixed(2)}s, duration ${duration.toFixed(2)}s.${selectedInfo}`;
+  // YouTube / NativeHelper status
+  const nativeConnected = NativeHelperClient.isConnected();
+  const hasYouTubeKey = !!useSettingsStore.getState().apiKeys.youtube;
+  const ytStatus = nativeConnected
+    ? `Native Helper: connected (downloads available).`
+    : `Native Helper: not connected (downloads unavailable).`;
+  const ytKeyStatus = hasYouTubeKey ? '' : ' YouTube API key not set.';
+
+  return `Timeline: ${videoTracks.length} video tracks (${videoClips.length} clips), ${audioTracks.length} audio tracks (${audioClips.length} clips). Playhead at ${playheadPosition.toFixed(2)}s, duration ${duration.toFixed(2)}s.${selectedInfo} ${ytStatus}${ytKeyStatus}`;
 }

@@ -27,6 +27,7 @@ export {
   previewToolDefinitions,
   mediaToolDefinitions,
   batchToolDefinitions,
+  youtubeToolDefinitions,
 } from './definitions';
 
 // Re-export utilities
