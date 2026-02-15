@@ -4,7 +4,6 @@
 import type { TimelineClip } from '../../../types';
 import { DEFAULT_TRANSFORM, calculateNativeScale } from '../constants';
 import { useMediaStore } from '../../mediaStore';
-import { generateImageThumbnail } from '../helpers/thumbnailHelpers';
 import { generateClipId } from '../helpers/idGenerator';
 import { blobUrlManager } from '../helpers/blobUrlManager';
 
@@ -59,10 +58,6 @@ export async function loadImageMedia(params: LoadImageMediaParams): Promise<void
     img.onerror = () => resolve();
   });
 
-  // Generate thumbnail
-  const thumbnail = generateImageThumbnail(img);
-  const thumbnails = thumbnail ? [thumbnail] : [];
-
   // Calculate native pixel scale so content appears at actual size
   const nativeScale = (img.naturalWidth && img.naturalHeight)
     ? calculateNativeScale(img.naturalWidth, img.naturalHeight)
@@ -71,7 +66,6 @@ export async function loadImageMedia(params: LoadImageMediaParams): Promise<void
   updateClip(clip.id, {
     source: { type: 'image', imageElement: img, naturalDuration: clip.duration },
     transform: { ...DEFAULT_TRANSFORM, scale: nativeScale },
-    thumbnails,
     isLoading: false,
   });
 

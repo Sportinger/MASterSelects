@@ -134,7 +134,6 @@ function convertProjectCompositionToStore(
         mediaFileId: c.mediaId,  // Map mediaId -> mediaFileId for loadState
         sourceType: c.sourceType || 'video',
         naturalDuration: c.naturalDuration,
-        thumbnails: c.thumbnails,
         linkedClipId: c.linkedClipId,
         linkedGroupId: c.linkedGroupId,
         waveform: c.waveform,
@@ -630,7 +629,6 @@ async function reloadNestedCompositionClips(): Promise<void> {
         inPoint: nestedSerializedClip.inPoint,
         outPoint: nestedSerializedClip.outPoint,
         source: null,
-        thumbnails: nestedSerializedClip.thumbnails,
         // Convert flat ProjectTransform → nested ClipTransform for nested clips too
         transform: nestedSerializedClip.transform ? (() => {
           const t = nestedSerializedClip.transform as any;
@@ -724,19 +722,6 @@ async function reloadNestedCompositionClips(): Promise<void> {
         isLoading: false,
       });
 
-      // Generate thumbnails if missing
-      if (!compClip.thumbnails || compClip.thumbnails.length === 0) {
-        const { generateCompThumbnails } = await import('../../stores/timeline/clip/addCompClip');
-        const compDuration = composition.timelineData?.duration ?? composition.duration;
-        generateCompThumbnails({
-          clipId: compClip.id,
-          nestedClips,
-          compDuration,
-          thumbnailsEnabled: timelineStore.thumbnailsEnabled,
-          get: useTimelineStore.getState,
-          set: useTimelineStore.setState,
-        });
-      }
     }
   }
 

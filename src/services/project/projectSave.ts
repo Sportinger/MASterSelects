@@ -84,7 +84,6 @@ function convertCompositions(compositions: Composition[]): ProjectComposition[] 
       mediaId: c.source?.mediaFileId || c.mediaFileId || c.mediaId || '',
       sourceType: c.source?.type || c.sourceType || 'video',
       naturalDuration: c.source?.naturalDuration || c.naturalDuration,
-      thumbnails: c.thumbnails,
       linkedClipId: c.linkedClipId,
       linkedGroupId: c.linkedGroupId,
       waveform: c.waveform,

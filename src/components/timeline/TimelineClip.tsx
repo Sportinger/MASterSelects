@@ -57,7 +57,6 @@ function TimelineClipComponent({
   pixelToTime,
   formatTime,
 }: TimelineClipProps) {
-  const thumbnails = clip.thumbnails || [];
   const thumbnailsEnabled = useTimelineStore(s => s.thumbnailsEnabled);
   const waveformsEnabled = useTimelineStore(s => s.waveformsEnabled);
 
@@ -558,34 +557,28 @@ function TimelineClipComponent({
       {/* Regular thumbnail filmstrip - for non-composition clips */}
       {thumbnailsEnabled && !isAudioClip && !(clip.isComposition && clip.clipSegments && clip.clipSegments.length > 0) && (
         <div className="clip-thumbnails">
-          {Array.from({ length: visibleThumbs }).map((_, i) => {
-            // Calculate exact source time for this thumbnail position
-            const positionInTrimmed = (i + 0.5) / visibleThumbs;
-            const time = displayInPoint + positionInTrimmed * (displayOutPoint - displayInPoint);
+          {clip.source?.type === 'image' && clip.source.imageElement ? (
+            // Image clips: show the image directly (same frame for all positions)
+            Array.from({ length: visibleThumbs }).map((_, i) => (
+              <img key={i} src={clip.source!.imageElement!.src} alt="" className="clip-thumb" draggable={false} />
+            ))
+          ) : (
+            // Video clips: use on-demand thumbnail cache
+            Array.from({ length: visibleThumbs }).map((_, i) => {
+              const positionInTrimmed = (i + 0.5) / visibleThumbs;
+              const time = displayInPoint + positionInTrimmed * (displayOutPoint - displayInPoint);
 
-            // Try on-demand cache first
-            const cachedThumb = mediaFileId ? thumbnailCache.getThumbnail(mediaFileId, time, zoom) : null;
+              const cachedThumb = mediaFileId ? thumbnailCache.getThumbnail(mediaFileId, time, zoom) : null;
 
-            if (cachedThumb) {
-              return (
-                <img key={i} src={cachedThumb} alt="" className="clip-thumb" draggable={false} />
-              );
-            }
+              if (cachedThumb) {
+                return (
+                  <img key={i} src={cachedThumb} alt="" className="clip-thumb" draggable={false} />
+                );
+              }
 
-            // Fallback to legacy clip.thumbnails array
-            if (thumbnails.length > 0) {
-              const naturalDuration = clip.source?.naturalDuration || clip.duration;
-              const sourceRatio = time / naturalDuration;
-              const thumbIndex = Math.floor(sourceRatio * thumbnails.length);
-              const thumb = thumbnails[Math.min(Math.max(0, thumbIndex), thumbnails.length - 1)];
-              return (
-                <img key={i} src={thumb} alt="" className="clip-thumb" draggable={false} />
-              );
-            }
-
-            // No thumbnail available yet — placeholder
-            return <div key={i} className="clip-thumb clip-thumb-placeholder" />;
-          })}
+              return <div key={i} className="clip-thumb clip-thumb-placeholder" />;
+            })
+          )}
         </div>
       )}
       {/* Nested composition clip boundary markers */}

@@ -291,7 +291,7 @@ export interface TimelineClip {
     textCanvas?: HTMLCanvasElement;  // Pre-rendered text/solid canvas for text and solid clips
     filePath?: string;  // Path to original file (for native helper to access directly)
   } | null;
-  thumbnails?: string[];  // Array of data URLs for filmstrip preview
+  thumbnails?: string[];  // Deprecated: legacy filmstrip data — on-demand cache is used instead
   mediaFileId?: string;   // Reference to MediaFile for audio/proxy lookup (top-level for YouTube downloads)
   linkedClipId?: string;  // ID of linked clip (e.g., audio linked to video)
   linkedGroupId?: string; // ID of multicam group (clips synced together)
