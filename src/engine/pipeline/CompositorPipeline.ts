@@ -437,10 +437,6 @@ fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
   let alpha = select(finalAlpha, 0.0, outOfBounds);
   var result = mix(baseColor.rgb, blended, alpha);
 
-  // DEBUG: Always show posZ as red channel intensity
-  // Red = posZ value (0 = no red, 1 = full red)
-  result.r = result.r + abs(layer.posZ);
-
   return vec4f(result, max(baseColor.a, alpha));
 }
 `;
