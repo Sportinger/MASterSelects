@@ -45,10 +45,14 @@ export async function transcribeClip(clipId: string, language: string = 'auto'):
     return;
   }
 
-  // Check if file has audio
-  const hasAudio = clip.file.type.startsWith('video/') || clip.file.type.startsWith('audio/');
+  // Check if file has audio (also check extension as fallback since file.type can be empty after project reload)
+  const mimeType = clip.file.type || '';
+  const fileName = clip.file.name || '';
+  const ext = fileName.split('.').pop()?.toLowerCase() || '';
+  const audioVideoExts = ['mp4', 'webm', 'mkv', 'mov', 'avi', 'mp3', 'wav', 'ogg', 'aac', 'flac', 'm4a'];
+  const hasAudio = mimeType.startsWith('video/') || mimeType.startsWith('audio/') || audioVideoExts.includes(ext);
   if (!hasAudio) {
-    log.warn('File does not contain audio');
+    log.warn('File does not contain audio', { type: mimeType, name: fileName });
     return;
   }
 
