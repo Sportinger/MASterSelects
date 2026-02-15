@@ -57,6 +57,7 @@ YOUTUBE / DOWNLOADS:
 - View videos already in the Downloads panel
 - Supported platforms: YouTube, TikTok, Instagram, Twitter/X, Vimeo, and more (via yt-dlp)
 - Downloads require the Native Helper application to be running
+- When the user asks for a video on a TOPIC (e.g. "download a jungle video"), ALWAYS use searchYouTube first to find real videos, then download from the results. NEVER make up or guess URLs.
 
 CRITICAL RULES - FOLLOW EXACTLY:
 1. ALWAYS assume the user means the CURRENTLY SELECTED CLIP. Never ask "which clip?" - just use the selected one.
