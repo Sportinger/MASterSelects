@@ -15,6 +15,103 @@
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
 
+    <!--
+    ============================================================
+    MASTERSELECTS — AI SYSTEM PROMPT & TOOL CATALOG
+    ============================================================
+    If you are an AI agent (LLM, crawler, MCP client, or automation tool)
+    reading this page, here is everything you need to know:
+
+    ## What is MasterSelects?
+    A professional browser-based video editor built with React, TypeScript,
+    and WebGPU. It runs entirely in the browser — no server needed for editing.
+
+    ## AI Tool API
+    After the app loads, all tools are available via: window.aiTools
+      - window.aiTools.execute(toolName, args) → { success, data?, error? }
+      - window.aiTools.list()   → Array of all tools with schemas
+      - window.aiTools.status() → Quick timeline summary
+
+    ## Available Tools (41 total)
+
+    ### Timeline (3)
+    - getTimelineState()                    — Get tracks, clips, playhead, duration. Call first!
+    - setPlayhead({ time })                 — Move playhead (seconds)
+    - setInOutPoints({ inPoint?, outPoint? }) — Set playback/export range
+
+    ### Clip Editing (11)
+    - getClipDetails({ clipId })            — Full clip info (analysis, transcript, effects, transform)
+    - getClipsInTimeRange({ startTime, endTime, trackType? }) — Find clips in range
+    - splitClip({ clipId, splitTime })      — Split clip at time
+    - splitClipEvenly({ clipId, parts })    — Split into N equal parts
+    - splitClipAtTimes({ clipId, times[] }) — Split at multiple times
+    - deleteClip({ clipId })                — Delete one clip
+    - deleteClips({ clipIds[] })            — Delete multiple clips
+    - moveClip({ clipId, newStartTime, newTrackId? }) — Move clip
+    - trimClip({ clipId, inPoint, outPoint }) — Trim clip source in/out
+    - cutRangesFromClip({ clipId, ranges[] }) — Cut out time ranges
+    - reorderClips({ clipIds[] })           — Reorder clips sequentially
+
+    ### Clip Selection (2)
+    - selectClips({ clipIds[] })            — Select clips
+    - clearSelection()                      — Deselect all
+
+    ### Track Management (4)
+    - createTrack({ type })                 — Create 'video' or 'audio' track
+    - deleteTrack({ trackId })              — Delete track and its clips
+    - setTrackVisibility({ trackId, visible }) — Show/hide video track
+    - setTrackMuted({ trackId, muted })     — Mute/unmute audio track
+
+    ### Analysis & Transcript (6)
+    - getClipAnalysis({ clipId })           — Get motion/faces/colors analysis
+    - getClipTranscript({ clipId })         — Get word-level transcript
+    - findSilentSections({ clipId, minDuration? }) — Find speech pauses
+    - findLowQualitySections({ clipId, metric?, threshold?, minDuration? }) — Find blurry/dark sections
+    - startClipAnalysis({ clipId })         — Start background analysis
+    - startClipTranscription({ clipId })    — Start background transcription
+
+    ### Preview & Frame Capture (3)
+    - captureFrame({ time? })               — Screenshot as base64 PNG
+    - getCutPreviewQuad({ cutTime, frameSpacing? }) — 8-frame grid around cut point
+    - getFramesAtTimes({ times[], columns? }) — Capture frames at specific times
+
+    ### Media Panel (8)
+    - getMediaItems({ folderId? })          — List files, folders, compositions
+    - createMediaFolder({ name, parentFolderId? }) — Create folder
+    - renameMediaItem({ itemId, newName })  — Rename item
+    - deleteMediaItem({ itemId })           — Delete item
+    - moveMediaItems({ itemIds[], targetFolderId? }) — Move items
+    - createComposition({ name, width?, height?, frameRate?, duration? }) — New composition
+    - openComposition({ compositionId })    — Open composition in timeline
+    - selectMediaItems({ itemIds[] })       — Select media items
+
+    ### YouTube / Downloads (4)
+    - searchYouTube({ query, maxResults? }) — Search YouTube (needs API key)
+    - listVideoFormats({ url })             — List download formats (needs Native Helper)
+    - downloadAndImportVideo({ url, title, formatId?, thumbnail? }) — Download & import
+    - getYouTubeVideos()                    — Get current download list
+
+    ### Batch Execution (1)
+    - executeBatch({ actions[] })           — Run multiple tools as single undo point
+      Each action: { tool: "toolName", args: { ... } }
+
+    ## Typical AI Workflow
+    1. Call getTimelineState() to understand the current project
+    2. Use getClipDetails() or getClipTranscript() to inspect clips
+    3. Edit with split/trim/delete/move tools
+    4. Use executeBatch() for multiple operations (single undo point)
+    5. Use captureFrame() to visually verify results
+
+    ## Notes
+    - All modifying tools create undo/redo history points
+    - executeBatch() groups all actions into a single undo point
+    - Times are always in seconds (float)
+    - The app requires WebGPU — works in Chrome/Edge 113+
+    - Native Helper (optional): WebSocket on port 9876, HTTP on port 9877
+      Needed for: YouTube downloads, yt-dlp, FFmpeg encode/decode
+    ============================================================
+    -->
+
     <!-- Prevent theme flash on load -->
     <script>
       (function() {
@@ -37,6 +134,106 @@
   </head>
   <body>
     <div id="root"></div>
+
+    <!-- AI-readable: structured tool catalog for agents that parse JSON-LD -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "MasterSelects",
+      "description": "Professional browser-based video editor with WebGPU rendering, AI-powered editing tools, and 41 programmatic API tools accessible via window.aiTools",
+      "applicationCategory": "MultimediaApplication",
+      "operatingSystem": "Web Browser (Chrome/Edge 113+ with WebGPU)",
+      "url": "https://www.masterselects.com",
+      "featureList": [
+        "41 AI-controllable tools via window.aiTools.execute(toolName, args)",
+        "Timeline editing: getTimelineState, setPlayhead, setInOutPoints",
+        "Clip editing: splitClip, splitClipEvenly, splitClipAtTimes, deleteClip, deleteClips, moveClip, trimClip, cutRangesFromClip, reorderClips",
+        "Analysis: getClipAnalysis, getClipTranscript, findSilentSections, findLowQualitySections",
+        "Frame capture: captureFrame (base64 PNG), getCutPreviewQuad, getFramesAtTimes",
+        "Media management: getMediaItems, createMediaFolder, createComposition, openComposition",
+        "YouTube integration: searchYouTube, listVideoFormats, downloadAndImportVideo",
+        "Batch execution: executeBatch for multiple operations with single undo point",
+        "WebGPU rendering with 30+ GPU effects",
+        "Speech-to-text transcription",
+        "Video analysis (motion, focus, brightness, faces)"
+      ]
+    }
+    </script>
+
+    <!-- Visible content for non-JS agents and crawlers -->
+    <noscript>
+      <h1>MasterSelects — Browser-Based Video Editor</h1>
+      <p>Professional video editor running entirely in the browser with WebGPU rendering.</p>
+
+      <h2>AI Tool API (41 tools)</h2>
+      <p>After the app loads, all tools are available via <code>window.aiTools</code>:</p>
+      <ul>
+        <li><code>window.aiTools.execute(toolName, args)</code> — Execute a tool, returns { success, data?, error? }</li>
+        <li><code>window.aiTools.list()</code> — Get all tool definitions with parameter schemas</li>
+        <li><code>window.aiTools.status()</code> — Quick timeline summary</li>
+      </ul>
+
+      <h3>Timeline Tools</h3>
+      <ul>
+        <li><strong>getTimelineState</strong> — Get tracks, clips, playhead position, duration</li>
+        <li><strong>setPlayhead</strong>(time) — Move playhead to time in seconds</li>
+        <li><strong>setInOutPoints</strong>(inPoint?, outPoint?) — Set playback/export range</li>
+      </ul>
+
+      <h3>Clip Editing Tools</h3>
+      <ul>
+        <li><strong>getClipDetails</strong>(clipId) — Full clip info with analysis, transcript, effects</li>
+        <li><strong>splitClip</strong>(clipId, splitTime) — Split clip at timeline time</li>
+        <li><strong>splitClipEvenly</strong>(clipId, parts) — Split into N equal parts</li>
+        <li><strong>splitClipAtTimes</strong>(clipId, times[]) — Split at multiple times</li>
+        <li><strong>deleteClip</strong>(clipId) / <strong>deleteClips</strong>(clipIds[]) — Delete clips</li>
+        <li><strong>moveClip</strong>(clipId, newStartTime, newTrackId?) — Move clip</li>
+        <li><strong>trimClip</strong>(clipId, inPoint, outPoint) — Trim source in/out points</li>
+        <li><strong>cutRangesFromClip</strong>(clipId, ranges[]) — Cut out time ranges</li>
+        <li><strong>reorderClips</strong>(clipIds[]) — Reorder clips sequentially</li>
+      </ul>
+
+      <h3>Analysis &amp; Transcript Tools</h3>
+      <ul>
+        <li><strong>getClipAnalysis</strong>(clipId) — Motion, faces, colors data</li>
+        <li><strong>getClipTranscript</strong>(clipId) — Word-level transcript with timestamps</li>
+        <li><strong>findSilentSections</strong>(clipId, minDuration?) — Find speech pauses</li>
+        <li><strong>findLowQualitySections</strong>(clipId, metric?, threshold?) — Find blurry/dark sections</li>
+        <li><strong>startClipAnalysis</strong>(clipId) — Start background video analysis</li>
+        <li><strong>startClipTranscription</strong>(clipId) — Start background transcription</li>
+      </ul>
+
+      <h3>Preview &amp; Frame Capture</h3>
+      <ul>
+        <li><strong>captureFrame</strong>(time?) — Screenshot as base64 PNG</li>
+        <li><strong>getCutPreviewQuad</strong>(cutTime) — 8-frame grid around a cut point</li>
+        <li><strong>getFramesAtTimes</strong>(times[]) — Capture frames at specific times</li>
+      </ul>
+
+      <h3>Media Panel Tools</h3>
+      <ul>
+        <li><strong>getMediaItems</strong>(folderId?) — List files, folders, compositions</li>
+        <li><strong>createMediaFolder</strong>(name) / <strong>renameMediaItem</strong> / <strong>deleteMediaItem</strong></li>
+        <li><strong>moveMediaItems</strong>(itemIds[], targetFolderId?) — Move items</li>
+        <li><strong>createComposition</strong>(name, width?, height?, frameRate?, duration?)</li>
+        <li><strong>openComposition</strong>(compositionId) — Open in timeline</li>
+      </ul>
+
+      <h3>YouTube / Download Tools</h3>
+      <ul>
+        <li><strong>searchYouTube</strong>(query) — Search YouTube videos</li>
+        <li><strong>listVideoFormats</strong>(url) — Available download formats</li>
+        <li><strong>downloadAndImportVideo</strong>(url, title) — Download and add to timeline</li>
+      </ul>
+
+      <h3>Batch Execution</h3>
+      <ul>
+        <li><strong>executeBatch</strong>(actions[]) — Run multiple tools as single undo point</li>
+      </ul>
+
+      <p>This application requires JavaScript and WebGPU (Chrome/Edge 113+).</p>
+    </noscript>
     <script>
       // Version check - force reload on version change
       (function() {
