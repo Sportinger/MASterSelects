@@ -42,15 +42,15 @@
     ### Clip Editing (11)
     - getClipDetails({ clipId })            — Full clip info (analysis, transcript, effects, transform)
     - getClipsInTimeRange({ startTime, endTime, trackType? }) — Find clips in range
-    - splitClip({ clipId, splitTime })      — Split clip at time
-    - splitClipEvenly({ clipId, parts })    — Split into N equal parts
-    - splitClipAtTimes({ clipId, times[] }) — Split at multiple times
-    - deleteClip({ clipId })                — Delete one clip
-    - deleteClips({ clipIds[] })            — Delete multiple clips
-    - moveClip({ clipId, newStartTime, newTrackId? }) — Move clip
+    - splitClip({ clipId, splitTime, withLinked? })      — Split clip at time (+ linked audio by default)
+    - splitClipEvenly({ clipId, parts, withLinked? })    — Split into N equal parts (+ linked audio)
+    - splitClipAtTimes({ clipId, times[], withLinked? }) — Split at multiple times (+ linked audio)
+    - deleteClip({ clipId, withLinked? })                — Delete clip (+ linked audio by default)
+    - deleteClips({ clipIds[], withLinked? })            — Delete multiple clips (+ linked audio)
+    - moveClip({ clipId, newStartTime, newTrackId?, withLinked? }) — Move clip (+ linked audio)
     - trimClip({ clipId, inPoint, outPoint }) — Trim clip source in/out
     - cutRangesFromClip({ clipId, ranges[] }) — Cut out time ranges
-    - reorderClips({ clipIds[] })           — Reorder clips sequentially
+    - reorderClips({ clipIds[], withLinked? })           — Reorder clips sequentially (+ linked audio)
 
     ### Clip Selection (2)
     - selectClips({ clipIds[] })            — Select clips
@@ -86,7 +86,7 @@
     - selectMediaItems({ itemIds[] })       — Select media items
 
     ### YouTube / Downloads (4)
-    - searchYouTube({ query, maxResults? }) — Search YouTube (needs API key)
+    - searchVideos({ query, maxResults?, maxDuration?, minDuration? }) — Search videos (needs Native Helper)
     - listVideoFormats({ url })             — List download formats (needs Native Helper)
     - downloadAndImportVideo({ url, title, formatId?, thumbnail? }) — Download & import
     - getYouTubeVideos()                    — Get current download list
@@ -101,6 +101,11 @@
     3. Edit with split/trim/delete/move tools
     4. Use executeBatch() for multiple operations (single undo point)
     5. Use captureFrame() to visually verify results
+
+    ## Linked Clips
+    - Video imports create paired video+audio clips linked via linkedClipId
+    - All editing tools support withLinked (default: true) to edit both together
+    - Set withLinked: false to edit only the targeted clip independently
 
     ## Notes
     - All modifying tools create undo/redo history points
@@ -152,7 +157,7 @@
         "Analysis: getClipAnalysis, getClipTranscript, findSilentSections, findLowQualitySections",
         "Frame capture: captureFrame (base64 PNG), getCutPreviewQuad, getFramesAtTimes",
         "Media management: getMediaItems, createMediaFolder, createComposition, openComposition",
-        "YouTube integration: searchYouTube, listVideoFormats, downloadAndImportVideo",
+        "YouTube integration: searchVideos, listVideoFormats, downloadAndImportVideo",
         "Batch execution: executeBatch for multiple operations with single undo point",
         "WebGPU rendering with 30+ GPU effects",
         "Speech-to-text transcription",
@@ -184,14 +189,14 @@
       <h3>Clip Editing Tools</h3>
       <ul>
         <li><strong>getClipDetails</strong>(clipId) — Full clip info with analysis, transcript, effects</li>
-        <li><strong>splitClip</strong>(clipId, splitTime) — Split clip at timeline time</li>
-        <li><strong>splitClipEvenly</strong>(clipId, parts) — Split into N equal parts</li>
-        <li><strong>splitClipAtTimes</strong>(clipId, times[]) — Split at multiple times</li>
-        <li><strong>deleteClip</strong>(clipId) / <strong>deleteClips</strong>(clipIds[]) — Delete clips</li>
-        <li><strong>moveClip</strong>(clipId, newStartTime, newTrackId?) — Move clip</li>
+        <li><strong>splitClip</strong>(clipId, splitTime, withLinked?) — Split clip at timeline time (+ linked audio by default)</li>
+        <li><strong>splitClipEvenly</strong>(clipId, parts, withLinked?) — Split into N equal parts (+ linked audio)</li>
+        <li><strong>splitClipAtTimes</strong>(clipId, times[], withLinked?) — Split at multiple times (+ linked audio)</li>
+        <li><strong>deleteClip</strong>(clipId, withLinked?) / <strong>deleteClips</strong>(clipIds[], withLinked?) — Delete clips (+ linked audio by default)</li>
+        <li><strong>moveClip</strong>(clipId, newStartTime, newTrackId?, withLinked?) — Move clip (+ linked audio)</li>
         <li><strong>trimClip</strong>(clipId, inPoint, outPoint) — Trim source in/out points</li>
         <li><strong>cutRangesFromClip</strong>(clipId, ranges[]) — Cut out time ranges</li>
-        <li><strong>reorderClips</strong>(clipIds[]) — Reorder clips sequentially</li>
+        <li><strong>reorderClips</strong>(clipIds[], withLinked?) — Reorder clips sequentially (+ linked audio)</li>
       </ul>
 
       <h3>Analysis &amp; Transcript Tools</h3>
@@ -222,7 +227,7 @@
 
       <h3>YouTube / Download Tools</h3>
       <ul>
-        <li><strong>searchYouTube</strong>(query) — Search YouTube videos</li>
+        <li><strong>searchVideos</strong>(query, maxResults?, maxDuration?, minDuration?) — Search videos via yt-dlp</li>
         <li><strong>listVideoFormats</strong>(url) — Available download formats</li>
         <li><strong>downloadAndImportVideo</strong>(url, title) — Download and add to timeline</li>
       </ul>
