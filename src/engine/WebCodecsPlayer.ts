@@ -3,6 +3,10 @@
 // Export mode delegated to WebCodecsExportMode
 
 import { Logger } from '../services/logger';
+import { playbackMetrics } from '../services/playbackMetrics';
+import { PlaybackDecodeWorkerClient } from './playback/PlaybackDecodeWorkerClient';
+import { DecodedFrameQueue } from './playback/DecodedFrameQueue';
+import { SeekScheduler } from './playback/SeekScheduler';
 const log = Logger.create('WebCodecsPlayer');
 
 import * as MP4BoxModule from 'mp4box';
@@ -34,6 +38,15 @@ export class WebCodecsPlayer implements ExportModePlayer {
   private animationId: number | null = null;
   private videoTrack: MP4VideoTrack | null = null;
   private codecConfig: VideoDecoderConfig | null = null;
+  private currentFrameTimeSec = 0;
+  private seekInProgress = false;
+  private pendingSeekTime: number | null = null;
+  private seekToken = 0;
+  private deferredSeekFrame: VideoFrame | null = null;
+  private decodeWorkerClient: PlaybackDecodeWorkerClient | null = null;
+  private frameQueue = new DecodedFrameQueue<VideoFrame>(3);
+  private throttleToggle = false;
+  private seekScheduler: SeekScheduler;
 
   // Audio track info extracted from MP4Box
   private audioTrackInfo: AudioTrackInfo | null = null;
@@ -74,6 +87,11 @@ export class WebCodecsPlayer implements ExportModePlayer {
     this.onFrame = options.onFrame;
     this.onReady = options.onReady;
     this.onError = options.onError;
+    this.decodeWorkerClient = new PlaybackDecodeWorkerClient();
+    this.seekScheduler = new SeekScheduler(
+      async (timeSec) => this.enqueueSeek(timeSec, 'preview'),
+      async (timeSec) => this.enqueueSeek(timeSec, 'exact')
+    );
   }
 
   async loadFile(file: File): Promise<void> {
@@ -192,6 +210,8 @@ export class WebCodecsPlayer implements ExportModePlayer {
             clearTimeout(timeout);
             endLoad();
             log.info(`Decoder configured: ${this.width}x${this.height} @ ${this.frameRate.toFixed(1)}fps (samples loading in background)`);
+            // Initialize worker-side seek planner asynchronously (non-blocking).
+            void this.initDecodeWorker(buffer);
             resolve();
           }
         });
@@ -256,6 +276,16 @@ export class WebCodecsPlayer implements ExportModePlayer {
     return dominated;
   }
 
+  private async initDecodeWorker(buffer: ArrayBuffer): Promise<void> {
+    if (!this.decodeWorkerClient || !this.decodeWorkerClient.isAvailable()) return;
+    try {
+      await this.decodeWorkerClient.init(buffer.slice(0));
+      log.debug('Playback decode worker initialized');
+    } catch (e) {
+      log.warn('Playback decode worker init failed, using local seek planner', e);
+    }
+  }
+
   private initDecoder(): void {
     if (!this.codecConfig) return;
 
@@ -264,13 +294,21 @@ export class WebCodecsPlayer implements ExportModePlayer {
         // In export mode, buffer ALL frames via export mode handler
         if (this.exportMode.isInExportMode) {
           this.exportMode.handleDecoderOutput(frame);
-        } else {
-          // Normal mode: just keep current frame
-          if (this.currentFrame) {
-            this.currentFrame.close();
+        } else if (this.seekInProgress) {
+          // While seeking we suppress intermediate frames and only publish
+          // the final decoded frame when flush() completes.
+          if (this.deferredSeekFrame) {
+            try { this.deferredSeekFrame.close(); } catch {}
           }
-          this.currentFrame = frame;
-          this.onFrame?.(frame);
+          this.deferredSeekFrame = frame;
+        } else {
+          this.frameQueue.push(frame);
+          const latest = this.frameQueue.popLatest();
+          if (latest) {
+            this.commitFrame(latest);
+          }
+          // Close any stale buffered frames after committing latest.
+          this.frameQueue.clear();
         }
 
         // Resolve any pending frame wait
@@ -307,8 +345,100 @@ export class WebCodecsPlayer implements ExportModePlayer {
 
   play(): void {
     if (this._isPlaying || !this.ready) return;
+
+    // Cancel pending preview/exact scheduler jobs from paused/scrub mode.
+    // Otherwise a delayed exact seek can fire right after play() and freeze
+    // realtime preview until that seek completes.
+    this.seekScheduler.reset();
+
+    // If a heavy seek was in progress (paused/scrub mode), abort its continuation
+    // so realtime playback starts immediately.
+    if (this.seekInProgress) {
+      this.seekToken++;
+      this.pendingSeekTime = null;
+      this.seekInProgress = false;
+      if (this.deferredSeekFrame) {
+        try { this.deferredSeekFrame.close(); } catch {}
+        this.deferredSeekFrame = null;
+      }
+      if (this.decoder && this.codecConfig) {
+        try {
+          this.decoder.reset();
+          this.decoder.configure(this.codecConfig);
+        } catch {
+          // Ignore; decoder may already be reconfigured by an obsolete seek.
+        }
+      }
+    }
+
     this._isPlaying = true;
     this.lastFrameTime = performance.now();
+    log.info('play', {
+      timeSec: Number(this.currentTime.toFixed(3)),
+      sampleIndex: this.sampleIndex,
+      decodeQueueDepth: this.getDecodeQueueDepth(),
+    });
+    this.scheduleNextFrame();
+  }
+
+  /**
+   * Atomic seek + play: resets the decoder, decodes from the nearest keyframe
+   * to the target time, then starts the realtime decode loop from there.
+   *
+   * This avoids the race condition where play() cancels a preceding seek()
+   * via seekScheduler.reset(), causing video to start from the wrong position.
+   */
+  playFrom(timeSec: number): void {
+    if (this._isPlaying || !this.ready) return;
+    if (!this.decoder || !this.codecConfig || !this.videoTrack || this.samples.length === 0) {
+      // Fall back to plain play() if we can't seek
+      this.play();
+      return;
+    }
+
+    // Cancel pending scheduler jobs and abort any in-progress seek
+    this.seekScheduler.reset();
+    if (this.seekInProgress) {
+      this.seekToken++;
+      this.pendingSeekTime = null;
+      this.seekInProgress = false;
+      if (this.deferredSeekFrame) {
+        try { this.deferredSeekFrame.close(); } catch {}
+        this.deferredSeekFrame = null;
+      }
+    }
+
+    // Reset decoder and decode from nearest keyframe to target
+    this.decoder.reset();
+    this.decoder.configure(this.codecConfig);
+
+    const targetIndex = this.findTargetIndex(timeSec);
+    const keyframeIndex = this.findKeyframeIndex(targetIndex);
+
+    for (let i = keyframeIndex; i <= targetIndex; i++) {
+      const sample = this.samples[i];
+      const chunk = new EncodedVideoChunk({
+        type: sample.is_sync ? 'key' : 'delta',
+        timestamp: (sample.cts * 1_000_000) / sample.timescale,
+        duration: (sample.duration * 1_000_000) / sample.timescale,
+        data: sample.data,
+      });
+      try {
+        this.decoder.decode(chunk);
+      } catch {
+        // Skip decode errors during startup seek
+      }
+    }
+
+    this.sampleIndex = targetIndex + 1;
+    this._isPlaying = true;
+    this.lastFrameTime = performance.now();
+    log.info('playFrom', {
+      targetTimeSec: Number(timeSec.toFixed(3)),
+      targetIndex,
+      keyframeIndex,
+      framesToDecode: targetIndex - keyframeIndex + 1,
+    });
     this.scheduleNextFrame();
   }
 
@@ -318,11 +448,17 @@ export class WebCodecsPlayer implements ExportModePlayer {
       cancelAnimationFrame(this.animationId);
       this.animationId = null;
     }
+    log.info('pause', {
+      timeSec: Number(this.currentTime.toFixed(3)),
+      sampleIndex: this.sampleIndex,
+      decodeQueueDepth: this.getDecodeQueueDepth(),
+    });
   }
 
   stop(): void {
     this.pause();
     this.sampleIndex = 0;
+    this.currentFrameTimeSec = 0;
 
     if (this.currentFrame) {
       this.currentFrame.close();
@@ -369,6 +505,18 @@ export class WebCodecsPlayer implements ExportModePlayer {
 
   private decodeNextFrame(): void {
     if (!this.decoder || this.samples.length === 0) return;
+    if (this.seekInProgress) return;
+
+    const workerPressure = this.decodeWorkerClient?.getBackpressureState() ?? 'NORMAL';
+    if (workerPressure === 'STALL_RECOVERY') {
+      return;
+    }
+    if (workerPressure === 'THROTTLE') {
+      this.throttleToggle = !this.throttleToggle;
+      if (this.throttleToggle) {
+        return;
+      }
+    }
 
     // Get next sample
     if (this.sampleIndex >= this.samples.length) {
@@ -385,6 +533,9 @@ export class WebCodecsPlayer implements ExportModePlayer {
 
     const sample = this.samples[this.sampleIndex];
     this.sampleIndex++;
+    const localDepth = this.getDecodeQueueDepth();
+    const workerPending = this.decodeWorkerClient?.getPendingRequestCount() ?? 0;
+    playbackMetrics.recordDecodeQueueDepth(Math.max(localDepth, workerPending));
 
     // Create EncodedVideoChunk from sample
     const chunk = new EncodedVideoChunk({
@@ -407,54 +558,12 @@ export class WebCodecsPlayer implements ExportModePlayer {
     return this.currentFrame !== null;
   }
 
+  getDecodeQueueDepth(): number {
+    return Math.max(0, this.samples.length - this.sampleIndex);
+  }
+
   seek(timeSeconds: number): void {
-    if (!this.videoTrack || this.samples.length === 0 || !this.decoder) return;
-
-    const targetTime = timeSeconds * this.videoTrack.timescale;
-
-    // Find sample with CTS closest to target time
-    // IMPORTANT: Samples are in DECODE order (DTS), not presentation order (CTS)
-    // due to B-frame reordering. We must search for closest CTS match.
-    let targetIndex = 0;
-    let closestDiff = Infinity;
-
-    for (let i = 0; i < this.samples.length; i++) {
-      const diff = Math.abs(this.samples[i].cts - targetTime);
-      if (diff < closestDiff) {
-        closestDiff = diff;
-        targetIndex = i;
-      }
-    }
-
-    // Find the nearest keyframe before the target sample (in decode order)
-    let keyframeIndex = 0;
-    for (let i = 0; i <= targetIndex; i++) {
-      if (this.samples[i].is_sync) {
-        keyframeIndex = i;
-      }
-    }
-
-    // Reset decoder
-    this.decoder.reset();
-    this.decoder.configure(this.codecConfig!);
-
-    // Decode from keyframe up to target frame to get correct frame
-    for (let i = keyframeIndex; i <= targetIndex; i++) {
-      const sample = this.samples[i];
-      const chunk = new EncodedVideoChunk({
-        type: sample.is_sync ? 'key' : 'delta',
-        timestamp: (sample.cts * 1_000_000) / sample.timescale,
-        duration: (sample.duration * 1_000_000) / sample.timescale,
-        data: sample.data,
-      });
-      try {
-        this.decoder.decode(chunk);
-      } catch {
-        // Skip decode errors
-      }
-    }
-
-    this.sampleIndex = targetIndex + 1;
+    this.seekScheduler.request(timeSeconds);
   }
 
   /**
@@ -462,58 +571,8 @@ export class WebCodecsPlayer implements ExportModePlayer {
    * Use this for export where we need guaranteed frame accuracy
    */
   async seekAsync(timeSeconds: number): Promise<void> {
-    if (!this.videoTrack || this.samples.length === 0 || !this.decoder) {
-      return;
-    }
-
-    const targetTime = timeSeconds * this.videoTrack.timescale;
-
-    // Find sample with CTS closest to target time
-    // IMPORTANT: Samples are in DECODE order (DTS), not presentation order (CTS)
-    // due to B-frame reordering. We must search for closest CTS match.
-    let targetIndex = 0;
-    let closestDiff = Infinity;
-
-    for (let i = 0; i < this.samples.length; i++) {
-      const diff = Math.abs(this.samples[i].cts - targetTime);
-      if (diff < closestDiff) {
-        closestDiff = diff;
-        targetIndex = i;
-      }
-    }
-
-    // Find the nearest keyframe before the target sample (in decode order)
-    let keyframeIndex = 0;
-    for (let i = 0; i <= targetIndex; i++) {
-      if (this.samples[i].is_sync) {
-        keyframeIndex = i;
-      }
-    }
-
-    // Reset decoder
-    this.decoder.reset();
-    this.decoder.configure(this.codecConfig!);
-
-    // Decode from keyframe up to target frame
-    for (let i = keyframeIndex; i <= targetIndex; i++) {
-      const sample = this.samples[i];
-      const chunk = new EncodedVideoChunk({
-        type: sample.is_sync ? 'key' : 'delta',
-        timestamp: (sample.cts * 1_000_000) / sample.timescale,
-        duration: (sample.duration * 1_000_000) / sample.timescale,
-        data: sample.data,
-      });
-      try {
-        this.decoder.decode(chunk);
-      } catch {
-        // Skip decode errors
-      }
-    }
-
-    // Flush to ensure all frames are decoded
-    await this.decoder.flush();
-
-    this.sampleIndex = targetIndex + 1;
+    this.seekScheduler.request(timeSeconds);
+    await this.seekScheduler.flushExactNow();
   }
 
   // ==================== EXPORT MODE (delegated to WebCodecsExportMode) ====================
@@ -548,6 +607,7 @@ export class WebCodecsPlayer implements ExportModePlayer {
   }
 
   get currentTime(): number {
+    if (this.currentFrameTimeSec > 0) return this.currentFrameTimeSec;
     if (!this.videoTrack || this.samples.length === 0 || this.sampleIndex === 0) return 0;
     const sample = this.samples[Math.min(this.sampleIndex - 1, this.samples.length - 1)];
     return sample.cts / sample.timescale;
@@ -555,6 +615,8 @@ export class WebCodecsPlayer implements ExportModePlayer {
 
   destroy(): void {
     this.stop();
+    this.seekScheduler.reset();
+    this.frameQueue.clear();
 
     if (this.decoder) {
       this.decoder.close();
@@ -572,9 +634,151 @@ export class WebCodecsPlayer implements ExportModePlayer {
       }
       this.currentFrame = null;
     }
+    if (this.deferredSeekFrame) {
+      try {
+        this.deferredSeekFrame.close();
+      } catch {
+        // Already closed
+      }
+      this.deferredSeekFrame = null;
+    }
 
     this.mp4File = null;
     this.samples = [];
     this.ready = false;
+    if (this.decodeWorkerClient) {
+      void this.decodeWorkerClient.shutdown();
+      this.decodeWorkerClient = null;
+    }
+  }
+
+  private commitFrame(frame: VideoFrame): void {
+    if (this.currentFrame) {
+      try { this.currentFrame.close(); } catch {}
+    }
+    this.currentFrame = frame;
+    if (typeof frame.timestamp === 'number') {
+      this.currentFrameTimeSec = frame.timestamp / 1_000_000;
+    }
+    this.onFrame?.(frame);
+  }
+
+  private findTargetIndex(timeSeconds: number): number {
+    if (!this.videoTrack || this.samples.length === 0) return 0;
+    const targetTime = timeSeconds * this.videoTrack.timescale;
+    let targetIndex = 0;
+    let closestDiff = Infinity;
+    for (let i = 0; i < this.samples.length; i++) {
+      const diff = Math.abs(this.samples[i].cts - targetTime);
+      if (diff < closestDiff) {
+        closestDiff = diff;
+        targetIndex = i;
+      }
+    }
+    return targetIndex;
+  }
+
+  private findKeyframeIndex(targetIndex: number): number {
+    let keyframeIndex = 0;
+    for (let i = 0; i <= targetIndex; i++) {
+      if (this.samples[i].is_sync) keyframeIndex = i;
+    }
+    return keyframeIndex;
+  }
+
+  private async enqueueSeek(timeSeconds: number, mode: 'preview' | 'exact' = 'exact'): Promise<void> {
+    if (!this.videoTrack || this.samples.length === 0 || !this.decoder || !this.codecConfig) return;
+    const seekStart = performance.now();
+
+    // Coalesce seeks: keep only the latest request while one seek is active.
+    if (this.seekInProgress) {
+      this.pendingSeekTime = timeSeconds;
+      log.debug('seek coalesced', { timeSeconds: Number(timeSeconds.toFixed(3)), mode });
+      return;
+    }
+
+    const token = ++this.seekToken;
+    this.seekInProgress = true;
+
+    try {
+      let targetIndex = this.findTargetIndex(timeSeconds);
+      let keyframeIndex = this.findKeyframeIndex(targetIndex);
+      if (this.decodeWorkerClient?.isAvailable()) {
+        try {
+          const plan = await this.decodeWorkerClient.getSeekPlan(timeSeconds);
+          targetIndex = Math.max(0, Math.min(this.samples.length - 1, plan.targetIndex));
+          keyframeIndex = Math.max(0, Math.min(targetIndex, plan.keyframeIndex));
+        } catch {
+          // Fall back to local seek planning if worker is unavailable.
+        }
+      }
+
+      this.decoder.reset();
+      this.decoder.configure(this.codecConfig);
+      // Wider preview window improves scrub coverage on long-GOP footage.
+      // Exact seek still runs via scheduler settle to land on the precise frame.
+      const previewDecodeWindow = Math.max(1, Math.round(this.frameRate * 2.0));
+      const decodeStopIndex =
+        mode === 'preview'
+          ? Math.min(targetIndex, keyframeIndex + previewDecodeWindow)
+          : targetIndex;
+
+      for (let i = keyframeIndex; i <= decodeStopIndex; i++) {
+        const sample = this.samples[i];
+        const chunk = new EncodedVideoChunk({
+          type: sample.is_sync ? 'key' : 'delta',
+          timestamp: (sample.cts * 1_000_000) / sample.timescale,
+          duration: (sample.duration * 1_000_000) / sample.timescale,
+          data: sample.data,
+        });
+        try {
+          this.decoder.decode(chunk);
+        } catch {
+          // Skip decode errors
+        }
+      }
+
+      try {
+        await this.decoder.flush();
+      } catch (e) {
+        const isAbort =
+          (e instanceof DOMException && e.name === 'AbortError') ||
+          (e instanceof Error && /aborted due to reset/i.test(e.message));
+        if (!isAbort) throw e;
+      }
+
+      // Ignore obsolete seek completion.
+      if (token !== this.seekToken) return;
+
+      this.sampleIndex = decodeStopIndex + 1;
+
+      // Publish only the final seek frame (no fast intermediate playback).
+      if (this.deferredSeekFrame) {
+        const frame = this.deferredSeekFrame;
+        this.deferredSeekFrame = null;
+        this.commitFrame(frame);
+      }
+    } finally {
+      const seekLatencyMs = performance.now() - seekStart;
+      playbackMetrics.recordSeekLatency(seekLatencyMs);
+      if (seekLatencyMs > 120) {
+        log.warn('slow seek', {
+          mode,
+          latencyMs: Math.round(seekLatencyMs),
+          targetTimeSec: Number(timeSeconds.toFixed(3)),
+          sampleIndex: this.sampleIndex,
+        });
+      }
+      this.seekInProgress = false;
+
+      // If another seek arrived during this one, run latest now.
+      const next = this.pendingSeekTime;
+      this.pendingSeekTime = null;
+      if (next !== null) {
+        void this.enqueueSeek(next, mode).catch(() => {
+          // Swallow expected abort/race errors from coalesced seeks.
+        });
+      }
+    }
   }
 }
