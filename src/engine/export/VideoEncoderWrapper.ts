@@ -185,7 +185,6 @@ export class VideoEncoderWrapper {
     // FPS-based keyframe interval (default: 1 keyframe per second)
     const interval = keyframeInterval ?? this.settings.fps;
     const keyFrame = frameIndex % interval === 0;
-
     this.encoder.encode(frame, { keyFrame });
     frame.close();
 

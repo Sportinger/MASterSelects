@@ -40,6 +40,7 @@ import { useClipDrag } from './hooks/useClipDrag';
 import { useClipFade } from './hooks/useClipFade';
 import { useLayerSync } from './hooks/useLayerSync';
 import { usePlaybackLoop } from './hooks/usePlaybackLoop';
+import { useVideoPreload } from './hooks/useVideoPreload';
 import { useAutoFeatures } from './hooks/useAutoFeatures';
 import { useExternalDrop } from './hooks/useExternalDrop';
 import { useTransitionDrop } from './hooks/useTransitionDrop';
@@ -532,9 +533,13 @@ export function Timeline() {
     isAudioTrackMuted,
   });
 
-  // Video preloading is handled by VideoSyncManager.preloadUpcomingClips()
-  // in the render loop — it correctly skips shared video elements (split clips)
-  // and uses smart two-phase preroll. No React hook needed.
+  // Preload upcoming video clips - extracted to hook
+  useVideoPreload({
+    isPlaying,
+    isDraggingPlayhead,
+    playheadPosition,
+    clips,
+  });
 
   // Audio master clock playback loop - extracted to hook
   usePlaybackLoop({ isPlaying });

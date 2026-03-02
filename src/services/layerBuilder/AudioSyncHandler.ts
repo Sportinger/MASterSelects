@@ -78,7 +78,7 @@ export class AudioSyncHandler {
     // Only set new timeout if none active
     if (!this.scrubAudioTimeout) {
       this.scrubAudioTimeout = setTimeout(() => {
-        audioRoutingManager.fadeOutAndPause(element);
+        element.pause();
         this.scrubAudioTimeout = null;
       }, LAYER_BUILDER_CONSTANTS.SCRUB_AUDIO_DURATION);
     }
@@ -107,16 +107,17 @@ export class AudioSyncHandler {
     // Check if we have EQ to apply (any non-zero gain)
     const hasEQ = eqGains && eqGains.some(g => Math.abs(g) > 0.01);
 
-    // Ensure all audio goes through Web Audio for smooth fade-outs
-    audioRoutingManager.ensureRoute(element);
-
     if (hasEQ) {
       // Use Web Audio routing for volume + EQ
       // This handles both volume and EQ through the audio graph
       audioRoutingManager.applyEffects(element, volume, eqGains!);
     } else {
-      // Volume-only path — use smooth ramp via gain node
-      audioRoutingManager.setVolume(element, volume);
+      // Simple volume-only path (no Web Audio overhead)
+      // HTMLMediaElement.volume only accepts [0, 1] range - clamp to prevent errors
+      const targetVolume = Math.max(0, Math.min(1, volume));
+      if (Math.abs(element.volume - targetVolume) > 0.01) {
+        element.volume = targetVolume;
+      }
     }
 
     // Start playback if paused
@@ -134,16 +135,10 @@ export class AudioSyncHandler {
       state.masterSet = true;
     }
 
-    // Track drift and correct if too large
+    // Track drift for stats (informational only)
     const timeDiff = element.currentTime - clipTime;
-    const absDrift = Math.abs(timeDiff);
-    if (absDrift > state.maxAudioDrift) {
-      state.maxAudioDrift = absDrift;
-    }
-
-    // Corrective seek when audio drifts more than ~2 frames at 60fps (33ms)
-    if (absDrift > LAYER_BUILDER_CONSTANTS.AUDIO_DRIFT_THRESHOLD && !element.paused) {
-      element.currentTime = clipTime;
+    if (Math.abs(timeDiff) > state.maxAudioDrift) {
+      state.maxAudioDrift = Math.abs(timeDiff);
     }
 
     // Count playing audio
@@ -153,11 +148,11 @@ export class AudioSyncHandler {
   }
 
   /**
-   * Pause element if currently playing, using fade-out to prevent audio pops
+   * Pause element if currently playing
    */
   private pauseIfPlaying(element: HTMLAudioElement | HTMLVideoElement): void {
     if (!element.paused) {
-      audioRoutingManager.fadeOutAndPause(element);
+      element.pause();
     }
   }
 

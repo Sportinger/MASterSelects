@@ -96,10 +96,10 @@ function cloneLinkedSourceForPart(
  * Creates all clips at once and applies with a single setState() call.
  * Handles linked audio clips and source element cloning.
  */
-function splitClipBatch(clip: TimelineClip, splitTimes: number[], withLinked = true): void {
+function splitClipBatch(clip: TimelineClip, splitTimes: number[]): void {
   const state = useTimelineStore.getState();
   const allClips = state.clips;
-  const linkedClip = withLinked && clip.linkedClipId
+  const linkedClip = clip.linkedClipId
     ? allClips.find(c => c.id === clip.linkedClipId)
     : undefined;
 
@@ -131,7 +131,7 @@ function splitClipBatch(clip: TimelineClip, splitTimes: number[], withLinked = t
       duration: partDuration,
       inPoint: partInPoint,
       outPoint: partOutPoint,
-      linkedClipId: linkedClip ? linkedPartId : undefined,
+      linkedClipId: linkedPartId,
       source: partSource,
       transitionIn: i === 0 ? clip.transitionIn : undefined,
       transitionOut: i === boundaries.length - 2 ? clip.transitionOut : undefined,
@@ -233,7 +233,6 @@ export async function handleSplitClip(
 ): Promise<ToolResult> {
   const clipId = args.clipId as string;
   const splitTime = args.splitTime as number;
-  const withLinked = (args.withLinked as boolean | undefined) ?? true;
 
   const clip = timelineStore.clips.find(c => c.id === clipId);
   if (!clip) {
@@ -245,9 +244,8 @@ export async function handleSplitClip(
     return { success: false, error: `Split time ${splitTime}s is outside clip range (${clip.startTime}s - ${clipEnd}s)` };
   }
 
-  // Use splitClipBatch to respect withLinked parameter
-  splitClipBatch(clip, [splitTime], withLinked);
-  return { success: true, data: { splitAt: splitTime, originalClipId: clipId, withLinked } };
+  timelineStore.splitClip(clipId, splitTime);
+  return { success: true, data: { splitAt: splitTime, originalClipId: clipId } };
 }
 
 export async function handleDeleteClip(
@@ -255,25 +253,13 @@ export async function handleDeleteClip(
   timelineStore: TimelineStore
 ): Promise<ToolResult> {
   const clipId = args.clipId as string;
-  const withLinked = (args.withLinked as boolean | undefined) ?? true;
   const clip = timelineStore.clips.find(c => c.id === clipId);
   if (!clip) {
     return { success: false, error: `Clip not found: ${clipId}` };
   }
 
-  // removeClip() only deletes linked clip if it's in selectedClipIds
-  // So we select the linked clip first when withLinked is true
-  if (withLinked && clip.linkedClipId) {
-    const linkedClip = timelineStore.clips.find(c => c.id === clip.linkedClipId);
-    if (linkedClip) {
-      useTimelineStore.setState({
-        selectedClipIds: new Set([clipId, clip.linkedClipId]),
-      });
-    }
-  }
-
   timelineStore.removeClip(clipId);
-  return { success: true, data: { deletedClipId: clipId, clipName: clip.name, withLinked } };
+  return { success: true, data: { deletedClipId: clipId, clipName: clip.name } };
 }
 
 export async function handleDeleteClips(
@@ -281,25 +267,11 @@ export async function handleDeleteClips(
   timelineStore: TimelineStore
 ): Promise<ToolResult> {
   const clipIds = args.clipIds as string[];
-  const withLinked = (args.withLinked as boolean | undefined) ?? true;
   const deleted: string[] = [];
   const notFound: string[] = [];
 
-  // When withLinked is true, collect all linked IDs and select them so removeClip deletes them
-  if (withLinked) {
-    const allLinkedIds = new Set<string>();
-    for (const clipId of clipIds) {
-      allLinkedIds.add(clipId);
-      const clip = useTimelineStore.getState().clips.find(c => c.id === clipId);
-      if (clip?.linkedClipId) {
-        allLinkedIds.add(clip.linkedClipId);
-      }
-    }
-    useTimelineStore.setState({ selectedClipIds: allLinkedIds });
-  }
-
   for (const clipId of clipIds) {
-    const clip = useTimelineStore.getState().clips.find(c => c.id === clipId);
+    const clip = timelineStore.clips.find(c => c.id === clipId);
     if (clip) {
       timelineStore.removeClip(clipId);
       deleted.push(clipId);
@@ -310,7 +282,7 @@ export async function handleDeleteClips(
 
   return {
     success: true,
-    data: { deleted, notFound, deletedCount: deleted.length, withLinked },
+    data: { deleted, notFound, deletedCount: deleted.length },
   };
 }
 
@@ -413,7 +385,6 @@ export async function handleMoveClip(
   const clipId = args.clipId as string;
   const newStartTime = args.newStartTime as number;
   const newTrackId = args.newTrackId as string | undefined;
-  const withLinked = (args.withLinked as boolean | undefined) ?? true;
 
   const clip = timelineStore.clips.find(c => c.id === clipId);
   if (!clip) {
@@ -427,15 +398,13 @@ export async function handleMoveClip(
     }
   }
 
-  // skipLinked is the inverse of withLinked
-  timelineStore.moveClip(clipId, newStartTime, newTrackId, !withLinked);
+  timelineStore.moveClip(clipId, newStartTime, newTrackId);
   return {
     success: true,
     data: {
       clipId,
       newStartTime,
       newTrackId: newTrackId || clip.trackId,
-      withLinked,
     },
   };
 }
@@ -467,7 +436,6 @@ export async function handleSplitClipEvenly(
 ): Promise<ToolResult> {
   const clipId = args.clipId as string;
   const parts = args.parts as number;
-  const withLinked = (args.withLinked as boolean | undefined) ?? true;
 
   const clip = timelineStore.clips.find(c => c.id === clipId);
   if (!clip) {
@@ -489,11 +457,11 @@ export async function handleSplitClipEvenly(
   }
 
   // Single-setState batch split — no stack overflow possible
-  splitClipBatch(clip, splitTimes, withLinked);
+  splitClipBatch(clip, splitTimes);
 
   return {
     success: true,
-    data: { parts, splitTimes, clipName, partDuration, withLinked },
+    data: { parts, splitTimes, clipName, partDuration },
   };
 }
 
@@ -503,7 +471,6 @@ export async function handleSplitClipAtTimes(
 ): Promise<ToolResult> {
   const clipId = args.clipId as string;
   const times = args.times as number[];
-  const withLinked = (args.withLinked as boolean | undefined) ?? true;
 
   const clip = timelineStore.clips.find(c => c.id === clipId);
   if (!clip) {
@@ -523,11 +490,11 @@ export async function handleSplitClipAtTimes(
   }
 
   // Single-setState batch split — no stack overflow possible
-  splitClipBatch(clip, validTimes, withLinked);
+  splitClipBatch(clip, validTimes);
 
   return {
     success: true,
-    data: { splitCount: validTimes.length, splitTimes: validTimes, resultingParts: validTimes.length + 1, withLinked },
+    data: { splitCount: validTimes.length, splitTimes: validTimes, resultingParts: validTimes.length + 1 },
   };
 }
 
@@ -536,7 +503,6 @@ export async function handleReorderClips(
   _timelineStore: TimelineStore
 ): Promise<ToolResult> {
   const clipIds = args.clipIds as string[];
-  const withLinked = (args.withLinked as boolean | undefined) ?? true;
 
   if (!clipIds || clipIds.length < 2) {
     return { success: false, error: 'Need at least 2 clip IDs to reorder' };
@@ -566,14 +532,12 @@ export async function handleReorderClips(
   }
 
   // Also move linked audio clips (same delta as their video clip)
-  if (withLinked) {
-    for (const clip of orderedClips) {
-      if (clip!.linkedClipId) {
-        const linkedClip = allClips.find(c => c.id === clip!.linkedClipId);
-        if (linkedClip && !newPositions.has(linkedClip.id)) {
-          const delta = newPositions.get(clip!.id)! - clip!.startTime;
-          newPositions.set(linkedClip.id, linkedClip.startTime + delta);
-        }
+  for (const clip of orderedClips) {
+    if (clip!.linkedClipId) {
+      const linkedClip = allClips.find(c => c.id === clip!.linkedClipId);
+      if (linkedClip && !newPositions.has(linkedClip.id)) {
+        const delta = newPositions.get(clip!.id)! - clip!.startTime;
+        newPositions.set(linkedClip.id, linkedClip.startTime + delta);
       }
     }
   }
@@ -597,7 +561,6 @@ export async function handleReorderClips(
     success: true,
     data: {
       reorderedCount: clipIds.length,
-      withLinked,
       newOrder: clipIds.map((id, i) => ({
         clipId: id,
         newStartTime: newPositions.get(id),

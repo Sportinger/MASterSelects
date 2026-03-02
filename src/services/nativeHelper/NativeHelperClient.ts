@@ -364,45 +364,6 @@ class NativeHelperClientImpl {
   }
 
   /**
-   * Search for videos via yt-dlp (requires native helper with search support)
-   */
-  async searchVideos(query: string, maxResults: number): Promise<Array<{
-    id: string; title: string; url: string; thumbnail: string;
-    uploader: string; duration: number; view_count?: number;
-  }> | null> {
-    const id = this.nextId();
-
-    return new Promise((resolve) => {
-      const timeout = setTimeout(() => {
-        this.pendingRequests.delete(id);
-        resolve(null);
-      }, 30000);
-
-      this.pendingRequests.set(id, (response: any) => {
-        clearTimeout(timeout);
-        if (response.ok && Array.isArray(response.results)) {
-          resolve(response.results);
-        } else {
-          resolve(null);
-        }
-      });
-
-      const cmd = {
-        cmd: 'search_videos',
-        id,
-        query,
-        max_results: maxResults,
-      };
-
-      this.sendRaw(JSON.stringify(cmd)).catch(() => {
-        clearTimeout(timeout);
-        this.pendingRequests.delete(id);
-        resolve(null);
-      });
-    });
-  }
-
-  /**
    * List available formats for a video URL (YouTube, TikTok, Instagram, etc.)
    */
   async listFormats(url: string): Promise<VideoInfo | null> {

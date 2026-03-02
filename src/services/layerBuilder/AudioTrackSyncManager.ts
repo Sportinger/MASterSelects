@@ -7,7 +7,6 @@ import { LAYER_BUILDER_CONSTANTS } from './types';
 import { playheadState } from './PlayheadState';
 import { createFrameContext, getClipTimeInfo, getMediaFileForClip, getClipForTrack, isVideoTrackVisible } from './FrameContext';
 import { AudioSyncHandler, createAudioSyncState, finalizeAudioSync, resumeAudioContextIfNeeded } from './AudioSyncHandler';
-import { audioRoutingManager } from '../audioRoutingManager';
 import { proxyFrameCache } from '../proxyFrameCache';
 import { layerPlaybackManager } from '../layerPlaybackManager';
 
@@ -190,10 +189,10 @@ export class AudioTrackSyncManager {
       }
     }
 
-    // Fade out and pause inactive audio proxies (prevents audio pop)
+    // Pause inactive audio proxies
     for (const [clipId, audioProxy] of this.activeAudioProxies) {
       if (!activeVideoClipIds.has(clipId) && !audioProxy.paused) {
-        audioRoutingManager.fadeOutAndPause(audioProxy);
+        audioProxy.pause();
         this.activeAudioProxies.delete(clipId);
       }
     }
@@ -232,18 +231,11 @@ export class AudioTrackSyncManager {
       const isAtPlayhead = ctx.clipsAtTime.some(c => c.id === clip.id);
 
       if (clip.source?.audioElement && !isAtPlayhead && !clip.source.audioElement.paused) {
-        // Don't pause if an active clip shares this audio element (split clips)
-        const audio = clip.source.audioElement;
-        const sharedByActiveClip = ctx.clipsAtTime.some(
-          active => active.source?.audioElement === audio
-        );
-        if (!sharedByActiveClip) {
-          audioRoutingManager.fadeOutAndPause(audio);
-        }
+        clip.source.audioElement.pause();
       }
 
       if (clip.mixdownAudio && !isAtPlayhead && !clip.mixdownAudio.paused) {
-        audioRoutingManager.fadeOutAndPause(clip.mixdownAudio);
+        clip.mixdownAudio.pause();
       }
     }
   }
@@ -257,16 +249,16 @@ export class AudioTrackSyncManager {
     playheadState.hasMasterAudio = false;
     playheadState.masterAudioElement = null;
 
-    // Fade out and pause all audio elements to prevent pops
+    // Pause all audio elements
     for (const clip of ctx.clips) {
       if (clip.source?.audioElement && !clip.source.audioElement.paused) {
-        audioRoutingManager.fadeOutAndPause(clip.source.audioElement);
+        clip.source.audioElement.pause();
       }
       if (clip.source?.videoElement && !clip.source.videoElement.muted) {
         clip.source.videoElement.muted = true;
       }
       if (clip.mixdownAudio && !clip.mixdownAudio.paused) {
-        audioRoutingManager.fadeOutAndPause(clip.mixdownAudio);
+        clip.mixdownAudio.pause();
       }
     }
   }

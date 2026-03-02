@@ -4,11 +4,6 @@ import type { PlaybackActions, SliceCreator } from './types';
 import { MIN_ZOOM, MAX_ZOOM } from './constants';
 import { useMediaStore } from '../mediaStore';
 
-// Module-level counter to track play/pause request ordering.
-// Incremented by both play() and pause() so that a pending play()
-// can detect that a newer pause() (or another play()) has been issued.
-let playRequestId = 0;
-
 // Playback actions only (RAM preview and proxy cache in separate slices)
 export const createPlaybackSlice: SliceCreator<PlaybackActions> = (set, get) => ({
   // Playback actions
@@ -22,7 +17,6 @@ export const createPlaybackSlice: SliceCreator<PlaybackActions> = (set, get) => 
   },
 
   play: async () => {
-    const currentRequestId = ++playRequestId;
     const { clips, playheadPosition } = get();
 
     // Find all video clips at current playhead position that need to be ready
@@ -66,21 +60,11 @@ export const createPlaybackSlice: SliceCreator<PlaybackActions> = (set, get) => 
         if (video.readyState >= 3) return;
 
         return new Promise((resolve) => {
-          let iterations = 0;
-          const maxIterations = 20; // 20 iterations * ~50ms = ~1000ms max
-
           const checkReady = () => {
             if (video.readyState >= 3) {
               resolve();
               return;
             }
-
-            // Bail out if we've exceeded max iterations
-            if (++iterations > maxIterations) {
-              resolve();
-              return;
-            }
-
             // Trigger buffering by briefly playing
             video.play().then(() => {
               setTimeout(() => {
@@ -109,24 +93,16 @@ export const createPlaybackSlice: SliceCreator<PlaybackActions> = (set, get) => 
       ]);
     }
 
-    // Guard: if pause() or another play() was called during the async wait,
-    // this request is stale — do not override the newer state.
-    if (playRequestId !== currentRequestId) return;
-
     set({ isPlaying: true });
   },
 
   pause: () => {
-    // Invalidate any pending play() that is still awaiting video readiness
-    playRequestId++;
     // Reset playback speed to normal when pausing
     // So that Space (play/pause toggle) plays forward again
     set({ isPlaying: false, playbackSpeed: 1 });
   },
 
   stop: () => {
-    // Invalidate any pending play() that is still awaiting video readiness
-    playRequestId++;
     set({ isPlaying: false, playheadPosition: 0 });
   },
 

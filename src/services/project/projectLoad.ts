@@ -134,6 +134,7 @@ function convertProjectCompositionToStore(
         mediaFileId: c.mediaId,  // Map mediaId -> mediaFileId for loadState
         sourceType: c.sourceType || 'video',
         naturalDuration: c.naturalDuration,
+        thumbnails: c.thumbnails,
         linkedClipId: c.linkedClipId,
         linkedGroupId: c.linkedGroupId,
         waveform: c.waveform,
@@ -141,20 +142,7 @@ function convertProjectCompositionToStore(
         duration: c.duration,
         inPoint: c.inPoint,
         outPoint: c.outPoint,
-        // Convert flat ProjectTransform → nested ClipTransform format
-        // Also supports already-nested format for forward compatibility
-        transform: c.transform ? (() => {
-          const t = c.transform as any;
-          return {
-            position: t.position ?? { x: t.x ?? 0, y: t.y ?? 0, z: t.z ?? 0 },
-            scale: t.scale ?? { x: t.scaleX ?? 1, y: t.scaleY ?? 1 },
-            rotation: t.rotation != null && typeof t.rotation === 'object'
-              ? t.rotation
-              : { x: t.rotationX ?? 0, y: t.rotationY ?? 0, z: t.rotation ?? 0 },
-            opacity: t.opacity ?? 1,
-            blendMode: t.blendMode ?? 'normal',
-          };
-        })() : undefined,
+        transform: c.transform,
         effects: c.effects,
         masks: c.masks,
         keyframes: c.keyframes || [],
@@ -629,19 +617,8 @@ async function reloadNestedCompositionClips(): Promise<void> {
         inPoint: nestedSerializedClip.inPoint,
         outPoint: nestedSerializedClip.outPoint,
         source: null,
-        // Convert flat ProjectTransform → nested ClipTransform for nested clips too
-        transform: nestedSerializedClip.transform ? (() => {
-          const t = nestedSerializedClip.transform as any;
-          return {
-            position: t.position ?? { x: t.x ?? 0, y: t.y ?? 0, z: t.z ?? 0 },
-            scale: t.scale ?? { x: t.scaleX ?? 1, y: t.scaleY ?? 1 },
-            rotation: t.rotation != null && typeof t.rotation === 'object'
-              ? t.rotation
-              : { x: t.rotationX ?? 0, y: t.rotationY ?? 0, z: t.rotation ?? 0 },
-            opacity: t.opacity ?? 1,
-            blendMode: t.blendMode ?? 'normal',
-          };
-        })() : undefined,
+        thumbnails: nestedSerializedClip.thumbnails,
+        transform: nestedSerializedClip.transform,
         effects: nestedSerializedClip.effects || [],
         masks: nestedSerializedClip.masks || [],
         isLoading: true,
@@ -722,6 +699,19 @@ async function reloadNestedCompositionClips(): Promise<void> {
         isLoading: false,
       });
 
+      // Generate thumbnails if missing
+      if (!compClip.thumbnails || compClip.thumbnails.length === 0) {
+        const { generateCompThumbnails } = await import('../../stores/timeline/clip/addCompClip');
+        const compDuration = composition.timelineData?.duration ?? composition.duration;
+        generateCompThumbnails({
+          clipId: compClip.id,
+          nestedClips,
+          compDuration,
+          thumbnailsEnabled: timelineStore.thumbnailsEnabled,
+          get: useTimelineStore.getState,
+          set: useTimelineStore.setState,
+        });
+      }
     }
   }
 

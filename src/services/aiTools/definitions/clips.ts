@@ -50,7 +50,7 @@ export const clipToolDefinitions: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'splitClip',
-      description: 'Split a clip at a specific time, creating two separate clips. Also splits linked audio/video clip when withLinked is true (default).',
+      description: 'Split a clip at a specific time, creating two separate clips.',
       parameters: {
         type: 'object',
         properties: {
@@ -62,10 +62,6 @@ export const clipToolDefinitions: ToolDefinition[] = [
             type: 'number',
             description: 'The time in seconds (timeline time, not clip-relative) where to split',
           },
-          withLinked: {
-            type: 'boolean',
-            description: 'Also apply to linked audio/video clip (default: true). Set false to edit only this clip.',
-          },
         },
         required: ['clipId', 'splitTime'],
       },
@@ -75,17 +71,13 @@ export const clipToolDefinitions: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'deleteClip',
-      description: 'Delete a clip from the timeline. Also deletes linked audio/video clip when withLinked is true (default).',
+      description: 'Delete a clip from the timeline.',
       parameters: {
         type: 'object',
         properties: {
           clipId: {
             type: 'string',
             description: 'The ID of the clip to delete',
-          },
-          withLinked: {
-            type: 'boolean',
-            description: 'Also apply to linked audio/video clip (default: true). Set false to delete only this clip.',
           },
         },
         required: ['clipId'],
@@ -96,7 +88,7 @@ export const clipToolDefinitions: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'deleteClips',
-      description: 'Delete multiple clips from the timeline at once. Also deletes linked audio/video clips when withLinked is true (default).',
+      description: 'Delete multiple clips from the timeline at once.',
       parameters: {
         type: 'object',
         properties: {
@@ -104,10 +96,6 @@ export const clipToolDefinitions: ToolDefinition[] = [
             type: 'array',
             items: { type: 'string' },
             description: 'Array of clip IDs to delete',
-          },
-          withLinked: {
-            type: 'boolean',
-            description: 'Also apply to linked audio/video clips (default: true). Set false to delete only the specified clips.',
           },
         },
         required: ['clipIds'],
@@ -118,7 +106,7 @@ export const clipToolDefinitions: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'moveClip',
-      description: 'Move a clip to a new position and/or track. Also moves linked audio/video clip when withLinked is true (default).',
+      description: 'Move a clip to a new position and/or track.',
       parameters: {
         type: 'object',
         properties: {
@@ -133,10 +121,6 @@ export const clipToolDefinitions: ToolDefinition[] = [
           newTrackId: {
             type: 'string',
             description: 'ID of the track to move the clip to (optional, keeps current track if not specified)',
-          },
-          withLinked: {
-            type: 'boolean',
-            description: 'Also apply to linked audio/video clip (default: true). Set false to move only this clip.',
           },
         },
         required: ['clipId', 'newStartTime'],
@@ -201,7 +185,7 @@ export const clipToolDefinitions: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'splitClipEvenly',
-      description: 'Split a clip into N equal parts. This is much faster than using executeBatch with individual splitClip calls. Also splits linked audio/video clip when withLinked is true (default).',
+      description: 'Split a clip into N equal parts. This is much faster than using executeBatch with individual splitClip calls. Handles linked audio automatically.',
       parameters: {
         type: 'object',
         properties: {
@@ -213,10 +197,6 @@ export const clipToolDefinitions: ToolDefinition[] = [
             type: 'number',
             description: 'Number of equal parts to split into (minimum 2)',
           },
-          withLinked: {
-            type: 'boolean',
-            description: 'Also apply to linked audio/video clip (default: true). Set false to split only this clip.',
-          },
         },
         required: ['clipId', 'parts'],
       },
@@ -226,7 +206,7 @@ export const clipToolDefinitions: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'splitClipAtTimes',
-      description: 'Split a clip at multiple specific times in a single operation. This is much faster than using executeBatch with individual splitClip calls. Also splits linked audio/video clip when withLinked is true (default).',
+      description: 'Split a clip at multiple specific times in a single operation. This is much faster than using executeBatch with individual splitClip calls. Handles linked audio and changing clip IDs automatically.',
       parameters: {
         type: 'object',
         properties: {
@@ -239,10 +219,6 @@ export const clipToolDefinitions: ToolDefinition[] = [
             items: { type: 'number' },
             description: 'Array of timeline times (in seconds) where to split the clip',
           },
-          withLinked: {
-            type: 'boolean',
-            description: 'Also apply to linked audio/video clip (default: true). Set false to split only this clip.',
-          },
         },
         required: ['clipId', 'times'],
       },
@@ -252,7 +228,7 @@ export const clipToolDefinitions: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'reorderClips',
-      description: 'Reorder clips by placing them sequentially in the given order. Provide clip IDs in the desired playback order — the tool calculates all new positions and moves everything in a single operation. Also moves linked audio/video clips when withLinked is true (default). Much faster and more reliable than using executeBatch with multiple moveClip calls.',
+      description: 'Reorder clips by placing them sequentially in the given order. Provide clip IDs in the desired playback order — the tool calculates all new positions and moves everything (including linked audio) in a single operation. Much faster and more reliable than using executeBatch with multiple moveClip calls.',
       parameters: {
         type: 'object',
         properties: {
@@ -260,10 +236,6 @@ export const clipToolDefinitions: ToolDefinition[] = [
             type: 'array',
             items: { type: 'string' },
             description: 'Array of clip IDs in the desired playback order. Clips will be placed sequentially starting from the earliest clip position.',
-          },
-          withLinked: {
-            type: 'boolean',
-            description: 'Also apply to linked audio/video clips (default: true). Set false to reorder only the specified clips.',
           },
         },
         required: ['clipIds'],

@@ -4,7 +4,6 @@ import { useTimelineStore } from '../../../stores/timeline';
 import type { TranscriptWord } from '../../../types';
 
 const LANGUAGES = [
-  { code: 'auto', name: 'Auto-Detect' },
   { code: 'de', name: 'Deutsch' },
   { code: 'en', name: 'English' },
   { code: 'es', name: 'Español' },
@@ -33,7 +32,7 @@ export function TranscriptTab({ clipId, transcript, transcriptStatus, transcript
   const playheadPosition = useTimelineStore(state => state.playheadPosition);
   // Actions from getState() - stable, no subscription needed
   const { setPlayheadPosition } = useTimelineStore.getState();
-  const [language, setLanguage] = useState(() => localStorage.getItem('transcriptLanguage') || 'auto');
+  const [language, setLanguage] = useState(() => localStorage.getItem('transcriptLanguage') || 'de');
   const [searchQuery, setSearchQuery] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
 

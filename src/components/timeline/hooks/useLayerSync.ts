@@ -8,8 +8,12 @@ import { useTimelineStore } from '../../../stores/timeline';
 import { useMediaStore } from '../../../stores/mediaStore';
 import { engine } from '../../../engine/WebGPUEngine';
 import { proxyFrameCache } from '../../../services/proxyFrameCache';
+import { audioManager, audioStatusTracker } from '../../../services/audioManager';
+import { Logger } from '../../../services/logger';
 import { getInterpolatedClipTransform } from '../../../utils/keyframeInterpolation';
 import { DEFAULT_TRANSFORM } from '../../../stores/timeline/constants';
+
+const log = Logger.create('useLayerSync');
 
 interface UseLayerSyncProps {
   // Refs
@@ -31,7 +35,7 @@ interface UseLayerSyncProps {
   // Derived state
   clipMap: Map<string, TimelineClip>;
   videoTracks: TimelineTrack[];
-  audioTracks: TimelineTrack[]; // Kept for API compatibility; audio sync now handled by AudioTrackSyncManager
+  audioTracks: TimelineTrack[];
 
   // Helper functions
   getClipsAtTime: (time: number) => TimelineClip[];
@@ -46,7 +50,7 @@ interface UseLayerSyncProps {
   getInterpolatedSpeed: (clipId: string, localTime: number) => number;
   getSourceTimeForClip: (clipId: string, localTime: number) => number;
   isVideoTrackVisible: (track: TimelineTrack) => boolean;
-  isAudioTrackMuted: (track: TimelineTrack) => boolean; // Kept for API compatibility; audio sync now handled by AudioTrackSyncManager
+  isAudioTrackMuted: (track: TimelineTrack) => boolean;
 }
 
 export function useLayerSync({
@@ -55,7 +59,7 @@ export function useLayerSync({
   clips,
   tracks,
   isPlaying,
-  isDraggingPlayhead: _isDraggingPlayhead,
+  isDraggingPlayhead,
   ramPreviewRange,
   isRamPreviewing,
   clipKeyframes,
@@ -64,12 +68,14 @@ export function useLayerSync({
   scrollX,
   clipMap,
   videoTracks,
+  audioTracks,
   getClipsAtTime,
   getInterpolatedTransform,
   getInterpolatedEffects,
   getInterpolatedSpeed,
   getSourceTimeForClip,
   isVideoTrackVisible,
+  isAudioTrackMuted,
 }: UseLayerSyncProps): void {
   // Native decoder throttling (unused - sync handled by LayerBuilderService)
   // Kept for potential future use
@@ -818,10 +824,169 @@ export function useLayerSync({
       engine.requestRender();
     }
 
-    // NOTE: Audio sync (play/pause/seek/drift/volume) has been removed from useLayerSync.
-    // All audio synchronization is now handled exclusively by AudioTrackSyncManager
-    // (called via layerBuilder.syncAudioElements() in useEngine.ts) to avoid
-    // dual-sync race conditions that caused audio glitches and conflicting state.
+    // Audio sync with status tracking
+    let audioPlayingCount = 0;
+    let maxAudioDrift = 0;
+    let hasAudioError = false;
+
+    // Resume audio context if needed (browser autoplay policy)
+    if (isPlaying && !isDraggingPlayhead) {
+      audioManager.resume().catch(() => {});
+    }
+
+    audioTracks.forEach((track) => {
+      const clip = clipsAtTime.find((c) => c.trackId === track.id);
+
+      if (clip?.source?.audioElement) {
+        const audio = clip.source.audioElement;
+        const clipLocalTime = playheadPosition - clip.startTime;
+
+        // Get current speed for this clip (accounts for keyframes)
+        const currentSpeed = getInterpolatedSpeed(clip.id, clipLocalTime);
+        const absSpeed = Math.abs(currentSpeed);
+
+        // Calculate source time using speed integration
+        const sourceTime = getSourceTimeForClip(clip.id, clipLocalTime);
+        const initialSpeed = getInterpolatedSpeed(clip.id, 0);
+        const startPoint = initialSpeed >= 0 ? clip.inPoint : clip.outPoint;
+        const clipTime = Math.max(clip.inPoint, Math.min(clip.outPoint, startPoint + sourceTime));
+
+        const timeDiff = audio.currentTime - clipTime;
+
+        // Track drift for stats
+        if (Math.abs(timeDiff) > maxAudioDrift) {
+          maxAudioDrift = Math.abs(timeDiff);
+        }
+
+        const effectivelyMuted = isAudioTrackMuted(track);
+        audio.muted = effectivelyMuted;
+
+        // Set playback rate for speed effect (use absolute value, negative speed not supported for audio)
+        const targetRate = absSpeed > 0.1 ? absSpeed : 1;
+        if (Math.abs(audio.playbackRate - targetRate) > 0.01) {
+          audio.playbackRate = Math.max(0.25, Math.min(4, targetRate));
+        }
+
+        // Set preservesPitch based on clip setting (default true)
+        const shouldPreservePitch = clip.preservesPitch !== false;
+        if ((audio as HTMLAudioElement & { preservesPitch?: boolean }).preservesPitch !== shouldPreservePitch) {
+          (audio as HTMLAudioElement & { preservesPitch?: boolean }).preservesPitch = shouldPreservePitch;
+        }
+
+        const shouldPlay = isPlaying && !effectivelyMuted && !isDraggingPlayhead && absSpeed > 0.1;
+
+        if (shouldPlay) {
+          // Only sync audio on significant drift (>200ms) to avoid constant glitches
+          if (Math.abs(timeDiff) > 0.2) {
+            audio.currentTime = clipTime;
+          }
+
+          // Ensure audio is playing - sync on start
+          if (audio.paused) {
+            audio.currentTime = clipTime;
+            audio.play().catch((err) => {
+              log.warn('Audio failed to play:', err.message);
+              hasAudioError = true;
+            });
+          }
+
+          if (!audio.paused && !effectivelyMuted) {
+            audioPlayingCount++;
+          }
+        } else {
+          if (!audio.paused) {
+            audio.pause();
+          }
+        }
+      }
+    });
+
+    // Pause audio clips that are no longer at playhead
+    clips.forEach((clip) => {
+      if (clip.source?.audioElement) {
+        const isAtPlayhead = clipsAtTime.some((c) => c.id === clip.id);
+        if (!isAtPlayhead && !clip.source.audioElement.paused) {
+          clip.source.audioElement.pause();
+        }
+      }
+      // Also pause nested composition mixdown audio
+      if (clip.mixdownAudio) {
+        const isAtPlayhead = clipsAtTime.some((c) => c.id === clip.id);
+        if (!isAtPlayhead && !clip.mixdownAudio.paused) {
+          clip.mixdownAudio.pause();
+        }
+      }
+    });
+
+    // Play nested composition mixdown audio for clips at playhead
+    clipsAtTime.forEach((clip) => {
+      if (clip.isComposition && clip.mixdownAudio && clip.hasMixdownAudio) {
+        const audio = clip.mixdownAudio;
+        const clipLocalTime = playheadPosition - clip.startTime;
+
+        // Get current speed for this clip (accounts for keyframes)
+        const currentSpeed = getInterpolatedSpeed(clip.id, clipLocalTime);
+        const absSpeed = Math.abs(currentSpeed);
+
+        // Calculate source time using speed integration
+        const sourceTime = getSourceTimeForClip(clip.id, clipLocalTime);
+        const initialSpeed = getInterpolatedSpeed(clip.id, 0);
+        const startPoint = initialSpeed >= 0 ? clip.inPoint : clip.outPoint;
+        const clipTime = Math.max(clip.inPoint, Math.min(clip.outPoint, startPoint + sourceTime));
+
+        // Find the track this clip is on
+        const track = videoTracks.find(t => t.id === clip.trackId);
+        const effectivelyMuted = track ? !isVideoTrackVisible(track) : false;
+        audio.muted = effectivelyMuted;
+
+        // Set playback rate for speed effect
+        const targetRate = absSpeed > 0.1 ? absSpeed : 1;
+        if (Math.abs(audio.playbackRate - targetRate) > 0.01) {
+          audio.playbackRate = Math.max(0.25, Math.min(4, targetRate));
+        }
+
+        // Set preservesPitch based on clip setting
+        const shouldPreservePitch = clip.preservesPitch !== false;
+        if ((audio as HTMLAudioElement & { preservesPitch?: boolean }).preservesPitch !== shouldPreservePitch) {
+          (audio as HTMLAudioElement & { preservesPitch?: boolean }).preservesPitch = shouldPreservePitch;
+        }
+
+        const timeDiff = audio.currentTime - clipTime;
+
+        // Track drift for stats
+        if (Math.abs(timeDiff) > maxAudioDrift) {
+          maxAudioDrift = Math.abs(timeDiff);
+        }
+
+        const shouldPlay = isPlaying && !effectivelyMuted && !isDraggingPlayhead && absSpeed > 0.1;
+
+        if (shouldPlay) {
+          // Only sync audio on significant drift to avoid pops
+          if (Math.abs(timeDiff) > 0.2) {
+            audio.currentTime = clipTime;
+          }
+
+          // Ensure audio is playing
+          if (audio.paused) {
+            audio.currentTime = clipTime;
+            audio.play().catch((err) => {
+              log.warn('Nested Comp Audio failed to play:', err.message);
+            });
+          }
+
+          if (!audio.paused && !effectivelyMuted) {
+            audioPlayingCount++;
+          }
+        } else {
+          if (!audio.paused) {
+            audio.pause();
+          }
+        }
+      }
+    });
+
+    // Update audio status for stats display
+    audioStatusTracker.updateStatus(audioPlayingCount, maxAudioDrift, hasAudioError);
 
     }); // end requestAnimationFrame
   }, [
@@ -829,6 +994,7 @@ export function useLayerSync({
     clips,
     tracks,
     isPlaying,
+    isDraggingPlayhead,
     ramPreviewRange,
     isRamPreviewing,
     clipKeyframes,
@@ -841,7 +1007,9 @@ export function useLayerSync({
     getInterpolatedSpeed,
     getSourceTimeForClip,
     videoTracks,
+    audioTracks,
     isVideoTrackVisible,
+    isAudioTrackMuted,
     buildNestedLayers,
     effectsChanged,
     timelineRef,

@@ -105,7 +105,7 @@ export const mediaToolDefinitions: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'createComposition',
-      description: 'Create a new composition (timeline sequence). By default opens it immediately so subsequent operations target it.',
+      description: 'Create a new composition (timeline sequence).',
       parameters: {
         type: 'object',
         properties: {
@@ -129,29 +129,8 @@ export const mediaToolDefinitions: ToolDefinition[] = [
             type: 'number',
             description: 'Duration in seconds (default: 60)',
           },
-          openAfterCreate: {
-            type: 'boolean',
-            description: 'Open the composition immediately after creation (default: true). Set to false to create without switching.',
-          },
         },
         required: ['name'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'openComposition',
-      description: 'Open a composition in the timeline and make it the active composition. Use getMediaItems first to find composition IDs.',
-      parameters: {
-        type: 'object',
-        properties: {
-          compositionId: {
-            type: 'string',
-            description: 'ID of the composition to open',
-          },
-        },
-        required: ['compositionId'],
       },
     },
   },

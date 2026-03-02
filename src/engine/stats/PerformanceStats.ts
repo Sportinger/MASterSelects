@@ -2,15 +2,8 @@
 
 import type { EngineStats, DetailedStats, ProfileData } from '../core/types';
 import { audioStatusTracker } from '../../services/audioManager';
-import type { GpuMemoryManager } from '../gpuMemory/GpuMemoryManager';
 
 export class PerformanceStats {
-  /** Optional GPU memory manager for real VRAM stats */
-  private gpuMemoryManager: GpuMemoryManager | null = null;
-
-  setGpuMemoryManager(manager: GpuMemoryManager): void {
-    this.gpuMemoryManager = manager;
-  }
   // FPS tracking
   private frameCount = 0;
   private fps = 0;
@@ -91,9 +84,6 @@ export class PerformanceStats {
   }
 
   updateStats(): void {
-    // Tick GPU memory manager for LRU aging
-    this.gpuMemoryManager?.tick();
-
     this.frameCount++;
     const now = performance.now();
 
@@ -130,9 +120,7 @@ export class PerformanceStats {
     return {
       fps: this.fps,
       frameTime: avgFrameTime,
-      gpuMemory: this.gpuMemoryManager
-        ? this.gpuMemoryManager.getUsageMB()
-        : 0,
+      gpuMemory: 0,
       timing: {
         rafGap: this.detailedStats.rafGap,
         importTexture: this.detailedStats.importTexture,

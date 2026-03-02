@@ -5,8 +5,8 @@ import type { TimelineClip } from '../../../types';
 import { DEFAULT_TRANSFORM } from '../constants';
 import { useMediaStore } from '../../mediaStore';
 import { initWebCodecsPlayer, createAudioElement } from '../helpers/webCodecsHelpers';
+import { generateDownloadThumbnails } from '../helpers/thumbnailHelpers';
 import { generateWaveformForFile } from '../helpers/waveformHelpers';
-import { thumbnailCache } from '../../../services/thumbnailCache';
 import { generateClipId } from '../helpers/idGenerator';
 import { blobUrlManager } from '../helpers/blobUrlManager';
 import { updateClipById } from '../helpers/clipStateHelpers';
@@ -66,6 +66,7 @@ export async function completeDownload(params: CompleteDownloadParams): Promise<
   });
 
   const naturalDuration = video.duration || 30;
+  const initialThumbnails = clip.youtubeThumbnail ? [clip.youtubeThumbnail] : [];
   video.currentTime = 0;
 
   // Import to media store in YouTube folder
@@ -99,6 +100,7 @@ export async function completeDownload(params: CompleteDownloadParams): Promise<
       },
       mediaFileId: mediaFile.id,
       linkedClipId: audioClipId,
+      thumbnails: initialThumbnails,
       isPendingDownload: false,
       downloadProgress: undefined,
       youtubeVideoId: undefined,
@@ -167,10 +169,8 @@ export async function completeDownload(params: CompleteDownloadParams): Promise<
     }
   }
 
-  // Preload on-demand thumbnail cache
-  if (mediaFile.id) {
-    thumbnailCache.preloadClip(mediaFile.id, naturalDuration, file);
-  }
+  // Generate real thumbnails in background
+  generateThumbnailsAsync(clipId, video, naturalDuration, get, set);
 }
 
 /**
@@ -194,3 +194,32 @@ async function generateWaveformAsync(
   }
 }
 
+/**
+ * Generate thumbnails asynchronously.
+ */
+async function generateThumbnailsAsync(
+  clipId: string,
+  video: HTMLVideoElement,
+  duration: number,
+  get: () => any,
+  set: (state: any) => void
+): Promise<void> {
+  // Wait for video to be ready instead of arbitrary delay
+  await new Promise<void>(resolve => {
+    if (video.readyState >= 2) {
+      resolve();
+    } else {
+      video.addEventListener('canplay', () => resolve(), { once: true });
+      setTimeout(resolve, 1000); // Fallback timeout
+    }
+  });
+
+  try {
+    const thumbnails = await generateDownloadThumbnails(video, duration);
+    video.currentTime = 0;
+    set({ clips: updateClipById(get().clips, clipId, { thumbnails }) });
+    log.debug('Generated thumbnails', { count: thumbnails.length });
+  } catch (e) {
+    log.warn('Thumbnail generation failed', e);
+  }
+}

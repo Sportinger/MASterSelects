@@ -192,9 +192,10 @@ fn fs(in: VertexOutput) -> @location(0) vec4f {
 }
 `;
 
+export const VS_SIZE = 512;
+
 export class VectorscopeScope {
   private device: GPUDevice;
-  readonly vsSize: number;
 
   private computePipeline!: GPUComputePipeline;
   private renderPipeline!: GPURenderPipeline;
@@ -206,15 +207,14 @@ export class VectorscopeScope {
   private computeParams!: GPUBuffer;
   private renderParams!: GPUBuffer;
 
-  constructor(device: GPUDevice, format: GPUTextureFormat, vsSize = 512) {
+  constructor(device: GPUDevice, format: GPUTextureFormat) {
     this.device = device;
-    this.vsSize = vsSize;
     this.init(format);
   }
 
   private init(format: GPUTextureFormat) {
     const d = this.device;
-    const bufSize = this.vsSize * this.vsSize * 4;
+    const bufSize = VS_SIZE * VS_SIZE * 4;
 
     this.accumR = d.createBuffer({ size: bufSize, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
     this.accumG = d.createBuffer({ size: bufSize, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
@@ -260,9 +260,9 @@ export class VectorscopeScope {
     const srcW = sourceTexture.width;
     const srcH = sourceTexture.height;
 
-    d.queue.writeBuffer(this.computeParams, 0, new Uint32Array([this.vsSize, srcW, srcH, 0]));
-    const refValue = Math.sqrt(srcH * srcW / (this.vsSize * this.vsSize)) * 18.0;
-    d.queue.writeBuffer(this.renderParams, 0, new Float32Array([this.vsSize, refValue, 0, 0]));
+    d.queue.writeBuffer(this.computeParams, 0, new Uint32Array([VS_SIZE, srcW, srcH, 0]));
+    const refValue = Math.sqrt(srcH * srcW / (VS_SIZE * VS_SIZE)) * 18.0;
+    d.queue.writeBuffer(this.renderParams, 0, new Float32Array([VS_SIZE, refValue, 0, 0]));
 
     const encoder = d.createCommandEncoder();
 

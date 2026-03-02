@@ -8,7 +8,6 @@ import type { Composition } from '../stores/mediaStore/types';
 import { useMediaStore } from '../stores/mediaStore';
 import { DEFAULT_TRANSFORM } from '../stores/timeline/constants';
 import { Logger } from './logger';
-import { audioRoutingManager } from './audioRoutingManager';
 
 const log = Logger.create('LayerPlayback');
 
@@ -350,7 +349,7 @@ class LayerPlaybackManager {
         const isActive = time >= clip.startTime && time < clip.startTime + clip.duration;
 
         if (!isActive) {
-          if (!audio.paused) audioRoutingManager.fadeOutAndPause(audio);
+          if (!audio.paused) audio.pause();
           continue;
         }
 

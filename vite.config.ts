@@ -73,10 +73,6 @@ export default defineConfig(({ command, mode }) => ({
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'credentialless',
     },
-    watch: {
-      // Prevent watcher churn on bundled FFmpeg docs/binaries.
-      ignored: ['**/tools/native-helper/ffmpeg/**'],
-    },
   },
   preview: {
     headers: {
@@ -98,9 +94,6 @@ export default defineConfig(({ command, mode }) => ({
     },
   },
   optimizeDeps: {
-    // Restrict dep-scan entrypoints so Vite doesn't scan every HTML file
-    // under tools/native-helper/ffmpeg/win64/doc (causes EMFILE on Windows).
-    entries: ['index.html'],
     esbuildOptions: {
       target: 'esnext',
     },

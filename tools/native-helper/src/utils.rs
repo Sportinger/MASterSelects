@@ -17,21 +17,6 @@ pub fn get_allowed_prefixes() -> Vec<PathBuf> {
         prefixes.push(downloads);
     }
 
-    // User's Desktop folder
-    if let Some(desktop) = dirs::desktop_dir() {
-        prefixes.push(desktop);
-    }
-
-    // User's Videos folder
-    if let Some(videos) = dirs::video_dir() {
-        prefixes.push(videos);
-    }
-
-    // User's Documents folder
-    if let Some(documents) = dirs::document_dir() {
-        prefixes.push(documents);
-    }
-
     // Temp directory
     prefixes.push(std::env::temp_dir());
 

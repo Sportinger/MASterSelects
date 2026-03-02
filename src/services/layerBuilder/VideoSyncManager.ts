@@ -7,8 +7,6 @@ import { LAYER_BUILDER_CONSTANTS } from './types';
 import { createFrameContext, getClipTimeInfo, getMediaFileForClip } from './FrameContext';
 import { layerPlaybackManager } from '../layerPlaybackManager';
 import { engine } from '../../engine/WebGPUEngine';
-// import { Logger } from '../logger';
-// const log = Logger.create('VideoSync');
 
 export class VideoSyncManager {
   // Native decoder state
@@ -37,169 +35,6 @@ export class VideoSyncManager {
   private preciseSeekTimers: Record<string, ReturnType<typeof setTimeout>> = {};
   private latestSeekTargets: Record<string, number> = {};
 
-  // Sorted clips cache for efficient preload (early-break optimization)
-  private sortedClipsByStart: TimelineClip[] = [];
-  private lastClipsRef: TimelineClip[] = [];
-
-  // Continuous playback: track which clip was active per track to detect transitions
-  // and hand off video elements for contiguous same-source clips (like DaVinci's approach)
-  private trackPlaybackState = new Map<string, {
-    clipId: string;
-    sourceMediaFileId: string;
-    outPoint: number;
-    endTime: number;
-  }>();
-
-  /**
-   * Pre-render step: finalize prerolled clips that are now active.
-   * Seeks prerolled videos to correct position and unmutes BEFORE render.
-   * Does NOT pause — the video must stay playing so the GPU surface remains
-   * active (videoGpuReady) and importExternalTexture produces valid frames.
-   * The scrubbing cache from preroll phase 1 provides the correct frame
-   * while the seek completes.
-   *
-   * Must be called BEFORE engine.render() in the render callback.
-   */
-  finalizePrerolls(): void {
-    if (this.prerollingClips.size === 0) return;
-
-    const ctx = createFrameContext();
-    if (!ctx.isPlaying) return;
-
-    for (const clipId of this.prerollingClips) {
-      // Find if this clip is now at the playhead
-      const clip = ctx.clipsAtTime.find(c => c.id === clipId);
-      if (!clip?.source?.videoElement) continue;
-
-      const video = clip.source.videoElement;
-      const timeInfo = getClipTimeInfo(ctx, clip);
-
-      // Unmute (preroll was muted) — keep playing for GPU surface
-      // Only unmute if no linked audio clip (linked audio handles audio separately)
-      if (!clip.linkedClipId) {
-        video.muted = false;
-      }
-
-      // Seek to correct position (video was ~0.5s ahead from preroll)
-      const timeDiff = Math.abs(video.currentTime - timeInfo.clipTime);
-      if (timeDiff > 0.05) {
-        video.currentTime = timeInfo.clipTime;
-      }
-
-      this.prerollingClips.delete(clipId);
-    }
-  }
-
-  /**
-   * Continuous playback optimization for contiguous same-source clips.
-   *
-   * When clip B follows clip A on the same track from the same source file,
-   * and they're contiguous in both timeline and source time (i.e., a simple cut),
-   * we swap video elements: clip B inherits clip A's playing video element.
-   * The video keeps playing through the cut point — zero seek, zero stutter.
-   *
-   * This mimics how DaVinci Resolve handles cuts: one decoder per source file
-   * that plays through cut points without interruption.
-   *
-   * Must be called BEFORE buildLayersFromStore() so the Layer gets the correct video.
-   */
-  prepareContinuousPlayback(): void {
-    const ctx = createFrameContext();
-
-    if (!ctx.isPlaying) {
-      this.trackPlaybackState.clear();
-      return;
-    }
-
-    for (const clip of ctx.clipsAtTime) {
-      if (!clip.source?.videoElement || clip.source.type !== 'video') continue;
-      if (clip.reversed) continue; // Don't optimize reversed clips
-
-      const prev = this.trackPlaybackState.get(clip.trackId);
-
-      if (prev && prev.clipId !== clip.id) {
-        // Transition detected — find previous clip for source comparison
-        const prevClip = ctx.clips.find(c => c.id === prev.clipId);
-
-        if (prevClip?.source?.videoElement) {
-          // Check same source — multiple strategies (File ref, mediaFileId, file name+size)
-          const isSameFileRef = !!(clip.file && prevClip.file && clip.file === prevClip.file);
-          const isSameMediaId = !!(
-            (clip.source.mediaFileId && prevClip.source?.mediaFileId &&
-              clip.source.mediaFileId === prevClip.source.mediaFileId) ||
-            (clip.mediaFileId && prevClip.mediaFileId &&
-              clip.mediaFileId === prevClip.mediaFileId)
-          );
-          // Fallback: compare file name + size (works after project reload when File ref is lost)
-          const isSameFileName = !!(
-            clip.file && prevClip.file &&
-            clip.file.name === prevClip.file.name &&
-            clip.file.size === prevClip.file.size
-          );
-          const isSameSource = isSameFileRef || isSameMediaId || isSameFileName;
-
-          const isContiguousTimeline = Math.abs(prev.endTime - clip.startTime) < 0.016; // ~1 frame tolerance
-          const isContiguousSource = Math.abs(prev.outPoint - clip.inPoint) < 0.02; // ~1 frame
-
-          // TEMPORARY: always log transitions to console for debugging
-          console.warn('[VideoSync] Transition detected:', {
-            isSameSource, isSameFileRef, isSameMediaId, isSameFileName,
-            isContiguousTimeline, isContiguousSource,
-            prevEnd: prev.endTime.toFixed(4), clipStart: clip.startTime.toFixed(4),
-            prevOut: prev.outPoint.toFixed(4), clipIn: clip.inPoint.toFixed(4),
-            clipFile: clip.file?.name, prevFile: prevClip.file?.name,
-            clipMediaId: clip.source.mediaFileId || clip.mediaFileId,
-            prevMediaId: prevClip.source?.mediaFileId || prevClip.mediaFileId,
-          });
-
-          if (isSameSource && isContiguousTimeline && isContiguousSource) {
-            const playingVideo = prevClip.source.videoElement;
-            const idleVideo = clip.source.videoElement;
-
-            if (playingVideo === idleVideo) {
-              // Shared element (split clips) — video plays through the cut point
-              // No swap needed, just cancel preroll
-              this.prerollingClips.delete(clip.id);
-            } else if (!playingVideo.paused && playingVideo.readyState >= 2) {
-              // Different elements — swap them
-              const playingWC = prevClip.source.webCodecsPlayer;
-              const idleWC = clip.source.webCodecsPlayer;
-              clip.source.videoElement = playingVideo;
-              clip.source.webCodecsPlayer = playingWC;
-              prevClip.source.videoElement = idleVideo;
-              prevClip.source.webCodecsPlayer = idleWC;
-
-              // Cancel preroll — video is already playing at the correct position
-              this.prerollingClips.delete(clip.id);
-
-              console.warn('[VideoSync] ✓ HANDOFF:', clip.name,
-                'video@', playingVideo.currentTime.toFixed(3),
-                'clipInPoint:', clip.inPoint.toFixed(3),
-                'drift:', Math.abs(playingVideo.currentTime - clip.inPoint).toFixed(4));
-            } else {
-              console.warn('[VideoSync] ✗ Skip handoff: video not ready',
-                'paused:', playingVideo.paused,
-                'readyState:', playingVideo.readyState);
-            }
-          }
-        } else {
-          console.warn('[VideoSync] ✗ prevClip not found or no videoElement',
-            'prevClipId:', prev.clipId, 'found:', !!prevClip,
-            'hasSource:', !!prevClip?.source, 'hasVideo:', !!prevClip?.source?.videoElement);
-        }
-      }
-
-      // Update tracking for current active clip
-      const sourceId = clip.source.mediaFileId || clip.mediaFileId || '';
-      this.trackPlaybackState.set(clip.trackId, {
-        clipId: clip.id,
-        sourceMediaFileId: sourceId,
-        outPoint: clip.outPoint,
-        endTime: clip.startTime + clip.duration,
-      });
-    }
-  }
-
   /**
    * Sync video elements to current playhead
    */
@@ -225,21 +60,13 @@ export class VideoSyncManager {
       }
     }
 
-    // Pause videos not at playhead (but skip clips being prerolled or sharing elements)
+    // Pause videos not at playhead
     for (const clip of ctx.clips) {
       if (clip.source?.videoElement) {
         const isAtPlayhead = ctx.clipsByTrackId.has(clip.trackId) &&
           ctx.clipsByTrackId.get(clip.trackId)?.id === clip.id;
-        const isPrerolling = this.prerollingClips.has(clip.id);
-        if (!isAtPlayhead && !isPrerolling && !clip.source.videoElement.paused) {
-          // Don't pause if an active clip shares this video element (split clips)
-          const video = clip.source.videoElement;
-          const sharedByActiveClip = Array.from(ctx.clipsByTrackId.values()).some(
-            active => active.source?.videoElement === video
-          );
-          if (!sharedByActiveClip) {
-            video.pause();
-          }
+        if (!isAtPlayhead && !clip.source.videoElement.paused) {
+          clip.source.videoElement.pause();
         }
       }
 
@@ -249,8 +76,7 @@ export class VideoSyncManager {
           ctx.clipsByTrackId.get(clip.trackId)?.id === clip.id;
         if (!isAtPlayhead) {
           for (const nestedClip of clip.nestedClips) {
-            const isNestedPrerolling = this.prerollingClips.has(nestedClip.id);
-            if (nestedClip.source?.videoElement && !nestedClip.source.videoElement.paused && !isNestedPrerolling) {
+            if (nestedClip.source?.videoElement && !nestedClip.source.videoElement.paused) {
               nestedClip.source.videoElement.pause();
             }
           }
@@ -258,170 +84,8 @@ export class VideoSyncManager {
       }
     }
 
-    // Preload upcoming clips (seek video to start position before they become active)
-    if (ctx.isPlaying) {
-      this.preloadUpcomingClips(ctx);
-    }
-
     // Sync background layer video elements
     layerPlaybackManager.syncVideoElements(ctx.playheadPosition, ctx.isPlaying);
-  }
-
-  // Track which clips are being pre-rolled to avoid redundant play() calls
-  private prerollingClips = new Set<string>();
-
-  /**
-   * Preload video elements for clips about to become active.
-   * Two-phase strategy:
-   *   - 2s+ out: seek to start position and pause (buffering)
-   *   - <0.5s out: start playing muted from smart position (preroll)
-   *
-   * Smart preroll: starts from (inPoint - timeUntilStart) so the video
-   * naturally arrives at inPoint when the clip becomes active — no seek needed
-   * at transition. This eliminates stutter with many short clips.
-   *
-   * Uses sorted clips with early break for O(k) iteration instead of O(n).
-   */
-  private preloadUpcomingClips(ctx: FrameContext): void {
-    const lookaheadSec = 2;
-    const prerollSec = 0.5; // Start playing muted when clip is <0.5s away
-    const lookaheadEnd = ctx.playheadPosition + lookaheadSec;
-
-    // Re-sort clips by startTime when the clips array reference changes
-    // (Zustand returns same array reference if nothing changed)
-    if (ctx.clips !== this.lastClipsRef) {
-      this.sortedClipsByStart = [...ctx.clips].sort((a, b) => a.startTime - b.startTime);
-      this.lastClipsRef = ctx.clips;
-    }
-
-    // Iterate sorted clips with early break — only visits clips in the lookahead window
-    for (const clip of this.sortedClipsByStart) {
-      if (clip.startTime <= ctx.playheadPosition) continue; // Skip past clips
-      if (clip.startTime > lookaheadEnd) break; // Sorted: all remaining are past lookahead
-
-      const timeUntilStart = clip.startTime - ctx.playheadPosition;
-
-      // Skip preload for clips that share a video element with the active clip,
-      // or will receive continuous playback handoff (same source + contiguous).
-      // The video element will just keep playing through the cut point.
-      if (clip.source?.videoElement && !clip.reversed) {
-        const activeClip = ctx.clipsByTrackId.get(clip.trackId);
-        if (activeClip?.source?.videoElement) {
-          // Shared element (split clips) — always skip preload
-          if (clip.source.videoElement === activeClip.source.videoElement) {
-            continue;
-          }
-          const isSameFile = clip.file && activeClip.file && clip.file === activeClip.file;
-          const isSameMediaId = (
-            (clip.source.mediaFileId && activeClip.source?.mediaFileId &&
-              clip.source.mediaFileId === activeClip.source.mediaFileId) ||
-            (clip.mediaFileId && activeClip.mediaFileId &&
-              clip.mediaFileId === activeClip.mediaFileId)
-          );
-          if (isSameFile || isSameMediaId) {
-            const isContiguousTimeline = Math.abs(
-              (activeClip.startTime + activeClip.duration) - clip.startTime
-            ) < 0.001;
-            const isContiguousSource = Math.abs(activeClip.outPoint - clip.inPoint) < 0.02;
-            if (isContiguousTimeline && isContiguousSource) {
-              continue; // Skip — video will play through from active clip
-            }
-          }
-        }
-      }
-
-      if (clip.source?.videoElement) {
-        this.preloadVideoElement(clip.id, clip.source.videoElement, clip, timeUntilStart, prerollSec);
-      }
-
-      if (clip.source?.nativeDecoder) {
-        const targetTime = clip.reversed ? clip.outPoint : clip.inPoint;
-        const fps = clip.source.nativeDecoder.fps || 25;
-        const targetFrame = Math.round(targetTime * fps);
-        clip.source.nativeDecoder.seekToFrame(targetFrame, false).catch(() => {});
-      }
-
-      // Preload nested comp video elements
-      if (clip.isComposition && clip.nestedClips) {
-        for (const nestedClip of clip.nestedClips) {
-          if (!nestedClip.source?.videoElement) continue;
-          this.preloadVideoElement(nestedClip.id, nestedClip.source.videoElement, nestedClip, timeUntilStart, prerollSec);
-        }
-      }
-    }
-
-    // Clean up preroll tracking for clips that are now active
-    for (const clipId of this.prerollingClips) {
-      const clip = ctx.clips.find(c => c.id === clipId);
-      if (clip && ctx.playheadPosition >= clip.startTime) {
-        this.prerollingClips.delete(clipId);
-      }
-    }
-  }
-
-  /**
-   * Preload a single video element.
-   * Phase 1 (>0.5s): seek to inPoint + pause (buffer ahead)
-   * Phase 2 (<0.5s): play muted from smart position (decoder warm-up)
-   *
-   * Smart preroll: Instead of starting from inPoint (which causes a backward
-   * seek at transition because the video drifts to inPoint + prerollDuration),
-   * we start from (inPoint - timeUntilStart). This way the video naturally
-   * arrives at inPoint when the clip becomes active — zero seek needed.
-   */
-  private preloadVideoElement(
-    clipId: string,
-    video: HTMLVideoElement,
-    clip: TimelineClip,
-    timeUntilStart: number,
-    prerollSec: number
-  ): void {
-    const inPoint = clip.reversed ? clip.outPoint : clip.inPoint;
-
-    if (timeUntilStart <= prerollSec) {
-      // Phase 2: Preroll — play muted so decoder is warm
-      // Smart position: start from (inPoint - timeUntilStart) so by the time
-      // the clip becomes active, the video naturally arrives at inPoint.
-      // For clips where inPoint < timeUntilStart (e.g. inPoint=0), we clamp to 0
-      // and accept a small drift that finalizePrerolls() will correct.
-      if (!this.prerollingClips.has(clipId)) {
-        const prerollStart = Math.max(0, inPoint - timeUntilStart);
-        const timeDiff = Math.abs(video.currentTime - prerollStart);
-        if (timeDiff > 0.1 && !video.seeking) {
-          video.currentTime = prerollStart;
-        }
-        video.muted = true;
-        // Add to prerollingClips BEFORE play() to prevent the pause loop
-        // from killing the preroll during the async .then() gap
-        this.prerollingClips.add(clipId);
-        video.play().then(() => {
-          // Mark GPU-ready: during preroll the video plays muted but
-          // tryHTMLVideo never runs for it (not at playhead).
-          // Without this, the first render of the clip returns null → black frame.
-          engine.markVideoGpuReady(video);
-        }).catch(() => {
-          this.prerollingClips.delete(clipId);
-        });
-      }
-    } else {
-      // Phase 1: Seek to inPoint and pause (buffer ahead of time)
-      const timeDiff = Math.abs(video.currentTime - inPoint);
-      if (timeDiff > 0.1 && !video.seeking) {
-        video.currentTime = inPoint;
-        // Cache frame at inPoint after seek completes — this frame will be
-        // used by tryHTMLVideo when the clip transitions from preroll to active,
-        // preventing a wrong-frame flash on the first render
-        video.addEventListener('seeked', () => {
-          if (video.readyState >= 2) {
-            engine.ensureVideoFrameCached(video);
-            engine.cacheFrameAtTime(video, video.currentTime);
-          }
-        }, { once: true });
-      }
-      if (!video.paused) {
-        video.pause();
-      }
-    }
   }
 
   /**
@@ -631,44 +295,10 @@ export class VideoSyncManager {
       }
     } else {
       // Normal 1x forward playback: let video play naturally
-
-      // Clean up preroll state FIRST — need to know if this clip just
-      // transitioned from preroll to active for position correction below
-      const wasPrerolling = this.prerollingClips.has(clip.id);
-      if (wasPrerolling) {
-        this.prerollingClips.delete(clip.id);
-        // Only unmute if no linked audio clip (linked audio handles audio separately)
-        if (!clip.linkedClipId) {
-          video.muted = false;
-        }
-      }
-
       if (ctx.isPlaying && video.paused) {
-        // Video is paused but should be playing — seek to correct position
-        // (preroll drift or stale position from previous pause)
-        if (timeDiff > 0.05) {
-          video.currentTime = timeInfo.clipTime;
-        }
         video.play().catch(() => {});
-      } else if (ctx.isPlaying && !video.paused) {
-        // Video is already playing — correct drift
-        if (wasPrerolling) {
-          // Just transitioned from preroll: video was playing from inPoint
-          // for ~0.5s, so it's significantly ahead. Always correct.
-          if (timeDiff > 0.05) {
-            video.currentTime = timeInfo.clipTime;
-          }
-        } else if (timeDiff > 0.15) {
-          // Ongoing playback: correct if drift > 0.15s (~4-5 frames at 30fps)
-          video.currentTime = timeInfo.clipTime;
-        }
       } else if (!ctx.isPlaying && !video.paused) {
-        // Stopping playback: pause and seek to exact playhead position
-        // to prevent "jump back one frame" visual artifact
         video.pause();
-        if (timeDiff > 0.02) {
-          video.currentTime = timeInfo.clipTime;
-        }
       }
 
       if (!ctx.isPlaying) {

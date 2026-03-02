@@ -118,11 +118,8 @@ export const LAYER_BUILDER_CONSTANTS = {
   // Native decoder throttling
   NATIVE_SEEK_THROTTLE_MS: 16,
 
-  // Audio sync interval (1 frame at 60fps for tight cut-boundary response)
-  AUDIO_SYNC_INTERVAL: 16,
-
-  // Audio drift threshold for corrective seeking (~2 frames at 60fps)
-  AUDIO_DRIFT_THRESHOLD: 0.033,
+  // Audio sync interval
+  AUDIO_SYNC_INTERVAL: 50,
 
   // Lookahead for nested comp preloading
   LOOKAHEAD_INTERVAL: 100,

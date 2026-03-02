@@ -36,7 +36,6 @@ export class RenderLoop {
   private isScrubbing = false;
   private newFrameReady = false; // Set by RVFC to bypass scrub limiter
   private lastRenderTime = 0;
-  private forceNextRender = false; // Bypass frame limiter on playhead jumps (cut points)
 
   // Health monitoring - detect frozen render loop
   private lastSuccessfulRender = 0;
@@ -104,34 +103,24 @@ export class RenderLoop {
         return;
       }
 
-      // Frame rate limiting — always cap at ~60fps during playback,
-      // ~30fps during scrubbing. Previously only active when hasActiveVideo
-      // was true, which caused uncapped frame rates when video import failed.
-      // If forceNextRender is set (playhead jumped significantly, e.g. at a
-      // cut point), bypass the time-based limiter to avoid visible stuttering.
-      {
-        if (this.forceNextRender) {
-          // Playhead jumped — render immediately regardless of elapsed time
-          this.forceNextRender = false;
-          this.newFrameReady = false;
-        } else {
-          const timeSinceLastRender = timestamp - this.lastRenderTime;
-          if (this.isPlaying) {
-            // Playback: ~60fps target
-            if (timeSinceLastRender < this.VIDEO_FRAME_TIME) {
-              this.animationId = requestAnimationFrame(loop);
-              return;
-            }
-          } else if (this.isScrubbing && this.hasActiveVideo) {
-            // Scrubbing: ~30fps baseline to avoid wasted renders while video seeks.
-            // BUT: if RVFC signaled a new decoded frame is ready, render immediately
-            // to minimize latency between decode completion and display.
-            if (!this.newFrameReady && timeSinceLastRender < this.SCRUB_FRAME_TIME) {
-              this.animationId = requestAnimationFrame(loop);
-              return;
-            }
-            this.newFrameReady = false;
+      // Frame rate limiting for video
+      if (this.hasActiveVideo) {
+        const timeSinceLastRender = timestamp - this.lastRenderTime;
+        if (this.isPlaying) {
+          // Playback: ~60fps target
+          if (timeSinceLastRender < this.VIDEO_FRAME_TIME) {
+            this.animationId = requestAnimationFrame(loop);
+            return;
           }
+        } else if (this.isScrubbing) {
+          // Scrubbing: ~30fps baseline to avoid wasted renders while video seeks.
+          // BUT: if RVFC signaled a new decoded frame is ready, render immediately
+          // to minimize latency between decode completion and display.
+          if (!this.newFrameReady && timeSinceLastRender < this.SCRUB_FRAME_TIME) {
+            this.animationId = requestAnimationFrame(loop);
+            return;
+          }
+          this.newFrameReady = false;
         }
         this.lastRenderTime = timestamp;
       }
@@ -243,15 +232,6 @@ export class RenderLoop {
     this.requestRender();
   }
 
-  // Force the next render to bypass the frame rate limiter entirely.
-  // Use when the playhead has jumped to a new position (e.g. cut point,
-  // seek, or clip transition) and the new content must be displayed
-  // without waiting for the next frame time slot.
-  forceRender(): void {
-    this.forceNextRender = true;
-    this.requestRender();
-  }
-
   getIsIdle(): boolean {
     return this.isIdle;
   }
@@ -265,15 +245,8 @@ export class RenderLoop {
   }
 
   updatePlayheadTracking(playhead: number): boolean {
-    const delta = Math.abs(playhead - this.lastRenderedPlayhead);
-    const changed = delta > 0.0001;
+    const changed = Math.abs(playhead - this.lastRenderedPlayhead) > 0.0001;
     if (changed) {
-      // If playhead jumped significantly (> 1ms), this is likely a cut point
-      // or a seek — bypass the frame rate limiter for the next frame so the
-      // new content is displayed immediately without stutter.
-      if (delta > 0.001) {
-        this.forceNextRender = true;
-      }
       this.lastRenderedPlayhead = playhead;
       this.requestRender();
     }

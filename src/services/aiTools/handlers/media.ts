@@ -156,7 +156,6 @@ export async function handleCreateComposition(
   const height = (args.height as number) || 1080;
   const frameRate = (args.frameRate as number) || 30;
   const duration = (args.duration as number) || 60;
-  const openAfterCreate = args.openAfterCreate !== false; // default true
 
   const comp = mediaStore.createComposition(name, {
     width,
@@ -164,38 +163,6 @@ export async function handleCreateComposition(
     frameRate,
     duration,
   });
-
-  // Auto-open so subsequent operations target this composition
-  if (openAfterCreate) {
-    mediaStore.openCompositionTab(comp.id);
-  }
-
-  return {
-    success: true,
-    data: {
-      compositionId: comp.id,
-      name: comp.name,
-      width: comp.width,
-      height: comp.height,
-      frameRate: comp.frameRate,
-      duration: comp.duration,
-      opened: openAfterCreate,
-    },
-  };
-}
-
-export async function handleOpenComposition(
-  args: Record<string, unknown>,
-  mediaStore: MediaStore
-): Promise<ToolResult> {
-  const compositionId = args.compositionId as string;
-
-  const comp = mediaStore.compositions.find(c => c.id === compositionId);
-  if (!comp) {
-    return { success: false, error: `Composition not found: ${compositionId}` };
-  }
-
-  mediaStore.openCompositionTab(compositionId);
 
   return {
     success: true,

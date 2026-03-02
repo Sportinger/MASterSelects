@@ -32,8 +32,6 @@ export function useEngine() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const isEngineReady = useEngineStore((state) => state.isEngineReady);
   const isPlaying = useTimelineStore((state) => state.isPlaying);
-  const isPlayingRef = useRef(isPlaying);
-  isPlayingRef.current = isPlaying;
   const initRef = useRef(false);
 
   // Initialize engine - only once
@@ -367,10 +365,7 @@ export function useEngine() {
         // When stopped/scrubbing, only renders when playhead actually moves
         if (currentPlayhead !== lastPlayhead) {
           lastPlayhead = currentPlayhead;
-          // Use updatePlayheadTracking instead of requestRender so that
-          // large playhead jumps (seeks, cut points) bypass the frame rate
-          // limiter and render immediately without stutter.
-          engine.updatePlayheadTracking(currentPlayhead);
+          engine.requestRender();
         }
 
         // Keep engine awake when background layers are playing (independent of global playhead)
@@ -389,12 +384,6 @@ export function useEngine() {
           return;
         }
 
-        // Continuous playback: for contiguous same-source clips (simple cuts),
-        // hand off the playing video element to the next clip so the decoder
-        // plays through the cut point without pause/seek — like DaVinci Resolve.
-        // Must run BEFORE buildLayersFromStore so the Layer gets the correct video.
-        layerBuilder.prepareContinuousPlayback();
-
         // Build layers directly from stores (single source of truth)
         const layers = layerBuilder.buildLayersFromStore();
 
@@ -402,26 +391,22 @@ export function useEngine() {
         // can reuse them instead of re-evaluating and re-seeking videos
         renderScheduler.setActiveCompLayers(layers);
 
-        // Finalize prerolled clips BEFORE render — pauses prerolled videos
-        // and seeks to correct position so the first render frame of a new clip
-        // shows the correct frame instead of one 0.5s ahead from preroll
-        layerBuilder.finalizePrerolls();
-
-        // Sync video elements BEFORE render so the video is seeked to the
-        // correct frame before the engine imports its texture. This prevents
-        // 1-frame flicker at cut points where the new clip's video would
-        // otherwise still show the old/un-seeked frame.
-        layerBuilder.syncVideoElements();
-
+        // Render FIRST, before seeking video elements
+        // This ensures we always have a displayable frame even after page reload
+        // when the scrubbing cache is empty. The video is at its previous position
+        // (not yet seeking), so importExternalTexture succeeds and populates the cache.
+        // After sync seeks the video, the 'seeked' event triggers a re-render
+        // with the correct frame.
         engine.render(layers);
 
-        // Sync audio elements after render (audio is not visual, no flicker concern)
+        // Sync video and audio elements (seek to target time for next frame)
+        layerBuilder.syncVideoElements();
         layerBuilder.syncAudioElements();
 
         // Cache rendered frame for instant scrubbing (like Premiere's playback caching)
         // Only cache if RAM preview is enabled and we're playing (not generating RAM preview)
         const { ramPreviewEnabled, addCachedFrame } = useTimelineStore.getState();
-        if (ramPreviewEnabled && isPlayingRef.current) {
+        if (ramPreviewEnabled && isPlaying) {
           engine.cacheCompositeFrame(currentPlayhead).then(() => {
             addCachedFrame(currentPlayhead);
           });
@@ -445,8 +430,7 @@ export function useEngine() {
     return () => {
       engine.stop();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- isPlaying via ref to avoid engine restart
-  }, [isEngineReady]);
+  }, [isEngineReady, isPlaying]);
 
   // Subscribe to state changes that require re-render (wake from idle)
   useEffect(() => {

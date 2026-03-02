@@ -31,7 +31,7 @@ function getWorker(): Worker {
  * Extract audio from a clip's file and transcribe it
  * Uses the configured provider (local Whisper, OpenAI, AssemblyAI, or Deepgram)
  */
-export async function transcribeClip(clipId: string, language: string = 'auto'): Promise<void> {
+export async function transcribeClip(clipId: string, language: string = 'de'): Promise<void> {
   if (isTranscribing) {
     log.warn('Already transcribing');
     return;
@@ -45,14 +45,10 @@ export async function transcribeClip(clipId: string, language: string = 'auto'):
     return;
   }
 
-  // Check if file has audio (also check extension as fallback since file.type can be empty after project reload)
-  const mimeType = clip.file.type || '';
-  const fileName = clip.file.name || '';
-  const ext = fileName.split('.').pop()?.toLowerCase() || '';
-  const audioVideoExts = ['mp4', 'webm', 'mkv', 'mov', 'avi', 'mp3', 'wav', 'ogg', 'aac', 'flac', 'm4a'];
-  const hasAudio = mimeType.startsWith('video/') || mimeType.startsWith('audio/') || audioVideoExts.includes(ext);
+  // Check if file has audio
+  const hasAudio = clip.file.type.startsWith('video/') || clip.file.type.startsWith('audio/');
   if (!hasAudio) {
-    log.warn('File does not contain audio', { type: mimeType, name: fileName });
+    log.warn('File does not contain audio');
     return;
   }
 
@@ -438,10 +434,7 @@ async function transcribeWithOpenAI(
   const formData = new FormData();
   formData.append('file', audioBlob, 'audio.wav');
   formData.append('model', 'whisper-1');
-  // Omit language for auto-detect - OpenAI Whisper will detect automatically
-  if (language !== 'auto') {
-    formData.append('language', language);
-  }
+  formData.append('language', language);
   formData.append('response_format', 'verbose_json');
   formData.append('timestamp_granularities[]', 'word');
 
@@ -539,10 +532,7 @@ async function transcribeWithAssemblyAI(
     },
     body: JSON.stringify({
       audio_url: upload_url,
-      // Auto-detect: use language_detection, otherwise specify language
-      ...(language === 'auto'
-        ? { language_detection: true }
-        : { language_code: languageMap[language] || language }),
+      language_code: languageMap[language] || language,
     }),
   });
 
@@ -621,15 +611,10 @@ async function transcribeWithDeepgram(
   // Build query params
   const params = new URLSearchParams({
     model: 'nova-2',
+    language: language,
     punctuate: 'true',
     utterances: 'false',
   });
-  // Auto-detect: use detect_language, otherwise specify language
-  if (language === 'auto') {
-    params.set('detect_language', 'true');
-  } else {
-    params.set('language', language);
-  }
 
   const response = await fetch(`https://api.deepgram.com/v1/listen?${params}`, {
     method: 'POST',

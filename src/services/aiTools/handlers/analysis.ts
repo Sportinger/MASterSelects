@@ -348,7 +348,7 @@ export async function handleStartClipTranscription(
 
   // Import and start transcription (runs in background)
   const { transcribeClip } = await import('../../clipTranscriber');
-  transcribeClip(clipId, 'auto'); // Don't await - runs in background
+  transcribeClip(clipId, 'de'); // Don't await - runs in background
 
   return {
     success: true,

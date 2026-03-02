@@ -24,69 +24,67 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 
   let pixel = textureLoad(inputTex, vec2i(gid.xy), 0);
 
-  // Gaussian spread kernels — 5x5 for smooth DaVinci-style traces
-  let gK = array<f32, 5>(0.06, 0.24, 0.40, 0.24, 0.06); // vertical
-  let hK = array<f32, 5>(0.06, 0.24, 0.40, 0.24, 0.06); // horizontal
-
-  // X mapping: center column in output space
+  // Sub-pixel X: distribute weight across 2 adjacent columns (scale 256)
   let fxPos = f32(gid.x) * f32(params.outW) / f32(params.srcW);
-  let xC = i32(fxPos + 0.5);
-  let maxX = i32(params.outW - 1u);
+  let x0 = u32(fxPos);
+  let x1 = min(x0 + 1u, params.outW - 1u);
+  let frac = fxPos - f32(x0);
+  let w0 = u32((1.0 - frac) * 256.0);
+  let w1 = 256u - w0;
 
   let hm1 = f32(params.outH - 1u);
   let maxY = i32(params.outH - 1u);
 
+  // Gaussian vertical spread kernel — 5 rows for smooth DaVinci-style traces
+  let gK = array<f32, 5>(0.06, 0.24, 0.40, 0.24, 0.06);
+
   // ── Red ──
   let ryC = i32(hm1 - clamp(pixel.r, 0.0, 1.0) * hm1);
-  for (var dy: i32 = -2; dy <= 2; dy += 1) {
-    let y = u32(clamp(ryC + dy, 0, maxY));
-    let vw = gK[u32(dy + 2)];
+  for (var d: i32 = -2; d <= 2; d += 1) {
+    let y = u32(clamp(ryC + d, 0, maxY));
+    let yw = gK[u32(d + 2)];
     let idx = y * params.outW;
-    for (var dx: i32 = -2; dx <= 2; dx += 1) {
-      let x = u32(clamp(xC + dx, 0, maxX));
-      let w = u32(vw * hK[u32(dx + 2)] * 256.0);
-      if (w > 0u) { atomicAdd(&accumR[idx + x], w); }
-    }
+    let wA = u32(f32(w0) * yw);
+    let wB = u32(f32(w1) * yw);
+    if (wA > 0u) { atomicAdd(&accumR[idx + x0], wA); }
+    if (wB > 0u) { atomicAdd(&accumR[idx + x1], wB); }
   }
 
   // ── Green ──
   let gyC = i32(hm1 - clamp(pixel.g, 0.0, 1.0) * hm1);
-  for (var dy: i32 = -2; dy <= 2; dy += 1) {
-    let y = u32(clamp(gyC + dy, 0, maxY));
-    let vw = gK[u32(dy + 2)];
+  for (var d: i32 = -2; d <= 2; d += 1) {
+    let y = u32(clamp(gyC + d, 0, maxY));
+    let yw = gK[u32(d + 2)];
     let idx = y * params.outW;
-    for (var dx: i32 = -2; dx <= 2; dx += 1) {
-      let x = u32(clamp(xC + dx, 0, maxX));
-      let w = u32(vw * hK[u32(dx + 2)] * 256.0);
-      if (w > 0u) { atomicAdd(&accumG[idx + x], w); }
-    }
+    let wA = u32(f32(w0) * yw);
+    let wB = u32(f32(w1) * yw);
+    if (wA > 0u) { atomicAdd(&accumG[idx + x0], wA); }
+    if (wB > 0u) { atomicAdd(&accumG[idx + x1], wB); }
   }
 
   // ── Blue ──
   let byC = i32(hm1 - clamp(pixel.b, 0.0, 1.0) * hm1);
-  for (var dy: i32 = -2; dy <= 2; dy += 1) {
-    let y = u32(clamp(byC + dy, 0, maxY));
-    let vw = gK[u32(dy + 2)];
+  for (var d: i32 = -2; d <= 2; d += 1) {
+    let y = u32(clamp(byC + d, 0, maxY));
+    let yw = gK[u32(d + 2)];
     let idx = y * params.outW;
-    for (var dx: i32 = -2; dx <= 2; dx += 1) {
-      let x = u32(clamp(xC + dx, 0, maxX));
-      let w = u32(vw * hK[u32(dx + 2)] * 256.0);
-      if (w > 0u) { atomicAdd(&accumB[idx + x], w); }
-    }
+    let wA = u32(f32(w0) * yw);
+    let wB = u32(f32(w1) * yw);
+    if (wA > 0u) { atomicAdd(&accumB[idx + x0], wA); }
+    if (wB > 0u) { atomicAdd(&accumB[idx + x1], wB); }
   }
 
   // ── Luma (BT.709) ──
   let luma = 0.2126 * clamp(pixel.r, 0.0, 1.0) + 0.7152 * clamp(pixel.g, 0.0, 1.0) + 0.0722 * clamp(pixel.b, 0.0, 1.0);
   let lyC = i32(hm1 - luma * hm1);
-  for (var dy: i32 = -2; dy <= 2; dy += 1) {
-    let y = u32(clamp(lyC + dy, 0, maxY));
-    let vw = gK[u32(dy + 2)];
+  for (var d: i32 = -2; d <= 2; d += 1) {
+    let y = u32(clamp(lyC + d, 0, maxY));
+    let yw = gK[u32(d + 2)];
     let idx = y * params.outW;
-    for (var dx: i32 = -2; dx <= 2; dx += 1) {
-      let x = u32(clamp(xC + dx, 0, maxX));
-      let w = u32(vw * hK[u32(dx + 2)] * 256.0);
-      if (w > 0u) { atomicAdd(&accumL[idx + x], w); }
-    }
+    let wA = u32(f32(w0) * yw);
+    let wB = u32(f32(w1) * yw);
+    if (wA > 0u) { atomicAdd(&accumL[idx + x0], wA); }
+    if (wB > 0u) { atomicAdd(&accumL[idx + x1], wB); }
   }
 }
 `;
@@ -112,9 +110,9 @@ struct RenderParams {
   refValue: f32,
   intensity: f32,
   mode: u32,   // 0=RGB, 1=R, 2=G, 3=B, 4=Luma
-  bloomStep: u32,
-  srcW: u32,
-  _pad: u32,
+  _pad0: u32,
+  _pad1: u32,
+  _pad2: u32,
 }
 
 @group(0) @binding(0) var<storage, read> accumR: array<u32>;
@@ -123,23 +121,19 @@ struct RenderParams {
 @group(0) @binding(3) var<uniform> params: RenderParams;
 @group(0) @binding(4) var<storage, read> accumL: array<u32>;
 
-// Adaptive horizontal smooth sample: 9-tap Gaussian that widens when outW > srcW
-fn smoothSample(acc: ptr<storage, array<u32>, read>, fx: f32, fy: f32, w: u32, h: u32, step: f32, sigma: f32) -> f32 {
+// Bilinear sample helper: reads accumulator with interpolation
+fn sampleAccum(acc: ptr<storage, array<u32>, read>, fx: f32, fy: f32, w: u32, h: u32) -> f32 {
+  let x0 = u32(clamp(fx, 0.0, f32(w - 1u)));
   let y0 = u32(clamp(fy, 0.0, f32(h - 1u)));
+  let x1 = min(x0 + 1u, w - 1u);
   let y1 = min(y0 + 1u, h - 1u);
+  let dx = fract(fx);
   let dy = fract(fy);
-  let inv2s2 = -0.5 / (sigma * sigma);
-  var sum = 0.0;
-  var wt = 0.0;
-  for (var i: i32 = -4; i <= 4; i += 1) {
-    let sx = clamp(fx + f32(i) * step, 0.0, f32(w - 1u));
-    let xi = u32(sx);
-    let gw = exp(f32(i * i) * inv2s2);
-    let v = mix(f32((*acc)[y0 * w + xi]), f32((*acc)[y1 * w + xi]), dy);
-    sum += v * gw;
-    wt += gw;
-  }
-  return sum / max(wt, 0.001);
+  let v00 = f32((*acc)[y0 * w + x0]);
+  let v10 = f32((*acc)[y0 * w + x1]);
+  let v01 = f32((*acc)[y1 * w + x0]);
+  let v11 = f32((*acc)[y1 * w + x1]);
+  return mix(mix(v00, v10, dx), mix(v01, v11, dx), dy);
 }
 
 // Nearest-neighbor read for bloom sampling
@@ -160,34 +154,28 @@ fn fs(in: VertexOutput) -> @location(0) vec4f {
   let ih = i32(h);
   let mode = params.mode;
 
-  // Adaptive smooth sampling: step & sigma widen when accumulator is sparse
-  let ratio = params.outW / max(f32(params.srcW), 1.0);
-  let sStep = max(1.0, ratio * 0.6);
-  let sSigma = max(0.8, ratio * 0.8);
-
-  // Floating-point grid position
+  // Floating-point grid position for bilinear sampling
   let fx = uv.x * params.outW - 0.5;
   let fy = uv.y * params.outH - 0.5;
 
-  // Center value (adaptive smooth — bridges sparse columns)
-  let rCenter = smoothSample(&accumR, fx, fy, w, h, sStep, sSigma);
-  let gCenter = smoothSample(&accumG, fx, fy, w, h, sStep, sSigma);
-  let bCenter = smoothSample(&accumB, fx, fy, w, h, sStep, sSigma);
-  let lCenter = smoothSample(&accumL, fx, fy, w, h, sStep, sSigma);
+  // Center value (bilinear — sharp trace)
+  let rCenter = sampleAccum(&accumR, fx, fy, w, h);
+  let gCenter = sampleAccum(&accumG, fx, fy, w, h);
+  let bCenter = sampleAccum(&accumB, fx, fy, w, h);
+  let lCenter = sampleAccum(&accumL, fx, fy, w, h);
 
-  // Phosphor bloom: 3x3 gaussian at adaptive step for soft glow
+  // Phosphor bloom: 3x3 gaussian at 4px step for soft glow
   let ix = i32(fx + 0.5);
   let iy = i32(fy + 0.5);
-  let bStep = i32(params.bloomStep);
   var rBloom = 0.0; var gBloom = 0.0; var bBloom = 0.0; var lBloom = 0.0;
   let bK = array<f32, 3>(0.25, 0.50, 0.25);
   for (var by: i32 = -1; by <= 1; by += 1) {
     for (var bx: i32 = -1; bx <= 1; bx += 1) {
       let bw = bK[u32(bx + 1)] * bK[u32(by + 1)];
-      rBloom += readAccum(&accumR, ix + bx * bStep, iy + by * bStep, iw, ih) * bw;
-      gBloom += readAccum(&accumG, ix + bx * bStep, iy + by * bStep, iw, ih) * bw;
-      bBloom += readAccum(&accumB, ix + bx * bStep, iy + by * bStep, iw, ih) * bw;
-      lBloom += readAccum(&accumL, ix + bx * bStep, iy + by * bStep, iw, ih) * bw;
+      rBloom += readAccum(&accumR, ix + bx * 4, iy + by * 4, iw, ih) * bw;
+      gBloom += readAccum(&accumG, ix + bx * 4, iy + by * 4, iw, ih) * bw;
+      bBloom += readAccum(&accumB, ix + bx * 4, iy + by * 4, iw, ih) * bw;
+      lBloom += readAccum(&accumL, ix + bx * 4, iy + by * 4, iw, ih) * bw;
     }
   }
 
@@ -200,10 +188,10 @@ fn fs(in: VertexOutput) -> @location(0) vec4f {
   let bT = pow(clamp(sqrt(bCenter) / rv, 0.0, 1.0), 0.75) * s;
   let lT = pow(clamp(sqrt(lCenter) / rv, 0.0, 1.0), 0.75) * s;
 
-  let rG = 0.0;
-  let gG = 0.0;
-  let bG = 0.0;
-  let lG = 0.0;
+  let rG = pow(clamp(sqrt(rBloom) / rv, 0.0, 1.0), 0.65) * 0.12;
+  let gG = pow(clamp(sqrt(gBloom) / rv, 0.0, 1.0), 0.65) * 0.12;
+  let bG = pow(clamp(sqrt(bBloom) / rv, 0.0, 1.0), 0.65) * 0.12;
+  let lG = pow(clamp(sqrt(lBloom) / rv, 0.0, 1.0), 0.65) * 0.12;
 
   // Additive phosphor composite based on mode
   var color: vec3f;
@@ -254,10 +242,11 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
 }
 `;
 
+export const OUT_W = 1024;
+export const OUT_H = 512;
+
 export class WaveformScope {
   private device: GPUDevice;
-  readonly outW: number;
-  readonly outH: number;
 
   private computePipeline!: GPUComputePipeline;
   private renderPipeline!: GPURenderPipeline;
@@ -274,17 +263,15 @@ export class WaveformScope {
   private decayBGL!: GPUBindGroupLayout;
   private decayParams!: GPUBuffer;
 
-  constructor(device: GPUDevice, format: GPUTextureFormat, outW = 1024, outH = 512) {
+  constructor(device: GPUDevice, format: GPUTextureFormat) {
     this.device = device;
-    this.outW = outW;
-    this.outH = outH;
     this.initWaveform(format);
     this.initDecay();
   }
 
   private initWaveform(format: GPUTextureFormat) {
     const d = this.device;
-    const bufSize = this.outW * this.outH * 4;
+    const bufSize = OUT_W * OUT_H * 4;
 
     this.accumR = d.createBuffer({ size: bufSize, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
     this.accumG = d.createBuffer({ size: bufSize, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
@@ -349,20 +336,17 @@ export class WaveformScope {
     const srcW = sourceTexture.width;
     const srcH = sourceTexture.height;
 
-    d.queue.writeBuffer(this.computeParams, 0, new Uint32Array([this.outW, this.outH, srcW, srcH]));
-    // refValue: lower = brighter traces. Adjusted for 5x5 compute kernel + 9-tap render smoothing
-    const refValue = Math.sqrt(srcH / this.outH) * 16.0;
-    // Bloom step scales with output resolution for consistent glow size
-    const bloomStep = Math.max(4, Math.round(this.outW / 200));
+    d.queue.writeBuffer(this.computeParams, 0, new Uint32Array([OUT_W, OUT_H, srcW, srcH]));
+    const refValue = Math.sqrt(srcH / OUT_H) * 40.0;
     const paramsData = new ArrayBuffer(32);
-    new Float32Array(paramsData, 0, 4).set([this.outW, this.outH, refValue, 0.9]);
-    new Uint32Array(paramsData, 16, 4).set([mode, bloomStep, srcW, 0]);
+    new Float32Array(paramsData, 0, 4).set([OUT_W, OUT_H, refValue, 0.9]);
+    new Uint32Array(paramsData, 16, 4).set([mode, 0, 0, 0]);
     d.queue.writeBuffer(this.renderParams, 0, paramsData);
 
     const encoder = d.createCommandEncoder();
 
     // Temporal decay
-    const bufLen = this.outW * this.outH;
+    const bufLen = OUT_W * OUT_H;
     d.queue.writeBuffer(this.decayParams, 0, new Uint32Array([bufLen, 0, 0, 0]));
 
     const decayBG_R = d.createBindGroup({

@@ -155,7 +155,7 @@ src/components/timeline/
 ├── hooks/
 │   ├── useExternalDrop.ts   # NEW
 │   ├── usePlaybackLoop.ts   # NEW
-│   # useVideoPreload.ts REMOVED — caused stutter (VideoSyncManager handles preloading)
+│   ├── useVideoPreload.ts   # NEW
 │   └── useAutoFeatures.ts   # NEW
 ├── components/
 │   ├── TimelineOverlays.tsx # NEW

@@ -28,8 +28,7 @@ import { detectMediaType } from './helpers/mediaTypeHelpers';
 import { loadVideoMedia } from './clip/addVideoClip';
 import { createAudioClipPlaceholder, loadAudioMedia } from './clip/addAudioClip';
 import { createImageClipPlaceholder, loadImageMedia } from './clip/addImageClip';
-// createVideoElement, createAudioElement, initWebCodecsPlayer no longer needed for split
-// (split clips share the original element for seamless playback)
+import { createVideoElement, createAudioElement, initWebCodecsPlayer } from './helpers/webCodecsHelpers';
 import {
   createCompClipPlaceholder,
   loadNestedClips,
@@ -43,7 +42,61 @@ import {
 } from './helpers/idGenerator';
 import { blobUrlManager } from './helpers/blobUrlManager';
 import { updateClipById } from './helpers/clipStateHelpers';
-import { thumbnailCache } from '../../services/thumbnailCache';
+import { thumbnailRenderer } from '../../services/thumbnailRenderer';
+
+// Debounce map for thumbnail regeneration per clip
+const thumbnailDebounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const THUMBNAIL_DEBOUNCE_MS = 500; // Wait 500ms after last change before regenerating
+
+/**
+ * Debounced thumbnail regeneration for a clip with effects.
+ * Only regenerates after changes stop for THUMBNAIL_DEBOUNCE_MS.
+ */
+async function regenerateClipThumbnails(
+  clipId: string,
+  getClip: () => TimelineClip | undefined,
+  setClips: (updater: (clips: TimelineClip[]) => TimelineClip[]) => void
+): Promise<void> {
+  // Clear any existing debounce timer for this clip
+  const existingTimer = thumbnailDebounceTimers.get(clipId);
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+  }
+
+  // Set new debounce timer
+  const timer = setTimeout(async () => {
+    thumbnailDebounceTimers.delete(clipId);
+
+    const clip = getClip();
+    if (!clip || !clip.source) {
+      return;
+    }
+
+    // Skip composition clips - they have their own thumbnail generation
+    if (clip.isComposition) {
+      return;
+    }
+
+    // Skip audio-only clips
+    if (clip.source.type === 'audio') {
+      return;
+    }
+
+    log.debug('Regenerating thumbnails for clip with effects', { clipId: clip.id, name: clip.name });
+
+    try {
+      const thumbnails = await thumbnailRenderer.generateClipThumbnails(clip, { count: 10 });
+      if (thumbnails.length > 0) {
+        setClips(clips => updateClipById(clips, clipId, { thumbnails }));
+        log.debug('Updated thumbnails for clip', { clipId, count: thumbnails.length });
+      }
+    } catch (e) {
+      log.warn('Failed to regenerate clip thumbnails', e);
+    }
+  }, THUMBNAIL_DEBOUNCE_MS);
+
+  thumbnailDebounceTimers.set(clipId, timer);
+}
 
 export const createClipSlice: SliceCreator<CoreClipActions> = (set, get) => ({
   addClip: async (trackId, file, startTime, providedDuration, mediaFileId) => {
@@ -441,18 +494,36 @@ export const createClipSlice: SliceCreator<CoreClipActions> = (set, get) => ({
     const timestamp = Date.now();
     const randomSuffix = Math.random().toString(36).substr(2, 5);
 
-    // Share video/audio elements between split clips on the same track.
-    // Since clips on the same track are never active simultaneously, the shared
-    // element plays through the cut point seamlessly — zero seek, zero stutter.
-    // The pause loop in VideoSyncManager/AudioTrackSyncManager checks for shared
-    // elements before pausing, so the playing element won't be interrupted.
+    // Create new video/audio elements for the second clip to avoid sharing HTMLMediaElements
+    // This is critical: both clips need their own elements for independent seeking/playback
     let secondClipSource = clip.source;
-    if (clip.source?.type === 'video' && clip.source.videoElement) {
-      // Share video element + WebCodecsPlayer — video plays through the cut
-      secondClipSource = { ...clip.source };
-    } else if (clip.source?.type === 'audio' && clip.source.audioElement) {
-      // Share audio element — audio plays through the cut
-      secondClipSource = { ...clip.source };
+    if (clip.source?.type === 'video' && clip.source.videoElement && clip.file) {
+      const newVideo = createVideoElement(clip.file);
+      secondClipSource = {
+        ...clip.source,
+        videoElement: newVideo,
+        webCodecsPlayer: undefined, // Will be initialized async below
+      };
+      // Initialize WebCodecsPlayer for the new video element asynchronously
+      initWebCodecsPlayer(newVideo, clip.name).then(player => {
+        if (player) {
+          const { clips: currentClips } = get();
+          const secondClipId = `clip-${timestamp}-${randomSuffix}-b`;
+          set({
+            clips: currentClips.map(c => {
+              if (c.id !== secondClipId || !c.source) return c;
+              return { ...c, source: { ...c.source, webCodecsPlayer: player } };
+            }),
+          });
+        }
+      });
+    } else if (clip.source?.type === 'audio' && clip.source.audioElement && clip.file) {
+      // Handle audio-only clips - create new audio element for second clip
+      const newAudio = createAudioElement(clip.file);
+      secondClipSource = {
+        ...clip.source,
+        audioElement: newAudio,
+      };
     }
 
     const firstClip: TimelineClip = {
@@ -482,14 +553,12 @@ export const createClipSlice: SliceCreator<CoreClipActions> = (set, get) => ({
     if (clip.linkedClipId) {
       const linkedClip = clips.find(c => c.id === clip.linkedClipId);
       if (linkedClip) {
-        // Share audio element between linked split clips on the same track.
-        // Audio plays through the cut point seamlessly — no seek, no overlap.
-        // For composition audio (mixdownBuffer), we must create a new element
-        // since the mixdown buffer is different per clip segment.
+        // Create new audio element for linked second clip
         let linkedSecondSource = linkedClip.source;
         if (linkedClip.source?.type === 'audio' && linkedClip.source.audioElement) {
+          // For composition audio clips, use mixdownBuffer to create new audio element
           if (linkedClip.mixdownBuffer) {
-            // Composition audio: needs separate element from mixdown buffer
+            // Async create audio from mixdown buffer
             import('../../services/compositionAudioMixer').then(({ compositionAudioMixer }) => {
               const newAudio = compositionAudioMixer.createAudioElement(linkedClip.mixdownBuffer!);
               const { clips: currentClips } = get();
@@ -501,10 +570,15 @@ export const createClipSlice: SliceCreator<CoreClipActions> = (set, get) => ({
                 }),
               });
             });
+            // Source will be updated async, use existing for now
             linkedSecondSource = { ...linkedClip.source };
-          } else {
-            // Regular audio: share element — plays through cuts
-            linkedSecondSource = { ...linkedClip.source };
+          } else if (linkedClip.file && linkedClip.file.size > 0) {
+            // Regular audio file (not empty composition placeholder)
+            const newAudio = createAudioElement(linkedClip.file);
+            linkedSecondSource = {
+              ...linkedClip.source,
+              audioElement: newAudio,
+            };
           }
         }
 
@@ -571,7 +645,7 @@ export const createClipSlice: SliceCreator<CoreClipActions> = (set, get) => ({
   },
 
   updateClipTransform: (id, transform) => {
-    const { clips, invalidateCache } = get();
+    const { clips, invalidateCache, thumbnailsEnabled } = get();
     set({
       clips: clips.map(c => {
         if (c.id !== id) return c;
@@ -588,26 +662,30 @@ export const createClipSlice: SliceCreator<CoreClipActions> = (set, get) => ({
       }),
     });
     invalidateCache();
+
+    // Regenerate thumbnails with new transform (debounced)
+    if (thumbnailsEnabled) {
+      regenerateClipThumbnails(
+        id,
+        () => get().clips.find(c => c.id === id),
+        (updater) => set({ clips: updater(get().clips) })
+      );
+    }
   },
 
   toggleClipReverse: (id) => {
     const { clips, invalidateCache } = get();
-    const clip = clips.find(c => c.id === id);
     set({
       clips: clips.map(c => {
         if (c.id !== id) return c;
         return {
           ...c,
           reversed: !c.reversed,
+          thumbnails: c.thumbnails ? [...c.thumbnails].reverse() : c.thumbnails,
         };
       }),
     });
     invalidateCache();
-    // Invalidate on-demand thumbnail cache for this media
-    const mediaFileId = clip?.mediaFileId || clip?.source?.mediaFileId;
-    if (mediaFileId) {
-      thumbnailCache.invalidate(mediaFileId);
-    }
   },
 
   // ========== WAVEFORM GENERATION ==========

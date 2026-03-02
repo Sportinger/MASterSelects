@@ -65,7 +65,8 @@ export const createClipboardSlice: SliceCreator<ClipboardActions> = (set, get) =
         preservesPitch: clip.preservesPitch,
         textProperties: clip.textProperties ? { ...clip.textProperties } : undefined,
         solidColor: clip.source?.type === 'solid' ? (clip.solidColor || clip.name.replace('Solid ', '')) : undefined,
-        // Visual data - reuse existing waveforms
+        // Visual data - reuse existing thumbnails and waveforms
+        thumbnails: clip.thumbnails ? [...clip.thumbnails] : undefined,
         waveform: clip.waveform ? [...clip.waveform] : undefined,
         isComposition: clip.isComposition,
         compositionId: clip.compositionId,
@@ -173,7 +174,8 @@ export const createClipboardSlice: SliceCreator<ClipboardActions> = (set, get) =
         preservesPitch: clipData.preservesPitch,
         textProperties: clipData.textProperties ? { ...clipData.textProperties } : undefined,
         solidColor: clipData.solidColor,
-        // Reuse existing waveforms from copied clip
+        // Reuse existing thumbnails and waveforms from copied clip
+        thumbnails: clipData.thumbnails ? [...clipData.thumbnails] : undefined,
         waveform: clipData.waveform ? [...clipData.waveform] : undefined,
         isComposition: clipData.isComposition,
         compositionId: clipData.compositionId,

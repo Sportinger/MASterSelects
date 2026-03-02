@@ -18,9 +18,6 @@ export type TranscriptionProvider = 'local' | 'openai' | 'assemblyai' | 'deepgra
 // Preview quality options (multiplier on base resolution)
 export type PreviewQuality = 1 | 0.5 | 0.25;
 
-// Scope quality options (internal buffer resolution)
-export type ScopeQuality = 'low' | 'medium' | 'high';
-
 // GPU power preference options
 export type GPUPowerPreference = 'high-performance' | 'low-power';
 
@@ -67,9 +64,6 @@ interface SettingsState {
   // Mobile/Desktop view
   forceDesktopMode: boolean;  // Show desktop UI even on mobile devices
 
-  // Scope quality (internal buffer resolution for waveform/vectorscope)
-  scopeQuality: ScopeQuality;
-
   // GPU preference
   gpuPowerPreference: GPUPowerPreference;  // 'high-performance' (dGPU) or 'low-power' (iGPU)
 
@@ -102,7 +96,6 @@ interface SettingsState {
   setApiKey: (provider: keyof APIKeys, key: string) => void;
   setTranscriptionProvider: (provider: TranscriptionProvider) => void;
   setPreviewQuality: (quality: PreviewQuality) => void;
-  setScopeQuality: (quality: ScopeQuality) => void;
   setShowTransparencyGrid: (show: boolean) => void;
   setAutosaveEnabled: (enabled: boolean) => void;
   setAutosaveInterval: (interval: AutosaveInterval) => void;
@@ -160,7 +153,6 @@ export const useSettingsStore = create<SettingsState>()(
       nativeHelperPort: 9876, // Default WebSocket port
       nativeHelperConnected: false, // Not connected initially
       forceDesktopMode: false, // Use responsive detection by default
-      scopeQuality: 'low' as ScopeQuality, // Low = current resolution, fast
       gpuPowerPreference: 'high-performance', // Prefer dGPU by default
       copyMediaToProject: true, // Copy imported files to Raw/ folder by default
       hasCompletedSetup: false, // Show welcome overlay on first run
@@ -205,10 +197,6 @@ export const useSettingsStore = create<SettingsState>()(
 
       setPreviewQuality: (quality) => {
         set({ previewQuality: quality });
-      },
-
-      setScopeQuality: (quality) => {
-        set({ scopeQuality: quality });
       },
 
       setShowTransparencyGrid: (show) => {
@@ -329,7 +317,6 @@ export const useSettingsStore = create<SettingsState>()(
         customBrightness: state.customBrightness,
         transcriptionProvider: state.transcriptionProvider,
         previewQuality: state.previewQuality,
-        scopeQuality: state.scopeQuality,
         showTransparencyGrid: state.showTransparencyGrid,
         autosaveEnabled: state.autosaveEnabled,
         autosaveInterval: state.autosaveInterval,

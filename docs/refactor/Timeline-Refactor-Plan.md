@@ -13,7 +13,7 @@
 | `utils/fileTypeHelpers.ts` | ~60 | 817-877 | File type detection |
 | `hooks/useExternalDrop.ts` | ~400 | 879-1335 | External drag & drop |
 | `hooks/usePlaybackLoop.ts` | ~110 | 600-708 | Audio master clock |
-| ~~`hooks/useVideoPreload.ts`~~ | ~~90~~ | ~~509-598~~ | ~~REMOVED: Conflicted with VideoSyncManager.preloadUpcomingClips, caused stutter at cuts~~ |
+| `hooks/useVideoPreload.ts` | ~90 | 509-598 | Video prebuffering |
 | `hooks/useAutoFeatures.ts` | ~80 | 375-481 | RAM preview & proxy auto-start |
 | `components/TimelineOverlays.tsx` | ~150 | 1812-1916 + 2039-2084 | All overlay elements |
 | `components/NewTrackDropZone.tsx` | ~50 | 1687-1712, 1784-1810 | Drop zone component |
@@ -49,7 +49,7 @@ src/components/timeline/
 │   ├── useLayerSync.ts             # EXISTING
 │   ├── useExternalDrop.ts          # NEW
 │   ├── usePlaybackLoop.ts          # NEW
-│   # useVideoPreload.ts REMOVED — caused stutter at cuts (VideoSyncManager handles preloading)
+│   ├── useVideoPreload.ts          # NEW
 │   └── useAutoFeatures.ts          # NEW
 ├── components/
 │   ├── TimelineOverlays.tsx        # NEW
@@ -318,27 +318,50 @@ export function usePlaybackLoop({ isPlaying }: UsePlaybackLoopProps) {
 
 ---
 
-### ~~Step 3: Create `hooks/useVideoPreload.ts`~~ — REMOVED
+### Step 3: Create `hooks/useVideoPreload.ts`
 
-> **REMOVED:** This hook was deleted because it conflicted with `VideoSyncManager.preloadUpcomingClips()`.
-> It seeked shared video elements (split clips) to the upcoming clip's `inPoint`, disrupting
-> the currently-playing clip. VideoSyncManager already handles all preloading correctly with
-> shared-element detection and two-phase preroll. See commit `80287898`.
+**File:** `src/components/timeline/hooks/useVideoPreload.ts`
 
-~~**File:** `src/components/timeline/hooks/useVideoPreload.ts`~~
-
-~~**Action:** Extract video preloading from lines 509-598.~~
+**Action:** Extract video preloading from lines 509-598.
 
 ```typescript
-// DELETED — Video preloading is handled by VideoSyncManager.preloadUpcomingClips()
-// which correctly skips shared video elements and uses smart two-phase preroll.
-// The old useVideoPreload hook caused stutter at cut points by seeking shared
-// HTMLVideoElements away from their current playback position.
-```
+// Video preloading - seeks and buffers upcoming clips before playhead reaches them
 
-Original code for reference (DO NOT RE-IMPLEMENT):
-```typescript
-const currentPosition = playheadState.isUsingInternalPosition
+import { useEffect, useRef } from 'react';
+import { playheadState } from '../../../services/layerBuilder';
+import type { TimelineClip } from '../../../types';
+
+interface UseVideoPreloadProps {
+  isPlaying: boolean;
+  isDraggingPlayhead: boolean;
+  playheadPosition: number;
+  clips: TimelineClip[];
+}
+
+/**
+ * Preload upcoming video clips - seek videos and force buffering before playhead hits them
+ * This prevents stuttering when playback transitions to a new clip
+ * PERFORMANCE: Throttled to run every 500ms instead of every frame
+ */
+export function useVideoPreload({
+  isPlaying,
+  isDraggingPlayhead,
+  playheadPosition,
+  clips,
+}: UseVideoPreloadProps) {
+  const lastPreloadCheckRef = useRef(0);
+
+  useEffect(() => {
+    if (!isPlaying || isDraggingPlayhead) return;
+
+    // Throttle preload checks to every 500ms (no need to check every frame for 2s lookahead)
+    const now = performance.now();
+    if (now - lastPreloadCheckRef.current < 500) return;
+    lastPreloadCheckRef.current = now;
+
+    const LOOKAHEAD_TIME = 2.0; // Look 2 seconds ahead
+    // Use high-frequency playhead position during playback
+    const currentPosition = playheadState.isUsingInternalPosition
       ? playheadState.position
       : playheadPosition;
     const lookaheadPosition = currentPosition + LOOKAHEAD_TIME;
@@ -1385,7 +1408,7 @@ export function PickWhipOverlay({ dragState }: PickWhipOverlayProps) {
 ```typescript
 // Add at top of imports
 import { usePlaybackLoop } from './hooks/usePlaybackLoop';
-// useVideoPreload REMOVED — VideoSyncManager.preloadUpcomingClips handles preloading
+import { useVideoPreload } from './hooks/useVideoPreload';
 import { useAutoFeatures } from './hooks/useAutoFeatures';
 import { useExternalDrop } from './hooks/useExternalDrop';
 import { NewTrackDropZone } from './components/NewTrackDropZone';
@@ -1413,13 +1436,16 @@ useAutoFeatures({
 });
 ```
 
-3. **~~Remove lines 509-598~~ (video preloading)** — ALREADY REMOVED
-   useVideoPreload was deleted (caused stutter). VideoSyncManager handles preloading.
-   Replace with comment:
+3. **Remove lines 509-598** (video preloading)
+   Replace with:
 ```typescript
-// Video preloading is handled by VideoSyncManager.preloadUpcomingClips()
-// in the render loop — it correctly skips shared video elements (split clips)
-// and uses smart two-phase preroll. No React hook needed.
+// Preload upcoming video clips
+useVideoPreload({
+  isPlaying,
+  isDraggingPlayhead,
+  playheadPosition,
+  clips,
+});
 ```
 
 4. **Remove lines 600-708** (playback loop)
@@ -1546,7 +1572,7 @@ npx tsc --noEmit
    - [ ] RAM preview auto-starts after idle
    - [ ] Proxy auto-generates after idle
    - [ ] Pick whip layer parenting works
-   - [x] Video preloading (handled by VideoSyncManager — useVideoPreload removed)
+   - [ ] Video preloading (no stutter on clip transitions)
 
 ### Step 12: Commit
 
@@ -1556,7 +1582,7 @@ git commit -m "refactor: Split Timeline.tsx into focused modules
 
 - Extract useExternalDrop hook (drag & drop handling)
 - Extract usePlaybackLoop hook (audio master clock)
-- REMOVED useVideoPreload hook (caused stutter at cuts, VideoSyncManager handles it)
+- Extract useVideoPreload hook (video prebuffering)
 - Extract useAutoFeatures hook (RAM preview & proxy auto-start)
 - Extract fileTypeHelpers utils (remove duplicate code)
 - Create NewTrackDropZone component (remove JSX duplication)
@@ -1578,7 +1604,7 @@ git push origin staging
 | `Timeline.tsx` | ~900 | Main component |
 | `hooks/useExternalDrop.ts` | ~400 | Drag & drop |
 | `hooks/usePlaybackLoop.ts` | ~110 | Audio master clock |
-| ~~`hooks/useVideoPreload.ts`~~ | ~~90~~ | ~~REMOVED: caused stutter~~ |
+| `hooks/useVideoPreload.ts` | ~90 | Video prebuffering |
 | `hooks/useAutoFeatures.ts` | ~80 | Auto-start features |
 | `utils/fileTypeHelpers.ts` | ~60 | File type detection |
 | `components/NewTrackDropZone.tsx` | ~50 | Drop zone UI |

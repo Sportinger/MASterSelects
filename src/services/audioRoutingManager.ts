@@ -31,7 +31,6 @@ class AudioRoutingManager {
   private audioContext: AudioContext | null = null;
   private routes = new Map<HTMLMediaElement, AudioRoute>();
   private contextResumePromise: Promise<void> | null = null;
-  private fadingElements = new WeakSet<HTMLMediaElement>();
 
   /**
    * Get or create the shared AudioContext
@@ -131,11 +130,7 @@ class AudioRoutingManager {
     // Update volume if changed (with small delta threshold)
     if (Math.abs(route.lastVolume - volume) > 0.001) {
       // Web Audio gain can go above 1, but clamp for sanity
-      const clampedVolume = Math.max(0, Math.min(4, volume));
-      const now = route.gainNode.context.currentTime;
-      route.gainNode.gain.cancelScheduledValues(now);
-      route.gainNode.gain.setValueAtTime(route.gainNode.gain.value, now);
-      route.gainNode.gain.linearRampToValueAtTime(clampedVolume, now + 0.003);
+      route.gainNode.gain.value = Math.max(0, Math.min(4, volume));
       route.lastVolume = volume;
     }
 
@@ -143,10 +138,7 @@ class AudioRoutingManager {
     for (let i = 0; i < 10; i++) {
       const gain = eqGains[i] ?? 0;
       if (Math.abs(route.lastEQGains[i] - gain) > 0.01) {
-        const now = route.eqFilters[i].context.currentTime;
-        route.eqFilters[i].gain.cancelScheduledValues(now);
-        route.eqFilters[i].gain.setValueAtTime(route.eqFilters[i].gain.value, now);
-        route.eqFilters[i].gain.linearRampToValueAtTime(gain, now + 0.003);
+        route.eqFilters[i].gain.value = gain;
         route.lastEQGains[i] = gain;
       }
     }
@@ -158,73 +150,6 @@ class AudioRoutingManager {
     }
 
     return true;
-  }
-
-  /**
-   * Public wrapper for getOrCreateRoute — ensures an element is routed
-   * through Web Audio. Fire-and-forget safe.
-   */
-  ensureRoute(element: HTMLMediaElement): void {
-    this.getOrCreateRoute(element).catch(() => {});
-  }
-
-  /**
-   * Set volume for an element using a smooth 3ms ramp via the gain node.
-   * Falls back to element.volume if route not ready yet.
-   */
-  setVolume(element: HTMLMediaElement, volume: number): void {
-    const route = this.routes.get(element);
-    if (route) {
-      const clampedVolume = Math.max(0, Math.min(4, volume));
-      if (Math.abs(route.lastVolume - clampedVolume) > 0.001) {
-        const now = route.gainNode.context.currentTime;
-        route.gainNode.gain.cancelScheduledValues(now);
-        route.gainNode.gain.setValueAtTime(route.gainNode.gain.value, now);
-        route.gainNode.gain.linearRampToValueAtTime(clampedVolume, now + 0.003);
-        route.lastVolume = clampedVolume;
-      }
-      // When using Web Audio routing, element volume must be 1
-      if (element.volume !== 1) {
-        element.volume = 1;
-      }
-    } else {
-      // No route yet — set element volume directly
-      const targetVolume = Math.max(0, Math.min(1, volume));
-      if (Math.abs(element.volume - targetVolume) > 0.01) {
-        element.volume = targetVolume;
-      }
-    }
-  }
-
-  /**
-   * Fade out an element over 5ms then pause. Prevents audio pops from
-   * abrupt pause. Uses WeakSet to avoid duplicate fade-outs.
-   * Falls back to direct pause if no route.
-   */
-  fadeOutAndPause(element: HTMLMediaElement): void {
-    if (element.paused) return;
-    if (this.fadingElements.has(element)) return;
-
-    const route = this.routes.get(element);
-    if (route && this.audioContext && this.audioContext.state === 'running') {
-      this.fadingElements.add(element);
-      const now = this.audioContext.currentTime;
-      route.gainNode.gain.cancelScheduledValues(now);
-      route.gainNode.gain.setValueAtTime(route.gainNode.gain.value, now);
-      route.gainNode.gain.linearRampToValueAtTime(0, now + 0.005);
-
-      // Pause after the ramp completes, then restore gain for next play
-      setTimeout(() => {
-        element.pause();
-        // Restore gain to last volume so next play() starts at correct level
-        route.gainNode.gain.cancelScheduledValues(0);
-        route.gainNode.gain.value = route.lastVolume;
-        this.fadingElements.delete(element);
-      }, 8); // Slightly longer than 5ms ramp to ensure completion
-    } else {
-      // No route or context not running — pause directly
-      element.pause();
-    }
   }
 
   /**

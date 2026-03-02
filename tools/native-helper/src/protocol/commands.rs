@@ -114,23 +114,6 @@ pub enum Command {
         url: String,
     },
 
-    /// Search for videos using yt-dlp with YouTube's native search filters
-    SearchVideo {
-        id: String,
-        query: String,
-        #[serde(default)]
-        max_results: Option<u32>,
-        /// Duration filter: "short" (<4min), "medium" (4-20min), "long" (>20min)
-        #[serde(default)]
-        duration: Option<String>,
-        /// Definition filter: "hd" or "4k"
-        #[serde(default)]
-        definition: Option<String>,
-        /// Sort order: "relevance" (default), "date", "views", "rating"
-        #[serde(default)]
-        sort_by: Option<String>,
-    },
-
     /// Get a file from local filesystem (for serving downloads)
     GetFile {
         id: String,

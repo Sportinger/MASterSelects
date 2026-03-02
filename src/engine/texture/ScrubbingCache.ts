@@ -22,8 +22,6 @@ export class ScrubbingCache {
   private lastFrameViews: Map<HTMLVideoElement, GPUTextureView> = new Map();
   private lastFrameSizes: Map<HTMLVideoElement, { width: number; height: number }> = new Map();
   private lastCaptureTime: Map<HTMLVideoElement, number> = new Map();
-  // Track the video.currentTime at which the last frame was captured (for time-proximity checks)
-  private lastFrameVideoTime: Map<HTMLVideoElement, number> = new Map();
 
   // RAM Preview cache - fully composited frames for instant playback
   // Key: time (quantized to frame) -> ImageData (CPU-side for memory efficiency)
@@ -161,8 +159,6 @@ export class ScrubbingCache {
         { texture },
         [width, height]
       );
-      // Track the video time at which this frame was captured
-      this.lastFrameVideoTime.set(video, video.currentTime);
     } catch {
       // Video might not be ready - ignore
     }
@@ -206,8 +202,6 @@ export class ScrubbingCache {
         [width, height]
       );
       bitmap.close();
-      // Track the video time at which this frame was captured
-      this.lastFrameVideoTime.set(video, video.currentTime);
       log.debug('Pre-cached video frame via createImageBitmap', { width, height });
       return true;
     } catch (e) {
@@ -217,11 +211,11 @@ export class ScrubbingCache {
   }
 
   // Get last cached frame for a video (used during seeks)
-  getLastFrame(video: HTMLVideoElement): { view: GPUTextureView; width: number; height: number; videoTime: number | undefined } | null {
+  getLastFrame(video: HTMLVideoElement): { view: GPUTextureView; width: number; height: number } | null {
     const view = this.lastFrameViews.get(video);
     const size = this.lastFrameSizes.get(video);
     if (view && size) {
-      return { view, width: size.width, height: size.height, videoTime: this.lastFrameVideoTime.get(video) };
+      return { view, width: size.width, height: size.height };
     }
     return null;
   }
@@ -242,7 +236,6 @@ export class ScrubbingCache {
     this.lastFrameViews.delete(video);
     this.lastFrameSizes.delete(video);
     this.lastCaptureTime.delete(video);
-    this.lastFrameVideoTime.delete(video);
   }
 
   // === RAM PREVIEW COMPOSITE CACHE ===
@@ -354,7 +347,6 @@ export class ScrubbingCache {
     this.lastFrameViews.clear();
     this.lastFrameSizes.clear();
     this.lastCaptureTime.clear();
-    this.lastFrameVideoTime.clear();
 
     log.debug('All caches cleared');
   }

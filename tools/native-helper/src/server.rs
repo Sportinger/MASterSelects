@@ -284,12 +284,6 @@ async fn handle_websocket(
                         let mut w = write.lock().await;
                         w.send(Message::Text(json)).await?;
                     }
-                    Command::SearchVideo { id, query, max_results, duration, definition, sort_by } => {
-                        let response = download::handle_search_video(&id, &query, max_results, duration.as_deref(), definition.as_deref(), sort_by.as_deref()).await;
-                        let json = serde_json::to_string(&response)?;
-                        let mut w = write.lock().await;
-                        w.send(Message::Text(json)).await?;
-                    }
                     other => {
                         // Handle all other commands through session
                         let (response, binary) = session.handle_command(other).await;

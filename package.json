@@ -14,13 +14,7 @@
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
-    "test:unit": "vitest run tests/unit",
-    "bench:playback": "node tools/bench/playback-bench.mjs --out .artifacts/playback-bench-latest.json",
-    "bench:playback:smoke": "node tools/bench/playback-smoke.mjs",
-    "bench:playback:prepare": "node tools/bench/prepare-playback-fixtures.mjs",
-    "bench:playback:guide": "node tools/bench/playback-run-guide.mjs",
-    "bench:phase4:report": "node tools/bench/phase4-exit-report.mjs",
-    "check:audio-paths": "node tools/ci/check-audio-paths.mjs"
+    "test:unit": "vitest run tests/unit"
   },
   "dependencies": {
     "@ffmpeg/core": "^0.12.6",
@@ -48,7 +42,6 @@
     "@vitejs/plugin-react": "^5.1.1",
     "@vitest/coverage-v8": "^4.0.18",
     "@vitest/ui": "^4.0.18",
-    "baseline-browser-mapping": "^2.9.19",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",

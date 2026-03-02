@@ -28,7 +28,6 @@ function getModelName(language: string): string {
   if (language === 'en') {
     return 'Xenova/whisper-tiny.en';
   }
-  // 'auto' and all other languages use multilingual model
   return 'onnx-community/whisper-tiny';
 }
 
@@ -135,7 +134,6 @@ async function transcribe(
   let wordIndex = 0;
 
   const isEnglishOnly = language === 'en';
-  const isAutoDetect = language === 'auto';
   const useWordTimestamps = supportsWordTimestamps(language);
 
   for (let segmentIdx = 0; segmentIdx < numSegments; segmentIdx++) {
@@ -157,10 +155,7 @@ async function transcribe(
         condition_on_previous_text: false,
         compression_ratio_threshold: 2.4,
         logprob_threshold: -1.0,
-        // Auto-detect: don't pass language so Whisper detects it
-        // English-only model: no language needed
-        // Other languages: pass explicitly
-        ...(isEnglishOnly || isAutoDetect ? {} : { language, task: 'transcribe' }),
+        ...(isEnglishOnly ? {} : { language, task: 'transcribe' }),
       });
 
       const chunks: TranscriptChunk[] = result.chunks || [];

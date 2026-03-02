@@ -131,9 +131,28 @@ export class LayerCollector {
         }
       }
 
-      // 3. WebCodecs VideoFrame — disabled for playback (causes lag).
-      //    WebCodecs is still used for export via WebCodecsExportMode.
-      //    HTMLVideoElement (tier 4) handles playback rendering.
+      // 3. Try WebCodecs VideoFrame
+      // Skip for videos that haven't been played yet — after page reload,
+      // VideoFrame from a never-played video produces black/empty frames.
+      // Fall through to tryHTMLVideo which has a canvas-based fallback.
+      if (source.webCodecsPlayer && (!source.videoElement || this.videoGpuReady.has(source.videoElement))) {
+        const frame = source.webCodecsPlayer.getCurrentFrame();
+        if (frame) {
+          const extTex = deps.textureManager.importVideoTexture(frame);
+          if (extTex) {
+            this.currentDecoder = 'WebCodecs';
+            this.hasVideo = true;
+            return {
+              layer,
+              isVideo: true,
+              externalTexture: extTex,
+              textureView: null,
+              sourceWidth: frame.displayWidth,
+              sourceHeight: frame.displayHeight,
+            };
+          }
+        }
+      }
 
       // 4. Try HTMLVideoElement (fallback)
       if (source.videoElement) {
@@ -147,27 +166,6 @@ export class LayerCollector {
   // Track videos where importExternalTexture produces valid (non-black) frames
   // After page reload, importExternalTexture returns black until the video is played
   private videoGpuReady = new WeakSet<HTMLVideoElement>();
-
-  /**
-   * Mark a video as GPU-ready externally (e.g., after preroll playback).
-   * During preroll, the video plays muted but tryHTMLVideo never runs for it
-   * (not at playhead), so videoGpuReady is never set. This method bridges that gap.
-   */
-  markVideoGpuReady(video: HTMLVideoElement): void {
-    this.videoGpuReady.add(video);
-  }
-
-  /**
-   * Check if a cached frame's video time is close enough to the expected time.
-   * At clip boundaries, the video may be seeking to a new position while the cache
-   * holds a frame from the previous clip's position. If the time difference exceeds
-   * ~1 frame (0.034s at 30fps), the cached frame likely belongs to a different clip
-   * and would cause a visible flash of the wrong content.
-   */
-  private isCachedFrameTimeValid(cachedVideoTime: number | undefined, expectedTime: number): boolean {
-    if (cachedVideoTime === undefined) return false;
-    return Math.abs(cachedVideoTime - expectedTime) < 0.034;
-  }
 
   private tryHTMLVideo(layer: Layer, video: HTMLVideoElement, deps: LayerCollectorDeps): LayerRenderData | null {
     const videoKey = video.src || layer.id;
@@ -196,7 +194,7 @@ export class LayerCollector {
       }
 
       // If video is seeking, try per-time scrubbing cache first (exact frame for this position),
-      // then fall back to generic last-frame cache (only if time-proximate)
+      // then fall back to generic last-frame cache
       if (video.seeking && !deps.isExporting) {
         // Try per-time cache: if we've visited this position before, show the exact frame
         const cachedView = deps.scrubbingCache?.getCachedFrame(video.src, currentTime);
@@ -211,12 +209,9 @@ export class LayerCollector {
             sourceHeight: video.videoHeight,
           };
         }
-        // Fall back to generic last-frame cache, but only if the cached frame
-        // was captured near the current expected time. At clip boundaries, the
-        // cached frame belongs to the previous clip's position and would cause
-        // a visible flash of wrong content.
+        // Fall back to generic last-frame cache
         const lastFrame = deps.scrubbingCache?.getLastFrame(video);
-        if (lastFrame && this.isCachedFrameTimeValid(lastFrame.videoTime, currentTime)) {
+        if (lastFrame) {
           this.currentDecoder = 'HTMLVideo(seeking-cache)';
           return {
             layer,
@@ -227,8 +222,6 @@ export class LayerCollector {
             sourceHeight: lastFrame.height,
           };
         }
-        // Cache frame is from a different time (likely a clip transition) — skip it
-        // and return null to show transparency instead of wrong-clip flash
       }
 
       // After page reload, importExternalTexture returns a valid GPUExternalTexture
@@ -241,9 +234,8 @@ export class LayerCollector {
           this.videoGpuReady.add(video);
         } else {
           // Video is paused and GPU not ready — use cached frame if warmup already captured one
-          // Only use if time-proximate to avoid wrong-clip flash at transitions
           const cachedFrame = deps.scrubbingCache?.getLastFrame(video);
-          if (cachedFrame && this.isCachedFrameTimeValid(cachedFrame.videoTime, currentTime)) {
+          if (cachedFrame) {
             deps.setLastVideoTime(videoKey, currentTime);
             this.currentDecoder = 'HTMLVideo(cached)';
             return {
@@ -291,10 +283,9 @@ export class LayerCollector {
         };
       }
 
-      // Fallback to cache — only use if the cached frame is time-proximate
-      // to avoid showing a frame from a different clip at cut boundaries
+      // Fallback to cache
       const lastFrame = deps.scrubbingCache?.getLastFrame(video);
-      if (lastFrame && this.isCachedFrameTimeValid(lastFrame.videoTime, currentTime)) {
+      if (lastFrame) {
         this.currentDecoder = 'HTMLVideo(cached)';
         return {
           layer,
@@ -306,9 +297,9 @@ export class LayerCollector {
         };
       }
     } else {
-      // Video not ready - try cache, but only if time-proximate
+      // Video not ready - try cache
       const lastFrame = deps.scrubbingCache?.getLastFrame(video);
-      if (lastFrame && this.isCachedFrameTimeValid(lastFrame.videoTime, video.currentTime)) {
+      if (lastFrame) {
         return {
           layer,
           isVideo: false,

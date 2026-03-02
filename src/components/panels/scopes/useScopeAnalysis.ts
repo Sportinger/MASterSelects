@@ -1,6 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useEngineStore } from '../../../stores/engineStore';
-import { useSettingsStore } from '../../../stores/settingsStore';
 import { ScopeRenderer } from '../../../engine/analysis/ScopeRenderer';
 
 export type ScopeTab = 'histogram' | 'vectorscope' | 'waveform';
@@ -28,7 +27,6 @@ export function useGpuScope(
   viewMode: ScopeViewMode = 'rgb'
 ) {
   const isEngineReady = useEngineStore((s) => s.isEngineReady);
-  const scopeQuality = useSettingsStore((s) => s.scopeQuality);
   const rendererRef = useRef<ScopeRenderer | null>(null);
   const ctxRef = useRef<GPUCanvasContext | null>(null);
   const rafRef = useRef(0);
@@ -37,7 +35,7 @@ export function useGpuScope(
   const viewModeRef = useRef(viewMode);
   viewModeRef.current = viewMode;
 
-  // Initialize WebGPU context + renderer (recreates on quality change)
+  // Initialize WebGPU context + renderer
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !isEngineReady || !visible) return;
@@ -55,9 +53,9 @@ export function useGpuScope(
       ctx.configure({ device, format, alphaMode: 'opaque' });
       ctxRef.current = ctx;
 
-      // Destroy previous renderer if quality changed
-      rendererRef.current?.destroy();
-      rendererRef.current = new ScopeRenderer(device, format, scopeQuality);
+      if (!rendererRef.current) {
+        rendererRef.current = new ScopeRenderer(device, format);
+      }
       initedRef.current = true;
     };
 
@@ -68,7 +66,7 @@ export function useGpuScope(
       initedRef.current = false;
       ctxRef.current = null;
     };
-  }, [canvasRef, isEngineReady, visible, scopeQuality]);
+  }, [canvasRef, isEngineReady, visible]);
 
   // Render callback
   const render = useCallback(async () => {
