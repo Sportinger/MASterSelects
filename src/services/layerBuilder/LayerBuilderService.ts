@@ -717,7 +717,9 @@ export class LayerBuilderService {
 
     // Handle sub-nested composition clips (Level 3+)
     if (nestedClip.isComposition && nestedClip.nestedClips && nestedClip.nestedClips.length > 0) {
-      const subLayers = this.buildNestedLayers(nestedClip, nestedClipLocalTime, _ctx, depth + 1);
+      // Convert clip-local time to sub-composition timeline time (add inPoint)
+      const subCompTime = nestedClipLocalTime + (nestedClip.inPoint || 0);
+      const subLayers = this.buildNestedLayers(nestedClip, subCompTime, _ctx, depth + 1);
       if (subLayers.length === 0) return null;
 
       const compositions = useMediaStore.getState().compositions;
