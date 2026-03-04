@@ -27,6 +27,7 @@ import { MulticamDialog } from './MulticamDialog';
 import { TimelineNavigator } from './TimelineNavigator';
 import { TimelineOverlays } from './components/TimelineOverlays';
 import { TransitionOverlays } from './components/TransitionOverlays';
+import { AIActionOverlays } from './components/AIActionOverlays';
 import { PickWhipCables } from './components/PickWhipCables';
 import { ParentChildLinksOverlay } from './components/ParentChildLinksOverlay';
 import { VerticalScrollbar } from './VerticalScrollbar';
@@ -1017,6 +1018,13 @@ export function Timeline() {
           <TransitionOverlays
             activeJunction={activeJunction}
             clips={clips}
+            tracks={tracks}
+            timeToPixel={timeToPixel}
+            isTrackExpanded={isTrackExpanded}
+            getExpandedTrackHeight={getExpandedTrackHeight}
+          />
+
+          <AIActionOverlays
             tracks={tracks}
             timeToPixel={timeToPixel}
             isTrackExpanded={isTrackExpanded}

@@ -1,6 +1,6 @@
 // TimelineClip component - Clip rendering within tracks
 
-import { memo, useRef } from 'react';
+import { memo, useRef, useState, useEffect } from 'react';
 import type { TimelineClipProps } from './types';
 import { THUMB_WIDTH } from './constants';
 import { useTimelineStore } from '../../stores/timeline';
@@ -115,6 +115,34 @@ function TimelineClipComponent({
     : (clipAnimationPhase === 'entering' && isNewClip)
       ? 'entrance-animate'
       : '';
+
+  // AI move animation (FLIP technique)
+  const aiMove = useTimelineStore(s => s.aiMovingClips.get(clip.id));
+  const [aiMovePhase, setAiMovePhase] = useState<'idle' | 'initial' | 'animating'>('idle');
+  const aiMoveRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (aiMove) {
+      setAiMovePhase('initial');
+      // Double-rAF to ensure the initial transform is painted before starting transition
+      const raf1 = requestAnimationFrame(() => {
+        const raf2 = requestAnimationFrame(() => {
+          setAiMovePhase('animating');
+        });
+        aiMoveRef.current = raf2;
+      });
+      const timer = setTimeout(() => {
+        setAiMovePhase('idle');
+      }, (aiMove.animationDuration || 200) + 50);
+      return () => {
+        cancelAnimationFrame(raf1);
+        if (aiMoveRef.current) cancelAnimationFrame(aiMoveRef.current);
+        clearTimeout(timer);
+      };
+    } else {
+      setAiMovePhase('idle');
+    }
+  }, [aiMove?.startedAt]);
 
   // Check if this clip should show cut indicator (either directly hovered or linked to hovered clip)
   const isDirectlyHovered = cutHoverInfo?.clipId === clip.id;
@@ -279,6 +307,7 @@ function TimelineClipComponent({
     clip.isPendingDownload ? 'pending-download' : '',
     clip.downloadError ? 'download-error' : '',
     clip.isComposition ? 'composition' : '',
+    aiMovePhase !== 'idle' ? 'ai-moving' : '',
   ]
     .filter(Boolean)
     .join(' ');
@@ -364,6 +393,13 @@ function TimelineClipComponent({
         width,
         cursor: toolMode === 'cut' ? 'crosshair' : undefined,
         animationDelay: `${animationDelay}s`,
+        // FLIP move animation: initial phase applies offset transform, animating phase transitions to 0
+        ...(aiMovePhase === 'initial' && aiMove ? {
+          transform: `translateX(${timeToPixel(aiMove.fromStartTime) - left}px)`,
+        } : aiMovePhase === 'animating' && aiMove ? {
+          transform: 'translateX(0)',
+          transition: `transform ${aiMove.animationDuration}ms cubic-bezier(0.22, 1, 0.36, 1)`,
+        } : {}),
         ...(isSolidClip && clip.solidColor ? {
           background: clip.solidColor,
           borderColor: clip.solidColor,

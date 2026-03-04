@@ -12,6 +12,7 @@ import type { ToolResult } from './types';
 import { MODIFYING_TOOLS } from './types';
 import { executeToolInternal } from './handlers';
 import { handleExecuteBatch } from './handlers/batch';
+import { setAIExecutionActive } from './executionState';
 
 // Re-export types
 export type { ToolResult, ToolDefinition } from './types';
@@ -36,11 +37,23 @@ export { getQuickTimelineSummary, formatClipInfo, formatTrackInfo, captureFrameG
 // Re-export handlers for advanced usage
 export { executeToolInternal } from './handlers';
 
+// Re-export execution state check (from separate module to avoid circular imports)
+export { isAIExecutionActive } from './executionState';
+
 /**
  * Execute an AI tool with history tracking
  * Main entry point for AI chat integration
  */
 export async function executeAITool(toolName: string, args: Record<string, unknown>): Promise<ToolResult> {
+  setAIExecutionActive(true);
+  try {
+    return await _executeAIToolInternal(toolName, args);
+  } finally {
+    setAIExecutionActive(false);
+  }
+}
+
+async function _executeAIToolInternal(toolName: string, args: Record<string, unknown>): Promise<ToolResult> {
   // Special-case: executeBatch wraps all sub-actions in a single undo group
   if (toolName === 'executeBatch') {
     startBatch('AI: batch');

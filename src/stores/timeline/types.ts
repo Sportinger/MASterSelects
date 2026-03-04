@@ -41,6 +41,28 @@ export type MaskEditMode = 'none' | 'drawing' | 'editing' | 'drawingRect' | 'dra
 // Timeline tool mode types
 export type TimelineToolMode = 'select' | 'cut';
 
+// AI action visual feedback types
+export type AIActionOverlayType = 'split-glow' | 'delete-ghost' | 'trim-highlight';
+
+export interface AIActionOverlay {
+  id: string;
+  type: AIActionOverlayType;
+  trackId: string;
+  timePosition: number;   // timeline seconds
+  width?: number;          // duration in seconds (for delete ghost)
+  clipName?: string;       // display name (for delete ghost)
+  clipColor?: string;      // background color (for delete ghost)
+  createdAt: number;
+  duration: number;        // animation duration in ms
+}
+
+export interface AIMovingClip {
+  clipId: string;
+  fromStartTime: number;   // old position in seconds
+  animationDuration: number; // ms
+  startedAt: number;
+}
+
 // Timeline marker type
 export interface TimelineMarker {
   id: string;
@@ -131,6 +153,10 @@ export interface TimelineState {
 
   // Slot grid view progress (0 = full timeline, 1 = full grid view)
   slotGridProgress: number;
+
+  // AI action visual feedback (transient, not serialized)
+  aiActionOverlays: AIActionOverlay[];
+  aiMovingClips: Map<string, AIMovingClip>;
 }
 
 // Track actions interface
@@ -434,6 +460,14 @@ export interface TimelineUtils {
   clearTimeline: () => void;
 }
 
+// AI Action Feedback actions
+export interface AIActionFeedbackActions {
+  addAIOverlay: (overlay: Omit<AIActionOverlay, 'id' | 'createdAt'>) => string;
+  removeAIOverlay: (id: string) => void;
+  setAIMovingClip: (clipId: string, fromStartTime: number, animationDuration?: number) => void;
+  clearAIMovingClip: (clipId: string) => void;
+}
+
 // Combined store interface
 export interface TimelineStore extends
   TimelineState,
@@ -451,6 +485,7 @@ export interface TimelineStore extends
   MarkerActions,
   TransitionActions,
   ClipboardActions,
+  AIActionFeedbackActions,
   TimelineUtils {}
 
 // Slice creator type

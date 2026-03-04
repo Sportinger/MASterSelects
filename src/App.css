@@ -4863,6 +4863,120 @@ input[type="checkbox"] {
   border-bottom: 6px solid #f97316;
 }
 
+/* ============================================
+   AI Action Visual Feedback Animations
+   ============================================ */
+
+/* Split Glow - vertical blue glow line at cut position */
+@keyframes ai-split-glow-fade {
+  0% {
+    opacity: 1;
+    box-shadow: 0 0 12px 4px rgba(59, 130, 246, 0.9), 0 0 24px 8px rgba(59, 130, 246, 0.4);
+  }
+  100% {
+    opacity: 0;
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+.ai-split-glow {
+  position: absolute;
+  width: 2px;
+  margin-left: -1px;
+  background: #3b82f6;
+  pointer-events: none;
+  z-index: 200;
+  animation: ai-split-glow-fade 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  box-shadow: 0 0 12px 4px rgba(59, 130, 246, 0.9), 0 0 24px 8px rgba(59, 130, 246, 0.4);
+}
+
+.ai-split-glow::before,
+.ai-split-glow::after {
+  content: '';
+  position: absolute;
+  left: -4px;
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+}
+
+.ai-split-glow::before {
+  top: 0;
+  border-top: 6px solid #3b82f6;
+}
+
+.ai-split-glow::after {
+  bottom: 0;
+  border-bottom: 6px solid #3b82f6;
+}
+
+/* Delete Ghost - fading red outline at old clip position */
+@keyframes ai-delete-fade {
+  0% {
+    opacity: 0.8;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.97) translateY(3px);
+  }
+}
+
+.ai-delete-ghost {
+  position: absolute;
+  border-radius: 4px;
+  background: rgba(239, 68, 68, 0.2);
+  border: 1.5px dashed rgba(239, 68, 68, 0.6);
+  pointer-events: none;
+  z-index: 199;
+  animation: ai-delete-fade 0.35s cubic-bezier(0.55, 0, 1, 0.45) forwards;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.3);
+}
+
+.ai-delete-ghost .ghost-name {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-decoration: line-through;
+}
+
+/* Trim Highlight - green edge glow at trimmed side */
+@keyframes ai-trim-pulse {
+  0% {
+    opacity: 1;
+    box-shadow: 0 0 10px 3px rgba(34, 197, 94, 0.8);
+  }
+  100% {
+    opacity: 0;
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+.ai-trim-highlight {
+  position: absolute;
+  width: 3px;
+  margin-left: -1.5px;
+  background: #22c55e;
+  pointer-events: none;
+  z-index: 200;
+  animation: ai-trim-pulse 0.4s ease-out forwards;
+  box-shadow: 0 0 10px 3px rgba(34, 197, 94, 0.8);
+  border-radius: 1px;
+}
+
+/* AI Move Animation - blue shadow during FLIP transition */
+.timeline-clip.ai-moving {
+  z-index: 100;
+  box-shadow: 0 2px 12px rgba(59, 130, 246, 0.4), 0 0 0 1px rgba(59, 130, 246, 0.3);
+}
+
 /* Premiere-style drag feedback */
 .timeline-tracks.dragging-clip {
   cursor: grabbing;

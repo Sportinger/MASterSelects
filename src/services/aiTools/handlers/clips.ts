@@ -6,6 +6,15 @@ import { createVideoElement, createAudioElement, initWebCodecsPlayer } from '../
 import type { TimelineClip } from '../../../types';
 import type { ToolResult } from '../types';
 import { formatClipInfo } from '../utils';
+import { isAIExecutionActive } from '../executionState';
+
+/** Resolve clip background color for ghost overlays */
+function getClipColor(clip: TimelineClip): string {
+  if (clip.source?.type === 'audio') return '#2d6b4a';
+  if (clip.source?.type === 'text') return '#5c3d7a';
+  if (clip.source?.type === 'solid' && clip.solidColor) return clip.solidColor;
+  return '#3d5a80';
+}
 
 type TimelineStore = ReturnType<typeof useTimelineStore.getState>;
 
@@ -248,6 +257,20 @@ export async function handleSplitClip(
 
   // Use splitClipBatch to respect withLinked parameter
   splitClipBatch(clip, [splitTime], withLinked);
+
+  // Visual feedback: split glow at cut position
+  if (isAIExecutionActive()) {
+    const store = useTimelineStore.getState();
+    store.addAIOverlay({ type: 'split-glow', trackId: clip.trackId, timePosition: splitTime, duration: 600 });
+    // Also show on linked audio track
+    if (withLinked && clip.linkedClipId) {
+      const linked = store.clips.find(c => c.linkedClipId === clip.linkedClipId || c.id === clip.linkedClipId);
+      if (linked && linked.trackId !== clip.trackId) {
+        store.addAIOverlay({ type: 'split-glow', trackId: linked.trackId, timePosition: splitTime, duration: 600 });
+      }
+    }
+  }
+
   return { success: true, data: { splitAt: splitTime, originalClipId: clipId, withLinked } };
 }
 
@@ -260,6 +283,26 @@ export async function handleDeleteClip(
   const clip = timelineStore.clips.find(c => c.id === clipId);
   if (!clip) {
     return { success: false, error: `Clip not found: ${clipId}` };
+  }
+
+  // Visual feedback: delete ghost before removing
+  if (isAIExecutionActive()) {
+    const store = useTimelineStore.getState();
+    store.addAIOverlay({
+      type: 'delete-ghost', trackId: clip.trackId,
+      timePosition: clip.startTime, width: clip.duration,
+      clipName: clip.name, clipColor: getClipColor(clip), duration: 350,
+    });
+    if (withLinked && clip.linkedClipId) {
+      const linked = timelineStore.clips.find(c => c.id === clip.linkedClipId);
+      if (linked) {
+        store.addAIOverlay({
+          type: 'delete-ghost', trackId: linked.trackId,
+          timePosition: linked.startTime, width: linked.duration,
+          clipName: linked.name, clipColor: getClipColor(linked), duration: 350,
+        });
+      }
+    }
   }
 
   // removeClip() only deletes linked clip if it's in selectedClipIds
@@ -302,6 +345,14 @@ export async function handleDeleteClips(
   for (const clipId of clipIds) {
     const clip = useTimelineStore.getState().clips.find(c => c.id === clipId);
     if (clip) {
+      // Visual feedback: delete ghost
+      if (isAIExecutionActive()) {
+        useTimelineStore.getState().addAIOverlay({
+          type: 'delete-ghost', trackId: clip.trackId,
+          timePosition: clip.startTime, width: clip.duration,
+          clipName: clip.name, clipColor: getClipColor(clip), duration: 350,
+        });
+      }
       timelineStore.removeClip(clipId);
       deleted.push(clipId);
     } else {
@@ -432,6 +483,17 @@ export async function handleMoveClip(
     }
   }
 
+  // Visual feedback: animate move from old to new position
+  const oldStartTime = clip.startTime;
+  if (isAIExecutionActive() && Math.abs(oldStartTime - newStartTime) > 0.01) {
+    const store = useTimelineStore.getState();
+    store.setAIMovingClip(clipId, oldStartTime, 200);
+    // Also animate linked clip
+    if (withLinked && clip.linkedClipId) {
+      store.setAIMovingClip(clip.linkedClipId, oldStartTime, 200);
+    }
+  }
+
   // skipLinked is the inverse of withLinked
   timelineStore.moveClip(clipId, newStartTime, newTrackId, !withLinked);
   return {
@@ -462,7 +524,25 @@ export async function handleTrimClip(
     return { success: false, error: 'In point must be less than out point' };
   }
 
+  const oldInPoint = clip.inPoint;
+  const oldOutPoint = clip.outPoint;
   timelineStore.trimClip(clipId, inPoint, outPoint);
+
+  // Visual feedback: trim highlight at the changed edge
+  if (isAIExecutionActive()) {
+    const store = useTimelineStore.getState();
+    const trimmedClip = store.clips.find(c => c.id === clipId);
+    if (trimmedClip) {
+      // Show highlight at left edge if inPoint changed, right edge if outPoint changed
+      if (Math.abs(inPoint - oldInPoint) > 0.01) {
+        store.addAIOverlay({ type: 'trim-highlight', trackId: trimmedClip.trackId, timePosition: trimmedClip.startTime, duration: 400 });
+      }
+      if (Math.abs(outPoint - oldOutPoint) > 0.01) {
+        store.addAIOverlay({ type: 'trim-highlight', trackId: trimmedClip.trackId, timePosition: trimmedClip.startTime + trimmedClip.duration, duration: 400 });
+      }
+    }
+  }
+
   return { success: true, data: { clipId, inPoint, outPoint, newDuration: outPoint - inPoint } };
 }
 
@@ -495,6 +575,14 @@ export async function handleSplitClipEvenly(
 
   // Single-setState batch split — no stack overflow possible
   splitClipBatch(clip, splitTimes, withLinked);
+
+  // Visual feedback: glow at each split point
+  if (isAIExecutionActive()) {
+    const store = useTimelineStore.getState();
+    for (const t of splitTimes) {
+      store.addAIOverlay({ type: 'split-glow', trackId: clip.trackId, timePosition: t, duration: 600 });
+    }
+  }
 
   return {
     success: true,
@@ -529,6 +617,14 @@ export async function handleSplitClipAtTimes(
 
   // Single-setState batch split — no stack overflow possible
   splitClipBatch(clip, validTimes, withLinked);
+
+  // Visual feedback: glow at each split point
+  if (isAIExecutionActive()) {
+    const store = useTimelineStore.getState();
+    for (const t of validTimes) {
+      store.addAIOverlay({ type: 'split-glow', trackId: clip.trackId, timePosition: t, duration: 600 });
+    }
+  }
 
   return {
     success: true,
@@ -579,6 +675,17 @@ export async function handleReorderClips(
           const delta = newPositions.get(clip!.id)! - clip!.startTime;
           newPositions.set(linkedClip.id, linkedClip.startTime + delta);
         }
+      }
+    }
+  }
+
+  // Visual feedback: animate moves for all reordered clips
+  if (isAIExecutionActive()) {
+    const store = useTimelineStore.getState();
+    for (const [cId, newStart] of newPositions) {
+      const c = allClips.find(cl => cl.id === cId);
+      if (c && Math.abs(c.startTime - newStart) > 0.01) {
+        store.setAIMovingClip(cId, c.startTime, 200);
       }
     }
   }

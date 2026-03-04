@@ -22,11 +22,15 @@ interface BatchActionResult {
  * Execute multiple tools in sequence as a single batch.
  * Re-fetches fresh store state between actions so that
  * clip IDs from splits are available to subsequent actions.
+ *
+ * Supports staggered execution for visual feedback:
+ * - staggerDelayMs: delay between actions in ms (default: 100)
  */
 export async function handleExecuteBatch(
   args: Record<string, unknown>
 ): Promise<ToolResult> {
   const actions = args.actions as BatchAction[];
+  const staggerDelayMs = (args.staggerDelayMs as number) ?? 100;
 
   if (!actions || !Array.isArray(actions) || actions.length === 0) {
     return { success: false, error: 'actions must be a non-empty array' };
@@ -35,7 +39,9 @@ export async function handleExecuteBatch(
   const results: BatchActionResult[] = [];
   let allSucceeded = true;
 
-  for (const action of actions) {
+  for (let i = 0; i < actions.length; i++) {
+    const action = actions[i];
+
     // Re-fetch fresh state before each action
     const timelineStore = useTimelineStore.getState();
     const mediaStore = useMediaStore.getState();
@@ -77,9 +83,14 @@ export async function handleExecuteBatch(
       });
     }
 
-    // Microtask break between actions to prevent call stack overflow
-    // (each action triggers multiple Zustand set() calls + subscribers)
-    await new Promise(resolve => setTimeout(resolve, 0));
+    // Staggered delay between actions for visual feedback
+    // (also serves as microtask break to prevent call stack overflow)
+    const delay = i < actions.length - 1 ? Math.max(staggerDelayMs, 0) : 0;
+    if (delay > 0) {
+      await new Promise(resolve => setTimeout(resolve, delay));
+    } else {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
   }
 
   return {

@@ -29,6 +29,10 @@ export const batchToolDefinitions: ToolDefinition[] = [
               required: ['tool', 'args'],
             },
           },
+          staggerDelayMs: {
+            type: 'number',
+            description: 'Delay between actions in ms for visual stagger effect (default: 100, set to 0 for instant)',
+          },
         },
         required: ['actions'],
       },

@@ -22,6 +22,7 @@ import { createMaskSlice } from './maskSlice';
 import { createMarkerSlice } from './markerSlice';
 import { createTransitionSlice } from './transitionSlice';
 import { createClipboardSlice } from './clipboardSlice';
+import { createAIActionFeedbackSlice } from './aiActionFeedbackSlice';
 import { createPositioningUtils } from './positioningUtils';
 import { createSerializationUtils } from './serializationUtils';
 import { Logger } from '../../services/logger';
@@ -55,6 +56,7 @@ export const useTimelineStore = create<TimelineStore>()(
     const markerActions = createMarkerSlice(set, get);
     const transitionActions = createTransitionSlice(set, get);
     const clipboardActions = createClipboardSlice(set, get);
+    const aiActionFeedbackActions = createAIActionFeedbackSlice(set, get);
 
     // Extracted utils (positioning + serialization)
     const positioningUtils = createPositioningUtils(set, get);
@@ -201,6 +203,10 @@ export const useTimelineStore = create<TimelineStore>()(
       // Clipboard state for copy/paste
       clipboardData: null as import('./types').ClipboardClipData[] | null,
       clipboardKeyframes: null as import('./types').ClipboardKeyframeData[] | null,
+
+      // AI action visual feedback (transient, not serialized)
+      aiActionOverlays: [] as import('./types').AIActionOverlay[],
+      aiMovingClips: new Map<string, import('./types').AIMovingClip>(),
     };
 
     // Layer actions (render layers for engine, moved from mixerStore)
@@ -252,6 +258,7 @@ export const useTimelineStore = create<TimelineStore>()(
       ...markerActions,
       ...transitionActions,
       ...clipboardActions,
+      ...aiActionFeedbackActions,
       ...utils,
     };
   })
