@@ -299,9 +299,13 @@ export class VideoSyncManager {
       engine.ensureVideoFrameCached(video);
     }
 
-    // Reverse playback: either clip is reversed OR timeline playbackSpeed is negative
+    // Reverse playback: clip is reversed, timeline playbackSpeed is negative, or clip speed is negative
     // H.264 can't play backwards, so we seek frame-by-frame
-    const isReversePlayback = clip.reversed || ctx.playbackSpeed < 0;
+    const isReversePlayback = clip.reversed || ctx.playbackSpeed < 0 || timeInfo.speed < 0;
+
+    // Clip-level speed (separate from transport playbackSpeed)
+    const clipAbsSpeed = timeInfo.absSpeed;
+    const needsClipSpeedAdjust = clipAbsSpeed > 0.01 && Math.abs(clipAbsSpeed - 1) > 0.01;
 
     if (isReversePlayback) {
       // For reverse: pause video and seek to each frame
@@ -318,14 +322,38 @@ export class VideoSyncManager {
         this.throttledSeek(clip.id, video, timeInfo.clipTime, ctx);
       }
     } else {
-      // Normal 1x forward playback: let video play naturally
-      if (ctx.isPlaying && video.paused) {
-        video.play().catch(() => {});
-      } else if (!ctx.isPlaying && !video.paused) {
-        video.pause();
+      // Normal forward playback (transport speed = 1x)
+      // Apply clip-level speed via video.playbackRate (e.g. 2x, 0.5x)
+      if (needsClipSpeedAdjust) {
+        const targetRate = Math.max(0.0625, Math.min(16, clipAbsSpeed));
+        if (Math.abs(video.playbackRate - targetRate) > 0.01) {
+          video.playbackRate = targetRate;
+        }
+        // Set preservesPitch based on clip setting (default true)
+        const shouldPreservePitch = clip.preservesPitch !== false;
+        if ((video as any).preservesPitch !== shouldPreservePitch) {
+          (video as any).preservesPitch = shouldPreservePitch;
+        }
+      } else if (video.playbackRate !== 1) {
+        // Reset playbackRate when clip speed returns to 1x
+        video.playbackRate = 1;
       }
 
-      if (!ctx.isPlaying) {
+      if (ctx.isPlaying) {
+        if (video.paused) {
+          // Seek to correct source time before playing (important for speed-adjusted clips)
+          video.currentTime = timeInfo.clipTime;
+          video.play().catch(() => {});
+        }
+        // Drift correction during playback (especially needed for speed-adjusted clips)
+        if (timeDiff > 0.3) {
+          video.currentTime = timeInfo.clipTime;
+        }
+      } else {
+        if (!video.paused) {
+          video.pause();
+        }
+
         // 0.04s ≈ slightly more than 1 frame at 30fps.
         // Previous 0.1s threshold skipped up to 3 frames during slow scrubbing.
         const seekThreshold = ctx.isDraggingPlayhead ? 0.04 : 0.04;
@@ -408,6 +436,36 @@ export class VideoSyncManager {
         engine.requestNewFrameRender();
       });
     }
+  }
+
+  // --- Health Monitor Accessors ---
+
+  getActiveRvfcClipIds(): string[] {
+    return Object.keys(this.rvfcHandles);
+  }
+
+  getActivePreciseSeekClipIds(): string[] {
+    return Object.keys(this.preciseSeekTimers);
+  }
+
+  getForceDecodeClipIds(): string[] {
+    return [...this.forceDecodeInProgress];
+  }
+
+  isVideoWarmingUp(video: HTMLVideoElement): boolean {
+    return this.warmingUpVideos.has(video);
+  }
+
+  cancelRvfcHandle(clipId: string, video?: HTMLVideoElement): void {
+    const handle = this.rvfcHandles[clipId];
+    if (handle !== undefined) {
+      if (video) (video as any).cancelVideoFrameCallback?.(handle);
+      delete this.rvfcHandles[clipId];
+    }
+  }
+
+  clearWarmupState(video: HTMLVideoElement): void {
+    this.warmingUpVideos.delete(video);
   }
 
   /**

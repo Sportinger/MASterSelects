@@ -131,6 +131,8 @@ function convertCompositions(compositions: Composition[]): ProjectComposition[] 
       audioEnabled: c.audioEnabled !== false,
       reversed: c.reversed || false,
       disabled: c.disabled || false,
+      speed: c.speed,
+      preservesPitch: c.preservesPitch,
       // Nested composition support
       isComposition: c.isComposition || undefined,
       compositionId: c.compositionId || undefined,

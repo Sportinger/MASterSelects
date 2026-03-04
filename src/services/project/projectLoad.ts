@@ -150,6 +150,8 @@ function convertProjectCompositionToStore(
         audioEnabled: c.audioEnabled,
         reversed: c.reversed,
         disabled: c.disabled,
+        speed: c.speed,
+        preservesPitch: c.preservesPitch,
         // Nested composition support
         isComposition: c.isComposition,
         compositionId: c.compositionId,

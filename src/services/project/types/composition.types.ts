@@ -47,6 +47,10 @@ export interface ProjectClip {
   reversed: boolean;
   disabled: boolean;
 
+  // Speed
+  speed?: number;
+  preservesPitch?: boolean;
+
   // Nested composition support
   isComposition?: boolean;
   compositionId?: string;

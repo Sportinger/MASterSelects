@@ -12,6 +12,7 @@ import { generateMaskTexture } from '../utils/maskRenderer';
 import { layerBuilder, playheadState } from '../services/layerBuilder';
 import { layerPlaybackManager } from '../services/layerPlaybackManager';
 import { renderScheduler } from '../services/renderScheduler';
+import { playbackHealthMonitor } from '../services/playbackHealthMonitor';
 import { Logger } from '../services/logger';
 
 const log = Logger.create('Engine');
@@ -412,9 +413,11 @@ export function useEngine() {
     // Always keep the engine running - it has idle detection to save power
     // when nothing changes. Stopping the engine breaks scrubbing.
     engine.start(renderFrame);
+    playbackHealthMonitor.start();
 
     return () => {
       engine.stop();
+      playbackHealthMonitor.stop();
     };
   }, [isEngineReady, isPlaying]);
 

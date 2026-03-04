@@ -70,6 +70,8 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
         analysisStatus: clip.analysisStatus !== 'none' ? clip.analysisStatus : undefined,
         // Playback
         reversed: clip.reversed || undefined,
+        speed: clip.speed != null && clip.speed !== 1 ? clip.speed : undefined,
+        preservesPitch: clip.preservesPitch === false ? false : undefined,
         // Text clip support
         textProperties: clip.textProperties,
         // Solid clip support
@@ -195,6 +197,8 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
               isLoading: false,
               isComposition: true,
               compositionId: serializedClip.compositionId,
+              speed: serializedClip.speed,
+              preservesPitch: serializedClip.preservesPitch,
             };
 
             // Add clip to state
@@ -273,6 +277,8 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
             compositionId: serializedClip.compositionId,
             nestedClips: [],
             nestedTracks: [],
+            speed: serializedClip.speed,
+            preservesPitch: serializedClip.preservesPitch,
           };
 
           // Add clip to state
@@ -736,6 +742,8 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
           effects: serializedClip.effects || [],
           masks: serializedClip.masks,
           textProperties: serializedClip.textProperties,
+          speed: serializedClip.speed,
+          preservesPitch: serializedClip.preservesPitch,
           isLoading: false,
         };
 
@@ -780,6 +788,8 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
           effects: serializedClip.effects || [],
           masks: serializedClip.masks,
           solidColor: color,
+          speed: serializedClip.speed,
+          preservesPitch: serializedClip.preservesPitch,
           isLoading: false,
         };
 
@@ -840,6 +850,8 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
         analysisStatus: serializedClip.analysisStatus || 'none',
         // Restore playback settings
         reversed: serializedClip.reversed,
+        speed: serializedClip.speed,
+        preservesPitch: serializedClip.preservesPitch,
       };
 
       // Add clip to state

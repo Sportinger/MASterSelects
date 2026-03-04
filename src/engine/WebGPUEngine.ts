@@ -774,6 +774,14 @@ export class WebGPUEngine {
       : this.renderTargetManager.getPongTexture();
   }
 
+  getLayerCollector(): LayerCollector | null {
+    return this.layerCollector;
+  }
+
+  getRenderLoop(): RenderLoop | null {
+    return this.renderLoop;
+  }
+
   getTextureManager(): TextureManager | null {
     return this.textureManager;
   }

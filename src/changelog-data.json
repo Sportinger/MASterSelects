@@ -2,6 +2,13 @@
   {
     "date": "2026-03-04",
     "type": "new",
+    "title": "Playback Health Monitor",
+    "description": "Detects playback anomalies (frame stalls, stuck warmups, orphaned RVFC handles, stuck seeks, GPU surface issues, render stalls) and auto-recovers. Console API at __PLAYBACK_HEALTH__ for diagnostics.",
+    "section": "Engine"
+  },
+  {
+    "date": "2026-03-04",
+    "type": "new",
     "title": "Staggered AI Action Execution",
     "description": "AI tool actions now execute visually step-by-step instead of all at once. Split operations show blue glow lines appearing one by one (300ms apart). Reorder operations move clips sequentially with FLIP animations (150ms apart). Delete shows a red ghost fade-out, trim shows green edge glow.",
     "section": "AI",

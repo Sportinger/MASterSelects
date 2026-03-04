@@ -828,6 +828,10 @@ export class LayerBuilderService {
     }
   }
 
+  getVideoSyncManager(): VideoSyncManager {
+    return this.videoSyncManager;
+  }
+
   // ==================== VIDEO & AUDIO SYNC (delegated) ====================
 
   /**
