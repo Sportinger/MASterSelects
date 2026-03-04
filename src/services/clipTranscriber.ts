@@ -420,25 +420,20 @@ async function audioBufferToWav(audioBuffer: AudioBuffer): Promise<Blob> {
   return new Blob([buffer], { type: 'audio/wav' });
 }
 
+// OpenAI file size limit: 25MB (26214400 bytes). Use 24MB as safe threshold.
+const OPENAI_MAX_BYTES = 24 * 1024 * 1024;
+
 /**
- * Transcribe using OpenAI Whisper API
+ * Send a single WAV blob to OpenAI Whisper and return raw word results
  */
-async function transcribeWithOpenAI(
-  clipId: string,
+async function openAISingleRequest(
   audioBlob: Blob,
   language: string,
   apiKey: string,
-  inPointOffset: number
-): Promise<TranscriptWord[]> {
-  updateClipTranscript(clipId, {
-    progress: 20,
-    message: 'Sending to OpenAI...',
-  });
-
+): Promise<Array<{ word: string; start: number; end: number }>> {
   const formData = new FormData();
   formData.append('file', audioBlob, 'audio.wav');
   formData.append('model', 'whisper-1');
-  // Omit language for auto-detect - OpenAI Whisper will detect automatically
   if (language !== 'auto') {
     formData.append('language', language);
   }
@@ -447,35 +442,138 @@ async function transcribeWithOpenAI(
 
   const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-    },
+    headers: { Authorization: `Bearer ${apiKey}` },
     body: formData,
   });
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: { message: response.statusText } }));
-    throw new Error(`OpenAI API error: ${error.error?.message || response.statusText}`);
+    throw new Error(`OpenAI API error: ${response.status}: ${error.error?.message || response.statusText}`);
   }
 
-  updateClipTranscript(clipId, {
-    progress: 80,
-    message: 'Processing response...',
-  });
-
   const result = await response.json();
+  return result.words || [];
+}
 
-  // Convert OpenAI response to TranscriptWord[]
-  const words: TranscriptWord[] = (result.words || []).map((word: any, index: number) => ({
-    id: `word-${index}`,
-    text: word.word,
-    start: (word.start || 0) + inPointOffset,
-    end: (word.end || word.start + 0.1) + inPointOffset,
-    confidence: 1,
-    speaker: 'Speaker 1',
-  }));
+/**
+ * Split an AudioBuffer into chunks that produce WAV files under the size limit
+ */
+function splitAudioBuffer(audioBuffer: AudioBuffer, maxWavBytes: number): AudioBuffer[] {
+  const sampleRate = audioBuffer.sampleRate;
+  const bytesPerSample = 2; // 16-bit PCM mono
+  const headerSize = 44;
+  const maxSamples = Math.floor((maxWavBytes - headerSize) / bytesPerSample);
+  const totalSamples = audioBuffer.length;
 
-  return words;
+  if (totalSamples <= maxSamples) {
+    return [audioBuffer];
+  }
+
+  const chunks: AudioBuffer[] = [];
+  const numChannels = audioBuffer.numberOfChannels;
+  let offset = 0;
+
+  while (offset < totalSamples) {
+    const chunkLength = Math.min(maxSamples, totalSamples - offset);
+    const ctx = new OfflineAudioContext(numChannels, chunkLength, sampleRate);
+    const chunkBuffer = ctx.createBuffer(numChannels, chunkLength, sampleRate);
+
+    for (let ch = 0; ch < numChannels; ch++) {
+      const src = audioBuffer.getChannelData(ch);
+      const dst = chunkBuffer.getChannelData(ch);
+      for (let i = 0; i < chunkLength; i++) {
+        dst[i] = src[offset + i];
+      }
+    }
+
+    chunks.push(chunkBuffer);
+    offset += chunkLength;
+  }
+
+  return chunks;
+}
+
+/**
+ * Transcribe using OpenAI Whisper API
+ * Automatically splits audio into chunks if it exceeds the 25MB API limit
+ */
+async function transcribeWithOpenAI(
+  clipId: string,
+  audioBlob: Blob,
+  language: string,
+  apiKey: string,
+  inPointOffset: number
+): Promise<TranscriptWord[]> {
+  // If small enough, send directly
+  if (audioBlob.size <= OPENAI_MAX_BYTES) {
+    updateClipTranscript(clipId, { progress: 20, message: 'Sending to OpenAI...' });
+
+    const rawWords = await openAISingleRequest(audioBlob, language, apiKey);
+
+    updateClipTranscript(clipId, { progress: 80, message: 'Processing response...' });
+
+    return rawWords.map((word: any, index: number) => ({
+      id: `word-${index}`,
+      text: word.word,
+      start: (word.start || 0) + inPointOffset,
+      end: (word.end || word.start + 0.1) + inPointOffset,
+      confidence: 1,
+      speaker: 'Speaker 1',
+    }));
+  }
+
+  // Audio too large - need to split into chunks
+  log.info(`Audio WAV is ${(audioBlob.size / 1024 / 1024).toFixed(1)}MB, splitting into chunks...`);
+  updateClipTranscript(clipId, { progress: 10, message: 'Audio too large, splitting...' });
+
+  // Re-decode the WAV blob to get an AudioBuffer we can split
+  const audioContext = new AudioContext();
+  const arrayBuffer = await audioBlob.arrayBuffer();
+  const fullBuffer = await audioContext.decodeAudioData(arrayBuffer);
+  audioContext.close();
+
+  const chunks = splitAudioBuffer(fullBuffer, OPENAI_MAX_BYTES);
+  log.info(`Split into ${chunks.length} chunks`);
+
+  const allWords: TranscriptWord[] = [];
+  let globalWordIndex = 0;
+  const sampleRate = fullBuffer.sampleRate;
+  let sampleOffset = 0;
+
+  for (let i = 0; i < chunks.length; i++) {
+    const chunkTimeOffset = sampleOffset / sampleRate;
+    const progressBase = 15 + (70 * i / chunks.length);
+    const progressEnd = 15 + (70 * (i + 1) / chunks.length);
+
+    updateClipTranscript(clipId, {
+      progress: Math.round(progressBase),
+      message: `Transcribing chunk ${i + 1}/${chunks.length}...`,
+    });
+
+    const chunkWav = await audioBufferToWav(chunks[i]);
+    const rawWords = await openAISingleRequest(chunkWav, language, apiKey);
+
+    for (const word of rawWords) {
+      allWords.push({
+        id: `word-${globalWordIndex++}`,
+        text: word.word,
+        start: (word.start || 0) + chunkTimeOffset + inPointOffset,
+        end: (word.end || word.start + 0.1) + chunkTimeOffset + inPointOffset,
+        confidence: 1,
+        speaker: 'Speaker 1',
+      });
+    }
+
+    updateClipTranscript(clipId, {
+      progress: Math.round(progressEnd),
+      words: allWords,
+      message: `Chunk ${i + 1}/${chunks.length} done (${allWords.length} words)`,
+    });
+
+    sampleOffset += chunks[i].length;
+  }
+
+  return allWords;
 }
 
 /**
