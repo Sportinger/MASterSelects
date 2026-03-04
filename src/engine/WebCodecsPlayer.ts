@@ -618,10 +618,21 @@ export class WebCodecsPlayer implements ExportModePlayer {
     }
   }
 
+  private lastRAFTime = 0;
+
   private scheduleNextFrame(): void {
     if (!this._isPlaying) return;
 
     this.animationId = requestAnimationFrame((now) => {
+      // Track rAF gaps to detect main thread stalls
+      if (this.lastRAFTime > 0) {
+        const rafGap = now - this.lastRAFTime;
+        if (rafGap > 100) {
+          wcPipelineMonitor.record('rAF_gap', { gapMs: Math.round(rafGap) });
+        }
+      }
+      this.lastRAFTime = now;
+
       const elapsed = now - this.lastFrameTime;
 
       if (elapsed >= this.frameInterval) {

@@ -12,6 +12,7 @@ export type PipelineEventType =
   | 'drift_correct'
   | 'queue_pressure'
   | 'stall'
+  | 'rAF_gap'
   | 'play'
   | 'pause';
 
@@ -50,12 +51,13 @@ class WcPipelineMonitor {
     if (type === 'play') this.playing = true;
     if (type === 'pause') this.playing = false;
 
-    // Stall detection: if playing and output gap > 50ms
+    // Stall detection: if playing and output gap > 100ms
+    // (30fps = ~33ms per frame, so 100ms = 3+ missed frames = real freeze)
     if (type === 'decode_output') {
       const now = event.t;
       if (this.playing && this.lastOutputTime > 0) {
         const gap = now - this.lastOutputTime;
-        if (gap > 50) {
+        if (gap > 100) {
           // Record stall inline (won't recurse because type !== decode_output)
           this.record('stall', { gapMs: Math.round(gap) });
         }
