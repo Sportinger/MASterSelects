@@ -6,6 +6,7 @@ import type { EffectsPipeline } from '../../effects/EffectsPipeline';
 import type { TextureManager } from '../texture/TextureManager';
 import type { MaskTextureManager } from '../texture/MaskTextureManager';
 import type { ScrubbingCache } from '../texture/ScrubbingCache';
+import { MAX_NESTING_DEPTH } from '../../stores/timeline/constants';
 import { Logger } from '../../services/logger';
 
 const log = Logger.create('NestedCompRenderer');
@@ -111,8 +112,13 @@ export class NestedCompRenderer {
     height: number,
     commandEncoder: GPUCommandEncoder,
     sampler: GPUSampler,
-    currentTime?: number
+    currentTime?: number,
+    depth: number = 0
   ): GPUTextureView | null {
+    if (depth >= MAX_NESTING_DEPTH) {
+      log.warn('Max nesting depth reached in preRender', { compositionId, depth });
+      return null;
+    }
     // Get or create output texture
     let compTexture = this.nestedCompTextures.get(compositionId);
     if (!compTexture || compTexture.texture.width !== width || compTexture.texture.height !== height) {
@@ -147,8 +153,8 @@ export class NestedCompRenderer {
     const nestedPingView = texturePair.pingView;
     const nestedPongView = texturePair.pongView;
 
-    // Collect layer data
-    const nestedLayerData = this.collectNestedLayerData(nestedLayers);
+    // Collect layer data (including sub-nested compositions)
+    const nestedLayerData = this.collectNestedLayerData(nestedLayers, commandEncoder, sampler, depth);
 
     // Debug: Log nested layer collection results
     log.debug('preRender', {
@@ -276,12 +282,43 @@ export class NestedCompRenderer {
     return compTexture.view;
   }
 
-  private collectNestedLayerData(layers: Layer[]): LayerRenderData[] {
+  private collectNestedLayerData(
+    layers: Layer[],
+    commandEncoder?: GPUCommandEncoder,
+    sampler?: GPUSampler,
+    depth: number = 0
+  ): LayerRenderData[] {
     const result: LayerRenderData[] = [];
 
     for (let i = layers.length - 1; i >= 0; i--) {
       const layer = layers[i];
       if (!layer?.visible || !layer.source || layer.opacity === 0) continue;
+
+      // Sub-nested composition (Level 3+)
+      if (layer.source.nestedComposition && commandEncoder && sampler) {
+        const nc = layer.source.nestedComposition;
+        const subTextureView = this.preRender(
+          nc.compositionId,
+          nc.layers,
+          nc.width,
+          nc.height,
+          commandEncoder,
+          sampler,
+          nc.currentTime,
+          depth + 1
+        );
+        if (subTextureView) {
+          result.push({
+            layer,
+            isVideo: false,
+            externalTexture: null,
+            textureView: subTextureView,
+            sourceWidth: nc.width,
+            sourceHeight: nc.height,
+          });
+        }
+        continue;
+      }
 
       // NativeDecoder (turbo mode — ImageBitmap-based)
       if (layer.source.nativeDecoder) {

@@ -7,6 +7,7 @@ import { LAYER_BUILDER_CONSTANTS } from './types';
 import { createFrameContext, getClipTimeInfo, getMediaFileForClip } from './FrameContext';
 import { layerPlaybackManager } from '../layerPlaybackManager';
 import { engine } from '../../engine/WebGPUEngine';
+import { MAX_NESTING_DEPTH } from '../../stores/timeline/constants';
 
 export class VideoSyncManager {
   // Native decoder state
@@ -93,8 +94,9 @@ export class VideoSyncManager {
    * Uses same logic as regular clips: play during playback, seek when paused
    * Also ensures videos have decoded frames (readyState >= 2) for rendering
    */
-  private syncNestedCompVideos(compClip: TimelineClip, ctx: FrameContext): void {
+  private syncNestedCompVideos(compClip: TimelineClip, ctx: FrameContext, depth: number = 0): void {
     if (!compClip.nestedClips || !compClip.nestedTracks) return;
+    if (depth >= MAX_NESTING_DEPTH) return;
 
     // Calculate time within the composition
     const compLocalTime = ctx.playheadPosition - compClip.startTime;
@@ -165,6 +167,28 @@ export class VideoSyncManager {
         const wcTimeDiff = Math.abs(webCodecsPlayer.currentTime - nestedClipTime);
         if (wcTimeDiff > 0.05) {
           webCodecsPlayer.seek(nestedClipTime);
+        }
+      }
+    }
+
+    // Recursively sync sub-nested composition videos (Level 3+)
+    for (const nestedClip of compClip.nestedClips) {
+      if (nestedClip.isComposition && nestedClip.nestedClips && nestedClip.nestedClips.length > 0) {
+        // Create a virtual context with adjusted time for the sub-composition
+        const compLocalTime = ctx.playheadPosition - compClip.startTime;
+        const compTime = compLocalTime + compClip.inPoint;
+        const isActive = compTime >= nestedClip.startTime && compTime < nestedClip.startTime + nestedClip.duration;
+        if (isActive) {
+          const subCtx = {
+            ...ctx,
+            playheadPosition: compTime - nestedClip.startTime + nestedClip.inPoint,
+          };
+          // Temporarily adjust the nested clip's startTime context for recursive call
+          const virtualCompClip = {
+            ...nestedClip,
+            startTime: 0, // Already offset-adjusted above
+          };
+          this.syncNestedCompVideos(virtualCompClip, { ...subCtx, playheadPosition: compTime }, depth + 1);
         }
       }
     }

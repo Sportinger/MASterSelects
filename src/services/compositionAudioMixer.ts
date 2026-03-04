@@ -16,6 +16,7 @@ import { AudioMixer, type AudioTrackData } from '../engine/audio/AudioMixer';
 import { audioExtractor } from '../engine/audio/AudioExtractor';
 import type { TimelineClip, TimelineTrack, SerializableClip } from '../types';
 import { generateWaveformFromBuffer } from '../stores/timeline/helpers/waveformHelpers';
+import { MAX_NESTING_DEPTH } from '../stores/timeline/constants';
 
 export interface CompositionMixdownResult {
   buffer: AudioBuffer;
@@ -47,8 +48,13 @@ class CompositionAudioMixerService {
    */
   async mixdownComposition(
     compositionId: string,
-    onProgress?: MixdownProgressCallback
+    onProgress?: MixdownProgressCallback,
+    depth: number = 0
   ): Promise<CompositionMixdownResult | null> {
+    if (depth >= MAX_NESTING_DEPTH) {
+      log.warn('Max nesting depth reached in mixdownComposition', { compositionId, depth });
+      return null;
+    }
     const { activeCompositionId, compositions, files } = useMediaStore.getState();
     const composition = compositions.find(c => c.id === compositionId);
 
@@ -169,6 +175,42 @@ class CompositionAudioMixerService {
         percent: 10 + Math.round((i / audioClips.length) * 50),
         message: `Extracting ${clip.name}...`,
       });
+    }
+
+    // Also check video tracks for nested composition clips that may have audio
+    const videoTracks = tracks.filter(t => t.type === 'video');
+    const videoTrackIds = new Set(videoTracks.map(t => t.id));
+    const videoClips = clips.filter(c => videoTrackIds.has(c.trackId));
+
+    for (const clip of videoClips) {
+      const isCompClip = ('isComposition' in clip && clip.isComposition) ||
+                          ('compositionId' in clip && clip.compositionId);
+      if (!isCompClip) continue;
+
+      const compId = ('compositionId' in clip) ? clip.compositionId : undefined;
+      if (!compId) continue;
+
+      try {
+        const subResult = await this.mixdownComposition(compId, undefined, depth + 1);
+        if (subResult?.hasAudio) {
+          trackDataList.push({
+            clipId: clip.id,
+            buffer: subResult.buffer,
+            startTime: clip.startTime,
+            trackId: clip.trackId,
+            trackMuted: false,
+            trackSolo: false,
+            clipVolume: clip.transform?.opacity ?? 1,
+          });
+          log.info('Mixed in audio from nested composition', {
+            clipName: clip.name,
+            compositionId: compId,
+            depth: depth + 1,
+          });
+        }
+      } catch (e) {
+        log.error('Failed to mixdown nested composition audio', { clipName: clip.name, error: e });
+      }
     }
 
     if (trackDataList.length === 0) {

@@ -15,7 +15,7 @@ import { Logger } from '../logger';
 import { getInterpolatedClipTransform } from '../../utils/keyframeInterpolation';
 import { useTimelineStore } from '../../stores/timeline';
 import { useMediaStore } from '../../stores/mediaStore';
-import { DEFAULT_TRANSFORM } from '../../stores/timeline/constants';
+import { DEFAULT_TRANSFORM, MAX_NESTING_DEPTH } from '../../stores/timeline/constants';
 
 const log = Logger.create('LayerBuilder');
 
@@ -543,8 +543,9 @@ export class LayerBuilderService {
   /**
    * Build nested layers (simplified - delegates to separate method for full implementation)
    */
-  private buildNestedLayers(clip: TimelineClip, clipTime: number, ctx: FrameContext): Layer[] {
+  private buildNestedLayers(clip: TimelineClip, clipTime: number, ctx: FrameContext, depth: number = 0): Layer[] {
     if (!clip.nestedClips || !clip.nestedTracks) return [];
+    if (depth >= MAX_NESTING_DEPTH) return [];
 
     // Filter for video tracks that are visible (default to visible if not explicitly set)
     const nestedVideoTracks = clip.nestedTracks.filter(t => t.type === 'video' && t.visible !== false);
@@ -602,7 +603,7 @@ export class LayerBuilderService {
       const nestedLocalTime = clipTime - nestedClip.startTime;
 
       // Build layer based on source type (pass nestedLocalTime for keyframe interpolation)
-      const nestedLayer = this.buildNestedClipLayer(nestedClip, nestedLocalTime, ctx);
+      const nestedLayer = this.buildNestedClipLayer(nestedClip, nestedLocalTime, ctx, depth);
       if (nestedLayer) {
         layers.push(nestedLayer);
       } else {
@@ -623,7 +624,7 @@ export class LayerBuilderService {
   /**
    * Build layer for a nested clip
    */
-  private buildNestedClipLayer(nestedClip: TimelineClip, nestedClipLocalTime: number, _ctx: FrameContext): Layer | null {
+  private buildNestedClipLayer(nestedClip: TimelineClip, nestedClipLocalTime: number, _ctx: FrameContext, depth: number = 0): Layer | null {
     // Get keyframes directly from the store (nested clips aren't in ctx.clips, so we can't use ctx.getInterpolatedTransform)
     const { clipKeyframes } = useTimelineStore.getState();
     const keyframes = clipKeyframes.get(nestedClip.id) || [];
@@ -712,6 +713,30 @@ export class LayerBuilderService {
     if (nestedClip.masks && nestedClip.masks.length > 0) {
       (baseLayer as any).maskClipId = nestedClip.id;
       (baseLayer as any).maskInvert = nestedClip.masks.some(m => m.inverted);
+    }
+
+    // Handle sub-nested composition clips (Level 3+)
+    if (nestedClip.isComposition && nestedClip.nestedClips && nestedClip.nestedClips.length > 0) {
+      const subLayers = this.buildNestedLayers(nestedClip, nestedClipLocalTime, _ctx, depth + 1);
+      if (subLayers.length === 0) return null;
+
+      const compositions = useMediaStore.getState().compositions;
+      const subComp = compositions.find(c => c.id === nestedClip.compositionId);
+      const subWidth = subComp?.width || 1920;
+      const subHeight = subComp?.height || 1080;
+
+      const nestedCompData: NestedCompositionData = {
+        compositionId: nestedClip.compositionId || nestedClip.id,
+        layers: subLayers,
+        width: subWidth,
+        height: subHeight,
+        currentTime: nestedClipLocalTime,
+      };
+
+      return {
+        ...baseLayer,
+        source: { type: 'image', nestedComposition: nestedCompData },
+      } as Layer;
     }
 
     // Skip clips that are still loading

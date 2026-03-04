@@ -4,6 +4,9 @@ import type { ClipTransform, TimelineTrack, TextClipProperties } from '../../typ
 import { useMediaStore } from '../mediaStore';
 import { useSettingsStore } from '../settingsStore';
 
+// Maximum nesting depth for nested compositions (prevents infinite recursion)
+export const MAX_NESTING_DEPTH = 8;
+
 // Default transform for new clips
 export const DEFAULT_TRANSFORM: ClipTransform = {
   opacity: 1,

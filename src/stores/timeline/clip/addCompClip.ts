@@ -3,7 +3,7 @@
 
 import type { TimelineClip, TimelineTrack, CompositionTimelineData, SerializableClip, Keyframe } from '../../../types';
 import type { Composition } from '../types';
-import { DEFAULT_TRANSFORM, calculateNativeScale } from '../constants';
+import { DEFAULT_TRANSFORM, calculateNativeScale, MAX_NESTING_DEPTH } from '../constants';
 import { useMediaStore } from '../../mediaStore';
 import { initWebCodecsPlayer } from '../helpers/webCodecsHelpers';
 import { findOrCreateAudioTrack, createCompositionAudioClip } from '../helpers/audioTrackHelpers';
@@ -245,6 +245,7 @@ export interface LoadNestedClipsParams {
   composition: Composition;
   get: CompClipStoreGet;
   set: CompClipStoreSet;
+  depth?: number;
 }
 
 /**
@@ -278,7 +279,12 @@ function updateNestedClipInCompClip(
  * Load nested clips from composition's timeline data.
  */
 export async function loadNestedClips(params: LoadNestedClipsParams): Promise<TimelineClip[]> {
-  const { compClipId, composition, get, set } = params;
+  const { compClipId, composition, get, set, depth = 0 } = params;
+
+  if (depth >= MAX_NESTING_DEPTH) {
+    log.warn('Max nesting depth reached, skipping deeper nesting', { compClipId, depth });
+    return [];
+  }
 
   if (!composition.timelineData) return [];
 
@@ -305,6 +311,62 @@ export async function loadNestedClips(params: LoadNestedClipsParams): Promise<Ti
   });
 
   for (const serializedClip of composition.timelineData.clips) {
+    // Check if this nested clip is itself a composition
+    if (serializedClip.isComposition && serializedClip.compositionId) {
+      const nestedComp = mediaStore.compositions.find(c => c.id === serializedClip.compositionId);
+      if (!nestedComp) {
+        log.warn('Could not find nested composition', {
+          clip: serializedClip.name,
+          compositionId: serializedClip.compositionId,
+        });
+        continue;
+      }
+
+      const nestedClipId = generateNestedClipId(compClipId, serializedClip.id);
+      const compDuration = nestedComp.timelineData?.duration ?? nestedComp.duration;
+
+      const nestedClip: TimelineClip = {
+        id: nestedClipId,
+        trackId: serializedClip.trackId,
+        name: serializedClip.name,
+        file: new File([], nestedComp.name),
+        startTime: serializedClip.startTime,
+        duration: serializedClip.duration,
+        inPoint: serializedClip.inPoint,
+        outPoint: serializedClip.outPoint,
+        source: { type: 'video', naturalDuration: compDuration },
+        thumbnails: serializedClip.thumbnails,
+        transform: serializedClip.transform,
+        effects: serializedClip.effects || [],
+        masks: serializedClip.masks || [],
+        isComposition: true,
+        compositionId: serializedClip.compositionId,
+        nestedClips: [],
+        nestedTracks: nestedComp.timelineData?.tracks || [],
+        isLoading: true,
+      };
+
+      // Recursively load sub-nested clips
+      const subNestedClips = await loadNestedClips({
+        compClipId: nestedClipId,
+        composition: nestedComp,
+        get, set,
+        depth: depth + 1,
+      });
+
+      nestedClip.nestedClips = subNestedClips;
+      nestedClip.isLoading = false;
+      nestedClips.push(nestedClip);
+
+      log.info('Loaded sub-nested composition', {
+        nestedClipId,
+        compositionName: nestedComp.name,
+        subNestedClipCount: subNestedClips.length,
+        depth: depth + 1,
+      });
+      continue;
+    }
+
     const mediaFile = mediaStore.files.find(f => f.id === serializedClip.mediaFileId);
     if (!mediaFile?.file) {
       log.warn('Could not find media file for nested clip', {
