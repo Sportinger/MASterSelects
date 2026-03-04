@@ -2,6 +2,20 @@
   {
     "date": "2026-03-04",
     "type": "fix",
+    "title": "Export Respects Clip Speed",
+    "description": "Export pipeline now correctly applies clip speed to all decode paths: parallel decode, sequential WebCodecs, nested composition clips, and HTMLVideoElement fallback seeking.",
+    "section": "Export"
+  },
+  {
+    "date": "2026-03-04",
+    "type": "fix",
+    "title": "Playback Start Jitter Eliminated",
+    "description": "Removed unnecessary video seek before play() that caused decoder to re-decode from last keyframe, causing a visible backward jitter on playback start.",
+    "section": "Playback"
+  },
+  {
+    "date": "2026-03-04",
+    "type": "fix",
     "title": "Frame Jump-Back on Playback Stop",
     "description": "Fixed visual frame regression when stopping playback. On the playing→paused transition, the playhead now snaps to the video's actual position instead of seeking the video back to the playhead. Also syncs the internal 60fps position to the store before disabling internal tracking.",
     "section": "Playback"
