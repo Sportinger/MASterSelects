@@ -16,7 +16,11 @@ interface UsePlaybackLoopProps {
 export function usePlaybackLoop({ isPlaying }: UsePlaybackLoopProps) {
   useEffect(() => {
     if (!isPlaying) {
-      // Disable internal position tracking when not playing
+      // Sync store to final internal position before disabling —
+      // prevents frame jump-back caused by stale 33ms-throttled store value
+      if (playheadState.isUsingInternalPosition) {
+        useTimelineStore.setState({ playheadPosition: playheadState.position });
+      }
       playheadState.isUsingInternalPosition = false;
       playheadState.hasMasterAudio = false;
       playheadState.masterAudioElement = null;
@@ -169,6 +173,10 @@ export function usePlaybackLoop({ isPlaying }: UsePlaybackLoopProps) {
 
     return () => {
       cancelAnimationFrame(rafId);
+      // Sync final position to store before cleanup
+      if (playheadState.isUsingInternalPosition) {
+        useTimelineStore.setState({ playheadPosition: playheadState.position });
+      }
       playheadState.isUsingInternalPosition = false;
       playheadState.hasMasterAudio = false;
       playheadState.masterAudioElement = null;

@@ -1,6 +1,13 @@
 [
   {
     "date": "2026-03-04",
+    "type": "fix",
+    "title": "Frame Jump-Back on Playback Stop",
+    "description": "Fixed visual frame regression when stopping playback. The internal 60fps playhead position is now synced to the store before disabling internal tracking, preventing a 1-2 frame jump caused by the stale 33ms-throttled store value.",
+    "section": "Playback"
+  },
+  {
+    "date": "2026-03-04",
     "type": "new",
     "title": "Playback Health Monitor",
     "description": "Detects playback anomalies (frame stalls, stuck warmups, orphaned RVFC handles, stuck seeks, GPU surface issues, render stalls) and auto-recovers. Console API at __PLAYBACK_HEALTH__ for diagnostics.",
