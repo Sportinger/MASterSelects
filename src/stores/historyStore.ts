@@ -148,6 +148,16 @@ function deepClone<T>(obj: T, seen?: WeakSet<object>): T {
     return obj; // Return reference, don't clone
   }
 
+  // Skip ArrayBuffer/TypedArrays (video data, decoded samples — huge)
+  if (obj instanceof ArrayBuffer || ArrayBuffer.isView(obj)) return obj;
+
+  // Skip class instances (WebCodecsPlayer, MP4File, VideoDecoder, NativeDecoder, etc.)
+  // Only deep-clone plain objects {} and arrays [] — class instances keep reference
+  const proto = Object.getPrototypeOf(obj);
+  if (proto && proto !== Object.prototype && proto !== Array.prototype) {
+    return obj;
+  }
+
   // Circular reference detection
   if (!seen) seen = new WeakSet();
   if (seen.has(obj as object)) return obj; // Break cycle, return reference
