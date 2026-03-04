@@ -96,7 +96,14 @@ export interface DetailedStats {
   dropsThisSecond: number;
   lastDropReason: 'none' | 'slow_raf' | 'slow_render' | 'slow_import';
   lastRafTime: number;
-  decoder: 'WebCodecs' | 'HTMLVideo' | 'HTMLVideo(cached)' | 'HTMLVideo(paused-cache)' | 'HTMLVideo(seeking-cache)' | 'HTMLVideo(scrub-cache)' | 'NativeHelper' | 'ParallelDecode' | 'none';
+  decoder: 'WebCodecs' | 'HTMLVideo(VF)' | 'HTMLVideo' | 'HTMLVideo(cached)' | 'HTMLVideo(paused-cache)' | 'HTMLVideo(seeking-cache)' | 'HTMLVideo(scrub-cache)' | 'NativeHelper' | 'ParallelDecode' | 'none';
+  webCodecsInfo?: {
+    codec: string;
+    hwAccel: string;
+    decodeQueueSize: number;
+    samplesLoaded: number;
+    sampleIndex: number;
+  };
 }
 
 // Profile data for performance tracking

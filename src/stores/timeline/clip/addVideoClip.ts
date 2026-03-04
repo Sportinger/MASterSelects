@@ -283,7 +283,7 @@ export async function loadVideoMedia(params: LoadVideoMediaParams): Promise<void
     });
 
     // Initialize WebCodecsPlayer for hardware-accelerated decoding (non-blocking)
-    initWebCodecsPlayer(video, file.name).then(webCodecsPlayer => {
+    initWebCodecsPlayer(video, file.name, file).then(webCodecsPlayer => {
       if (webCodecsPlayer) {
         setClips(clips => clips.map(c => {
           if (c.id !== clipId || !c.source) return c;

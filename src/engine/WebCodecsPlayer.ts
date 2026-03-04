@@ -73,6 +73,7 @@ export class WebCodecsPlayer implements ExportModePlayer {
   getCurrentFrame(): VideoFrame | null { return this.currentFrame; }
   setCurrentFrame(frame: VideoFrame | null): void { this.currentFrame = frame; }
   isSimpleMode(): boolean { return this.useSimpleMode; }
+  isFullMode(): boolean { return !this.useSimpleMode && this.ready; }
   getVideoElement(): HTMLVideoElement | null { return this.videoElement; }
 
   constructor(options: WebCodecsPlayerOptions = {}) {
@@ -679,6 +680,18 @@ export class WebCodecsPlayer implements ExportModePlayer {
   // Check if there's a valid frame available
   hasFrame(): boolean {
     return this.currentFrame !== null;
+  }
+
+  /** Debug info for stats overlay (null in simple mode) */
+  getDebugInfo(): { codec: string; hwAccel: string; decodeQueueSize: number; samplesLoaded: number; sampleIndex: number } | null {
+    if (this.useSimpleMode || !this.codecConfig) return null;
+    return {
+      codec: this.codecConfig.codec,
+      hwAccel: (this.codecConfig.hardwareAcceleration as string) || 'no-preference',
+      decodeQueueSize: this.decoder?.decodeQueueSize ?? 0,
+      samplesLoaded: this.samples.length,
+      sampleIndex: this.sampleIndex,
+    };
   }
 
   seek(timeSeconds: number): void {

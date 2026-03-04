@@ -49,7 +49,7 @@ export function StatsOverlay({ stats, resolution, expanded, onToggle }: StatsOve
           <span style={{ color: '#888', marginLeft: 6, fontSize: 9 }}>[IDLE]</span>
         )}
         {stats.decoder !== 'none' && !stats.isIdle && (
-          <span style={{ color: decoderColor, marginLeft: 6, fontSize: 9 }}>[{stats.decoder === 'WebCodecs' ? 'WC' : stats.decoder === 'NativeHelper' ? 'NH' : stats.decoder === 'ParallelDecode' ? 'PD' : 'HTML'}]</span>
+          <span style={{ color: decoderColor, marginLeft: 6, fontSize: 9 }}>[{stats.decoder === 'WebCodecs' ? 'WC' : stats.decoder === 'HTMLVideo(VF)' ? 'VF' : stats.decoder === 'NativeHelper' ? 'NH' : stats.decoder === 'ParallelDecode' ? 'PD' : 'HTML'}]</span>
         )}
         {stats.drops.lastSecond > 0 && (
           <span style={{ color: '#f44', marginLeft: 6 }}>▼{stats.drops.lastSecond}</span>
@@ -161,6 +161,33 @@ export function StatsOverlay({ stats, resolution, expanded, onToggle }: StatsOve
           </div>
         )}
       </div>
+
+      {/* WebCodecs Debug Section (full mode only) */}
+      {stats.webCodecsInfo && (
+        <div className="stats-section">
+          <div className="stats-label">WebCodecs</div>
+          <div className="stats-row">
+            <span>Codec</span>
+            <span style={{ color: '#4f4' }}>{stats.webCodecsInfo.codec}</span>
+          </div>
+          <div className="stats-row">
+            <span>HW Accel</span>
+            <span style={{ color: stats.webCodecsInfo.hwAccel === 'prefer-hardware' ? '#4f4' : '#fa4' }}>
+              {stats.webCodecsInfo.hwAccel}
+            </span>
+          </div>
+          <div className="stats-row">
+            <span>Decode Queue</span>
+            <span style={{ color: stats.webCodecsInfo.decodeQueueSize > 5 ? '#ff4' : '#aaa' }}>
+              {stats.webCodecsInfo.decodeQueueSize}
+            </span>
+          </div>
+          <div className="stats-row">
+            <span>Samples</span>
+            <span>{stats.webCodecsInfo.sampleIndex} / {stats.webCodecsInfo.samplesLoaded}</span>
+          </div>
+        </div>
+      )}
 
       {/* Audio Status Section */}
       {stats.audio && (

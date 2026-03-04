@@ -18,12 +18,14 @@ export interface LayerCollectorDeps {
 export class LayerCollector {
   private layerRenderData: LayerRenderData[] = [];
   private currentDecoder: DetailedStats['decoder'] = 'none';
+  private currentWebCodecsInfo?: DetailedStats['webCodecsInfo'];
   private hasVideo = false;
 
   collect(layers: Layer[], deps: LayerCollectorDeps): LayerRenderData[] {
     this.layerRenderData.length = 0;
     this.hasVideo = false;
     this.currentDecoder = 'none';
+    this.currentWebCodecsInfo = undefined;
 
     log.debug(`Collecting ${layers.length} layers`);
 
@@ -141,21 +143,29 @@ export class LayerCollector {
       // Skip for videos that haven't been played yet — after page reload,
       // VideoFrame from a never-played video produces black/empty frames.
       // Fall through to tryHTMLVideo which has a canvas-based fallback.
-      if (source.webCodecsPlayer && typeof source.webCodecsPlayer.getCurrentFrame === 'function' && (!source.videoElement || this.videoGpuReady.has(source.videoElement))) {
-        const frame = source.webCodecsPlayer.getCurrentFrame();
-        if (frame) {
-          const extTex = deps.textureManager.importVideoTexture(frame);
-          if (extTex) {
-            this.currentDecoder = 'WebCodecs';
-            this.hasVideo = true;
-            return {
-              layer,
-              isVideo: true,
-              externalTexture: extTex,
-              textureView: null,
-              sourceWidth: frame.displayWidth,
-              sourceHeight: frame.displayHeight,
-            };
+      if (source.webCodecsPlayer && typeof source.webCodecsPlayer.getCurrentFrame === 'function') {
+        // Full mode: frames come from VideoDecoder, no GPU-ready guard needed
+        // Simple mode: frames come from HTMLVideoElement, needs GPU surface ready
+        const needsGpuReady = source.webCodecsPlayer.isSimpleMode();
+        if (!needsGpuReady || !source.videoElement || this.videoGpuReady.has(source.videoElement)) {
+          const frame = source.webCodecsPlayer.getCurrentFrame();
+          if (frame) {
+            const extTex = deps.textureManager.importVideoTexture(frame);
+            if (extTex) {
+              this.currentDecoder = source.webCodecsPlayer.isFullMode()
+                ? 'WebCodecs'       // Echtes WebCodecs (VideoDecoder API)
+                : 'HTMLVideo(VF)';  // VideoFrame-Wrapper um HTMLVideo
+              this.currentWebCodecsInfo = source.webCodecsPlayer.getDebugInfo() ?? undefined;
+              this.hasVideo = true;
+              return {
+                layer,
+                isVideo: true,
+                externalTexture: extTex,
+                textureView: null,
+                sourceWidth: frame.displayWidth,
+                sourceHeight: frame.displayHeight,
+              };
+            }
           }
         }
       }
@@ -355,6 +365,10 @@ export class LayerCollector {
 
   getDecoder(): DetailedStats['decoder'] {
     return this.currentDecoder;
+  }
+
+  getWebCodecsInfo(): DetailedStats['webCodecsInfo'] {
+    return this.currentWebCodecsInfo;
   }
 
   hasActiveVideo(): boolean {

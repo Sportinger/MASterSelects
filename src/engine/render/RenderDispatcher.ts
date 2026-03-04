@@ -89,6 +89,7 @@ export class RenderDispatcher {
 
     // Update stats
     d.performanceStats.setDecoder(d.layerCollector.getDecoder());
+    d.performanceStats.setWebCodecsInfo(d.layerCollector.getWebCodecsInfo());
     d.renderLoop?.setHasActiveVideo(d.layerCollector.hasActiveVideo());
 
     // Handle empty layers

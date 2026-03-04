@@ -2,6 +2,7 @@
 // Handles WebCodecsPlayer setup and video decoder warm-up
 
 import { WebCodecsPlayer } from '../../../engine/WebCodecsPlayer';
+import { flags } from '../../../engine/featureFlags';
 import { Logger } from '../../../services/logger';
 
 const log = Logger.create('WebCodecsHelpers');
@@ -16,28 +17,43 @@ export function hasWebCodecsSupport(): boolean {
 /**
  * Initialize WebCodecsPlayer for hardware-accelerated video decoding.
  * Returns null if WebCodecs is not available or initialization fails.
+ *
+ * When `flags.useFullWebCodecsPlayback` is active and a File is provided,
+ * the player uses full mode (MP4Box + VideoDecoder API) instead of the
+ * simple VideoFrame-wrapper around HTMLVideoElement.
  */
 export async function initWebCodecsPlayer(
   video: HTMLVideoElement,
-  fileName: string = 'video'
+  fileName: string = 'video',
+  file?: File
 ): Promise<WebCodecsPlayer | null> {
   if (!hasWebCodecsSupport()) {
     return null;
   }
 
+  const useFullMode = flags.useFullWebCodecsPlayback && !!file;
+
   try {
-    log.debug('Initializing WebCodecs', { file: fileName });
+    log.debug('Initializing WebCodecs', { file: fileName, fullMode: useFullMode });
 
     const webCodecsPlayer = new WebCodecsPlayer({
       loop: false,
-      useSimpleMode: true,
+      useSimpleMode: !useFullMode,
       onError: (error) => {
         log.warn('WebCodecs error', { error: error.message });
       },
     });
 
-    webCodecsPlayer.attachToVideoElement(video);
-    log.debug('WebCodecs ready', { file: fileName });
+    if (useFullMode) {
+      // Full mode: load file via MP4Box + VideoDecoder
+      await webCodecsPlayer.loadFile(file);
+      // Still attach to video element for audio playback reference
+      log.info('WebCodecs full mode ready', { file: fileName });
+    } else {
+      // Simple mode: wrap HTMLVideoElement with VideoFrame
+      webCodecsPlayer.attachToVideoElement(video);
+      log.debug('WebCodecs simple mode ready', { file: fileName });
+    }
 
     return webCodecsPlayer;
   } catch (err) {

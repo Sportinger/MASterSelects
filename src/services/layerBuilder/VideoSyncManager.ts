@@ -247,6 +247,13 @@ export class VideoSyncManager {
 
     if (!clip.source?.videoElement) return;
 
+    // Full-mode WebCodecs: player handles its own decode loop,
+    // HTMLVideoElement is only used for audio. Sync both.
+    if (clip.source.webCodecsPlayer?.isFullMode()) {
+      this.syncFullWebCodecs(clip, ctx);
+      return;
+    }
+
     const video = clip.source.videoElement;
     const timeInfo = getClipTimeInfo(ctx, clip);
     const mediaFile = getMediaFileForClip(ctx, clip);
@@ -523,6 +530,48 @@ export class VideoSyncManager {
 
   clearWarmupState(video: HTMLVideoElement): void {
     this.warmingUpVideos.delete(video);
+  }
+
+  /**
+   * Sync full-mode WebCodecs player.
+   * The WebCodecsPlayer handles its own frame decoding via MP4Box + VideoDecoder.
+   * The HTMLVideoElement is kept for audio playback.
+   */
+  private syncFullWebCodecs(clip: TimelineClip, ctx: FrameContext): void {
+    const video = clip.source!.videoElement!;
+    const wcp = clip.source!.webCodecsPlayer!;
+    const timeInfo = getClipTimeInfo(ctx, clip);
+
+    if (ctx.isPlaying) {
+      // Start WebCodecs decode loop and video (for audio)
+      if (!wcp.isPlaying) wcp.play();
+      if (video.paused) video.play().catch(() => {});
+
+      // Drift correction: if WebCodecs time drifts from expected, seek
+      const wcDrift = Math.abs(wcp.currentTime - timeInfo.clipTime);
+      if (wcDrift > 0.3) {
+        wcp.seek(timeInfo.clipTime);
+      }
+      // Keep audio in sync
+      const audioDrift = Math.abs(video.currentTime - timeInfo.clipTime);
+      if (audioDrift > 0.3) {
+        video.currentTime = this.safeSeekTime(video, timeInfo.clipTime);
+      }
+    } else {
+      // Paused: stop decode loop, seek to exact frame
+      if (wcp.isPlaying) wcp.pause();
+      if (!video.paused) video.pause();
+
+      const wcTimeDiff = Math.abs(wcp.currentTime - timeInfo.clipTime);
+      if (wcTimeDiff > 0.05) {
+        wcp.seek(timeInfo.clipTime);
+      }
+      // Keep audio element at same position
+      const timeDiff = Math.abs(video.currentTime - timeInfo.clipTime);
+      if (timeDiff > 0.05) {
+        video.currentTime = this.safeSeekTime(video, timeInfo.clipTime);
+      }
+    }
   }
 
   /**

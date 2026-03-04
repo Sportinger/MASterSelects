@@ -43,6 +43,10 @@ export class PerformanceStats {
     this.detailedStats.decoder = decoder;
   }
 
+  setWebCodecsInfo(info: DetailedStats['webCodecsInfo']): void {
+    this.detailedStats.webCodecsInfo = info;
+  }
+
   setLayerCount(count: number): void {
     this.lastLayerCount = count;
   }
@@ -136,6 +140,7 @@ export class PerformanceStats {
       layerCount: this.lastLayerCount,
       targetFps: 60,
       decoder: this.detailedStats.decoder,
+      webCodecsInfo: this.detailedStats.webCodecsInfo,
       audio: audioStatusTracker.getStatus(),
       isIdle,
     };

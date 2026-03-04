@@ -200,7 +200,15 @@ export interface EngineStats {
   layerCount: number;
   targetFps: number;
   // Decoder info
-  decoder: 'WebCodecs' | 'HTMLVideo' | 'HTMLVideo(cached)' | 'HTMLVideo(paused-cache)' | 'HTMLVideo(seeking-cache)' | 'HTMLVideo(scrub-cache)' | 'NativeHelper' | 'ParallelDecode' | 'none';
+  decoder: 'WebCodecs' | 'HTMLVideo(VF)' | 'HTMLVideo' | 'HTMLVideo(cached)' | 'HTMLVideo(paused-cache)' | 'HTMLVideo(seeking-cache)' | 'HTMLVideo(scrub-cache)' | 'NativeHelper' | 'ParallelDecode' | 'none';
+  // WebCodecs debug info (only in full mode)
+  webCodecsInfo?: {
+    codec: string;
+    hwAccel: string;
+    decodeQueueSize: number;
+    samplesLoaded: number;
+    sampleIndex: number;
+  };
   // Audio status
   audio: {
     playing: number;       // Number of audio elements currently playing
