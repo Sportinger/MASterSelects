@@ -22,7 +22,7 @@ export interface PipelineEvent {
   detail?: Record<string, number | string>;
 }
 
-const MAX_EVENTS = 1000;
+const MAX_EVENTS = 5000;
 
 class WcPipelineMonitor {
   private buffer: PipelineEvent[] = [];
@@ -36,7 +36,17 @@ class WcPipelineMonitor {
   // Frame drop detection
   private frameReadSinceLastOutput = true;
 
+  // Throttle frame_read to 1-in-10 to save buffer space
+  private frameReadCounter = 0;
+
   record(type: PipelineEventType, detail?: Record<string, number | string>): void {
+    // Throttle frame_read: only record every 10th to save buffer for important events
+    if (type === 'frame_read') {
+      this.frameReadSinceLastOutput = true;
+      this.frameReadCounter++;
+      if (this.frameReadCounter % 10 !== 0) return;
+    }
+
     const event: PipelineEvent = { type, t: performance.now(), detail };
 
     if (this.count < MAX_EVENTS) {
@@ -69,10 +79,6 @@ class WcPipelineMonitor {
         this.record('frame_drop');
       }
       this.frameReadSinceLastOutput = false;
-    }
-
-    if (type === 'frame_read') {
-      this.frameReadSinceLastOutput = true;
     }
   }
 
@@ -186,6 +192,22 @@ class WcPipelineMonitor {
     };
   }
 
+  /** Show events surrounding each stall (500ms before, 200ms after) */
+  stallContext(): { stallAt: number; gapMs: number; before: PipelineEvent[]; after: PipelineEvent[] }[] {
+    const all = this.ordered();
+    const stalls = all.filter(e => e.type === 'stall');
+    return stalls.map(stall => {
+      const before = all.filter(e => e.t >= stall.t - 500 && e.t < stall.t && e.type !== 'frame_read');
+      const after = all.filter(e => e.t > stall.t && e.t <= stall.t + 200 && e.type !== 'frame_read');
+      return {
+        stallAt: Math.round(stall.t),
+        gapMs: Number(stall.detail?.gapMs ?? 0),
+        before,
+        after,
+      };
+    });
+  }
+
   /** Reset all data */
   reset(): void {
     this.buffer = [];
@@ -205,6 +227,7 @@ if (typeof window !== 'undefined') {
   (window as any).__WC_PIPELINE__ = {
     events: (n?: number) => wcPipelineMonitor.events(n),
     stalls: () => wcPipelineMonitor.stalls(),
+    stallContext: () => wcPipelineMonitor.stallContext(),
     seeks: () => wcPipelineMonitor.seeks(),
     stats: () => wcPipelineMonitor.stats(),
     reset: () => wcPipelineMonitor.reset(),
