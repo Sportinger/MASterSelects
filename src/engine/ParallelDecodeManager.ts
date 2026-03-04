@@ -59,6 +59,7 @@ interface ClipInfo {
   inPoint: number;        // Source in point
   outPoint: number;       // Source out point
   reversed: boolean;
+  speed: number;          // Clip speed multiplier (1 = normal, 2 = 2x, 0.5 = half)
   // Nested clip properties
   isNested?: boolean;
   parentClipId?: string;
@@ -372,10 +373,13 @@ export class ParallelDecodeManager {
       clipLocalTime = timelineTime - clipInfo.startTime;
     }
 
+    // Apply clip speed: at 2x speed, we advance through source twice as fast
+    const speedAdjusted = clipLocalTime * (clipInfo.speed || 1);
+
     if (clipInfo.reversed) {
-      return clipInfo.outPoint - clipLocalTime;
+      return clipInfo.outPoint - speedAdjusted;
     }
-    return clipInfo.inPoint + clipLocalTime;
+    return clipInfo.inPoint + speedAdjusted;
   }
 
   /**

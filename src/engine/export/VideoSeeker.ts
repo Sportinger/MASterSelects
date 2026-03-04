@@ -50,9 +50,11 @@ async function seekSequentialMode(
         if (nestedTime >= nestedClip.startTime && nestedTime < nestedClip.startTime + nestedClip.duration) {
           if (nestedClip.source?.videoElement) {
             const nestedLocalTime = nestedTime - nestedClip.startTime;
-            const nestedClipTime = nestedClip.reversed
-              ? nestedClip.outPoint - nestedLocalTime
-              : nestedLocalTime + nestedClip.inPoint;
+            const nestedSpeed = nestedClip.speed ?? 1;
+            const speedAdjusted = nestedLocalTime * Math.abs(nestedSpeed);
+            const nestedClipTime = (nestedClip.reversed !== (nestedSpeed < 0))
+              ? nestedClip.outPoint - speedAdjusted
+              : nestedClip.inPoint + speedAdjusted;
             seekPromises.push(seekVideo(nestedClip.source.videoElement, nestedClipTime));
           }
         }

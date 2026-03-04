@@ -159,11 +159,13 @@ async function initializeFastMode(
       throw new Error(`FAST export failed: WebCodecs/MP4Box parsing failed for clip "${clip.name}": ${e}.${hint} Try PRECISE mode instead.`);
     }
 
-    // Calculate clip start time
+    // Calculate clip start time (accounting for speed)
     const clipStartInExport = Math.max(0, startTime - clip.startTime);
-    const clipTime = clip.reversed
-      ? clip.outPoint - clipStartInExport
-      : clipStartInExport + clip.inPoint;
+    const clipSpeed = clip.speed ?? 1;
+    const speedAdjusted = clipStartInExport * Math.abs(clipSpeed);
+    const clipTime = (clip.reversed !== (clipSpeed < 0))
+      ? clip.outPoint - speedAdjusted
+      : clip.inPoint + speedAdjusted;
 
     const endSeqPrep = log.time(`prepareForSequentialExport "${clip.name}"`);
     await exportPlayer.prepareForSequentialExport(clipTime);
@@ -221,6 +223,7 @@ async function initializeParallelDecoding(
       inPoint: clip.inPoint,
       outPoint: clip.outPoint,
       reversed: clip.reversed || false,
+      speed: clip.speed ?? 1,
     };
   });
 
@@ -244,6 +247,7 @@ async function initializeParallelDecoding(
       inPoint: clip.inPoint,
       outPoint: clip.outPoint,
       reversed: clip.reversed || false,
+      speed: clip.speed ?? 1,
       isNested: true,
       parentClipId: parentClip.id,
       parentStartTime: parentClip.startTime,
@@ -322,9 +326,11 @@ async function initializeParallelDecoding(
     if (clip.source?.videoElement) {
       const video = clip.source.videoElement;
       const clipLocalTime = Math.max(0, _startTime - clip.startTime);
-      const sourceTime = clip.reversed
-        ? clip.outPoint - clipLocalTime
-        : clip.inPoint + clipLocalTime;
+      const clipSpeed = clip.speed ?? 1;
+      const speedAdjusted = clipLocalTime * Math.abs(clipSpeed);
+      const sourceTime = (clip.reversed !== (clipSpeed < 0))
+        ? clip.outPoint - speedAdjusted
+        : clip.inPoint + speedAdjusted;
 
       seekPromises.push(new Promise<void>((resolve) => {
         const targetTime = Math.max(0, Math.min(sourceTime, video.duration || 0));

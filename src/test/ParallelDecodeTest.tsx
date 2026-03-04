@@ -151,7 +151,8 @@ export function ParallelDecodeTest() {
         duration: Math.min(file.duration, 10), // Max 10 seconds
         inPoint: 0,
         outPoint: Math.min(file.duration, 10),
-        reversed: false
+        reversed: false,
+        speed: 1
       }));
 
       log(`Initializing ${clipInfos.length} clips...`, 'info');
