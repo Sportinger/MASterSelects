@@ -1,6 +1,7 @@
 // Clip Tool Handlers
 
 import { useTimelineStore } from '../../../stores/timeline';
+import { useMediaStore } from '../../../stores/mediaStore';
 import { createVideoElement, createAudioElement, initWebCodecsPlayer } from '../../../stores/timeline/helpers/webCodecsHelpers';
 import type { TimelineClip } from '../../../types';
 import type { ToolResult } from '../types';
@@ -626,4 +627,83 @@ export async function handleClearSelection(
 ): Promise<ToolResult> {
   timelineStore.clearClipSelection();
   return { success: true, data: { message: 'Selection cleared' } };
+}
+
+/**
+ * Add a clip segment from the media pool with specific in/out points.
+ * Self-contained handler — fetches both stores internally.
+ */
+export async function handleAddClipSegment(
+  args: Record<string, unknown>,
+): Promise<ToolResult> {
+  const mediaFileId = args.mediaFileId as string;
+  const trackId = args.trackId as string;
+  const startTime = args.startTime as number;
+  const inPoint = args.inPoint as number;
+  const outPoint = args.outPoint as number;
+
+  if (inPoint >= outPoint) {
+    return { success: false, error: 'inPoint must be less than outPoint' };
+  }
+  if (isNaN(startTime) || isNaN(inPoint) || isNaN(outPoint)) {
+    return { success: false, error: 'startTime, inPoint, and outPoint must be valid numbers' };
+  }
+
+  const mediaStore = useMediaStore.getState();
+  const timelineStore = useTimelineStore.getState();
+
+  // Find media file
+  const mediaFile = mediaStore.files.find(f => f.id === mediaFileId);
+  if (!mediaFile) {
+    return { success: false, error: `Media file not found: ${mediaFileId}` };
+  }
+  if (!mediaFile.file) {
+    return { success: false, error: `File object not available for media: ${mediaFileId}. Try re-importing the file.` };
+  }
+
+  // Validate track
+  const track = timelineStore.tracks.find(t => t.id === trackId);
+  if (!track) {
+    return { success: false, error: `Track not found: ${trackId}` };
+  }
+
+  const duration = outPoint - inPoint;
+
+  // Snapshot clip count before adding
+  const clipsBefore = new Set(timelineStore.clips.map(c => c.id));
+
+  // Add the clip (this creates video + linked audio for video files)
+  await timelineStore.addClip(trackId, mediaFile.file, startTime, duration, mediaFileId);
+
+  // Find newly created clips
+  const clipsAfter = useTimelineStore.getState().clips;
+  const newClips = clipsAfter.filter(c => !clipsBefore.has(c.id));
+
+  if (newClips.length === 0) {
+    return { success: false, error: 'Failed to create clip' };
+  }
+
+  // Trim all new clips (video + linked audio) to the desired segment
+  const ts = useTimelineStore.getState();
+  for (const clip of newClips) {
+    ts.trimClip(clip.id, inPoint, outPoint);
+  }
+
+  // Return info about created clips
+  const createdClips = useTimelineStore.getState().clips.filter(c => newClips.some(n => n.id === c.id));
+  return {
+    success: true,
+    data: {
+      clipCount: createdClips.length,
+      clips: createdClips.map(c => ({
+        id: c.id,
+        trackId: c.trackId,
+        startTime: c.startTime,
+        duration: c.duration,
+        inPoint: c.inPoint,
+        outPoint: c.outPoint,
+        linkedClipId: c.linkedClipId,
+      })),
+    },
+  };
 }

@@ -25,6 +25,7 @@ import {
   handleReorderClips,
   handleSelectClips,
   handleClearSelection,
+  handleAddClipSegment,
 } from './clips';
 
 import {
@@ -112,9 +113,10 @@ const mediaHandlers: Record<string, (args: Record<string, unknown>, store: Retur
   importLocalFiles: handleImportLocalFiles,
 };
 
-// Self-contained handlers (no store dependency)
+// Self-contained handlers (no store dependency, or fetch own stores)
 const selfContainedHandlers: Record<string, (args: Record<string, unknown>) => Promise<ToolResult>> = {
   listLocalFiles: handleListLocalFiles,
+  addClipSegment: handleAddClipSegment,
 };
 
 // YouTube handlers - self-contained, fetch their own stores
@@ -179,6 +181,7 @@ export {
   handleReorderClips,
   handleSelectClips,
   handleClearSelection,
+  handleAddClipSegment,
   // Tracks
   handleCreateTrack,
   handleDeleteTrack,
