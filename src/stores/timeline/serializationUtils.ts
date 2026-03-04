@@ -544,25 +544,20 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
                   const hasWebCodecs = 'VideoDecoder' in window && 'VideoFrame' in window;
                   if (hasWebCodecs) {
                     try {
-                      const { WebCodecsPlayer } = await import('../../engine/WebCodecsPlayer');
+                      const { initWebCodecsPlayer } = await import('./helpers/webCodecsHelpers');
                       log.debug('Initializing WebCodecsPlayer for nested comp', { file: nestedFileRef.name });
 
-                      const webCodecsPlayer = new WebCodecsPlayer({
-                        loop: false,
-                        useSimpleMode: true,
-                        onError: (error) => {
-                          log.warn('WebCodecs error in nested comp', { error: error.message });
-                        },
-                      });
+                      const webCodecsPlayer = await initWebCodecsPlayer(video, nestedFileRef.name, nestedFileRef);
 
-                      webCodecsPlayer.attachToVideoElement(video);
-                      log.debug('WebCodecsPlayer ready for nested comp', { file: nestedFileRef.name });
+                      if (webCodecsPlayer) {
+                        log.debug('WebCodecsPlayer ready for nested comp', { file: nestedFileRef.name, fullMode: webCodecsPlayer.isFullMode() });
 
-                      // Update nested clip source with webCodecsPlayer
-                      nestedClip.source = {
-                        ...nestedClip.source,
-                        webCodecsPlayer,
-                      };
+                        // Update nested clip source with webCodecsPlayer
+                        nestedClip.source = {
+                          ...nestedClip.source,
+                          webCodecsPlayer,
+                        };
+                      }
                     } catch (err) {
                       log.warn('WebCodecsPlayer init failed in nested comp', err);
                     }
@@ -930,35 +925,29 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
           const hasWebCodecs = 'VideoDecoder' in window && 'VideoFrame' in window;
           if (hasWebCodecs) {
             try {
-              const { WebCodecsPlayer } = await import('../../engine/WebCodecsPlayer');
+              const { initWebCodecsPlayer } = await import('./helpers/webCodecsHelpers');
               log.debug('Initializing WebCodecsPlayer for restored clip', { clip: clip.name });
 
-              const webCodecsPlayer = new WebCodecsPlayer({
-                loop: false,
-                useSimpleMode: true, // Use VideoFrame from HTMLVideoElement (more compatible)
-                onError: (error) => {
-                  log.warn('WebCodecs error', { error: error.message });
-                },
-              });
+              const webCodecsPlayer = await initWebCodecsPlayer(video, clip.name, mediaFile.file || undefined);
 
-              // Attach to existing video element
-              webCodecsPlayer.attachToVideoElement(video);
-              log.debug('WebCodecsPlayer ready for restored clip', { clip: clip.name });
+              if (webCodecsPlayer) {
+                log.debug('WebCodecsPlayer ready for restored clip', { clip: clip.name, fullMode: webCodecsPlayer.isFullMode() });
 
-              // Update clip source with webCodecsPlayer
-              set(state => ({
-                clips: state.clips.map(c =>
-                  c.id === clip.id && c.source?.type === 'video'
-                    ? {
-                        ...c,
-                        source: {
-                          ...c.source,
-                          webCodecsPlayer,
-                        },
-                      }
-                    : c
-                ),
-              }));
+                // Update clip source with webCodecsPlayer
+                set(state => ({
+                  clips: state.clips.map(c =>
+                    c.id === clip.id && c.source?.type === 'video'
+                      ? {
+                          ...c,
+                          source: {
+                            ...c.source,
+                            webCodecsPlayer,
+                          },
+                        }
+                      : c
+                  ),
+                }));
+              }
             } catch (err) {
               log.warn('WebCodecsPlayer init failed for restored clip, using HTMLVideoElement', err);
             }
