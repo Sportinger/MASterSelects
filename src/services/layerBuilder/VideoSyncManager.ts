@@ -347,8 +347,13 @@ export class VideoSyncManager {
       if (ctx.isPlaying) {
         this.clipWasPlaying.add(clip.id);
         if (video.paused) {
-          // Seek to correct source time before playing (important for speed-adjusted clips)
-          video.currentTime = timeInfo.clipTime;
+          // Only seek before play if video is significantly out of sync.
+          // After a clean pause the video is already at the correct frame —
+          // an unnecessary seek forces the decoder to re-decode from the last
+          // keyframe which causes a visible backward jitter on long-GOP codecs.
+          if (timeDiff > 0.05) {
+            video.currentTime = timeInfo.clipTime;
+          }
           video.play().catch(() => {});
         }
         // Drift correction during playback (especially needed for speed-adjusted clips)
