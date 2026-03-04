@@ -35,20 +35,26 @@ export class LayerCollector {
         continue;
       }
 
-      const data = this.collectLayerData(layer, deps);
-      if (data) {
-        log.debug(`Layer ${layer.id} collected: isVideo=${data.isVideo}, hasExternalTex=${!!data.externalTexture}, hasTextureView=${!!data.textureView}`);
-        this.layerRenderData.push(data);
-      } else {
-        // This is normal during loading - use debug level to reduce noise
-        const source = layer.source;
-        log.debug(`Layer ${layer.id} skipped - source not ready`, {
-          sourceType: source?.type,
-          hasVideoElement: !!source?.videoElement,
-          videoReadyState: source?.videoElement?.readyState,
-          hasImageElement: !!source?.imageElement,
-          hasNestedComp: !!source?.nestedComposition,
-        });
+      try {
+        const data = this.collectLayerData(layer, deps);
+        if (data) {
+          log.debug(`Layer ${layer.id} collected: isVideo=${data.isVideo}, hasExternalTex=${!!data.externalTexture}, hasTextureView=${!!data.textureView}`);
+          this.layerRenderData.push(data);
+        } else {
+          // This is normal during loading - use debug level to reduce noise
+          const source = layer.source;
+          log.debug(`Layer ${layer.id} skipped - source not ready`, {
+            sourceType: source?.type,
+            hasVideoElement: !!source?.videoElement,
+            videoReadyState: source?.videoElement?.readyState,
+            hasImageElement: !!source?.imageElement,
+            hasNestedComp: !!source?.nestedComposition,
+          });
+        }
+      } catch (err) {
+        // Skip this layer but continue collecting others — prevents a single
+        // stale/invalid source (e.g. destroyed webCodecsPlayer) from killing rendering
+        log.warn(`Layer ${layer.id} collect error, skipping`, err);
       }
     }
 
@@ -135,7 +141,7 @@ export class LayerCollector {
       // Skip for videos that haven't been played yet — after page reload,
       // VideoFrame from a never-played video produces black/empty frames.
       // Fall through to tryHTMLVideo which has a canvas-based fallback.
-      if (source.webCodecsPlayer && (!source.videoElement || this.videoGpuReady.has(source.videoElement))) {
+      if (source.webCodecsPlayer && typeof source.webCodecsPlayer.getCurrentFrame === 'function' && (!source.videoElement || this.videoGpuReady.has(source.videoElement))) {
         const frame = source.webCodecsPlayer.getCurrentFrame();
         if (frame) {
           const extTex = deps.textureManager.importVideoTexture(frame);
