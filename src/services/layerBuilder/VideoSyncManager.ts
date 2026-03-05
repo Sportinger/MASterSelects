@@ -51,7 +51,8 @@ export class VideoSyncManager {
   // video element keeps playing through the cut — no pause/play gap.
   private lastTrackState = new Map<string, {
     clipId: string;
-    videoSrc: string;
+    fileId: string;       // mediaFileId — same for all split clips from same source
+    file: File;           // File object — same reference for split clips
     videoElement: HTMLVideoElement;
     outPoint: number;
   }>();
@@ -86,8 +87,16 @@ export class VideoSyncManager {
       const prev = this.lastTrackState.get(clip.trackId);
       if (!prev || prev.clipId === clip.id) continue;
 
-      const clipSrc = clip.source.videoElement.src || clip.source.videoElement.currentSrc;
-      if (!clipSrc || prev.videoSrc !== clipSrc) continue;
+      // Same source file? Check mediaFileId (string) or File object identity.
+      // NOTE: blob URLs (video.src) are unique per createObjectURL call,
+      // so split clips from the same file have DIFFERENT blob URLs.
+      // DaVinci/Premiere use one decoder per source — we approximate this
+      // by reusing the previous clip's video element across the cut.
+      const clipFileId = clip.source.mediaFileId || clip.mediaFileId;
+      const sameSource = clipFileId
+        ? clipFileId === prev.fileId
+        : clip.file === prev.file;
+      if (!sameSource) continue;
 
       // Continuous cut: clip's inPoint matches previous clip's outPoint
       if (Math.abs(clip.inPoint - prev.outPoint) > 0.1) continue;
@@ -693,12 +702,13 @@ export class VideoSyncManager {
       // Use the actual playing element (handoff or clip's own)
       const handoffElement = this.activeHandoffs.get(clip.id);
       const video = handoffElement ?? clip.source.videoElement;
-      const videoSrc = video.src || video.currentSrc;
-      if (!videoSrc) continue;
+
+      const fileId = clip.source.mediaFileId || clip.mediaFileId || '';
 
       this.lastTrackState.set(clip.trackId, {
         clipId: clip.id,
-        videoSrc,
+        fileId,
+        file: clip.file,
         videoElement: video,
         outPoint: clip.outPoint,
       });

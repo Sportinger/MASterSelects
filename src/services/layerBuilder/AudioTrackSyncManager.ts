@@ -48,6 +48,18 @@ export class AudioTrackSyncManager {
   // Active audio proxies tracking
   private activeAudioProxies = new Map<string, HTMLAudioElement>();
 
+  // Seamless audio cut transition: keep old audio element playing through cuts
+  // (same approach as video handoff in VideoSyncManager)
+  private lastAudioTrackState = new Map<string, {
+    clipId: string;
+    fileId: string;
+    file: File;
+    audioElement: HTMLAudioElement;
+    outPoint: number;
+  }>();
+  private audioHandoffs = new Map<string, HTMLAudioElement>();
+  private audioHandoffElements = new Set<HTMLAudioElement>();
+
   /**
    * Sync audio elements to current playhead
    */
@@ -80,6 +92,9 @@ export class AudioTrackSyncManager {
     // Resume audio context if needed
     resumeAudioContextIfNeeded(ctx.isPlaying, ctx.isDraggingPlayhead);
 
+    // Compute audio handoffs for seamless cut transitions
+    this.computeAudioHandoffs(ctx);
+
     // Create sync state
     const state = createAudioSyncState();
 
@@ -94,6 +109,9 @@ export class AudioTrackSyncManager {
 
     // Pause inactive audio
     this.pauseInactiveAudio(ctx);
+
+    // Update audio track state for next frame's handoff detection
+    this.updateLastAudioTrackState(ctx);
 
     // Sync background layer audio elements
     layerPlaybackManager.syncAudioElements(ctx.playheadPosition, ctx.isPlaying);
@@ -117,8 +135,10 @@ export class AudioTrackSyncManager {
       const timeInfo = getClipTimeInfo(ctx, clip);
       const isMuted = !ctx.unmutedAudioTrackIds.has(track.id);
 
+      // Use handoff element if available (seamless cut transition)
+      const handoffAudio = this.audioHandoffs.get(clip.id);
       this.audioSyncHandler.syncAudioElement({
-        element: clip.source.audioElement,
+        element: handoffAudio ?? clip.source.audioElement,
         clip,
         clipTime: timeInfo.clipTime,
         absSpeed: timeInfo.absSpeed,
@@ -230,13 +250,67 @@ export class AudioTrackSyncManager {
     for (const clip of ctx.clips) {
       const isAtPlayhead = ctx.clipsAtTime.some(c => c.id === clip.id);
 
-      if (clip.source?.audioElement && !isAtPlayhead && !clip.source.audioElement.paused) {
+      if (clip.source?.audioElement && !isAtPlayhead && !clip.source.audioElement.paused
+          && !this.audioHandoffElements.has(clip.source.audioElement)) {
         clip.source.audioElement.pause();
       }
 
       if (clip.mixdownAudio && !isAtPlayhead && !clip.mixdownAudio.paused) {
         clip.mixdownAudio.pause();
       }
+    }
+  }
+
+  /**
+   * Detect same-source sequential audio clips for seamless handoff.
+   * Same logic as video handoff: compare mediaFileId (not blob URL).
+   */
+  private computeAudioHandoffs(ctx: FrameContext): void {
+    this.audioHandoffs.clear();
+    this.audioHandoffElements.clear();
+
+    if (!ctx.isPlaying || ctx.isDraggingPlayhead) return;
+
+    for (const track of ctx.audioTracks) {
+      const clip = getClipForTrack(ctx, track.id);
+      if (!clip?.source?.audioElement) continue;
+
+      const prev = this.lastAudioTrackState.get(track.id);
+      if (!prev || prev.clipId === clip.id) continue;
+
+      const clipFileId = clip.source.mediaFileId || clip.mediaFileId;
+      const sameSource = clipFileId
+        ? clipFileId === prev.fileId
+        : clip.file === prev.file;
+      if (!sameSource) continue;
+
+      if (Math.abs(clip.inPoint - prev.outPoint) > 0.1) continue;
+      if (Math.abs(prev.audioElement.currentTime - clip.inPoint) > 0.5) continue;
+
+      this.audioHandoffs.set(clip.id, prev.audioElement);
+      this.audioHandoffElements.add(prev.audioElement);
+    }
+  }
+
+  /**
+   * Update per-track audio state for next frame's handoff detection
+   */
+  private updateLastAudioTrackState(ctx: FrameContext): void {
+    for (const track of ctx.audioTracks) {
+      const clip = getClipForTrack(ctx, track.id);
+      if (!clip?.source?.audioElement) continue;
+
+      const handoffElement = this.audioHandoffs.get(clip.id);
+      const audio = handoffElement ?? clip.source.audioElement;
+      const fileId = clip.source.mediaFileId || clip.mediaFileId || '';
+
+      this.lastAudioTrackState.set(track.id, {
+        clipId: clip.id,
+        fileId,
+        file: clip.file,
+        audioElement: audio,
+        outPoint: clip.outPoint,
+      });
     }
   }
 
