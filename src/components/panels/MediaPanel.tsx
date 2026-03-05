@@ -507,6 +507,11 @@ export function MediaPanel() {
 
     // Set the media file ID so Timeline can look it up
     e.dataTransfer.setData('application/x-media-file-id', mediaFile.id);
+    // Mark audio-only files so timeline can restrict drop targets to audio tracks
+    if (mediaFile.file.type.startsWith('audio/') ||
+        /\.(mp3|wav|ogg|aac|m4a|flac|wma|aiff|alac|opus)$/i.test(mediaFile.file.name)) {
+      e.dataTransfer.setData('application/x-media-is-audio', 'true');
+    }
     e.dataTransfer.effectAllowed = 'copyMove';
 
     // Set drag image

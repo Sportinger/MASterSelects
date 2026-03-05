@@ -102,7 +102,8 @@ export function useExternalDrop({
       }
 
       if (e.dataTransfer.types.includes('application/x-media-file-id')) {
-        setExternalDrag({ trackId, startTime, x: e.clientX, y: e.clientY, duration: 5, isVideo: true });
+        const isAudioDrag = e.dataTransfer.types.includes('application/x-media-is-audio');
+        setExternalDrag({ trackId, startTime, x: e.clientX, y: e.clientY, duration: 5, isVideo: !isAudioDrag, isAudio: isAudioDrag });
         return;
       }
 
@@ -119,12 +120,17 @@ export function useExternalDrop({
       if (e.dataTransfer.types.includes('Files')) {
         let dur: number | undefined;
         let hasAudio: boolean | undefined;
+        let fileIsAudio = false;
         const items = e.dataTransfer.items;
         if (items && items.length > 0) {
           for (let i = 0; i < items.length; i++) {
             const item = items[i];
             if (item.kind === 'file') {
               const file = item.getAsFile();
+              if (file && isAudioFile(file)) {
+                fileIsAudio = true;
+                break;
+              }
               if (file && isVideoFile(file)) {
                 const cacheKey = `${file.name}_${file.size}`;
                 if (dragMetadataCacheRef.current?.url === cacheKey) {
@@ -150,7 +156,7 @@ export function useExternalDrop({
           }
         }
 
-        setExternalDrag({ trackId, startTime, x: e.clientX, y: e.clientY, duration: dur, hasAudio });
+        setExternalDrag({ trackId, startTime, x: e.clientX, y: e.clientY, duration: dur, hasAudio, isAudio: fileIsAudio, isVideo: !fileIsAudio });
       }
     },
     [scrollX, pixelToTime]
@@ -175,6 +181,22 @@ export function useExternalDrop({
 
         const targetTrack = tracks.find((t) => t.id === trackId);
         const isVideoTrack = targetTrack?.type === 'video';
+        const isAudioTrack = targetTrack?.type === 'audio';
+
+        // Detect audio-only drag (from media panel marker or from externalDrag state)
+        const isAudioDrag = e.dataTransfer.types.includes('application/x-media-is-audio') || externalDrag?.isAudio;
+
+        // Audio files can only go on audio tracks
+        if (isAudioDrag && isVideoTrack) {
+          e.dataTransfer.dropEffect = 'none';
+          return;
+        }
+
+        // Text, solid, composition items can only go on video tracks
+        if ((isTextDrag || isSolidDrag || isCompDrag) && isAudioTrack) {
+          e.dataTransfer.dropEffect = 'none';
+          return;
+        }
 
         const previewDuration =
           externalDrag?.duration ?? dragMetadataCacheRef.current?.duration ?? 5;
@@ -211,6 +233,7 @@ export function useExternalDrop({
           y: e.clientY,
           audioTrackId,
           isVideo: isVideoTrack,
+          isAudio: prev?.isAudio ?? isAudioDrag,
           hasAudio: prev?.hasAudio ?? dragMetadataCacheRef.current?.hasAudio,
           duration: prev?.duration ?? dragMetadataCacheRef.current?.duration,
         }));
@@ -234,6 +257,14 @@ export function useExternalDrop({
     (e: React.DragEvent, trackType: 'video' | 'audio') => {
       e.preventDefault();
       e.stopPropagation();
+
+      // Audio files can only create audio tracks
+      const isAudioDrag = e.dataTransfer.types.includes('application/x-media-is-audio') || externalDrag?.isAudio;
+      if (isAudioDrag && trackType === 'video') {
+        e.dataTransfer.dropEffect = 'none';
+        return;
+      }
+
       e.dataTransfer.dropEffect = 'copy';
 
       if (timelineRef.current) {

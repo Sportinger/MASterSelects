@@ -939,7 +939,7 @@ export function Timeline() {
               ['--grid-size' as string]: `${gridSize}px`,
             }}>
               {/* New Video Track drop zone - at TOP above video tracks */}
-              {externalDrag && (
+              {externalDrag && !externalDrag.isAudio && (
                 <div
                   className={`new-track-drop-zone video ${externalDrag.newTrackType === 'video' ? 'active' : ''}`}
                   onDragOver={(e) => handleNewTrackDragOver(e, 'video')}
