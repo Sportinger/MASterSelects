@@ -498,7 +498,6 @@ export function useExternalDrop({
       // Get track type for validation
       const targetTrack = tracks.find((t) => t.id === trackId);
       const isVideoTrack = targetTrack?.type === 'video';
-      const isAudioTrack = targetTrack?.type === 'audio';
 
       const compositionId = e.dataTransfer.getData('application/x-composition-id');
       if (compositionId) {

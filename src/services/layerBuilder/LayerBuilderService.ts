@@ -153,6 +153,9 @@ export class LayerBuilderService {
   private buildLayers(ctx: FrameContext): Layer[] {
     const layers: Layer[] = [];
 
+    // Compute handoffs for seamless cut transitions (same-source sequential clips)
+    this.videoSyncManager.computeHandoffs(ctx);
+
     ctx.videoTracks.forEach((track, layerIndex) => {
       if (!isVideoTrackVisible(ctx, track.id)) {
         return;
@@ -353,6 +356,9 @@ export class LayerBuilderService {
       ? transform.opacity * opacityOverride
       : transform.opacity;
 
+    // Check for seamless cut handoff (same-source sequential clips reuse previous element)
+    const handoffVideo = this.videoSyncManager.getHandoffVideoElement(clip.id);
+
     const layer: Layer = {
       id: `${ctx.activeCompId}_layer_${layerIndex}`,
       name: clip.name,
@@ -361,8 +367,9 @@ export class LayerBuilderService {
       blendMode: transform.blendMode as BlendMode,
       source: {
         type: 'video',
-        videoElement: clip.source!.videoElement,
-        webCodecsPlayer: clip.source?.webCodecsPlayer,
+        videoElement: handoffVideo ?? clip.source!.videoElement,
+        // Skip WebCodecs player during handoff — it references the original element
+        webCodecsPlayer: handoffVideo ? undefined : clip.source?.webCodecsPlayer,
       },
       effects,
       position: transform.position,

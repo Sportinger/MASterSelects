@@ -46,6 +46,18 @@ export class VideoSyncManager {
   // WebCodecs precise seek debounce
   private wcPreciseSeekTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 
+  // Seamless cut transition: track last video element per track.
+  // When same-source clips are sequential (split clips), the outgoing clip's
+  // video element keeps playing through the cut — no pause/play gap.
+  private lastTrackState = new Map<string, {
+    clipId: string;
+    videoSrc: string;
+    videoElement: HTMLVideoElement;
+    outPoint: number;
+  }>();
+  private activeHandoffs = new Map<string, HTMLVideoElement>();
+  private handoffElements = new Set<HTMLVideoElement>();
+
   /**
    * Clamp seek time to valid range, preventing EOF decoder stalls.
    * H.264 B-frame decoders stall when seeking to exactly video.duration
@@ -55,6 +67,45 @@ export class VideoSyncManager {
     const dur = video.duration;
     if (!isFinite(dur) || dur <= 0) return Math.max(0, time);
     return Math.max(0, Math.min(time, dur - 0.001));
+  }
+
+  /**
+   * Detect same-source sequential clips and set up handoffs.
+   * Called from both LayerBuilderService.buildLayers() (for rendering)
+   * and syncVideoElements() (for sync + pause prevention).
+   */
+  computeHandoffs(ctx: FrameContext): void {
+    this.activeHandoffs.clear();
+    this.handoffElements.clear();
+
+    if (!ctx.isPlaying || ctx.isDraggingPlayhead) return;
+
+    for (const clip of ctx.clipsAtTime) {
+      if (!clip.source?.videoElement || !clip.trackId) continue;
+
+      const prev = this.lastTrackState.get(clip.trackId);
+      if (!prev || prev.clipId === clip.id) continue;
+
+      const clipSrc = clip.source.videoElement.src || clip.source.videoElement.currentSrc;
+      if (!clipSrc || prev.videoSrc !== clipSrc) continue;
+
+      // Continuous cut: clip's inPoint matches previous clip's outPoint
+      if (Math.abs(clip.inPoint - prev.outPoint) > 0.1) continue;
+
+      // Previous element should be near the clip's inPoint (playing through)
+      if (Math.abs(prev.videoElement.currentTime - clip.inPoint) > 0.5) continue;
+
+      this.activeHandoffs.set(clip.id, prev.videoElement);
+      this.handoffElements.add(prev.videoElement);
+    }
+  }
+
+  /**
+   * Get handoff video element for a clip (if same-source sequential transition).
+   * Returns null if no handoff is active.
+   */
+  getHandoffVideoElement(clipId: string): HTMLVideoElement | null {
+    return this.activeHandoffs.get(clipId) ?? null;
   }
 
   /**
@@ -72,6 +123,9 @@ export class VideoSyncManager {
     this.lastVideoSyncFrame = ctx.frameNumber;
     this.lastVideoSyncPlaying = ctx.isPlaying;
 
+    // Compute handoffs for seamless cut transitions
+    this.computeHandoffs(ctx);
+
     // Sync each clip at playhead
     for (const clip of ctx.clipsAtTime) {
       this.syncClipVideo(clip, ctx);
@@ -88,7 +142,8 @@ export class VideoSyncManager {
         const isAtPlayhead = ctx.clipsByTrackId.has(clip.trackId) &&
           ctx.clipsByTrackId.get(clip.trackId)?.id === clip.id;
         if (!isAtPlayhead && !clip.source.videoElement.paused &&
-            !this.warmingUpVideos.has(clip.source.videoElement)) {
+            !this.warmingUpVideos.has(clip.source.videoElement) &&
+            !this.handoffElements.has(clip.source.videoElement)) {
           clip.source.videoElement.pause();
         }
       }
@@ -113,6 +168,9 @@ export class VideoSyncManager {
     if (ctx.isPlaying) {
       this.warmupUpcomingClips(ctx);
     }
+
+    // Update track state for seamless cut transition detection
+    this.updateLastTrackState(ctx);
 
     // Sync background layer video elements
     layerPlaybackManager.syncVideoElements(ctx.playheadPosition, ctx.isPlaying);
@@ -267,7 +325,8 @@ export class VideoSyncManager {
       return;
     }
 
-    const video = clip.source.videoElement;
+    // Use handoff element if available (seamless cut transition)
+    const video = this.activeHandoffs.get(clip.id) ?? clip.source.videoElement;
     const timeInfo = getClipTimeInfo(ctx, clip);
     const mediaFile = getMediaFileForClip(ctx, clip);
 
@@ -418,32 +477,32 @@ export class VideoSyncManager {
         const justStopped = this.clipWasPlaying.has(clip.id);
         if (justStopped) {
           this.clipWasPlaying.delete(clip.id);
-          if (!video.paused) {
-            video.pause();
+          // If handoff was active, the actual playing element differs from clip's own
+          const prevTrack = this.lastTrackState.get(clip.trackId);
+          const actualVideo = (prevTrack && prevTrack.videoElement !== video)
+            ? prevTrack.videoElement : video;
+          if (!actualVideo.paused) {
+            actualVideo.pause();
             vfPipelineMonitor.record('vf_pause', { clipId: clip.id });
           }
-          // Convert video.currentTime back to timeline position
-          // clipTime = startPoint + sourceTime, where for speed=1: clipTime = inPoint + localTime
-          // localTime = playheadPosition - clip.startTime
-          // So: playheadPosition = clip.startTime + (video.currentTime - clip.inPoint) / speed
+          // Convert actualVideo.currentTime back to timeline position
           const effectiveSpeed = timeInfo.absSpeed > 0.01 ? timeInfo.absSpeed : 1;
-          const videoClipTime = video.currentTime;
+          const videoClipTime = actualVideo.currentTime;
           const newPlayheadPos = clip.reversed
             ? clip.startTime + (clip.outPoint - videoClipTime) / effectiveSpeed
             : clip.startTime + (videoClipTime - clip.inPoint) / effectiveSpeed;
-          // Only snap if video actually advanced — for very short play/stop cycles
-          // the video may not have moved yet, in which case keep the current playhead
-          // (from the internal clock) so rapid play/stop can inch forward
           const currentPlayhead = playheadState.isUsingInternalPosition
             ? playheadState.position
             : ctx.playheadPosition;
           const videoAdvanced = Math.abs(newPlayheadPos - currentPlayhead) > 0.01;
           if (videoAdvanced) {
-            // Video moved meaningfully — snap playhead to video position
             playheadState.position = newPlayheadPos;
             useTimelineStore.setState({ playheadPosition: newPlayheadPos });
           }
-          // Either way, skip the seek — video is at its natural stop position
+          // If handoff was active, seek clip's own element so it's ready for scrubbing
+          if (actualVideo !== video) {
+            video.currentTime = this.safeSeekTime(video, timeInfo.clipTime);
+          }
           return;
         }
 
@@ -620,6 +679,28 @@ export class VideoSyncManager {
       }).catch(() => {
         this.warmingUpVideos.delete(video);
         this.warmupRetryCooldown.set(video, performance.now());
+      });
+    }
+  }
+
+  /**
+   * Update per-track state after syncing (for cut transition detection next frame)
+   */
+  private updateLastTrackState(ctx: FrameContext): void {
+    for (const clip of ctx.clipsAtTime) {
+      if (!clip.source?.videoElement || !clip.trackId) continue;
+
+      // Use the actual playing element (handoff or clip's own)
+      const handoffElement = this.activeHandoffs.get(clip.id);
+      const video = handoffElement ?? clip.source.videoElement;
+      const videoSrc = video.src || video.currentSrc;
+      if (!videoSrc) continue;
+
+      this.lastTrackState.set(clip.trackId, {
+        clipId: clip.id,
+        videoSrc,
+        videoElement: video,
+        outPoint: clip.outPoint,
       });
     }
   }
