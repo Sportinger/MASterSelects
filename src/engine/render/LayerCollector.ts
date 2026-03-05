@@ -183,10 +183,10 @@ export class LayerCollector {
       }
 
       // 4. Try HTMLVideoElement (fallback)
-      // Skip fallback in full WebCodecs mode — the video element is not synced
-      // for visual output (it's muted, used only for audio). Showing it would
-      // flash frames from a different position while WebCodecs is seeking.
-      if (source.videoElement && !source.webCodecsPlayer?.isFullMode()) {
+      // WebCodecs (step 3) has priority — if it returned a frame, we never get here.
+      // This fallback covers: WebCodecs startup (samples loading), seeks (proximity
+      // filter active), and decoder catch-up. Better to show HTMLVideoElement than nothing.
+      if (source.videoElement) {
         return this.tryHTMLVideo(layer, source.videoElement, deps);
       }
     }
