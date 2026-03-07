@@ -1,6 +1,7 @@
 // Toolbar component - After Effects style menu bar
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { Logger } from '../../services/logger';
 
 const log = Logger.create('Toolbar');
@@ -32,7 +33,7 @@ type MenuId = 'file' | 'edit' | 'view' | 'output' | 'window' | 'info' | null;
 
 export function Toolbar() {
   const { isEngineReady, createOutputWindow } = useEngine();
-  const { gpuInfo } = useEngineStore();
+  const gpuInfo = useEngineStore(s => s.gpuInfo);
   const targets = useRenderTargetStore((s) => s.targets);
   const outputTargets = useMemo(() => {
     const result: { id: string; name: string }[] = [];
@@ -41,13 +42,26 @@ export function Toolbar() {
     }
     return result;
   }, [targets]);
-  const { resetLayout, isPanelTypeVisible, togglePanelType, saveLayoutAsDefault } = useDockStore();
+  const { resetLayout, isPanelTypeVisible, togglePanelType, saveLayoutAsDefault } = useDockStore(useShallow(s => ({
+    resetLayout: s.resetLayout,
+    isPanelTypeVisible: s.isPanelTypeVisible,
+    togglePanelType: s.togglePanelType,
+    saveLayoutAsDefault: s.saveLayoutAsDefault,
+  })));
   const { isSupported: midiSupported, isEnabled: midiEnabled, enableMIDI, disableMIDI, devices } = useMIDI();
   const {
     isSettingsOpen, openSettings, closeSettings,
     autosaveEnabled, setAutosaveEnabled,
     autosaveInterval, setAutosaveInterval,
-  } = useSettingsStore();
+  } = useSettingsStore(useShallow(s => ({
+    isSettingsOpen: s.isSettingsOpen,
+    openSettings: s.openSettings,
+    closeSettings: s.closeSettings,
+    autosaveEnabled: s.autosaveEnabled,
+    setAutosaveEnabled: s.setAutosaveEnabled,
+    autosaveInterval: s.autosaveInterval,
+    setAutosaveInterval: s.setAutosaveInterval,
+  })));
 
   const [openMenu, setOpenMenu] = useState<MenuId>(null);
   const [isEditingName, setIsEditingName] = useState(false);

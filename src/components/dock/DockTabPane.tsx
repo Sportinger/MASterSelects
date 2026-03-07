@@ -1,6 +1,7 @@
 // Tab group container with tab bar and panel content
 
 import { useCallback, useRef, useEffect, useState, useMemo } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import type { DockTabGroup, DockPanel } from '../../types/dock';
 import { WIP_PANEL_TYPES } from '../../types/dock';
 import { useDockStore } from '../../stores/dockStore';
@@ -33,15 +34,33 @@ export function DockTabPane({ group }: DockTabPaneProps) {
   const [holdingTabId, setHoldingTabId] = useState<string | null>(null);
   const [holdProgress, setHoldProgress] = useState<'idle' | 'holding' | 'ready' | 'fading'>('idle');
 
-  const { setActiveTab, startDrag, updateDrag, dragState, setPanelZoom, layout, activatePanelType } = useDockStore();
+  const { setActiveTab, startDrag, updateDrag, dragState, setPanelZoom, layout, activatePanelType } = useDockStore(useShallow(s => ({
+    setActiveTab: s.setActiveTab,
+    startDrag: s.startDrag,
+    updateDrag: s.updateDrag,
+    dragState: s.dragState,
+    setPanelZoom: s.setPanelZoom,
+    layout: s.layout,
+    activatePanelType: s.activatePanelType,
+  })));
   const {
     getOpenCompositions,
     activeCompositionId,
     setActiveComposition,
     closeCompositionTab,
     reorderCompositionTabs
-  } = useMediaStore();
-  const { clips, selectedClipIds, slotGridProgress } = useTimelineStore();
+  } = useMediaStore(useShallow(s => ({
+    getOpenCompositions: s.getOpenCompositions,
+    activeCompositionId: s.activeCompositionId,
+    setActiveComposition: s.setActiveComposition,
+    closeCompositionTab: s.closeCompositionTab,
+    reorderCompositionTabs: s.reorderCompositionTabs,
+  })));
+  const { clips, selectedClipIds, slotGridProgress } = useTimelineStore(useShallow(s => ({
+    clips: s.clips,
+    selectedClipIds: s.selectedClipIds,
+    slotGridProgress: s.slotGridProgress,
+  })));
 
   // Get selected clip name for dynamic tab titles (Properties/Audio panels)
   const selectedClipName = useMemo(() => {
