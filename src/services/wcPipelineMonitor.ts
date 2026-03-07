@@ -9,6 +9,9 @@ export type PipelineEventType =
   | 'frame_drop'
   | 'seek_start'
   | 'seek_end'
+  | 'seek_skip'
+  | 'seek_cancel'
+  | 'seek_publish'
   | 'drift_correct'
   | 'queue_pressure'
   | 'stall'
@@ -40,6 +43,16 @@ class WcPipelineMonitor {
   // Throttle frame_read to 1-in-10 to save buffer space
   private frameReadCounter = 0;
 
+  // Cache: ordered() result invalidated on record()
+  private _orderedCache: PipelineEvent[] | null = null;
+
+  // Cache: timeline() result with timestamp-based invalidation
+  private _timelineCache: PipelineEvent[] | null = null;
+  private _timelineCacheMs = 0;
+  private _timelineCacheAt = 0;
+  private _timelineCacheCount = 0;
+  private static readonly TIMELINE_CACHE_TTL = 50; // recompute at most every 50ms
+
   record(type: PipelineEventType, detail?: Record<string, number | string>): void {
     // Throttle frame_read: only record every 10th to save buffer for important events
     if (type === 'frame_read') {
@@ -57,6 +70,10 @@ class WcPipelineMonitor {
       this.buffer[this.head] = event;
     }
     this.head = (this.head + 1) % MAX_EVENTS;
+
+    // Invalidate caches on new data
+    this._orderedCache = null;
+    this._timelineCache = null;
 
     // Track play/pause for stall detection
     if (type === 'play') this.playing = true;
@@ -83,14 +100,23 @@ class WcPipelineMonitor {
     }
   }
 
-  /** Get ordered events (oldest first) */
+  /** Get ordered events (oldest first) — cached until next record() */
   private ordered(): PipelineEvent[] {
-    if (this.count < MAX_EVENTS) return this.buffer.slice();
-    // Ring buffer is full — reorder from oldest to newest
-    return [
-      ...this.buffer.slice(this.head),
-      ...this.buffer.slice(0, this.head),
-    ];
+    if (this._orderedCache) return this._orderedCache;
+
+    let result: PipelineEvent[];
+    if (this.count < MAX_EVENTS) {
+      result = this.buffer.slice();
+    } else {
+      // Ring buffer is full — reorder from oldest to newest
+      result = [
+        ...this.buffer.slice(this.head),
+        ...this.buffer.slice(0, this.head),
+      ];
+    }
+
+    this._orderedCache = result;
+    return result;
   }
 
   /** Last N events (default 50) */
@@ -106,13 +132,39 @@ class WcPipelineMonitor {
 
   /** Only seek events */
   seeks(): PipelineEvent[] {
-    return this.ordered().filter(e => e.type === 'seek_start' || e.type === 'seek_end');
+    return this.ordered().filter(e =>
+      e.type === 'seek_start' ||
+      e.type === 'seek_end' ||
+      e.type === 'seek_skip' ||
+      e.type === 'seek_cancel' ||
+      e.type === 'seek_publish' ||
+      e.type === 'advance_seek'
+    );
   }
 
-  /** Events within the last N ms (default 5000) */
+  /** Events within the last N ms (default 5000) — cached with 50ms TTL */
   timeline(ms = 5000): PipelineEvent[] {
-    const cutoff = performance.now() - ms;
-    return this.ordered().filter(e => e.t >= cutoff);
+    const now = performance.now();
+
+    // Return cached result if same window, same data, and within TTL
+    if (
+      this._timelineCache &&
+      this._timelineCacheMs === ms &&
+      this._timelineCacheCount === this.count &&
+      now - this._timelineCacheAt < WcPipelineMonitor.TIMELINE_CACHE_TTL
+    ) {
+      return this._timelineCache;
+    }
+
+    const cutoff = now - ms;
+    const result = this.ordered().filter(e => e.t >= cutoff);
+
+    this._timelineCache = result;
+    this._timelineCacheMs = ms;
+    this._timelineCacheAt = now;
+    this._timelineCacheCount = this.count;
+
+    return result;
   }
 
   /** Aggregate stats */
@@ -125,6 +177,7 @@ class WcPipelineMonitor {
       frameReads: 0,
       frameDrops: 0,
       seeks: 0,
+      advanceSeeks: 0,
       stalls: 0,
       driftCorrections: 0,
       queuePressure: 0,
@@ -147,6 +200,10 @@ class WcPipelineMonitor {
         case 'frame_read': counts.frameReads++; break;
         case 'frame_drop': counts.frameDrops++; break;
         case 'seek_start': counts.seeks++; break;
+        case 'advance_seek':
+          counts.seeks++;
+          counts.advanceSeeks++;
+          break;
         case 'seek_end':
           if (e.detail?.durationMs !== undefined) {
             seekDurations.push(Number(e.detail.durationMs));
@@ -169,10 +226,10 @@ class WcPipelineMonitor {
     }
 
     // Compute decode latency from consecutive feed→output pairs
-    let lastFeedTime = 0;
+    let lastFeedTime: number | null = null;
     for (const e of all) {
       if (e.type === 'decode_feed') lastFeedTime = e.t;
-      if (e.type === 'decode_output' && lastFeedTime > 0) {
+      if (e.type === 'decode_output' && lastFeedTime !== null) {
         decodeLats.push(e.t - lastFeedTime);
       }
     }
@@ -217,6 +274,8 @@ class WcPipelineMonitor {
     this.lastOutputTime = 0;
     this.playing = false;
     this.frameReadSinceLastOutput = true;
+    this._orderedCache = null;
+    this._timelineCache = null;
   }
 }
 
