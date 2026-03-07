@@ -1,6 +1,7 @@
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import { APP_VERSION } from './src/version'
+import crypto from 'crypto'
 import fs from 'fs'
 import path from 'path'
 
@@ -157,12 +158,94 @@ function browserLogBridge(): Plugin {
   };
 }
 
+// AI Tools Bridge - lets external agents (Claude CLI) execute aiTools via HTTP
+// Flow: POST /api/ai-tools → Vite server → HMR → browser → aiTools.execute() → HMR → HTTP response
+function aiToolsBridge(): Plugin {
+  const pendingRequests = new Map<string, { resolve: (value: unknown) => void; timer: ReturnType<typeof setTimeout> }>();
+  let requestCounter = 0;
+
+  return {
+    name: 'ai-tools-bridge',
+    configureServer(server) {
+      // Listen for results coming back from the browser via HMR
+      server.hot.on('ai-tools:result', (data: { requestId: string; result: unknown }) => {
+        const pending = pendingRequests.get(data.requestId);
+        if (pending) {
+          clearTimeout(pending.timer);
+          pendingRequests.delete(data.requestId);
+          pending.resolve(data.result);
+        }
+      });
+
+      server.middlewares.use('/api/ai-tools', (req, res) => {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+        if (req.method === 'OPTIONS') {
+          res.statusCode = 204;
+          res.end();
+          return;
+        }
+
+        if (req.method === 'GET') {
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ status: 'ready', pending: pendingRequests.size }));
+          return;
+        }
+
+        if (req.method !== 'POST') {
+          res.statusCode = 405;
+          res.end('Method not allowed');
+          return;
+        }
+
+        let body = '';
+        req.on('data', (chunk: Buffer) => body += chunk.toString());
+        req.on('end', () => {
+          try {
+            const { tool, args = {} } = JSON.parse(body);
+            if (!tool) {
+              res.statusCode = 400;
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify({ success: false, error: 'Missing "tool" field' }));
+              return;
+            }
+
+            const requestId = `r${++requestCounter}-${crypto.randomUUID().slice(0, 8)}`;
+
+            const resultPromise = new Promise((resolve) => {
+              const timer = setTimeout(() => {
+                pendingRequests.delete(requestId);
+                resolve({ success: false, error: 'Timeout: no browser tab responded within 30s' });
+              }, 30000);
+
+              pendingRequests.set(requestId, { resolve, timer });
+              server.hot.send('ai-tools:execute', { requestId, tool, args });
+            });
+
+            resultPromise.then((result) => {
+              res.setHeader('Content-Type', 'application/json');
+              res.end(JSON.stringify(result));
+            });
+          } catch {
+            res.statusCode = 400;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ success: false, error: 'Invalid JSON body' }));
+          }
+        });
+      });
+    },
+  };
+}
+
 // https://vite.dev/config/
 export default defineConfig(({ command, mode }) => ({
   plugins: [
     react(),
     localFileServer(),
     browserLogBridge(),
+    aiToolsBridge(),
     // Replace __APP_VERSION__ in index.html during build
     {
       name: 'html-version-replace',

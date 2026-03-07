@@ -11,6 +11,9 @@ import { executeAITool, AI_TOOLS, getQuickTimelineSummary } from './services/aiT
   status: getQuickTimelineSummary,
 };
 
+// Bridge: allow external agents to call aiTools via HTTP POST /api/ai-tools
+import('./services/aiTools/bridge');
+
 // Expose store for debugging
 if (import.meta.env.DEV) {
   (window as unknown as { store: typeof useTimelineStore }).store = useTimelineStore;
