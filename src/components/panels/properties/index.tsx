@@ -1,5 +1,5 @@
 // Properties Panel - Main container with lazy-loaded tabs
-import { useState, useEffect, useCallback, Suspense, lazy } from 'react';
+import { useState, useEffect, useCallback, useRef, Suspense, lazy } from 'react';
 import { useTimelineStore } from '../../../stores/timeline';
 import { TextTab } from '../TextTab';
 
@@ -30,6 +30,7 @@ export function PropertiesPanel() {
   const { getInterpolatedTransform, getInterpolatedSpeed } = useTimelineStore.getState();
   const [activeTab, setActiveTab] = useState<PropertiesTab>('transform');
   const [lastClipId, setLastClipId] = useState<string | null>(null);
+  const pendingTabRef = useRef<PropertiesTab | null>(null);
 
   // Use the primary (clicked) clip for properties, fall back to first selected
   const selectedClipId = primarySelectedClipId && selectedClipIds.has(primarySelectedClipId)
@@ -51,6 +52,14 @@ export function PropertiesPanel() {
   useEffect(() => {
     if (selectedClipId && selectedClipId !== lastClipId) {
       setLastClipId(selectedClipId);
+
+      // If a pending tab was requested (e.g. from badge click), apply it
+      if (pendingTabRef.current) {
+        setActiveTab(pendingTabRef.current);
+        pendingTabRef.current = null;
+        return;
+      }
+
       // Set appropriate default tab based on clip type
       if (isSolidClip) {
         setActiveTab('transform');
@@ -68,7 +77,10 @@ export function PropertiesPanel() {
   useEffect(() => {
     const handler = (e: Event) => {
       const tab = (e as CustomEvent).detail?.tab as PropertiesTab;
-      if (tab) setActiveTab(tab);
+      if (!tab) return;
+      // Store as pending so clip-switch effect doesn't override it
+      pendingTabRef.current = tab;
+      setActiveTab(tab);
     };
     window.addEventListener('openPropertiesTab', handler);
     return () => window.removeEventListener('openPropertiesTab', handler);

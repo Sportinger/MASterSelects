@@ -393,9 +393,11 @@ export function MediaPanel() {
     if (clip) {
       timelineState.selectClip(clip.id);
     }
-    // Open clip-properties panel and request the target tab
+    // Open clip-properties panel and dispatch tab switch after React re-renders
     useDockStore.getState().activatePanelType('clip-properties');
-    window.dispatchEvent(new CustomEvent('openPropertiesTab', { detail: { tab } }));
+    requestAnimationFrame(() => {
+      window.dispatchEvent(new CustomEvent('openPropertiesTab', { detail: { tab } }));
+    });
   }, []);
 
   // Delete selected items
