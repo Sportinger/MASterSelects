@@ -456,7 +456,8 @@ export function useEngine() {
         // scrubbing or dedicated RAM preview generation pass via isRamPreviewing).
         const cacheStart = performance.now();
         const { ramPreviewEnabled, addCachedFrame } = useTimelineStore.getState();
-        if (ramPreviewEnabled && !isPlaying) {
+        const { isDraggingPlayhead } = useTimelineStore.getState();
+        if (ramPreviewEnabled && !isPlaying && !isDraggingPlayhead) {
           engine.cacheCompositeFrame(currentPlayhead).then(() => {
             addCachedFrame(currentPlayhead);
           });
@@ -465,7 +466,7 @@ export function useEngine() {
         // Cache active comp output for parent preview texture sharing
         // This allows parent compositions to show the active comp without video conflicts
         const activeCompId = useMediaStore.getState().activeCompositionId;
-        if (activeCompId && !isPlaying) {
+        if (activeCompId && !isPlaying && !isDraggingPlayhead) {
           engine.cacheActiveCompOutput(activeCompId);
         }
         cacheMs += performance.now() - cacheStart;

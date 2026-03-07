@@ -166,8 +166,9 @@ export class AudioTrackSyncManager {
       const isMuted = !isVideoTrackVisible(ctx, track.id);
       const mediaFileId = mediaFile?.id || clip.mediaFileId || clip.id;
 
-      // Varispeed scrubbing for all clips
-      if (ctx.isDraggingPlayhead && !isMuted) {
+      // Varispeed scrubbing for all clips — respect clip volume and track mute
+      const clipVolume = getClipVolume(ctx, clip, timeInfo.clipLocalTime);
+      if (ctx.isDraggingPlayhead && !isMuted && clipVolume > 0.01) {
         const video = clip.source.videoElement;
         if (!video.muted) video.muted = true;
         proxyFrameCache.playScrubAudio(mediaFileId, timeInfo.clipTime, undefined, video.currentSrc || video.src);
