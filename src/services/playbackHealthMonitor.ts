@@ -56,7 +56,7 @@ const HIGH_DROP_THRESHOLD = 10;
 // --- Service ---
 
 export class PlaybackHealthMonitor {
-  private intervalId: ReturnType<typeof setInterval> | null = null;
+  private intervalId: number | null = null;
   private startTime = 0;
 
   // Per-video tracking
@@ -79,19 +79,42 @@ export class PlaybackHealthMonitor {
   private lastAnomalyTime: Partial<Record<AnomalyType, number>> = {};
 
   start(): void {
-    if (this.intervalId) return;
+    if (this.intervalId !== null) return;
     this.startTime = performance.now();
-    this.intervalId = setInterval(() => this.checkHealth(), POLL_INTERVAL);
+    this.intervalId = -1; // sentinel to indicate "started"
+    this.scheduleNextCheck();
     this.exposeConsoleAPI();
     log.info('Health monitor started');
   }
 
   stop(): void {
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-      this.intervalId = null;
+    if (this.intervalId !== null && this.intervalId !== -1) {
+      if (typeof cancelIdleCallback !== 'undefined') {
+        cancelIdleCallback(this.intervalId);
+      } else {
+        clearTimeout(this.intervalId);
+      }
     }
+    this.intervalId = null;
     log.info('Health monitor stopped');
+  }
+
+  private scheduleNextCheck(): void {
+    if (typeof requestIdleCallback !== 'undefined') {
+      this.intervalId = requestIdleCallback(() => {
+        this.checkHealth();
+        if (this.intervalId !== null) {
+          this.scheduleNextCheck();
+        }
+      }, { timeout: POLL_INTERVAL }) as unknown as number;
+    } else {
+      this.intervalId = setTimeout(() => {
+        this.checkHealth();
+        if (this.intervalId !== null) {
+          this.scheduleNextCheck();
+        }
+      }, POLL_INTERVAL) as unknown as number;
+    }
   }
 
   // --- Main check loop ---
