@@ -45,7 +45,10 @@ export const createCompositionSlice: MediaSliceCreator<CompositionActions> = (se
       duration,
       backgroundColor: settings?.backgroundColor ?? '#000000',
       timelineData: settings?.timelineData ?? {
-        tracks: DEFAULT_TRACKS.map(t => ({ ...t, id: `${t.id}-${generateId()}` })),
+        tracks: [
+          { id: `video-1-${generateId()}`, name: 'Video 1', type: 'video' as const, height: 60, muted: false, visible: true, solo: false },
+          { id: `audio-1-${generateId()}`, name: 'Audio 1', type: 'audio' as const, height: 40, muted: false, visible: true, solo: false },
+        ],
         clips: [],
         playheadPosition: 0,
         duration,
