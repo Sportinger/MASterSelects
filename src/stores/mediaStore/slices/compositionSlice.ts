@@ -4,6 +4,7 @@ import type { Composition, MediaSliceCreator, MediaState } from '../types';
 import { generateId } from '../helpers/importPipeline';
 import { useTimelineStore } from '../../timeline';
 import { useSettingsStore } from '../../settingsStore';
+import { DEFAULT_TRACKS } from '../../timeline/constants';
 import { compositionRenderer } from '../../../services/compositionRenderer';
 import { playheadState } from '../../../services/layerBuilder';
 
@@ -31,6 +32,7 @@ export interface CompositionActions {
 export const createCompositionSlice: MediaSliceCreator<CompositionActions> = (set, get) => ({
   createComposition: (name: string, settings?: Partial<Composition>) => {
     const { outputResolution } = useSettingsStore.getState();
+    const duration = settings?.duration ?? 60;
     const comp: Composition = {
       id: generateId(),
       name,
@@ -40,8 +42,19 @@ export const createCompositionSlice: MediaSliceCreator<CompositionActions> = (se
       width: settings?.width ?? outputResolution.width,
       height: settings?.height ?? outputResolution.height,
       frameRate: settings?.frameRate ?? 30,
-      duration: settings?.duration ?? 60,
+      duration,
       backgroundColor: settings?.backgroundColor ?? '#000000',
+      timelineData: settings?.timelineData ?? {
+        tracks: DEFAULT_TRACKS.map(t => ({ ...t, id: `${t.id}-${generateId()}` })),
+        clips: [],
+        playheadPosition: 0,
+        duration,
+        zoom: 50,
+        scrollX: 0,
+        inPoint: null,
+        outPoint: null,
+        loopPlayback: false,
+      },
     };
 
     set((state) => ({ compositions: [...state.compositions, comp] }));
