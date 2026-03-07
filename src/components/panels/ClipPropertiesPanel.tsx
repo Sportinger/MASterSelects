@@ -2,6 +2,7 @@
 
 import { useRef, useCallback, useState } from 'react';
 import { useTimelineStore } from '../../stores/timeline';
+import { useMediaStore } from '../../stores/mediaStore';
 import type { BlendMode, AnimatableProperty, MaskMode, ClipMask } from '../../types';
 import { BLEND_MODE_GROUPS, formatBlendModeName, KeyframeToggle } from './properties/shared';
 
@@ -433,6 +434,11 @@ export function ClipPropertiesPanel() {
     );
   }
 
+  // Get composition resolution for pixel conversion
+  const activeComp = useMediaStore(s => s.getActiveComposition());
+  const compWidth = activeComp?.width ?? 1920;
+  const compHeight = activeComp?.height ?? 1080;
+
   // Get interpolated transform at current playhead position
   const clipLocalTime = playheadPosition - selectedClip.startTime;
   const transform = getInterpolatedTransform(selectedClip.id, clipLocalTime);
@@ -543,27 +549,27 @@ export function ClipPropertiesPanel() {
             <KeyframeToggle clipId={selectedClip.id} property="position.x" value={transform.position.x} />
             <label>X</label>
             <PrecisionSlider
-              min={-1}
-              max={1}
-              step={0.0001}
-              value={transform.position.x}
-              onChange={(v) => handlePropertyChange('position.x', v)}
+              min={-compWidth}
+              max={compWidth}
+              step={1}
+              value={Math.round(transform.position.x * compWidth)}
+              onChange={(v) => handlePropertyChange('position.x', v / compWidth)}
               defaultValue={0}
             />
-            <span className="value">{transform.position.x.toFixed(3)}</span>
+            <span className="value">{Math.round(transform.position.x * compWidth)}</span>
           </div>
           <div className="control-row">
             <KeyframeToggle clipId={selectedClip.id} property="position.y" value={transform.position.y} />
             <label>Y</label>
             <PrecisionSlider
-              min={-1}
-              max={1}
-              step={0.0001}
-              value={transform.position.y}
-              onChange={(v) => handlePropertyChange('position.y', v)}
+              min={-compHeight}
+              max={compHeight}
+              step={1}
+              value={Math.round(transform.position.y * compHeight)}
+              onChange={(v) => handlePropertyChange('position.y', v / compHeight)}
               defaultValue={0}
             />
-            <span className="value">{transform.position.y.toFixed(3)}</span>
+            <span className="value">{Math.round(transform.position.y * compHeight)}</span>
           </div>
           <div className="control-row">
             <KeyframeToggle clipId={selectedClip.id} property="position.z" value={transform.position.z} />

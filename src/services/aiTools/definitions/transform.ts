@@ -10,8 +10,8 @@ export const transformToolDefinitions: ToolDefinition[] = [
         type: 'object',
         properties: {
           clipId: { type: 'string', description: 'The clip ID' },
-          x: { type: 'number', description: 'Horizontal position (pixels, 0 = center)' },
-          y: { type: 'number', description: 'Vertical position (pixels, 0 = center)' },
+          x: { type: 'number', description: 'Horizontal position in pixels (0 = center, e.g. 100 = 100px right). Range depends on composition resolution.' },
+          y: { type: 'number', description: 'Vertical position in pixels (0 = center, e.g. -50 = 50px up). Range depends on composition resolution.' },
           scaleX: { type: 'number', description: 'Horizontal scale (1 = 100%)' },
           scaleY: { type: 'number', description: 'Vertical scale (1 = 100%)' },
           rotation: { type: 'number', description: 'Z-axis rotation in degrees' },

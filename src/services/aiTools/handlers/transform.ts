@@ -1,4 +1,5 @@
 import { useTimelineStore } from '../../../stores/timeline';
+import { useMediaStore } from '../../../stores/mediaStore';
 import type { ToolResult } from '../types';
 
 type TimelineStore = ReturnType<typeof useTimelineStore.getState>;
@@ -13,6 +14,11 @@ export async function handleSetTransform(
     return { success: false, error: `Clip not found: ${clipId}` };
   }
 
+  // Get composition resolution for pixel → normalized conversion
+  const activeComp = useMediaStore.getState().getActiveComposition();
+  const compWidth = activeComp?.width ?? 1920;
+  const compHeight = activeComp?.height ?? 1080;
+
   const updates: Record<string, unknown> = {};
   const hasPosition = args.x !== undefined || args.y !== undefined;
   const hasScale = args.scaleX !== undefined || args.scaleY !== undefined;
@@ -21,8 +27,8 @@ export async function handleSetTransform(
   if (hasPosition) {
     const currentPos = clip.transform?.position || { x: 0, y: 0, z: 0 };
     updates.position = {
-      x: args.x !== undefined ? args.x as number : currentPos.x,
-      y: args.y !== undefined ? args.y as number : currentPos.y,
+      x: args.x !== undefined ? (args.x as number) / compWidth : currentPos.x,
+      y: args.y !== undefined ? (args.y as number) / compHeight : currentPos.y,
       z: currentPos.z,
     };
   }
