@@ -59,7 +59,7 @@ class NativeHelperClientImpl {
   private status: ConnectionStatus = 'disconnected';
   private requestId = 0;
   private pendingRequests = new Map<string, ResponseCallback>();
-  private progressCallbacks = new Map<string, (percent: number) => void>();
+  private progressCallbacks = new Map<string, (percent: number, speed?: string) => void>();
   private frameCallbacks = new Map<string, FrameCallback>();
   private statusListeners = new Set<(status: ConnectionStatus) => void>();
   private reconnectTimer: number | null = null;
@@ -412,7 +412,7 @@ class NativeHelperClientImpl {
   async downloadYouTube(
     url: string,
     formatId?: string,
-    onProgress?: (percent: number) => void
+    onProgress?: (percent: number, speed?: string) => void
   ): Promise<{ success: boolean; path?: string; error?: string }> {
     const id = this.nextId();
 
@@ -436,7 +436,7 @@ class NativeHelperClientImpl {
           // Don't resolve yet - this is just progress
           const progressCb = this.progressCallbacks.get(id);
           if (progressCb) {
-            progressCb(response.percent);
+            progressCb(response.percent, response.speed);
           }
           return; // Keep waiting for final response
         }
@@ -483,7 +483,7 @@ class NativeHelperClientImpl {
   async download(
     url: string,
     formatId?: string,
-    onProgress?: (percent: number) => void
+    onProgress?: (percent: number, speed?: string) => void
   ): Promise<{ success: boolean; path?: string; error?: string }> {
     const id = this.nextId();
 
@@ -502,7 +502,7 @@ class NativeHelperClientImpl {
         if (response.type === 'progress' && response.percent !== undefined) {
           const progressCb = this.progressCallbacks.get(id);
           if (progressCb) {
-            progressCb(response.percent);
+            progressCb(response.percent, response.speed);
           }
           return;
         }

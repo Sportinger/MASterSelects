@@ -11,6 +11,7 @@ export interface DownloadProgress {
   videoId: string;
   status: 'pending' | 'downloading' | 'processing' | 'complete' | 'error';
   progress: number; // 0-100
+  speed?: string;   // e.g. "5.23MiB/s"
   error?: string;
   file?: File;
   title: string;
@@ -102,8 +103,9 @@ export async function downloadVideo(
     // Request download from Native Helper
     log.info(`Starting download: ${videoId} (${url})`);
 
-    const result = await NativeHelperClient.download(url, formatId, (percent) => {
+    const result = await NativeHelperClient.download(url, formatId, (percent, speed) => {
       progress.progress = 5 + (percent * 0.9); // 5% to 95%
+      progress.speed = speed;
       notifySubscribers(progress);
     });
 

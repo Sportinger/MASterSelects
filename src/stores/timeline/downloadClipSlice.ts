@@ -48,8 +48,8 @@ export const createDownloadClipSlice: SliceCreator<DownloadClipActions> = (set, 
     return clipId;
   },
 
-  updateDownloadProgress: (clipId, progress) => {
-    set({ clips: updateClipById(get().clips, clipId, { downloadProgress: progress }) });
+  updateDownloadProgress: (clipId, progress, speed) => {
+    set({ clips: updateClipById(get().clips, clipId, { downloadProgress: progress, downloadSpeed: speed }) });
   },
 
   completeDownload: async (clipId, file) => {

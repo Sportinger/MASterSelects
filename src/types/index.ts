@@ -361,6 +361,7 @@ export interface TimelineClip {
   // YouTube download support
   isPendingDownload?: boolean;  // True if clip is being downloaded
   downloadProgress?: number;    // 0-100 download progress
+  downloadSpeed?: string;       // e.g. "5.23MiB/s"
   downloadError?: string;       // Error message if download failed
   youtubeVideoId?: string;      // YouTube video ID for pending downloads
   youtubeThumbnail?: string;    // Thumbnail URL for pending display

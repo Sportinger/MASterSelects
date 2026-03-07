@@ -517,7 +517,7 @@ export function DownloadPanel() {
 
     const unsubscribe = subscribeToDownload(video.id, (progress: DownloadProgress) => {
       if (progress.status === 'downloading' || progress.status === 'processing') {
-        updateDownloadProgress(clipId, progress.progress);
+        updateDownloadProgress(clipId, progress.progress, progress.speed);
       }
     });
 

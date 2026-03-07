@@ -103,6 +103,7 @@ export async function completeDownload(params: CompleteDownloadParams): Promise<
       thumbnails: initialThumbnails,
       isPendingDownload: false,
       downloadProgress: undefined,
+      downloadSpeed: undefined,
       youtubeVideoId: undefined,
       youtubeThumbnail: undefined,
     };

@@ -205,7 +205,7 @@ export interface LinkedGroupActions {
 // YouTube download clip actions (extracted to downloadClipSlice)
 export interface DownloadClipActions {
   addPendingDownloadClip: (trackId: string, startTime: number, videoId: string, title: string, thumbnail: string, estimatedDuration?: number) => string;
-  updateDownloadProgress: (clipId: string, progress: number) => void;
+  updateDownloadProgress: (clipId: string, progress: number, speed?: string) => void;
   completeDownload: (clipId: string, file: File) => Promise<void>;
   setDownloadError: (clipId: string, error: string) => void;
 }

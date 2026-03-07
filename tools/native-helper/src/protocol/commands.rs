@@ -126,12 +126,19 @@ impl Response {
         })
     }
 
-    /// Simple progress response for download percent
-    pub fn download_progress(id: impl Into<String>, percent: u8) -> Self {
+    /// Progress response for download percent with speed and eta
+    pub fn download_progress(id: impl Into<String>, percent: u8, speed: Option<&str>, eta: Option<&str>) -> Self {
+        let mut data = serde_json::json!({ "type": "progress", "percent": percent });
+        if let Some(s) = speed {
+            data["speed"] = serde_json::json!(s);
+        }
+        if let Some(e) = eta {
+            data["eta"] = serde_json::json!(e);
+        }
         Response::Ok(OkResponse {
             id: id.into(),
             ok: true,
-            data: serde_json::json!({ "type": "progress", "percent": percent }),
+            data,
         })
     }
 }

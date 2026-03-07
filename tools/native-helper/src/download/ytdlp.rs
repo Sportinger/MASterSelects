@@ -328,6 +328,7 @@ pub async fn handle_download(
             "--no-playlist",
             "--newline",           // Progress on separate lines
             "--progress",
+            "--concurrent-fragments", "5", // Download up to 5 fragments in parallel
             "--restrict-filenames", // Replace special chars with ASCII
             "--windows-filenames",  // Windows-safe filenames
             url,
@@ -351,24 +352,50 @@ pub async fn handle_download(
         let reader = BufReader::new(stderr);
         let mut lines = reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
-            // Parse progress percentage from yt-dlp output
-            // Format: "[download]  45.2% of 100.00MiB"
+            // Parse progress from yt-dlp output
+            // Format: "[download]  45.2% of 100.00MiB at  5.23MiB/s ETA 00:10"
             if line.contains('%') {
+                // Extract percentage
+                let mut percent_val: Option<u8> = None;
                 if let Some(pct_str) = line.split('%').next() {
                     let pct_part = pct_str.trim().rsplit_once(' ').map(|(_, p)| p).unwrap_or(pct_str.trim());
                     if let Ok(pct) = pct_part.trim().parse::<f32>() {
-                        let percent = (pct as u8).min(99);
-                        // Only send if changed by at least 5%
-                        if percent >= last_percent + 5 || percent == 99 {
-                            last_percent = percent;
-                            info!("[yt-dlp] Progress: {}%", percent);
-                            // Send progress via WebSocket
-                            if let Some(ref sender) = ws_sender {
-                                let progress_msg = Response::download_progress(id, percent);
-                                let json = serde_json::to_string(&progress_msg).unwrap();
-                                let mut sender = sender.lock().await;
-                                let _ = sender.send(Message::Text(json)).await;
-                            }
+                        percent_val = Some((pct as u8).min(99));
+                    }
+                }
+
+                if let Some(percent) = percent_val {
+                    // Extract speed (e.g. "5.23MiB/s" or "~5.23MiB/s")
+                    let speed: Option<String> = if let Some(at_idx) = line.find(" at ") {
+                        let after_at = &line[at_idx + 4..];
+                        let speed_str = after_at.trim().split_whitespace().next().unwrap_or("");
+                        let cleaned = speed_str.trim_start_matches('~');
+                        if cleaned.contains("/s") { Some(cleaned.to_string()) } else { None }
+                    } else {
+                        None
+                    };
+
+                    // Extract ETA (e.g. "00:10")
+                    let eta: Option<String> = if let Some(eta_idx) = line.find("ETA ") {
+                        let after_eta = &line[eta_idx + 4..];
+                        let eta_str = after_eta.trim().split_whitespace().next().unwrap_or("");
+                        if !eta_str.is_empty() && eta_str != "Unknown" { Some(eta_str.to_string()) } else { None }
+                    } else {
+                        None
+                    };
+
+                    // Send if changed by at least 1%
+                    if percent > last_percent || percent == 99 {
+                        last_percent = percent;
+                        info!("[yt-dlp] Progress: {}% speed={:?} eta={:?}", percent, speed, eta);
+                        if let Some(ref sender) = ws_sender {
+                            let progress_msg = Response::download_progress(
+                                id, percent,
+                                speed.as_deref(), eta.as_deref(),
+                            );
+                            let json = serde_json::to_string(&progress_msg).unwrap();
+                            let mut sender = sender.lock().await;
+                            let _ = sender.send(Message::Text(json)).await;
                         }
                     }
                 }

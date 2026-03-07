@@ -262,7 +262,7 @@ export async function handleDownloadAndImportVideo(args: Record<string, unknown>
         // Update pending clip progress
         const store = useTimelineStore.getState();
         if (progress.status === 'downloading' || progress.status === 'processing') {
-          store.updateDownloadProgress(clipId, progress.progress);
+          store.updateDownloadProgress(clipId, progress.progress, progress.speed);
         } else if (progress.status === 'error') {
           store.setDownloadError(clipId, progress.error || 'Download failed');
         }

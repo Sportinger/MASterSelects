@@ -441,7 +441,7 @@ function TimelineClipComponent({
           </div>
           <div className="clip-download-status">
             <div className="download-spinner" />
-            <span>Downloading {clip.downloadProgress || 0}%</span>
+            <span>Downloading {Math.round(clip.downloadProgress || 0)}%{clip.downloadSpeed ? ` \u00B7 ${clip.downloadSpeed}` : ''}</span>
           </div>
         </>
       )}
