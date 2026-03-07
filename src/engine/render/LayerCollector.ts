@@ -23,6 +23,7 @@ export class LayerCollector {
   private currentDecoder: DetailedStats['decoder'] = 'none';
   private currentWebCodecsInfo?: DetailedStats['webCodecsInfo'];
   private hasVideo = false;
+  private lastCollectedCount = -1;
 
   collect(layers: Layer[], deps: LayerCollectorDeps): LayerRenderData[] {
     this.layerRenderData.length = 0;
@@ -30,40 +31,28 @@ export class LayerCollector {
     this.currentDecoder = 'none';
     this.currentWebCodecsInfo = undefined;
 
-    log.debug(`Collecting ${layers.length} layers`);
-
     // Process layers in reverse order (lower slots render on top)
     for (let i = layers.length - 1; i >= 0; i--) {
       const layer = layers[i];
       if (!layer?.visible || !layer.source || layer.opacity === 0) {
-        log.debug(`Skipping layer ${layer?.id}: visible=${layer?.visible}, hasSource=${!!layer?.source}, opacity=${layer?.opacity}`);
         continue;
       }
 
       try {
         const data = this.collectLayerData(layer, deps);
         if (data) {
-          log.debug(`Layer ${layer.id} collected: isVideo=${data.isVideo}, hasExternalTex=${!!data.externalTexture}, hasTextureView=${!!data.textureView}`);
           this.layerRenderData.push(data);
-        } else {
-          // This is normal during loading - use debug level to reduce noise
-          const source = layer.source;
-          log.debug(`Layer ${layer.id} skipped - source not ready`, {
-            sourceType: source?.type,
-            hasVideoElement: !!source?.videoElement,
-            videoReadyState: source?.videoElement?.readyState,
-            hasImageElement: !!source?.imageElement,
-            hasNestedComp: !!source?.nestedComposition,
-          });
         }
       } catch (err) {
-        // Skip this layer but continue collecting others — prevents a single
-        // stale/invalid source (e.g. destroyed webCodecsPlayer) from killing rendering
         log.warn(`Layer ${layer.id} collect error, skipping`, err);
       }
     }
 
-    log.debug(`Total layers collected: ${this.layerRenderData.length}`);
+    // Only log when collected count changes (not per-frame)
+    if (this.layerRenderData.length !== this.lastCollectedCount) {
+      log.debug(`Layers collected: ${this.layerRenderData.length}/${layers.length}`);
+      this.lastCollectedCount = this.layerRenderData.length;
+    }
     return this.layerRenderData;
   }
 
@@ -286,7 +275,6 @@ export class LayerCollector {
       }
 
       // Import external texture (zero-copy GPU path)
-      log.debug('Attempting to import video as external texture...');
       const extTex = deps.textureManager.importVideoTexture(video);
       if (extTex) {
         deps.setLastVideoTime(videoKey, currentTime);

@@ -422,7 +422,6 @@ export class RenderDispatcher {
 
     const gpuCached = scrubbingCache.getGpuCachedFrame(time);
     if (gpuCached) {
-      log.debug('RAM Preview cache hit (GPU)', { time: time.toFixed(3) });
       const commandEncoder = device.createCommandEncoder();
       d.outputPipeline.renderToCanvas(commandEncoder, d.previewContext, gpuCached.bindGroup);
       // Output to all activeComp targets
@@ -437,14 +436,8 @@ export class RenderDispatcher {
 
     const imageData = scrubbingCache.getCachedCompositeFrame(time);
     if (!imageData) {
-      // Only log occasionally to avoid spam
-      if (Math.random() < 0.05) {
-        log.debug('RAM Preview cache miss', { time: time.toFixed(3), cacheSize: scrubbingCache.getCompositeCacheStats(1920, 1080).count });
-      }
       return false;
     }
-    log.debug('RAM Preview cache hit (ImageData→GPU)', { time: time.toFixed(3) });
-
     try {
       const { width, height } = { width: imageData.width, height: imageData.height };
 

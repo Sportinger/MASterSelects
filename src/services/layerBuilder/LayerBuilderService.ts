@@ -558,27 +558,6 @@ export class LayerBuilderService {
     const nestedVideoTracks = clip.nestedTracks.filter(t => t.type === 'video' && t.visible !== false);
     const layers: Layer[] = [];
 
-    // Debug: log nested clip info once per second
-    if (Math.floor(ctx.now / 1000) !== Math.floor((ctx.now - 16) / 1000)) {
-      log.info('buildNestedLayers', {
-        compClipId: clip.id,
-        clipTime,
-        nestedTrackCount: clip.nestedTracks.length,
-        nestedVideoTrackCount: nestedVideoTracks.length,
-        nestedTracks: clip.nestedTracks.map(t => ({ id: t.id, type: t.type, visible: t.visible })),
-        nestedClipCount: clip.nestedClips.length,
-        nestedClips: clip.nestedClips.map(nc => ({
-          id: nc.id,
-          name: nc.name,
-          trackId: nc.trackId,
-          startTime: nc.startTime,
-          duration: nc.duration,
-          isLoading: nc.isLoading,
-          hasVideoElement: !!nc.source?.videoElement,
-        })),
-      });
-    }
-
     // Iterate forwards to maintain correct layer order (track 0 = bottom, track N = top)
     for (let i = 0; i < nestedVideoTracks.length; i++) {
       const nestedTrack = nestedVideoTracks[i];

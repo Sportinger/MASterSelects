@@ -164,10 +164,16 @@ class ModuleLogger {
   }
 
   private log(level: LogLevel, message: string, data?: unknown): void {
+    const show = this.shouldLog(level);
+
+    // Buffer WARN/ERROR always (post-mortem debugging), DEBUG/INFO only when displayed.
+    // Avoids ~1200 object allocations/sec from per-frame render debug logs.
+    if (!show && LOG_LEVELS[level] < LOG_LEVELS['WARN']) return;
+
     const entry = this.createEntry(level, message, data);
     this.addToBuffer(entry);
 
-    if (!this.shouldLog(level)) return;
+    if (!show) return;
 
     const prefix = this.formatPrefix(entry);
     const args: unknown[] = [prefix, message];

@@ -156,35 +156,15 @@ export class NestedCompRenderer {
     // Collect layer data (including sub-nested compositions)
     const nestedLayerData = this.collectNestedLayerData(nestedLayers, commandEncoder, sampler, depth);
 
-    // Debug: Log nested layer collection results
-    log.debug('preRender', {
-      compositionId,
-      inputLayers: nestedLayers.length,
-      collectedLayers: nestedLayerData.length,
-      layerDetails: nestedLayers.map(l => ({
-        id: l.id,
-        visible: l.visible,
-        hasVideoElement: !!l.source?.videoElement,
-        hasWebCodecs: !!l.source?.webCodecsPlayer,
-        hasImageElement: !!l.source?.imageElement,
-        videoReadyState: l.source?.videoElement?.readyState,
-      })),
-    });
-
     // Handle empty composition
     if (nestedLayerData.length === 0) {
       if (nestedLayers.length > 0) {
         // Input layers exist but none could be collected (transient decode gap)
         // Retain the existing texture which holds the last good frame
-        log.debug('Transient decode gap - retaining previous frame', {
-          compositionId,
-          inputLayers: nestedLayers.length,
-        });
         this.releaseTexturePair(texturePair);
         return compTexture.view;
       }
       // Genuinely empty composition - clear to transparent
-      log.debug('No nested layers - rendering transparent', { compositionId });
       const clearPass = commandEncoder.beginRenderPass({
         colorAttachments: [{
           view: compTexture.view,
@@ -362,7 +342,7 @@ export class NestedCompRenderer {
             continue;
           }
         } else {
-          log.debug('WebCodecs has no frame', { layerId: layer.id, wcTime: layer.source.webCodecsPlayer.currentTime });
+          // WebCodecs has no frame yet - normal during decode startup
         }
       }
 
@@ -390,8 +370,7 @@ export class NestedCompRenderer {
             log.warn('Failed to import video texture', { layerId: layer.id });
           }
         } else {
-          // Expected during initial load - don't spam console
-          log.debug('Nested video not ready', { layerId: layer.id, readyState: video.readyState });
+          // Expected during initial load - skip silently
         }
 
         // Fallback: use last cached frame when video not ready or import failed
