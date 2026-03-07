@@ -926,18 +926,23 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
         video.preload = 'auto';
         video.crossOrigin = 'anonymous';
 
-        video.addEventListener('canplaythrough', async () => {
-          // First set up the basic video source
+        const hasWebCodecs = 'VideoDecoder' in window && 'VideoFrame' in window;
+        const mediaId = serializedClip.mediaFileId;
+
+        // Fast path: if WCP is already cached, attach it immediately — no need to wait for canplaythrough
+        const cachedWcp = (hasWebCodecs && mediaId) ? globalWcpCache.get(mediaId) : undefined;
+        if (cachedWcp && !cachedWcp.isDestroyed?.()) {
+          log.debug('Fast-attaching cached WCP during loadState', { clip: clip.name, mediaId });
           set(state => ({
             clips: state.clips.map(c =>
               c.id === clip.id
                 ? {
                     ...c,
                     source: {
-                      type: 'video',
-                      videoElement: video,
-                      naturalDuration: video.duration,
-                      mediaFileId: serializedClip.mediaFileId, // Needed for multicam sync
+                      type: 'video' as const,
+                      naturalDuration: serializedClip.naturalDuration || 0,
+                      mediaFileId: mediaId,
+                      webCodecsPlayer: cachedWcp,
                     },
                     isLoading: false,
                   }
@@ -945,43 +950,72 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
             ),
           }));
 
-          // Pre-cache frame via createImageBitmap for immediate scrubbing without play()
-          // createImageBitmap is the ONLY API that decodes a frame from a never-played video after reload
-          engine.preCacheVideoFrame(video);
+          // Still load the video element in background for fallback/thumbnails
+          video.addEventListener('canplaythrough', () => {
+            set(state => ({
+              clips: state.clips.map(c =>
+                c.id === clip.id && c.source?.type === 'video'
+                  ? {
+                      ...c,
+                      source: {
+                        ...c.source,
+                        videoElement: video,
+                        naturalDuration: video.duration,
+                      },
+                    }
+                  : c
+              ),
+            }));
+            engine.preCacheVideoFrame(video);
+          }, { once: true });
+        } else {
+          // Slow path: no cached WCP — wait for canplaythrough then init
+          video.addEventListener('canplaythrough', async () => {
+            set(state => ({
+              clips: state.clips.map(c =>
+                c.id === clip.id
+                  ? {
+                      ...c,
+                      source: {
+                        type: 'video',
+                        videoElement: video,
+                        naturalDuration: video.duration,
+                        mediaFileId: serializedClip.mediaFileId,
+                      },
+                      isLoading: false,
+                    }
+                  : c
+              ),
+            }));
 
-          // Get or reuse a cached WebCodecsPlayer for this source file.
-          // The global cache avoids re-reading entire files via file.arrayBuffer()
-          // on every composition switch — the main cause of OOM crashes.
-          const hasWebCodecs = 'VideoDecoder' in window && 'VideoFrame' in window;
-          const mediaId = serializedClip.mediaFileId;
-          if (hasWebCodecs && mediaId) {
-            try {
-              const webCodecsPlayer = await getOrCreateWcp(
-                mediaId, video, clip.name, mediaFile.file || undefined
-              );
+            engine.preCacheVideoFrame(video);
 
-              if (webCodecsPlayer) {
-
-                // Update clip source with shared webCodecsPlayer
-                set(state => ({
-                  clips: state.clips.map(c =>
-                    c.id === clip.id && c.source?.type === 'video'
-                      ? {
-                          ...c,
-                          source: {
-                            ...c.source,
-                            webCodecsPlayer,
-                          },
-                        }
-                      : c
-                  ),
-                }));
+            if (hasWebCodecs && mediaId) {
+              try {
+                const webCodecsPlayer = await getOrCreateWcp(
+                  mediaId, video, clip.name, mediaFile.file || undefined
+                );
+                if (webCodecsPlayer) {
+                  set(state => ({
+                    clips: state.clips.map(c =>
+                      c.id === clip.id && c.source?.type === 'video'
+                        ? {
+                            ...c,
+                            source: {
+                              ...c.source,
+                              webCodecsPlayer,
+                            },
+                          }
+                        : c
+                    ),
+                  }));
+                }
+              } catch (err) {
+                log.warn('WebCodecsPlayer init failed for restored clip, using HTMLVideoElement', err);
               }
-            } catch (err) {
-              log.warn('WebCodecsPlayer init failed for restored clip, using HTMLVideoElement', err);
             }
-          }
-        }, { once: true });
+          }, { once: true });
+        }
       } else if (type === 'audio') {
         // Audio clips - create audio element (works for both pure audio files and linked audio from video)
         const audio = document.createElement('audio');
