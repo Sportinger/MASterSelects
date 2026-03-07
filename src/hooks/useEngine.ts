@@ -12,6 +12,8 @@ import { generateMaskTexture } from '../utils/maskRenderer';
 import { layerBuilder, playheadState } from '../services/layerBuilder';
 import { layerPlaybackManager } from '../services/layerPlaybackManager';
 import { renderScheduler } from '../services/renderScheduler';
+import { getPlaybackDebugStats } from '../services/playbackDebugSnapshot';
+import { framePhaseMonitor } from '../services/framePhaseMonitor';
 import { playbackHealthMonitor } from '../services/playbackHealthMonitor';
 import { Logger } from '../services/logger';
 
@@ -329,18 +331,47 @@ export function useEngine() {
   useEffect(() => {
     if (!isEngineReady) return;
 
-    // Stats update throttle
-    let lastStatsUpdate = 0;
     let lastPlayhead = -1;
 
-    const renderFrame = () => {
+    // Move expensive stats collection out of the RAF callback.
+    // getPlaybackDebugStats + framePhaseMonitor.summary() can take 1-5ms+
+    // (copies/filters/sorts up to 5000 events + 7 array sorts).
+    // Running this inside RAF blocks the render path and causes frame drops.
+    const statsInterval = setInterval(() => {
       try {
-        // Always update stats (even when idle) so UI shows correct status
-        const now = performance.now();
-        if (now - lastStatsUpdate > 100) {
-          useEngineStore.getState().setEngineStats(engine.getStats());
-          lastStatsUpdate = now;
-        }
+        const stats = engine.getStats();
+        useEngineStore.getState().setEngineStats({
+          ...stats,
+          playback: getPlaybackDebugStats(stats.decoder),
+          mainThread: framePhaseMonitor.summary(),
+        });
+      } catch (_e) {
+        // Ignore stats errors - non-critical
+      }
+    }, 200);
+
+    const renderFrame = () => {
+      const frameStart = performance.now();
+      let buildMs = 0;
+      let renderMs = 0;
+      let syncVideoMs = 0;
+      let syncAudioMs = 0;
+      let cacheMs = 0;
+
+      const recordFramePhases = (mode: 'live' | 'cached' | 'skipped') => {
+        framePhaseMonitor.record({
+          mode,
+          statsMs: 0,
+          buildMs,
+          renderMs,
+          syncVideoMs,
+          syncAudioMs,
+          cacheMs,
+          totalMs: performance.now() - frameStart,
+        });
+      };
+
+      try {
 
         // Use high-frequency playhead position during playback
         const currentPlayhead = playheadState.isUsingInternalPosition
@@ -362,38 +393,70 @@ export function useEngine() {
 
         // Try cached RAM Preview frame first (instant scrubbing over pre-rendered frames)
         if (engine.renderCachedFrame(currentPlayhead)) {
+          const syncAudioStart = performance.now();
           layerBuilder.syncAudioElements();
+          syncAudioMs += performance.now() - syncAudioStart;
+          recordFramePhases('cached');
           return;
         }
 
         // Skip live rendering during RAM Preview generation
         if (useTimelineStore.getState().isRamPreviewing) {
+          recordFramePhases('skipped');
           return;
         }
 
         // Build layers directly from stores (single source of truth)
+        const buildStart = performance.now();
         const layers = layerBuilder.buildLayersFromStore();
+        buildMs += performance.now() - buildStart;
 
         // Share pre-built layers with renderScheduler so multi-preview
         // can reuse them instead of re-evaluating and re-seeking videos
         renderScheduler.setActiveCompLayers(layers);
 
-        // Render FIRST, before seeking video elements
-        // This ensures we always have a displayable frame even after page reload
-        // when the scrubbing cache is empty. The video is at its previous position
-        // (not yet seeking), so importExternalTexture succeeds and populates the cache.
-        // After sync seeks the video, the 'seeked' event triggers a re-render
-        // with the correct frame.
-        engine.render(layers);
+        // During playback: sync video elements FIRST so advanceToTime() prepares the
+        // correct VideoFrame before rendering. This eliminates the systematic 1-frame lag
+        // where we'd render before the frame was ready.
+        // During scrubbing (not playing): render FIRST for page-reload robustness.
+        // After a page reload the scrubbing cache is empty and the video is at its
+        // previous position (not yet seeking), so importExternalTexture succeeds and
+        // populates the cache. The 'seeked' event then triggers a re-render with the
+        // correct frame.
+        if (isPlaying) {
+          // Sync video elements FIRST during playback
+          const syncVideoStart = performance.now();
+          layerBuilder.syncVideoElements();
+          syncVideoMs += performance.now() - syncVideoStart;
 
-        // Sync video and audio elements (seek to target time for next frame)
-        layerBuilder.syncVideoElements();
+          // Then render with the freshly-synced frame
+          const renderStart = performance.now();
+          engine.render(layers);
+          renderMs += performance.now() - renderStart;
+        } else {
+          // Scrubbing: render first for page-reload robustness
+          const renderStart = performance.now();
+          engine.render(layers);
+          renderMs += performance.now() - renderStart;
+
+          const syncVideoStart = performance.now();
+          layerBuilder.syncVideoElements();
+          syncVideoMs += performance.now() - syncVideoStart;
+        }
+
+        // Audio sync always after render
+        const syncAudioStart = performance.now();
         layerBuilder.syncAudioElements();
+        syncAudioMs += performance.now() - syncAudioStart;
 
         // Cache rendered frame for instant scrubbing (like Premiere's playback caching)
-        // Only cache if RAM preview is enabled and we're playing (not generating RAM preview)
+        // Don't cache during active playback - GPU readback (mapAsync GPUMapMode.READ)
+        // is a GPU→CPU sync point that stalls the main thread for 50-275ms on Windows
+        // D3D12, causing severe frame drops. Only cache when NOT playing (e.g., manual
+        // scrubbing or dedicated RAM preview generation pass via isRamPreviewing).
+        const cacheStart = performance.now();
         const { ramPreviewEnabled, addCachedFrame } = useTimelineStore.getState();
-        if (ramPreviewEnabled && isPlaying) {
+        if (ramPreviewEnabled && !isPlaying) {
           engine.cacheCompositeFrame(currentPlayhead).then(() => {
             addCachedFrame(currentPlayhead);
           });
@@ -405,7 +468,10 @@ export function useEngine() {
         if (activeCompId) {
           engine.cacheActiveCompOutput(activeCompId);
         }
+        cacheMs += performance.now() - cacheStart;
+        recordFramePhases('live');
       } catch (e) {
+        recordFramePhases('skipped');
         log.error('Render error', e);
       }
     };
@@ -416,6 +482,7 @@ export function useEngine() {
     playbackHealthMonitor.start();
 
     return () => {
+      clearInterval(statsInterval);
       engine.stop();
       playbackHealthMonitor.stop();
     };
