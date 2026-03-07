@@ -348,7 +348,7 @@ export function useEngine() {
       } catch (_e) {
         // Ignore stats errors - non-critical
       }
-    }, 200);
+    }, 1000);
 
     const renderFrame = () => {
       const frameStart = performance.now();
@@ -465,7 +465,7 @@ export function useEngine() {
         // Cache active comp output for parent preview texture sharing
         // This allows parent compositions to show the active comp without video conflicts
         const activeCompId = useMediaStore.getState().activeCompositionId;
-        if (activeCompId) {
+        if (activeCompId && !isPlaying) {
           engine.cacheActiveCompOutput(activeCompId);
         }
         cacheMs += performance.now() - cacheStart;
