@@ -12,6 +12,7 @@ const log = Logger.create('MediaPanel');
 import { useMediaStore } from '../../stores/mediaStore';
 import type { MediaFile, Composition, ProjectItem, SolidItem } from '../../stores/mediaStore';
 import { useTimelineStore } from '../../stores/timeline';
+import { useDockStore } from '../../stores/dockStore';
 import { useContextMenuPosition } from '../../hooks/useContextMenuPosition';
 import { RelinkDialog } from '../common/RelinkDialog';
 import {
@@ -381,6 +382,21 @@ export function MediaPanel() {
       startRename(id, currentName);
     }
   }, [selectedIds, startRename]);
+
+  // Handle badge click — select clip using this media file, open properties panel with target tab
+  const handleBadgeClick = useCallback((mediaFileId: string, tab: 'transcript' | 'analysis') => {
+    const timelineState = useTimelineStore.getState();
+    // Find a clip in the timeline that uses this media file
+    const clip = timelineState.clips.find(c =>
+      (c.source?.mediaFileId || c.mediaFileId) === mediaFileId
+    );
+    if (clip) {
+      timelineState.selectClip(clip.id);
+    }
+    // Open clip-properties panel and request the target tab
+    useDockStore.getState().activatePanelType('clip-properties');
+    window.dispatchEvent(new CustomEvent('openPropertiesTab', { detail: { tab } }));
+  }, []);
 
   // Delete selected items
   const handleDelete = useCallback(() => {
@@ -840,7 +856,18 @@ export function MediaPanel() {
               </span>
             )}
             {'transcriptStatus' in item && (item as MediaFile).transcriptStatus === 'ready' && (
-              <span className="media-item-transcript-badge" title="Transcript available">T</span>
+              <span
+                className="media-item-transcript-badge"
+                title="Transcript available — click to open"
+                onClick={(e) => { e.stopPropagation(); handleBadgeClick(item.id, 'transcript'); }}
+              >T</span>
+            )}
+            {'analysisStatus' in item && (item as MediaFile).analysisStatus === 'ready' && (
+              <span
+                className="media-item-analysis-badge"
+                title="Analysis available — click to open"
+                onClick={(e) => { e.stopPropagation(); handleBadgeClick(item.id, 'analysis'); }}
+              >A</span>
             )}
           </div>
         );

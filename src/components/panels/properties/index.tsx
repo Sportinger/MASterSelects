@@ -64,6 +64,16 @@ export function PropertiesPanel() {
     }
   }, [selectedClipId, isAudioClip, isTextClip, isSolidClip, lastClipId, activeTab]);
 
+  // Listen for external tab navigation requests (e.g. badge clicks in MediaPanel)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const tab = (e as CustomEvent).detail?.tab as PropertiesTab;
+      if (tab) setActiveTab(tab);
+    };
+    window.addEventListener('openPropertiesTab', handler);
+    return () => window.removeEventListener('openPropertiesTab', handler);
+  }, []);
+
   const handleSolidColorChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     if (!selectedClipId) return;
     useTimelineStore.getState().updateSolidColor(selectedClipId, e.target.value);

@@ -4,6 +4,7 @@
 
 import { Logger } from './logger';
 import { useTimelineStore } from '../stores/timeline';
+import { useMediaStore } from '../stores/mediaStore';
 import type { SceneSegment, SceneDescriptionStatus } from '../types';
 
 const log = Logger.create('SceneDescriber');
@@ -424,6 +425,22 @@ export async function describeClip(clipId: string): Promise<void> {
       segments: allSegments,
       message: undefined,
     });
+
+    // Propagate analysis status to MediaFile for badge display
+    const mediaFileId = clip.source?.mediaFileId || clip.mediaFileId;
+    if (mediaFileId) {
+      try {
+        const mediaState = useMediaStore.getState();
+        const file = mediaState.files.find(f => f.id === mediaFileId);
+        if (file && file.analysisStatus !== 'ready') {
+          useMediaStore.setState({
+            files: mediaState.files.map(f =>
+              f.id === mediaFileId ? { ...f, analysisStatus: 'ready' as const } : f
+            ),
+          });
+        }
+      } catch { /* ignore */ }
+    }
 
     log.info(`Scene description complete: ${allSegments.length} segments in ${chunks.length} chunk(s)`);
 

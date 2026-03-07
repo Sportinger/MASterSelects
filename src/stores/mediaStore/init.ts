@@ -90,26 +90,29 @@ async function initializeStore(): Promise<void> {
       log.info('Restoring timeline for:', activeComp.name);
       await useTimelineStore.getState().loadState(activeComp.timelineData);
 
-      // Sync transcript status from restored clips to MediaFiles (for badge display)
-      syncTranscriptStatusFromClips(useMediaStore);
+      // Sync transcript and analysis status from restored clips to MediaFiles (for badge display)
+      syncStatusFromClips(useMediaStore);
     }
   }
 }
 
 /**
- * Scan timeline clips for transcripts and propagate status to MediaFiles.
- * This ensures the "T" badge shows correctly after project reload.
+ * Scan timeline clips for transcripts and analysis and propagate status to MediaFiles.
+ * This ensures the "T" and "A" badges show correctly after project reload.
  */
-function syncTranscriptStatusFromClips(useMediaStore: MediaStore): void {
+function syncStatusFromClips(useMediaStore: MediaStore): void {
   const clips = useTimelineStore.getState().clips;
   const transcriptMap = new Map<string, import('../../types').TranscriptWord[]>();
+  const analysisSet = new Set<string>();
 
   for (const clip of clips) {
     const mediaFileId = clip.source?.mediaFileId || clip.mediaFileId;
-    if (mediaFileId && clip.transcriptStatus === 'ready' && clip.transcript?.length) {
+    if (!mediaFileId) continue;
+
+    // Transcript sync
+    if (clip.transcriptStatus === 'ready' && clip.transcript?.length) {
       const existing = transcriptMap.get(mediaFileId);
       if (existing) {
-        // Merge: add non-duplicate words
         for (const word of clip.transcript) {
           const dup = existing.some(
             (w: import('../../types').TranscriptWord) => Math.abs(w.start - word.start) < 0.05 && Math.abs(w.end - word.end) < 0.05
@@ -120,9 +123,14 @@ function syncTranscriptStatusFromClips(useMediaStore: MediaStore): void {
         transcriptMap.set(mediaFileId, [...clip.transcript]);
       }
     }
+
+    // Analysis sync
+    if (clip.analysisStatus === 'ready' || clip.sceneDescriptionStatus === 'ready') {
+      analysisSet.add(mediaFileId);
+    }
   }
 
-  if (transcriptMap.size === 0) return;
+  if (transcriptMap.size === 0 && analysisSet.size === 0) return;
 
   // Sort each transcript by start time
   for (const [, words] of transcriptMap) {
@@ -130,16 +138,20 @@ function syncTranscriptStatusFromClips(useMediaStore: MediaStore): void {
   }
 
   useMediaStore.setState((state: MediaState) => ({
-    files: state.files.map((f: { id: string }) => {
+    files: state.files.map((f: { id: string; analysisStatus?: string }) => {
       const transcript = transcriptMap.get(f.id);
-      if (transcript) {
-        return { ...f, transcriptStatus: 'ready' as const, transcript };
-      }
-      return f;
+      const hasAnalysis = analysisSet.has(f.id);
+      if (!transcript && !hasAnalysis) return f;
+      return {
+        ...f,
+        ...(transcript && { transcriptStatus: 'ready' as const, transcript }),
+        ...(hasAnalysis && f.analysisStatus !== 'ready' && { analysisStatus: 'ready' as const }),
+      };
     }),
   }));
 
-  log.info(`Synced transcript status for ${transcriptMap.size} media file(s)`);
+  const total = transcriptMap.size + analysisSet.size;
+  log.info(`Synced status for ${total} media file(s) (T:${transcriptMap.size}, A:${analysisSet.size})`);
 }
 
 /**

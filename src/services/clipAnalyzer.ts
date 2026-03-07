@@ -3,6 +3,7 @@
 
 import { Logger } from './logger';
 import { useTimelineStore } from '../stores/timeline';
+import { useMediaStore } from '../stores/mediaStore';
 import { triggerTimelineSave } from '../stores/mediaStore';
 import { projectFileService } from './projectFileService';
 import { engine } from '../engine/WebGPUEngine';
@@ -500,6 +501,11 @@ export async function analyzeClip(clipId: string): Promise<void> {
       }
     }
 
+    // Propagate analysis status to MediaFile for badge display
+    if (mediaFileId) {
+      propagateAnalysisToMediaFile(mediaFileId);
+    }
+
     triggerTimelineSave();
     log.info(`Done: ${frames.length} frames analyzed`);
 
@@ -516,6 +522,28 @@ export async function analyzeClip(clipId: string): Promise<void> {
     isAnalyzing = false;
     shouldCancel = false;
     currentClipId = null;
+  }
+}
+
+/**
+ * Propagate analysis status to MediaFile for badge display.
+ */
+function propagateAnalysisToMediaFile(mediaFileId: string): void {
+  try {
+    const mediaState = useMediaStore.getState();
+    const file = mediaState.files.find(f => f.id === mediaFileId);
+    if (!file || file.analysisStatus === 'ready') return;
+
+    useMediaStore.setState({
+      files: mediaState.files.map(f =>
+        f.id === mediaFileId
+          ? { ...f, analysisStatus: 'ready' as const }
+          : f
+      ),
+    });
+    log.debug('Propagated analysis status to MediaFile', { mediaFileId });
+  } catch (e) {
+    log.warn('Failed to propagate analysis status to MediaFile', e);
   }
 }
 

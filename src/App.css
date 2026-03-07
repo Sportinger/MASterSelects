@@ -6534,6 +6534,27 @@ input[type="checkbox"] {
   border-radius: 3px;
   margin-left: 4px;
   flex-shrink: 0;
+  cursor: pointer;
+}
+
+.media-item-transcript-badge:hover {
+  filter: brightness(1.2);
+}
+
+.media-item-analysis-badge {
+  background: #e88a1a;
+  color: var(--text-inverse);
+  font-size: 9px;
+  font-weight: bold;
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-left: 4px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.media-item-analysis-badge:hover {
+  filter: brightness(1.2);
 }
 
 .media-item-proxy-generating {

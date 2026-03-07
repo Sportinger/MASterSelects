@@ -70,6 +70,28 @@ async function convertProjectMediaToStore(projectMedia: ProjectMediaFile[]): Pro
       }
     }
 
+    // Check for existing transcript on disk
+    let transcriptStatus: import('../../types').TranscriptStatus = 'none';
+    if (projectFileService.isProjectOpen()) {
+      try {
+        const saved = await projectFileService.getTranscript(pm.id);
+        if (saved && Array.isArray(saved) && saved.length > 0) {
+          transcriptStatus = 'ready';
+        }
+      } catch { /* no transcript file */ }
+    }
+
+    // Check for existing analysis on disk
+    let analysisStatus: import('../../types').AnalysisStatus = 'none';
+    if (projectFileService.isProjectOpen()) {
+      try {
+        const ranges = await projectFileService.getAnalysisRanges(pm.id);
+        if (ranges.length > 0) {
+          analysisStatus = 'ready';
+        }
+      } catch { /* no analysis file */ }
+    }
+
     files.push({
       id: pm.id,
       name: pm.name,
@@ -92,6 +114,8 @@ async function convertProjectMediaToStore(projectMedia: ProjectMediaFile[]): Pro
       proxyStatus: pm.hasProxy ? 'ready' : 'none',
       hasFileHandle: !!handle,
       filePath: pm.sourcePath,
+      transcriptStatus,
+      analysisStatus,
     });
   }
 
@@ -268,6 +292,9 @@ export async function loadProjectToStores(): Promise<void> {
     const activeComp = compositions.find((c) => c.id === projectData.activeCompositionId);
     if (activeComp?.timelineData) {
       await timelineStore.loadState(activeComp.timelineData);
+
+      // Sync transcript/analysis status from clips to MediaFiles (for badge display)
+      syncStatusFromClipsToMedia();
     }
   }
 
@@ -721,4 +748,42 @@ async function reloadNestedCompositionClips(): Promise<void> {
   }
 
   log.info('Nested composition clips reloaded');
+}
+
+/**
+ * Sync transcript/analysis status from timeline clips to MediaFiles.
+ * Ensures badges show correctly after project load.
+ */
+function syncStatusFromClipsToMedia(): void {
+  const clips = useTimelineStore.getState().clips;
+  const transcriptIds = new Set<string>();
+  const analysisIds = new Set<string>();
+
+  for (const clip of clips) {
+    const mediaFileId = clip.source?.mediaFileId || clip.mediaFileId;
+    if (!mediaFileId) continue;
+    if (clip.transcriptStatus === 'ready' && clip.transcript?.length) {
+      transcriptIds.add(mediaFileId);
+    }
+    if (clip.analysisStatus === 'ready' || clip.sceneDescriptionStatus === 'ready') {
+      analysisIds.add(mediaFileId);
+    }
+  }
+
+  if (transcriptIds.size === 0 && analysisIds.size === 0) return;
+
+  useMediaStore.setState((state) => ({
+    files: state.files.map((f) => {
+      const hasTranscript = transcriptIds.has(f.id);
+      const hasAnalysis = analysisIds.has(f.id);
+      if (!hasTranscript && !hasAnalysis) return f;
+      return {
+        ...f,
+        ...(hasTranscript && f.transcriptStatus !== 'ready' && { transcriptStatus: 'ready' as const }),
+        ...(hasAnalysis && f.analysisStatus !== 'ready' && { analysisStatus: 'ready' as const }),
+      };
+    }),
+  }));
+
+  log.info(`Synced badges from clips (T:${transcriptIds.size}, A:${analysisIds.size})`);
 }
