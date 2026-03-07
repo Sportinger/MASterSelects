@@ -11,6 +11,9 @@ import { engine } from '../../engine/WebGPUEngine';
 import { useTimelineStore } from '../../stores/timeline';
 import { MAX_NESTING_DEPTH } from '../../stores/timeline/constants';
 import { vfPipelineMonitor } from '../vfPipelineMonitor';
+import { Logger } from '../logger';
+
+const log = Logger.create('CutTransition');
 
 export class VideoSyncManager {
   // Native decoder state
@@ -114,10 +117,6 @@ export class VideoSyncManager {
 
       if (prev.clipId === clip.id) {
         // Same clip as last frame — persist handoff if we were using one.
-        // Without this, the handoff only lasts 1 frame and then the clip's
-        // cold element takes over (causing a glitch). DaVinci/Premiere keep
-        // one decoder per source, so we persist the handoff for the clip's
-        // entire duration when clips share the same source.
         if (prev.videoElement !== clip.source.videoElement) {
           this.activeHandoffs.set(clip.id, prev.videoElement);
           this.handoffElements.add(prev.videoElement);
@@ -126,22 +125,54 @@ export class VideoSyncManager {
       }
 
       // Different clip — detect same-source sequential cut for new handoff.
-      // NOTE: blob URLs (video.src) are unique per createObjectURL call,
-      // so split clips from the same file have DIFFERENT blob URLs.
-      // DaVinci/Premiere use one decoder per source — we approximate this
-      // by reusing the previous clip's video element across the cut.
       const clipFileId = clip.source.mediaFileId || clip.mediaFileId;
       const sameSource = clipFileId
         ? clipFileId === prev.fileId
         : clip.file === prev.file;
-      if (!sameSource) continue;
+
+      if (!sameSource) {
+        log.debug('Handoff SKIP: different source', {
+          track: clip.trackId,
+          prevClip: prev.clipId.slice(-6),
+          newClip: clip.id.slice(-6),
+          prevFileId: prev.fileId?.slice(-6),
+          newFileId: clipFileId?.slice(-6),
+        });
+        continue;
+      }
 
       // Continuous cut: clip's inPoint matches previous clip's outPoint
-      if (Math.abs(clip.inPoint - prev.outPoint) > 0.1) continue;
+      const inOutGap = Math.abs(clip.inPoint - prev.outPoint);
+      if (inOutGap > 0.1) {
+        log.debug('Handoff SKIP: non-continuous cut', {
+          track: clip.trackId,
+          inPoint: clip.inPoint.toFixed(3),
+          prevOutPoint: prev.outPoint.toFixed(3),
+          gap: inOutGap.toFixed(3),
+        });
+        continue;
+      }
 
       // Previous element should be near the clip's inPoint (playing through)
-      if (Math.abs(prev.videoElement.currentTime - clip.inPoint) > 0.5) continue;
+      const elemDrift = Math.abs(prev.videoElement.currentTime - clip.inPoint);
+      if (elemDrift > 0.5) {
+        log.debug('Handoff SKIP: element too far from inPoint', {
+          track: clip.trackId,
+          elementTime: prev.videoElement.currentTime.toFixed(3),
+          inPoint: clip.inPoint.toFixed(3),
+          drift: elemDrift.toFixed(3),
+        });
+        continue;
+      }
 
+      log.info('Handoff START', {
+        track: clip.trackId,
+        prevClip: prev.clipId.slice(-6),
+        newClip: clip.id.slice(-6),
+        elementTime: prev.videoElement.currentTime.toFixed(3),
+        inPoint: clip.inPoint.toFixed(3),
+        drift: elemDrift.toFixed(3),
+      });
       this.activeHandoffs.set(clip.id, prev.videoElement);
       this.handoffElements.add(prev.videoElement);
     }
@@ -847,9 +878,24 @@ export class VideoSyncManager {
       // Keep video element in sync for audio (if available)
       // Use handoff element for seamless audio across cuts
       if (audioVideo) {
-        if (audioVideo.paused) audioVideo.play().catch(() => {});
+        if (audioVideo.paused) {
+          log.info('Audio element PLAY', {
+            clip: clip.id.slice(-6),
+            isHandoff: !!handoffVideo,
+            time: audioVideo.currentTime.toFixed(3),
+            target: timeInfo.clipTime.toFixed(3),
+          });
+          audioVideo.play().catch(() => {});
+        }
         const audioDrift = Math.abs(audioVideo.currentTime - timeInfo.clipTime);
         if (audioDrift > 0.3) {
+          log.warn('Audio drift SEEK', {
+            clip: clip.id.slice(-6),
+            isHandoff: !!handoffVideo,
+            elementTime: audioVideo.currentTime.toFixed(3),
+            target: timeInfo.clipTime.toFixed(3),
+            drift: audioDrift.toFixed(3),
+          });
           audioVideo.currentTime = this.safeSeekTime(audioVideo, timeInfo.clipTime);
         }
       }

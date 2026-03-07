@@ -9,6 +9,9 @@ import { createFrameContext, getClipTimeInfo, getMediaFileForClip, getClipForTra
 import { AudioSyncHandler, createAudioSyncState, finalizeAudioSync, resumeAudioContextIfNeeded } from './AudioSyncHandler';
 import { proxyFrameCache } from '../proxyFrameCache';
 import { layerPlaybackManager } from '../layerPlaybackManager';
+import { Logger } from '../logger';
+
+const log = Logger.create('CutTransition');
 
 /**
  * Get interpolated volume for a clip from audio-volume effect
@@ -313,11 +316,33 @@ export class AudioTrackSyncManager {
       const sameSource = clipFileId
         ? clipFileId === prev.fileId
         : clip.file === prev.file;
-      if (!sameSource) continue;
+      if (!sameSource) {
+        log.debug('Audio handoff SKIP: different source', { track: track.id });
+        continue;
+      }
 
-      if (Math.abs(clip.inPoint - prev.outPoint) > 0.1) continue;
-      if (Math.abs(prev.audioElement.currentTime - clip.inPoint) > 0.5) continue;
+      const inOutGap = Math.abs(clip.inPoint - prev.outPoint);
+      if (inOutGap > 0.1) {
+        log.debug('Audio handoff SKIP: non-continuous', { gap: inOutGap.toFixed(3) });
+        continue;
+      }
 
+      const elemDrift = Math.abs(prev.audioElement.currentTime - clip.inPoint);
+      if (elemDrift > 0.5) {
+        log.debug('Audio handoff SKIP: element too far', {
+          elementTime: prev.audioElement.currentTime.toFixed(3),
+          inPoint: clip.inPoint.toFixed(3),
+          drift: elemDrift.toFixed(3),
+        });
+        continue;
+      }
+
+      log.info('Audio handoff START', {
+        track: track.id.slice(-6),
+        prevClip: prev.clipId.slice(-6),
+        newClip: clip.id.slice(-6),
+        drift: elemDrift.toFixed(3),
+      });
       this.audioHandoffs.set(clip.id, prev.audioElement);
       this.audioHandoffElements.add(prev.audioElement);
     }
