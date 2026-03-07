@@ -9,3 +9,4 @@ export { AIChatPanel } from './AIChatPanel';
 export { AIVideoPanel } from './AIVideoPanel';
 export { DownloadPanel } from './DownloadPanel';
 export { TransitionsPanel } from './TransitionsPanel';
+export { SceneDescriptionPanel } from './SceneDescriptionPanel';

@@ -146,6 +146,9 @@ function convertCompositions(compositions: Composition[]): ProjectComposition[] 
       // Analysis data
       analysis: c.analysis || undefined,
       analysisStatus: c.analysisStatus || undefined,
+      // AI scene description data
+      sceneDescriptions: c.sceneDescriptions || undefined,
+      sceneDescriptionStatus: c.sceneDescriptionStatus || undefined,
     }));
 
     // Note: markers not currently stored in CompositionTimelineData

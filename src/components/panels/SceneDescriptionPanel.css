@@ -1,0 +1,298 @@
+/* Scene Description Panel Styles */
+
+.scene-description-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: var(--font-lg);
+  overflow: hidden;
+}
+
+.scene-description-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--sp-2-5) var(--sp-3);
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+}
+
+.scene-description-header h2 {
+  margin: 0;
+  font-size: var(--font-lg);
+  font-weight: var(--font-semibold);
+}
+
+/* Search */
+.scene-description-search {
+  position: relative;
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.scene-description-search input {
+  width: 100%;
+  padding: var(--sp-1-5) 28px var(--sp-1-5) var(--sp-2-5);
+  font-size: var(--font-md);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+}
+
+.scene-description-search input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.scene-description-search input::placeholder {
+  color: var(--text-muted);
+}
+
+.scene-description-search .search-clear {
+  position: absolute;
+  right: 18px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: var(--sp-0-5) var(--sp-1-5);
+  font-size: var(--font-xl);
+}
+
+.scene-description-search .search-clear:hover {
+  color: var(--text-primary);
+}
+
+/* Clip info */
+.scene-description-clip-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.scene-description-status {
+  font-size: var(--font-xs);
+  padding: var(--sp-0-5) var(--sp-1-5);
+  border-radius: var(--radius-sm);
+}
+
+.scene-description-status.ready {
+  background: var(--success-dim);
+  color: var(--success-light);
+}
+
+.scene-description-status.describing {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.scene-description-status.error {
+  background: var(--danger-dim);
+  color: var(--danger-light);
+}
+
+/* Actions */
+.scene-description-actions {
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.btn-describe {
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--font-md);
+  font-weight: var(--font-medium);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.btn-describe:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.btn-describe.btn-secondary {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.btn-describe.btn-secondary:hover {
+  background: var(--bg-hover);
+}
+
+.btn-describe.btn-cancel,
+.btn-describe.btn-danger {
+  background: var(--danger-dim);
+  border: 1px solid var(--danger-border);
+  color: var(--danger-light);
+}
+
+.btn-describe.btn-cancel:hover,
+.btn-describe.btn-danger:hover {
+  background: var(--danger-border);
+}
+
+.scene-description-btn-row {
+  display: flex;
+  gap: var(--sp-2);
+}
+
+.scene-description-btn-row .btn-describe {
+  flex: 1;
+}
+
+/* Progress */
+.scene-description-progress {
+  height: 3px;
+  background: var(--bg-tertiary);
+}
+
+.scene-description-progress-bar {
+  height: 100%;
+  background: var(--accent);
+  transition: width var(--transition-slow);
+}
+
+/* Status message */
+.scene-description-message {
+  padding: var(--sp-1-5) var(--sp-3);
+  background: var(--accent-subtle);
+  border-bottom: 1px solid var(--border-color);
+  font-size: var(--font-sm);
+  color: var(--accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Error message */
+.scene-description-error {
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--danger-dim);
+  border-bottom: 1px solid var(--danger-border);
+  font-size: var(--font-sm);
+  color: var(--danger-light);
+  word-break: break-word;
+}
+
+/* Content */
+.scene-description-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--sp-2) 0;
+}
+
+.scene-description-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 100px;
+  padding: var(--sp-5);
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.scene-description-empty p {
+  margin: 0;
+  font-size: var(--font-md);
+}
+
+/* Scene segments */
+.scene-segment {
+  padding: var(--sp-2-5) var(--sp-3);
+  border-bottom: 1px solid var(--bg-active);
+  cursor: pointer;
+  transition: background var(--transition-normal);
+  border-left: 3px solid transparent;
+}
+
+.scene-segment:hover {
+  background: var(--bg-hover);
+}
+
+.scene-segment.active {
+  background: var(--accent-subtle);
+  border-left-color: var(--accent);
+}
+
+.scene-segment.highlighted {
+  background: var(--warning-dim);
+}
+
+.scene-segment.highlighted.active {
+  background: var(--accent-subtle);
+  border-left-color: var(--warning-light);
+}
+
+.scene-segment-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--sp-1);
+}
+
+.scene-segment-time {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.scene-segment-text {
+  font-size: var(--font-md);
+  line-height: var(--leading-relaxed);
+  color: var(--text-primary);
+}
+
+.scene-segment.active .scene-segment-text {
+  color: var(--text-primary);
+  font-weight: var(--font-medium);
+}
+
+.scene-segment.active .scene-segment-time {
+  color: var(--accent);
+  font-weight: var(--font-semibold);
+}
+
+/* Footer */
+.scene-description-footer {
+  padding: var(--sp-2) var(--sp-3);
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+}
+
+.scene-description-hint {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+}
+
+/* Scrollbar */
+.scene-description-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.scene-description-content::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+.scene-description-content::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: var(--radius-sm);
+}
+
+.scene-description-content::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}

@@ -17,6 +17,7 @@ const AIVideoPanel = lazy(() => import('../panels/AIVideoPanel').then(m => ({ de
 const DownloadPanel = lazy(() => import('../panels/DownloadPanel').then(m => ({ default: m.DownloadPanel })));
 const TransitionsPanel = lazy(() => import('../panels/TransitionsPanel').then(m => ({ default: m.TransitionsPanel })));
 const SAM2Panel = lazy(() => import('../panels/SAM2Panel').then(m => ({ default: m.SAM2Panel })));
+const SceneDescriptionPanel = lazy(() => import('../panels/SceneDescriptionPanel').then(m => ({ default: m.SceneDescriptionPanel })));
 const WaveformPanel = lazy(() => import('../panels/scopes/WaveformPanel').then(m => ({ default: m.WaveformPanel })));
 const HistogramPanel = lazy(() => import('../panels/scopes/HistogramPanel').then(m => ({ default: m.HistogramPanel })));
 const VectorscopePanel = lazy(() => import('../panels/scopes/VectorscopePanel').then(m => ({ default: m.VectorscopePanel })));
@@ -67,6 +68,8 @@ export function DockPanelContent({ panel }: DockPanelContentProps) {
       return <Suspense fallback={<PanelLoading />}><DownloadPanel /></Suspense>;
     case 'transitions':
       return <Suspense fallback={<PanelLoading />}><TransitionsPanel /></Suspense>;
+    case 'scene-description':
+      return <Suspense fallback={<PanelLoading />}><SceneDescriptionPanel /></Suspense>;
     case 'scope-waveform':
       return <Suspense fallback={<PanelLoading />}><WaveformPanel /></Suspense>;
     case 'scope-histogram':

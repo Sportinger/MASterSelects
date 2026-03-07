@@ -180,6 +180,10 @@ export function PropertiesPanel() {
               clipStartTime={selectedClip.startTime}
               inPoint={selectedClip.inPoint}
               outPoint={selectedClip.outPoint}
+              sceneDescriptions={selectedClip.sceneDescriptions}
+              sceneDescriptionStatus={selectedClip.sceneDescriptionStatus}
+              sceneDescriptionProgress={selectedClip.sceneDescriptionProgress}
+              sceneDescriptionMessage={selectedClip.sceneDescriptionMessage}
             />
           )}
         </Suspense>

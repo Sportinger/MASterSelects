@@ -2,7 +2,7 @@
 
 // Panel types that can be docked
 // Note: Effects, Transcript, Analysis are now integrated into Properties panel
-export type PanelType = 'preview' | 'multi-preview' | 'timeline' | 'clip-properties' | 'media' | 'export' | 'multicam' | 'ai-chat' | 'ai-video' | 'ai-segment' | 'youtube' | 'download' | 'transitions' | 'scope-waveform' | 'scope-histogram' | 'scope-vectorscope';
+export type PanelType = 'preview' | 'multi-preview' | 'timeline' | 'clip-properties' | 'media' | 'export' | 'multicam' | 'ai-chat' | 'ai-video' | 'ai-segment' | 'scene-description' | 'youtube' | 'download' | 'transitions' | 'scope-waveform' | 'scope-histogram' | 'scope-vectorscope';
 
 // Scope panel types for filtering in View menu
 export const SCOPE_PANEL_TYPES: PanelType[] = ['scope-waveform', 'scope-histogram', 'scope-vectorscope'];
@@ -11,7 +11,7 @@ export const SCOPE_PANEL_TYPES: PanelType[] = ['scope-waveform', 'scope-histogra
 export const WIP_PANEL_TYPES: PanelType[] = ['multicam', 'transitions', 'ai-segment'];
 
 // AI panel types for View menu grouping
-export const AI_PANEL_TYPES: PanelType[] = ['ai-chat', 'ai-video', 'ai-segment'];
+export const AI_PANEL_TYPES: PanelType[] = ['ai-chat', 'ai-video', 'ai-segment', 'scene-description'];
 
 // Panel-specific data for configurable panels
 export interface PreviewPanelData {
@@ -193,6 +193,13 @@ export const PANEL_CONFIGS: Record<PanelType, PanelConfig> = {
   'ai-segment': {
     type: 'ai-segment',
     title: 'AI Segment',
+    minWidth: 280,
+    minHeight: 300,
+    closable: false,
+  },
+  'scene-description': {
+    type: 'scene-description',
+    title: 'AI Scene Description',
     minWidth: 280,
     minHeight: 300,
     closable: false,

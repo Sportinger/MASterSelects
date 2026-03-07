@@ -76,6 +76,10 @@ export interface ProjectClip {
   // Analysis data
   analysis?: any;
   analysisStatus?: string;
+
+  // AI scene description data
+  sceneDescriptions?: any[];
+  sceneDescriptionStatus?: string;
 }
 
 export interface ProjectComposition {

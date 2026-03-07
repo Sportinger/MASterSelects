@@ -165,6 +165,9 @@ function convertProjectCompositionToStore(
         // Analysis data
         analysis: c.analysis,
         analysisStatus: c.analysisStatus,
+        // AI scene description data
+        sceneDescriptions: c.sceneDescriptions,
+        sceneDescriptionStatus: c.sceneDescriptionStatus,
       })),
       // Restore view state from saved uiState, or use defaults
       playheadPosition: viewState?.playheadPosition ?? 0,

@@ -247,6 +247,16 @@ export interface TranscriptWord {
   speaker?: string;     // Speaker label if diarization available
 }
 
+// Scene description types for AI video analysis
+export type SceneDescriptionStatus = 'none' | 'describing' | 'ready' | 'error';
+
+export interface SceneSegment {
+  id: string;
+  text: string;
+  start: number;        // Start time in seconds (relative to clip source)
+  end: number;          // End time in seconds (relative to clip source)
+}
+
 // Transcript status
 export type TranscriptStatus = 'none' | 'transcribing' | 'ready' | 'error';
 
@@ -339,6 +349,11 @@ export interface TimelineClip {
   analysis?: ClipAnalysis;
   analysisStatus?: AnalysisStatus;
   analysisProgress?: number;  // 0-100 progress
+  // AI scene description support
+  sceneDescriptions?: SceneSegment[];
+  sceneDescriptionStatus?: SceneDescriptionStatus;
+  sceneDescriptionProgress?: number;  // 0-100 progress
+  sceneDescriptionMessage?: string;   // Status message during description
   // Text clip support
   textProperties?: TextClipProperties;
   // Solid clip support
@@ -406,6 +421,9 @@ export interface SerializableClip {
   // Analysis data
   analysis?: ClipAnalysis;
   analysisStatus?: AnalysisStatus;
+  // AI scene description data
+  sceneDescriptions?: SceneSegment[];
+  sceneDescriptionStatus?: SceneDescriptionStatus;
   // Playback
   reversed?: boolean;
   speed?: number;         // Playback speed (default 1.0)
