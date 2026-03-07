@@ -1,17 +1,13 @@
 //! MasterSelects Native Helper
 //!
-//! A cross-platform video codec helper providing hardware-accelerated
-//! video decoding/encoding and video downloads via WebSocket for the
-//! MasterSelects web application.
+//! A cross-platform download helper providing video downloads via yt-dlp
+//! over WebSocket for the MasterSelects web application.
 //!
 //! On Windows (default): runs as a system tray app with no console window.
 //! On Windows (--console): runs in a terminal like on other platforms.
 //! On Linux/macOS: always runs in console mode.
 
-mod cache;
-mod decoder;
 mod download;
-mod encoder;
 mod protocol;
 mod server;
 mod session;
@@ -22,13 +18,13 @@ mod updater;
 mod utils;
 
 use clap::Parser;
-use tracing::{error, info, Level};
+use tracing::{error, Level};
 use tracing_subscriber::FmtSubscriber;
 
-/// MasterSelects Native Helper - Video codec acceleration for masterselects.app
+/// MasterSelects Native Helper - Download acceleration for masterselects.app
 #[derive(Parser, Debug)]
 #[command(name = "masterselects-helper")]
-#[command(about = "Cross-platform video codec helper for MasterSelects web application")]
+#[command(about = "Cross-platform download helper for MasterSelects web application")]
 #[command(version)]
 struct Args {
     /// Port to listen on
@@ -38,14 +34,6 @@ struct Args {
     /// Run in background (minimal output)
     #[arg(long)]
     background: bool,
-
-    /// Maximum cache size in MB
-    #[arg(long, default_value = "2048")]
-    cache_mb: usize,
-
-    /// Maximum number of open decoder contexts
-    #[arg(long, default_value = "8")]
-    max_decoders: usize,
 
     /// Allowed origins (comma-separated, empty = allow all localhost)
     #[arg(long)]
@@ -65,58 +53,6 @@ struct Args {
     console: bool,
 }
 
-/// On Windows, add bundled DLL directory to the DLL search path
-#[cfg(windows)]
-fn setup_dll_search_path() {
-    // Try to add the directory containing our executable to the DLL search path
-    if let Ok(exe_path) = std::env::current_exe() {
-        if let Some(exe_dir) = exe_path.parent() {
-            // Check for DLLs directly next to the binary
-            let avcodec = exe_dir.join("avcodec-61.dll");
-            if avcodec.exists() {
-                set_dll_directory(exe_dir);
-                return;
-            }
-
-            // Check for ffmpeg/bin subdirectory
-            let ffmpeg_bin = exe_dir.join("ffmpeg").join("bin");
-            let avcodec_sub = ffmpeg_bin.join("avcodec-61.dll");
-            if avcodec_sub.exists() {
-                set_dll_directory(&ffmpeg_bin);
-                return;
-            }
-        }
-    }
-
-    // Try FFMPEG_DIR environment variable
-    if let Ok(ffmpeg_dir) = std::env::var("FFMPEG_DIR") {
-        let bin_dir = std::path::PathBuf::from(&ffmpeg_dir).join("bin");
-        if bin_dir.exists() {
-            set_dll_directory(&bin_dir);
-        }
-    }
-}
-
-#[cfg(windows)]
-fn set_dll_directory(dir: &std::path::Path) {
-    use std::ffi::OsStr;
-    use std::os::windows::ffi::OsStrExt;
-
-    let wide: Vec<u16> = OsStr::new(dir)
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
-
-    unsafe {
-        windows_sys::Win32::System::LibraryLoader::SetDllDirectoryW(wide.as_ptr());
-    }
-    eprintln!("  DLL path: {}", dir.display());
-}
-
-// ---------------------------------------------------------------------------
-// Entry point
-// ---------------------------------------------------------------------------
-
 fn main() {
     let args = Args::parse();
 
@@ -129,16 +65,6 @@ fn main() {
 
     // Initialize logging
     init_logging(&args);
-
-    // On Windows, set up DLL search paths before FFmpeg init
-    #[cfg(windows)]
-    setup_dll_search_path();
-
-    // Initialize FFmpeg
-    if let Err(e) = init_ffmpeg() {
-        error!("{}", e);
-        std::process::exit(1);
-    }
 
     // Build server config
     let config = build_config(&args);
@@ -179,33 +105,6 @@ fn init_logging(args: &Args) {
     }
 }
 
-fn init_ffmpeg() -> Result<(), String> {
-    match ffmpeg_next::init() {
-        Ok(()) => {
-            info!("FFmpeg initialized");
-            Ok(())
-        }
-        Err(e) => {
-            #[cfg(windows)]
-            {
-                return Err(format!(
-                    "Failed to initialize FFmpeg: {}\n\
-                     Make sure FFmpeg DLLs are available:\n\
-                     1. Place DLLs next to this executable\n\
-                     2. Set FFMPEG_DIR environment variable\n\
-                     3. Place FFmpeg in ffmpeg/win64/ relative to project\n\
-                     Download from: https://github.com/BtbN/FFmpeg-Builds/releases",
-                    e
-                ));
-            }
-            #[cfg(not(windows))]
-            {
-                Err(format!("FFmpeg initialization failed: {}", e))
-            }
-        }
-    }
-}
-
 fn build_config(args: &Args) -> server::ServerConfig {
     let allowed_origins: Vec<String> = args
         .allowed_origins
@@ -224,14 +123,11 @@ fn build_config(args: &Args) -> server::ServerConfig {
 
     server::ServerConfig {
         port: args.port,
-        cache_mb: args.cache_mb,
-        max_decoders: args.max_decoders,
         allowed_origins,
     }
 }
 
 fn print_banner(config: &server::ServerConfig) {
-    let hw_accel = decoder::detect_hw_accel();
     let ytdlp_path = download::get_ytdlp_command();
     let ytdlp_available = download::find_ytdlp().is_some();
     let deno_available = download::find_deno().is_some();
@@ -256,19 +152,6 @@ fn print_banner(config: &server::ServerConfig) {
     println!("========================================================");
     println!("  WebSocket: ws://127.0.0.1:{}", config.port);
     println!("  HTTP File: http://127.0.0.1:{}", config.port + 1);
-    println!(
-        "  Cache:     {} MB (max {} decoders)",
-        config.cache_mb, config.max_decoders
-    );
-    println!("  FFmpeg:    initialized");
-    println!(
-        "  HW Accel:  {}",
-        if hw_accel.is_empty() {
-            "none detected".to_string()
-        } else {
-            hw_accel.join(", ")
-        }
-    );
     println!(
         "  yt-dlp:    {} [{}]",
         ytdlp_path,

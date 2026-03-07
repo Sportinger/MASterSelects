@@ -1,9 +1,9 @@
 [package]
 name = "masterselects-helper"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["MasterSelects Team"]
-description = "Cross-platform video codec helper for MasterSelects web application"
+description = "Download helper for MasterSelects web application (yt-dlp based)"
 license = "MIT"
 
 [dependencies]
@@ -13,9 +13,6 @@ tokio = { version = "1", features = ["full", "process"] }
 # WebSocket
 tokio-tungstenite = "0.24"
 futures-util = "0.3"
-
-# FFmpeg bindings - supports FFmpeg 7.1 (disable filters since libavfilter isn't needed)
-ffmpeg-next = { version = "7", default-features = false, features = ["codec", "format", "software-scaling"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -31,23 +28,19 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Utilities
 anyhow = "1"
 thiserror = "1"
-lz4_flex = "0.11"
-linked-hash-map = "0.5"
 dirs = "5"
 rand = "0.8"
 uuid = { version = "1", features = ["v4"] }
-parking_lot = "0.12"
 base64 = "0.22"
-image = { version = "0.25", default-features = false, features = ["jpeg"] }
 
 # HTTP for headers parsing and file serving
 http = "1"
 warp = "0.3"
 
 [target.'cfg(windows)'.dependencies]
-# Windows-specific APIs for DLL loading, console hiding, message pump, mutex
+# Windows-specific APIs for console hiding, message pump, mutex
 windows-sys = { version = "0.59", features = [
-    "Win32_System_LibraryLoader", "Win32_Foundation",
+    "Win32_Foundation",
     "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell",
     "Win32_System_Console", "Win32_System_Threading",
 ] }
