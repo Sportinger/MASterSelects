@@ -1,6 +1,7 @@
 // Preview canvas component with After Effects-style editing overlay
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { Logger } from '../../services/logger';
 
 const log = Logger.create('Preview');
@@ -32,11 +33,31 @@ interface PreviewProps {
 
 export function Preview({ panelId, compositionId, showTransparencyGrid }: PreviewProps) {
   const { isEngineReady } = useEngine();
-  const { engineStats } = useEngineStore();
-  const { clips, selectedClipIds, selectClip, updateClipTransform, maskEditMode, layers, selectedLayerId, selectLayer, updateLayer } = useTimelineStore();
-  const { compositions, activeCompositionId } = useMediaStore();
-  const { addPreviewPanel, updatePanelData, closePanelById } = useDockStore();
-  const { previewQuality, setPreviewQuality } = useSettingsStore();
+  const engineStats = useEngineStore(s => s.engineStats);
+  const { clips, selectedClipIds, selectClip, updateClipTransform, maskEditMode, layers, selectedLayerId, selectLayer, updateLayer } = useTimelineStore(useShallow(s => ({
+    clips: s.clips,
+    selectedClipIds: s.selectedClipIds,
+    selectClip: s.selectClip,
+    updateClipTransform: s.updateClipTransform,
+    maskEditMode: s.maskEditMode,
+    layers: s.layers,
+    selectedLayerId: s.selectedLayerId,
+    selectLayer: s.selectLayer,
+    updateLayer: s.updateLayer,
+  })));
+  const { compositions, activeCompositionId } = useMediaStore(useShallow(s => ({
+    compositions: s.compositions,
+    activeCompositionId: s.activeCompositionId,
+  })));
+  const { addPreviewPanel, updatePanelData, closePanelById } = useDockStore(useShallow(s => ({
+    addPreviewPanel: s.addPreviewPanel,
+    updatePanelData: s.updatePanelData,
+    closePanelById: s.closePanelById,
+  })));
+  const { previewQuality, setPreviewQuality } = useSettingsStore(useShallow(s => ({
+    previewQuality: s.previewQuality,
+    setPreviewQuality: s.setPreviewQuality,
+  })));
   const sam2Active = useSAM2Store((s) => s.isActive);
 
   // Get first selected clip for preview
