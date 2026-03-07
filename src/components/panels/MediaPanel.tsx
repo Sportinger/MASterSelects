@@ -14,6 +14,10 @@ import type { MediaFile, Composition, ProjectItem, SolidItem } from '../../store
 import { useTimelineStore } from '../../stores/timeline';
 import { useContextMenuPosition } from '../../hooks/useContextMenuPosition';
 import { RelinkDialog } from '../common/RelinkDialog';
+import {
+  clearExternalDragPayload,
+  setExternalDragPayload,
+} from '../timeline/utils/externalDragSession';
 
 // Re-export for backward compatibility
 export { LABEL_COLORS, getLabelHex } from './media/labelColors';
@@ -444,6 +448,7 @@ export function MediaPanel() {
   // Handle drag start for media files and compositions (to drag to Timeline OR to folders)
   const handleDragStart = useCallback((e: React.DragEvent, item: ProjectItem) => {
     const isFolder = 'isExpanded' in item;
+    clearExternalDragPayload();
 
     // Mark as internal drag (for moving to folders)
     e.dataTransfer.setData('application/x-media-panel-item', item.id);
@@ -466,6 +471,14 @@ export function MediaPanel() {
         e.preventDefault();
         return;
       }
+      setExternalDragPayload({
+        kind: 'composition',
+        id: comp.id,
+        duration: comp.timelineData?.duration ?? comp.duration ?? 5,
+        hasAudio: true,
+        isAudio: false,
+        isVideo: true,
+      });
       e.dataTransfer.setData('application/x-composition-id', comp.id);
       e.dataTransfer.effectAllowed = 'copyMove';
       if (e.currentTarget instanceof HTMLElement) {
@@ -476,6 +489,14 @@ export function MediaPanel() {
 
     // Handle text item drag
     if (item.type === 'text') {
+      setExternalDragPayload({
+        kind: 'text',
+        id: item.id,
+        duration: item.duration,
+        hasAudio: false,
+        isAudio: false,
+        isVideo: true,
+      });
       e.dataTransfer.setData('application/x-text-item-id', item.id);
       e.dataTransfer.effectAllowed = 'copyMove';
       if (e.currentTarget instanceof HTMLElement) {
@@ -486,6 +507,14 @@ export function MediaPanel() {
 
     // Handle solid item drag
     if (item.type === 'solid') {
+      setExternalDragPayload({
+        kind: 'solid',
+        id: item.id,
+        duration: item.duration,
+        hasAudio: false,
+        isAudio: false,
+        isVideo: true,
+      });
       e.dataTransfer.setData('application/x-solid-item-id', item.id);
       e.dataTransfer.effectAllowed = 'copyMove';
       if (e.currentTarget instanceof HTMLElement) {
@@ -506,10 +535,21 @@ export function MediaPanel() {
     }
 
     // Set the media file ID so Timeline can look it up
+    const isAudioOnly =
+      mediaFile.file.type.startsWith('audio/') ||
+      /\.(mp3|wav|ogg|aac|m4a|flac|wma|aiff|alac|opus)$/i.test(mediaFile.file.name);
+    setExternalDragPayload({
+      kind: 'media-file',
+      id: mediaFile.id,
+      duration: mediaFile.duration,
+      hasAudio: mediaFile.type === 'image' ? false : isAudioOnly ? true : mediaFile.hasAudio,
+      isAudio: isAudioOnly,
+      isVideo: !isAudioOnly,
+      file: mediaFile.file,
+    });
     e.dataTransfer.setData('application/x-media-file-id', mediaFile.id);
     // Mark audio-only files so timeline can restrict drop targets to audio tracks
-    if (mediaFile.file.type.startsWith('audio/') ||
-        /\.(mp3|wav|ogg|aac|m4a|flac|wma|aiff|alac|opus)$/i.test(mediaFile.file.name)) {
+    if (isAudioOnly) {
       e.dataTransfer.setData('application/x-media-is-audio', 'true');
     }
     e.dataTransfer.effectAllowed = 'copyMove';
@@ -524,6 +564,7 @@ export function MediaPanel() {
   const handleDragEnd = useCallback(() => {
     setInternalDragId(null);
     setDragOverFolderId(null);
+    clearExternalDragPayload();
   }, []);
 
   // Handle drag over folder (for internal moves)

@@ -8,6 +8,11 @@ import {
   isMediaFile,
   getVideoMetadataQuick,
 } from '../utils/fileTypeHelpers';
+import {
+  findClosestNonOverlappingStartTime,
+  findFirstTrackWithoutOverlap,
+} from '../utils/externalDragPlacement';
+import { getExternalDragPayload } from '../utils/externalDragSession';
 import type { ExternalDragState } from '../types';
 import type { TimelineTrack, TimelineClip } from '../../../types';
 import type { Composition } from '../../../stores/mediaStore';
@@ -86,6 +91,273 @@ export function useExternalDrop({
   const [externalDrag, setExternalDrag] = useState<ExternalDragState | null>(null);
   const dragCounterRef = useRef(0);
   const dragMetadataCacheRef = useRef<{ url: string; duration: number; hasAudio: boolean } | null>(null);
+  const dragMetadataPendingRef = useRef<string | null>(null);
+
+  const getDesiredStartTime = useCallback((clientX: number) => {
+    const rect = timelineRef.current?.getBoundingClientRect();
+    if (!rect) return 0;
+
+    const x = clientX - rect.left + scrollX;
+    return Math.max(0, pixelToTime(x));
+  }, [timelineRef, scrollX, pixelToTime]);
+
+  const resolveTrackStartTime = useCallback((
+    trackId: string,
+    desiredStartTime: number,
+    duration?: number
+  ) => {
+    const previewDuration = duration ?? dragMetadataCacheRef.current?.duration ?? 5;
+    return findClosestNonOverlappingStartTime(trackId, desiredStartTime, previewDuration, clips);
+  }, [clips]);
+
+  const buildTrackPreviewState = useCallback((params: {
+    trackId: string;
+    desiredStartTime: number;
+    x: number;
+    y: number;
+    duration?: number;
+    hasAudio?: boolean;
+    isVideo: boolean;
+    isAudio: boolean;
+  }): ExternalDragState => {
+    const {
+      trackId,
+      desiredStartTime,
+      x,
+      y,
+      duration,
+      hasAudio,
+      isVideo,
+      isAudio,
+    } = params;
+
+    const targetTrack = tracks.find((t) => t.id === trackId);
+    const isVideoTrack = targetTrack?.type === 'video';
+    const isAudioTrack = targetTrack?.type === 'audio';
+    const previewDuration = duration ?? dragMetadataCacheRef.current?.duration ?? 5;
+    const previewHasAudio = hasAudio ?? dragMetadataCacheRef.current?.hasAudio;
+    const resolvedStartTime = resolveTrackStartTime(trackId, desiredStartTime, previewDuration);
+
+    let audioTrackId: string | undefined;
+    let videoTrackId: string | undefined;
+
+    if (isVideoTrack && isVideo && !isAudio && (previewHasAudio ?? true)) {
+      audioTrackId =
+        findFirstTrackWithoutOverlap('audio', resolvedStartTime, previewDuration, tracks, clips) ??
+        '__new_audio_track__';
+    } else if (isAudioTrack && isVideo && !isAudio) {
+      videoTrackId =
+        findFirstTrackWithoutOverlap('video', resolvedStartTime, previewDuration, tracks, clips) ??
+        '__new_video_track__';
+    }
+
+    return {
+      trackId,
+      startTime: resolvedStartTime,
+      x,
+      y,
+      audioTrackId,
+      videoTrackId,
+      isVideo,
+      isAudio,
+      hasAudio: previewHasAudio,
+      duration: previewDuration,
+    };
+  }, [tracks, clips, resolveTrackStartTime]);
+
+  const updateResolvedDragMetadata = useCallback((cacheKey: string, duration: number, hasAudio: boolean) => {
+    dragMetadataCacheRef.current = { url: cacheKey, duration, hasAudio };
+    if (dragMetadataPendingRef.current === cacheKey) {
+      dragMetadataPendingRef.current = null;
+    }
+
+    setExternalDrag((prev) => {
+      if (!prev) return null;
+      if (!prev.trackId || prev.trackId === '__new_track__') {
+        return { ...prev, duration, hasAudio };
+      }
+
+      return buildTrackPreviewState({
+        trackId: prev.trackId,
+        desiredStartTime: getDesiredStartTime(prev.x),
+        x: prev.x,
+        y: prev.y,
+        duration,
+        hasAudio,
+        isVideo: prev.isVideo ?? !prev.isAudio,
+        isAudio: !!prev.isAudio,
+      });
+    });
+  }, [buildTrackPreviewState, getDesiredStartTime]);
+
+  const requestVideoDragMetadata = useCallback((cacheKey: string, file: File) => {
+    if (dragMetadataCacheRef.current?.url === cacheKey) {
+      return;
+    }
+    if (dragMetadataPendingRef.current === cacheKey) {
+      return;
+    }
+
+    dragMetadataPendingRef.current = cacheKey;
+    getVideoMetadataQuick(file).then((metadata) => {
+      if (!metadata?.duration) return;
+      updateResolvedDragMetadata(cacheKey, metadata.duration, metadata.hasAudio);
+    }).finally(() => {
+      if (dragMetadataPendingRef.current === cacheKey) {
+        dragMetadataPendingRef.current = null;
+      }
+    });
+  }, [updateResolvedDragMetadata]);
+
+  const resolveImmediateDragPreview = useCallback((e: React.DragEvent) => {
+    const mediaStore = useMediaStore.getState();
+    const dragPayload = getExternalDragPayload();
+
+    if (e.dataTransfer.types.includes('application/x-composition-id')) {
+      if (dragPayload?.kind === 'composition') {
+        return {
+          duration: dragPayload.duration ?? 5,
+          hasAudio: dragPayload.hasAudio ?? true,
+          isAudio: false,
+          isVideo: true,
+        };
+      }
+
+      const compositionId = e.dataTransfer.getData('application/x-composition-id');
+      const comp = mediaStore.compositions.find((c) => c.id === compositionId);
+      return {
+        duration: comp?.timelineData?.duration ?? comp?.duration ?? 5,
+        hasAudio: true,
+        isAudio: false,
+        isVideo: true,
+      };
+    }
+
+    if (e.dataTransfer.types.includes('application/x-text-item-id')) {
+      if (dragPayload?.kind === 'text') {
+        return {
+          duration: dragPayload.duration ?? 5,
+          hasAudio: false,
+          isAudio: false,
+          isVideo: true,
+        };
+      }
+
+      const textItemId = e.dataTransfer.getData('application/x-text-item-id');
+      const textItem = mediaStore.textItems.find((t) => t.id === textItemId);
+      return {
+        duration: textItem?.duration ?? 5,
+        hasAudio: false,
+        isAudio: false,
+        isVideo: true,
+      };
+    }
+
+    if (e.dataTransfer.types.includes('application/x-solid-item-id')) {
+      if (dragPayload?.kind === 'solid') {
+        return {
+          duration: dragPayload.duration ?? 5,
+          hasAudio: false,
+          isAudio: false,
+          isVideo: true,
+        };
+      }
+
+      const solidItemId = e.dataTransfer.getData('application/x-solid-item-id');
+      const solidItem = mediaStore.solidItems.find((s) => s.id === solidItemId);
+      return {
+        duration: solidItem?.duration ?? 5,
+        hasAudio: false,
+        isAudio: false,
+        isVideo: true,
+      };
+    }
+
+    if (e.dataTransfer.types.includes('application/x-media-file-id')) {
+      if (dragPayload?.kind === 'media-file') {
+        if (dragPayload.file && dragPayload.isVideo && dragPayload.duration === undefined) {
+          requestVideoDragMetadata(`media:${dragPayload.id}`, dragPayload.file);
+        }
+
+        return {
+          duration: dragPayload.duration,
+          hasAudio: dragPayload.hasAudio,
+          isAudio: dragPayload.isAudio,
+          isVideo: dragPayload.isVideo,
+        };
+      }
+
+      const mediaFileId = e.dataTransfer.getData('application/x-media-file-id');
+      const mediaFile = mediaStore.files.find((f) => f.id === mediaFileId);
+      const isAudio =
+        e.dataTransfer.types.includes('application/x-media-is-audio') ||
+        mediaFile?.type === 'audio';
+      const isVideo = !isAudio;
+      const duration = mediaFile?.duration;
+      const hasAudio =
+        mediaFile?.type === 'image'
+          ? false
+          : isAudio
+            ? true
+            : mediaFile?.hasAudio;
+
+      if (mediaFile?.file && mediaFile.type === 'video' && duration === undefined) {
+        requestVideoDragMetadata(`media:${mediaFile.id}`, mediaFile.file);
+      }
+
+      return { duration, hasAudio, isAudio, isVideo };
+    }
+
+    if (e.dataTransfer.types.includes('Files')) {
+      let duration = externalDrag?.duration ?? dragMetadataCacheRef.current?.duration;
+      let hasAudio = externalDrag?.hasAudio ?? dragMetadataCacheRef.current?.hasAudio;
+      let isAudio = false;
+      let isVideo = true;
+
+      const items = e.dataTransfer.items;
+      if (items && items.length > 0) {
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          if (item.kind !== 'file') continue;
+
+          const file = item.getAsFile();
+          if (!file) continue;
+
+          if (isAudioFile(file)) {
+            isAudio = true;
+            isVideo = false;
+            hasAudio = true;
+            break;
+          }
+
+          if (isVideoFile(file)) {
+            const cacheKey = `${file.name}_${file.size}`;
+            if (dragMetadataCacheRef.current?.url === cacheKey) {
+              duration = dragMetadataCacheRef.current.duration;
+              hasAudio = dragMetadataCacheRef.current.hasAudio;
+            } else {
+              requestVideoDragMetadata(cacheKey, file);
+            }
+            break;
+          }
+
+          if (isMediaFile(file)) {
+            hasAudio = false;
+            break;
+          }
+        }
+      }
+
+      return { duration, hasAudio, isAudio, isVideo };
+    }
+
+    return {
+      duration: externalDrag?.duration ?? dragMetadataCacheRef.current?.duration,
+      hasAudio: externalDrag?.hasAudio ?? dragMetadataCacheRef.current?.hasAudio,
+      isAudio: !!externalDrag?.isAudio,
+      isVideo: externalDrag?.isVideo ?? !externalDrag?.isAudio,
+    };
+  }, [externalDrag, requestVideoDragMetadata]);
 
   // Handle external file drag enter on track
   const handleTrackDragEnter = useCallback(
@@ -93,52 +365,191 @@ export function useExternalDrop({
       e.preventDefault();
       dragCounterRef.current++;
 
-      const rect = e.currentTarget.getBoundingClientRect();
-      const x = e.clientX - rect.left + scrollX;
-      const startTime = pixelToTime(x);
+      const startTime = getDesiredStartTime(e.clientX);
+      const mediaStore = useMediaStore.getState();
 
       // Determine target track type
       const targetTrack = tracks.find((t) => t.id === trackId);
       const isVideoTrack = targetTrack?.type === 'video';
       const isAudioTrack = targetTrack?.type === 'audio';
+      const dragPayload = getExternalDragPayload();
 
       if (e.dataTransfer.types.includes('application/x-composition-id')) {
+        const compositionId = dragPayload?.kind === 'composition'
+          ? dragPayload.id
+          : e.dataTransfer.getData('application/x-composition-id');
+        const comp = compositionId
+          ? mediaStore.compositions.find((c) => c.id === compositionId)
+          : null;
+        const compDuration = dragPayload?.kind === 'composition'
+          ? dragPayload.duration ?? 5
+          : comp?.timelineData?.duration ?? comp?.duration ?? 5;
+
         // Compositions only on video tracks
         if (isAudioTrack) {
-          setExternalDrag((prev) => prev ? { ...prev, x: e.clientX, y: e.clientY } : { trackId: '', startTime, x: e.clientX, y: e.clientY, duration: 5, isVideo: true });
+          setExternalDrag({
+            trackId: '',
+            startTime,
+            x: e.clientX,
+            y: e.clientY,
+            duration: compDuration,
+            hasAudio: true,
+            isVideo: true,
+            isAudio: false,
+          });
           return;
         }
-        setExternalDrag({ trackId, startTime, x: e.clientX, y: e.clientY, duration: 5, isVideo: true });
+        setExternalDrag(buildTrackPreviewState({
+          trackId,
+          desiredStartTime: startTime,
+          x: e.clientX,
+          y: e.clientY,
+          duration: compDuration,
+          hasAudio: true,
+          isVideo: true,
+          isAudio: false,
+        }));
         return;
       }
 
       if (e.dataTransfer.types.includes('application/x-media-file-id')) {
-        const isAudioDrag = e.dataTransfer.types.includes('application/x-media-is-audio');
+        const mediaFileId = dragPayload?.kind === 'media-file'
+          ? dragPayload.id
+          : e.dataTransfer.getData('application/x-media-file-id');
+        const mediaFile = mediaFileId
+          ? mediaStore.files.find((f) => f.id === mediaFileId)
+          : null;
+        const file = dragPayload?.kind === 'media-file' ? dragPayload.file : mediaFile?.file;
+        const isAudioDrag = dragPayload?.kind === 'media-file'
+          ? dragPayload.isAudio
+          : e.dataTransfer.types.includes('application/x-media-is-audio') ||
+            mediaFile?.type === 'audio';
+        const isVideoDrag = dragPayload?.kind === 'media-file'
+          ? dragPayload.isVideo
+          : mediaFile?.type === 'video';
+        const duration = dragPayload?.kind === 'media-file'
+          ? dragPayload.duration
+          : mediaFile?.duration;
+        const hasAudio = dragPayload?.kind === 'media-file'
+          ? dragPayload.hasAudio
+          : mediaFile?.type === 'image'
+            ? false
+            : isAudioDrag
+              ? true
+              : mediaFile?.hasAudio;
+
+        if (mediaFile?.duration && mediaFile?.hasAudio !== undefined) {
+          dragMetadataCacheRef.current = {
+            url: `media:${mediaFile.id}`,
+            duration: mediaFile.duration,
+            hasAudio: mediaFile.hasAudio,
+          };
+        }
+
         // Audio-only files can only go on audio tracks
         if (isAudioDrag && isVideoTrack) {
-          setExternalDrag((prev) => prev ? { ...prev, x: e.clientX, y: e.clientY } : { trackId: '', startTime, x: e.clientX, y: e.clientY, duration: 5, isVideo: false, isAudio: true });
+          setExternalDrag({
+            trackId: '',
+            startTime,
+            x: e.clientX,
+            y: e.clientY,
+            duration,
+            hasAudio,
+            isVideo: false,
+            isAudio: true,
+          });
           return;
         }
-        // Video+audio files are allowed on both track types (linked preview on the other)
-        setExternalDrag({ trackId, startTime, x: e.clientX, y: e.clientY, duration: 5, isVideo: !isAudioDrag, isAudio: isAudioDrag });
+
+        setExternalDrag(buildTrackPreviewState({
+          trackId,
+          desiredStartTime: startTime,
+          x: e.clientX,
+          y: e.clientY,
+          duration,
+          hasAudio,
+          isVideo: !isAudioDrag,
+          isAudio: isAudioDrag,
+        }));
+
+        if (file && isVideoDrag && duration === undefined) {
+          const cacheKey = `media:${mediaFileId || `${file.name}_${file.size}`}`;
+          requestVideoDragMetadata(cacheKey, file);
+        }
         return;
       }
 
       if (e.dataTransfer.types.includes('application/x-text-item-id')) {
+        const textItemId = dragPayload?.kind === 'text'
+          ? dragPayload.id
+          : e.dataTransfer.getData('application/x-text-item-id');
+        const textItem = textItemId
+          ? mediaStore.textItems.find((t) => t.id === textItemId)
+          : null;
+        const duration = dragPayload?.kind === 'text'
+          ? dragPayload.duration ?? 5
+          : textItem?.duration ?? 5;
+
         if (isAudioTrack) {
-          setExternalDrag((prev) => prev ? { ...prev, x: e.clientX, y: e.clientY } : { trackId: '', startTime, x: e.clientX, y: e.clientY, duration: 5, isVideo: true });
+          setExternalDrag({
+            trackId: '',
+            startTime,
+            x: e.clientX,
+            y: e.clientY,
+            duration,
+            hasAudio: false,
+            isVideo: true,
+            isAudio: false,
+          });
           return;
         }
-        setExternalDrag({ trackId, startTime, x: e.clientX, y: e.clientY, duration: 5, isVideo: true });
+        setExternalDrag(buildTrackPreviewState({
+          trackId,
+          desiredStartTime: startTime,
+          x: e.clientX,
+          y: e.clientY,
+          duration,
+          hasAudio: false,
+          isVideo: true,
+          isAudio: false,
+        }));
         return;
       }
 
       if (e.dataTransfer.types.includes('application/x-solid-item-id')) {
+        const solidItemId = dragPayload?.kind === 'solid'
+          ? dragPayload.id
+          : e.dataTransfer.getData('application/x-solid-item-id');
+        const solidItem = solidItemId
+          ? mediaStore.solidItems.find((s) => s.id === solidItemId)
+          : null;
+        const duration = dragPayload?.kind === 'solid'
+          ? dragPayload.duration ?? 5
+          : solidItem?.duration ?? 5;
+
         if (isAudioTrack) {
-          setExternalDrag((prev) => prev ? { ...prev, x: e.clientX, y: e.clientY } : { trackId: '', startTime, x: e.clientX, y: e.clientY, duration: 5, isVideo: true });
+          setExternalDrag({
+            trackId: '',
+            startTime,
+            x: e.clientX,
+            y: e.clientY,
+            duration,
+            hasAudio: false,
+            isVideo: true,
+            isAudio: false,
+          });
           return;
         }
-        setExternalDrag({ trackId, startTime, x: e.clientX, y: e.clientY, duration: 5, isVideo: true });
+        setExternalDrag(buildTrackPreviewState({
+          trackId,
+          desiredStartTime: startTime,
+          x: e.clientX,
+          y: e.clientY,
+          duration,
+          hasAudio: false,
+          isVideo: true,
+          isAudio: false,
+        }));
         return;
       }
 
@@ -163,16 +574,8 @@ export function useExternalDrop({
                   hasAudio = dragMetadataCacheRef.current.hasAudio;
                 } else {
                   getVideoMetadataQuick(file).then((metadata) => {
-                    if (metadata) {
-                      dragMetadataCacheRef.current = {
-                        url: cacheKey,
-                        duration: metadata.duration ?? 5,
-                        hasAudio: metadata.hasAudio,
-                      };
-                      setExternalDrag((prev) =>
-                        prev ? { ...prev, duration: metadata.duration ?? 5, hasAudio: metadata.hasAudio } : null
-                      );
-                    }
+                    if (!metadata?.duration) return;
+                    updateResolvedDragMetadata(cacheKey, metadata.duration, metadata.hasAudio);
                   });
                 }
                 break;
@@ -183,14 +586,32 @@ export function useExternalDrop({
 
         // Audio files on video tracks: keep externalDrag alive but don't assign this track
         if (fileIsAudio && isVideoTrack) {
-          setExternalDrag((prev) => prev ? { ...prev, x: e.clientX, y: e.clientY } : { trackId: '', startTime, x: e.clientX, y: e.clientY, duration: dur, isAudio: true, isVideo: false });
+          setExternalDrag({
+            trackId: '',
+            startTime,
+            x: e.clientX,
+            y: e.clientY,
+            duration: dur,
+            hasAudio: true,
+            isAudio: true,
+            isVideo: false,
+          });
           return;
         }
 
-        setExternalDrag({ trackId, startTime, x: e.clientX, y: e.clientY, duration: dur, hasAudio, isAudio: fileIsAudio, isVideo: !fileIsAudio });
+        setExternalDrag(buildTrackPreviewState({
+          trackId,
+          desiredStartTime: startTime,
+          x: e.clientX,
+          y: e.clientY,
+          duration: dur,
+          hasAudio,
+          isAudio: fileIsAudio,
+          isVideo: !fileIsAudio,
+        }));
       }
     },
-    [scrollX, pixelToTime, tracks]
+    [tracks, getDesiredStartTime, buildTrackPreviewState, requestVideoDragMetadata, updateResolvedDragMetadata]
   );
 
   // Handle external file drag over track
@@ -205,42 +626,60 @@ export function useExternalDrop({
       const isSolidDrag = e.dataTransfer.types.includes('application/x-solid-item-id');
       const isFileDrag = e.dataTransfer.types.includes('Files');
 
-      if ((isCompDrag || isMediaPanelDrag || isTextDrag || isSolidDrag || isFileDrag) && timelineRef.current) {
-        const rect = timelineRef.current.getBoundingClientRect();
-        const x = e.clientX - rect.left + scrollX;
-        const startTime = pixelToTime(x);
+      if (isCompDrag || isMediaPanelDrag || isTextDrag || isSolidDrag || isFileDrag) {
+        const desiredStartTime = getDesiredStartTime(e.clientX);
+        const preview = resolveImmediateDragPreview(e);
 
         const targetTrack = tracks.find((t) => t.id === trackId);
         const isVideoTrack = targetTrack?.type === 'video';
         const isAudioTrack = targetTrack?.type === 'audio';
 
         // Detect audio-only drag (from media panel marker or from externalDrag state)
-        const isAudioDrag = e.dataTransfer.types.includes('application/x-media-is-audio') || externalDrag?.isAudio;
+        const isAudioDrag = preview.isAudio;
 
         // Audio-only files can only go on audio tracks
         if (isAudioDrag && isVideoTrack) {
           e.dataTransfer.dropEffect = 'none';
-          // Keep externalDrag alive (so drop zones stay visible) but clear trackId
-          setExternalDrag((prev) => prev ? { ...prev, trackId: '', x: e.clientX, y: e.clientY, startTime } : null);
+          setExternalDrag((prev) => prev ? {
+            ...prev,
+            trackId: '',
+            startTime: desiredStartTime,
+            x: e.clientX,
+            y: e.clientY,
+            audioTrackId: undefined,
+            videoTrackId: undefined,
+            newTrackType: null,
+          } : null);
           return;
         }
 
         // Text, solid, composition items can only go on video tracks
         if ((isTextDrag || isSolidDrag || isCompDrag) && isAudioTrack) {
           e.dataTransfer.dropEffect = 'none';
-          setExternalDrag((prev) => prev ? { ...prev, trackId: '', x: e.clientX, y: e.clientY, startTime } : null);
+          setExternalDrag((prev) => prev ? {
+            ...prev,
+            trackId: '',
+            startTime: desiredStartTime,
+            x: e.clientX,
+            y: e.clientY,
+            audioTrackId: undefined,
+            videoTrackId: undefined,
+            newTrackType: null,
+          } : null);
           return;
         }
 
-        const previewDuration =
-          externalDrag?.duration ?? dragMetadataCacheRef.current?.duration ?? 5;
-
-        // Check if video has audio - default to true if not yet determined
-        const videoHasAudio = externalDrag?.hasAudio ?? dragMetadataCacheRef.current?.hasAudio ?? true;
-        const endTime = startTime + previewDuration;
-
-        let audioTrackId: string | undefined;
-        let videoTrackId: string | undefined;
+        setExternalDrag((prev) => buildTrackPreviewState({
+          trackId,
+          desiredStartTime,
+          x: e.clientX,
+          y: e.clientY,
+          duration: preview.duration ?? prev?.duration ?? dragMetadataCacheRef.current?.duration,
+          hasAudio: preview.hasAudio ?? prev?.hasAudio ?? dragMetadataCacheRef.current?.hasAudio,
+          isVideo: preview.isVideo,
+          isAudio: preview.isAudio,
+        }));
+        /*
 
         if (isVideoTrack && videoHasAudio) {
           // Hovering video track → find audio track for linked audio preview
@@ -290,9 +729,10 @@ export function useExternalDrop({
           hasAudio: prev?.hasAudio ?? dragMetadataCacheRef.current?.hasAudio,
           duration: prev?.duration ?? dragMetadataCacheRef.current?.duration,
         }));
+        */
       }
     },
-    [scrollX, pixelToTime, tracks, clips, externalDrag, timelineRef]
+    [tracks, externalDrag, getDesiredStartTime, buildTrackPreviewState, resolveImmediateDragPreview]
   );
 
   // Handle external file drag leave
@@ -304,7 +744,13 @@ export function useExternalDrop({
       // Don't null out externalDrag — just clear trackId so no preview shows on any track.
       // The state stays alive so drop zones remain mounted and reachable.
       // Full cleanup happens when drag leaves the timeline container (handleContainerDragLeave).
-      setExternalDrag((prev) => prev ? { ...prev, trackId: '' } : null);
+      setExternalDrag((prev) => prev ? {
+        ...prev,
+        trackId: '',
+        audioTrackId: undefined,
+        videoTrackId: undefined,
+        newTrackType: null,
+      } : null);
     }
   }, []);
 
@@ -314,9 +760,14 @@ export function useExternalDrop({
       e.preventDefault();
       e.stopPropagation();
 
+      const preview = resolveImmediateDragPreview(e);
+
       // Audio files can only create audio tracks
-      const isAudioDrag = e.dataTransfer.types.includes('application/x-media-is-audio') || externalDrag?.isAudio;
-      if (isAudioDrag && trackType === 'video') {
+      if (preview.isAudio && trackType === 'video') {
+        e.dataTransfer.dropEffect = 'none';
+        return;
+      }
+      if (!preview.isAudio && trackType === 'audio') {
         e.dataTransfer.dropEffect = 'none';
         return;
       }
@@ -324,24 +775,24 @@ export function useExternalDrop({
       e.dataTransfer.dropEffect = 'copy';
 
       if (timelineRef.current) {
-        const rect = timelineRef.current.getBoundingClientRect();
-        const x = e.clientX - rect.left + scrollX;
-        const startTime = pixelToTime(x);
+        const startTime = getDesiredStartTime(e.clientX);
 
         setExternalDrag((prev) => ({
           trackId: '__new_track__',
           startTime,
           x: e.clientX,
           y: e.clientY,
-          duration: prev?.duration ?? dragMetadataCacheRef.current?.duration ?? 5,
-          hasAudio: prev?.hasAudio ?? dragMetadataCacheRef.current?.hasAudio,
+          audioTrackId: undefined,
+          videoTrackId: undefined,
+          duration: preview.duration ?? prev?.duration ?? dragMetadataCacheRef.current?.duration ?? 5,
+          hasAudio: preview.hasAudio ?? prev?.hasAudio ?? dragMetadataCacheRef.current?.hasAudio,
           newTrackType: trackType,
-          isVideo: trackType === 'video',
-          isAudio: trackType === 'audio',
+          isVideo: preview.isVideo,
+          isAudio: preview.isAudio,
         }));
       }
     },
-    [scrollX, pixelToTime, timelineRef]
+    [externalDrag, timelineRef, getDesiredStartTime, resolveImmediateDragPreview]
   );
 
   // Handle drop on "new track" zone - creates new track and adds clip
@@ -489,6 +940,10 @@ export function useExternalDrop({
     async (e: React.DragEvent, trackId: string) => {
       e.preventDefault();
 
+      const desiredStartTime = getDesiredStartTime(e.clientX);
+      const resolveDropStartTime = (duration?: number) =>
+        resolveTrackStartTime(trackId, desiredStartTime, duration ?? externalDrag?.duration);
+
       const cachedDuration =
         externalDrag?.duration ?? dragMetadataCacheRef.current?.duration;
 
@@ -504,10 +959,8 @@ export function useExternalDrop({
         const mediaStore = useMediaStore.getState();
         const comp = mediaStore.compositions.find((c) => c.id === compositionId);
         if (comp) {
-          const rect = e.currentTarget.getBoundingClientRect();
-          const x = e.clientX - rect.left + scrollX;
-          const startTime = pixelToTime(x);
-          addCompClip(trackId, comp, Math.max(0, startTime));
+          const compDuration = comp.timelineData?.duration ?? comp.duration ?? 5;
+          addCompClip(trackId, comp, resolveDropStartTime(compDuration));
           return;
         }
       }
@@ -518,10 +971,7 @@ export function useExternalDrop({
         const mediaStore = useMediaStore.getState();
         const textItem = mediaStore.textItems.find((t) => t.id === textItemId);
         if (textItem && isVideoTrack) {
-          const rect = e.currentTarget.getBoundingClientRect();
-          const x = e.clientX - rect.left + scrollX;
-          const startTime = pixelToTime(x);
-          addTextClip(trackId, Math.max(0, startTime), textItem.duration, true);
+          addTextClip(trackId, resolveDropStartTime(textItem.duration), textItem.duration, true);
           return;
         }
       }
@@ -532,10 +982,7 @@ export function useExternalDrop({
         const mediaStore = useMediaStore.getState();
         const solidItem = mediaStore.solidItems.find((s) => s.id === solidItemId);
         if (solidItem && isVideoTrack) {
-          const rect = e.currentTarget.getBoundingClientRect();
-          const x = e.clientX - rect.left + scrollX;
-          const startTime = pixelToTime(x);
-          addSolidClip(trackId, Math.max(0, startTime), solidItem.color, solidItem.duration, true);
+          addSolidClip(trackId, resolveDropStartTime(solidItem.duration), solidItem.color, solidItem.duration, true);
           return;
         }
       }
@@ -553,10 +1000,7 @@ export function useExternalDrop({
           }
           // Video+audio files are allowed on both track types
 
-          const rect = e.currentTarget.getBoundingClientRect();
-          const x = e.clientX - rect.left + scrollX;
-          const startTime = pixelToTime(x);
-          addClip(trackId, mediaFile.file, Math.max(0, startTime), mediaFile.duration, mediaFileId);
+          addClip(trackId, mediaFile.file, resolveDropStartTime(mediaFile.duration), mediaFile.duration, mediaFileId);
           return;
         }
       }
@@ -572,10 +1016,6 @@ export function useExternalDrop({
         const item = items[0];
         log.debug('Item details:', { kind: item.kind, type: item.type });
         if (item.kind === 'file') {
-          // Capture rect before async operations (e.currentTarget becomes null after await)
-          const rect = e.currentTarget.getBoundingClientRect();
-          const x = e.clientX - rect.left + scrollX;
-          const startTime = Math.max(0, pixelToTime(x));
           const mediaStore = useMediaStore.getState();
 
           // Try to get file handle (File System Access API)
@@ -598,7 +1038,7 @@ export function useExternalDrop({
                   }
 
                   // Add clip immediately for instant visual feedback
-                  addClip(trackId, file, startTime, cachedDuration);
+                  addClip(trackId, file, resolveDropStartTime(cachedDuration), cachedDuration);
                   // Fire-and-forget media import (loadVideoMedia will pick it up)
                   mediaStore.importFilesWithHandles([{ file, handle, absolutePath: filePath }]);
                   log.debug('Imported file with handle:', { name: file.name, absolutePath: filePath });
@@ -625,14 +1065,14 @@ export function useExternalDrop({
             }
 
             // Add clip immediately for instant visual feedback
-            addClip(trackId, file, startTime, cachedDuration);
+            addClip(trackId, file, resolveDropStartTime(cachedDuration), cachedDuration);
             // Fire-and-forget media import (loadVideoMedia will pick it up)
             mediaStore.importFile(file);
           }
         }
       }
     },
-    [scrollX, pixelToTime, addCompClip, addClip, addTextClip, addSolidClip, externalDrag, tracks, timelineRef]
+    [addCompClip, addClip, addTextClip, addSolidClip, externalDrag, tracks, getDesiredStartTime, resolveTrackStartTime]
   );
 
   // Container-level drag leave: fully clear externalDrag when cursor leaves the timeline area
