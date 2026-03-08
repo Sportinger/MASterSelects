@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="24dp"
+    android:background="#1A1A2E">
+
+    <TextView
+        android:id="@+id/tvTitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Terminal Remote"
+        android:textSize="28sp"
+        android:textColor="#FFFFFF"
+        android:textStyle="bold"
+        android:layout_marginTop="48dp"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/tilName"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="32dp"
+        android:hint="Connection Name (optional)"
+        app:layout_constraintTop_toBottomOf="@id/tvTitle">
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/editConnectionName"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#FFFFFF" />
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/tilHost"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:hint="@string/host"
+        app:layout_constraintTop_toBottomOf="@id/tilName">
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/editHost"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#FFFFFF"
+            android:inputType="textUri" />
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/tilPort"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:hint="@string/port"
+        app:layout_constraintTop_toBottomOf="@id/tilHost">
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/editPort"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="8765"
+            android:textColor="#FFFFFF"
+            android:inputType="number" />
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/tilToken"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:hint="@string/token"
+        app:endIconMode="password_toggle"
+        app:layout_constraintTop_toBottomOf="@id/tilPort">
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/editToken"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#FFFFFF"
+            android:inputType="textPassword" />
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnConnect"
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:layout_marginTop="32dp"
+        android:text="@string/connect"
+        android:textSize="16sp"
+        app:cornerRadius="8dp"
+        app:layout_constraintTop_toBottomOf="@id/tilToken" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnSave"
+        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_marginTop="12dp"
+        android:text="@string/save_connection"
+        android:textColor="#AAAAAA"
+        app:cornerRadius="8dp"
+        app:strokeColor="#444444"
+        app:layout_constraintTop_toBottomOf="@id/btnConnect" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>

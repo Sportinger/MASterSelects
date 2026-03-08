@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.TerminalRemote" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#1E88E5</item>
+        <item name="colorPrimaryVariant">#1565C0</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorSecondary">#43A047</item>
+        <item name="colorSecondaryVariant">#2E7D32</item>
+        <item name="colorOnSecondary">#FFFFFF</item>
+        <item name="android:statusBarColor">?attr/colorPrimaryVariant</item>
+    </style>
+</resources>

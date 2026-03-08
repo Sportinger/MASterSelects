@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Terminal Remote</string>
+    <string name="connect">Connect</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="settings">Settings</string>
+    <string name="host">Host / IP / DynDNS</string>
+    <string name="port">Port</string>
+    <string name="token">Auth Token</string>
+    <string name="connecting">Connecting...</string>
+    <string name="connected">Connected</string>
+    <string name="disconnected">Disconnected</string>
+    <string name="new_session">New Session</string>
+    <string name="close_session">Close Session</string>
+    <string name="save_connection">Save Connection</string>
+</resources>

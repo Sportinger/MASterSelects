@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="24dp"
+    android:background="#1A1A2E">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Settings"
+        android:textSize="24sp"
+        android:textColor="#FFFFFF"
+        android:textStyle="bold"
+        android:layout_marginBottom="32dp" />
+
+    <!-- Font Size -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Font Size"
+        android:textColor="#AAAAAA"
+        android:textSize="14sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="24dp">
+
+        <com.google.android.material.slider.Slider
+            android:id="@+id/sliderFontSize"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:valueFrom="8"
+            android:valueTo="28"
+            android:stepSize="1" />
+
+        <TextView
+            android:id="@+id/tvFontSizeValue"
+            android:layout_width="48dp"
+            android:layout_height="wrap_content"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:gravity="center" />
+    </LinearLayout>
+
+    <!-- Theme -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Theme"
+        android:textColor="#AAAAAA"
+        android:textSize="14sp" />
+
+    <Spinner
+        android:id="@+id/spinnerTheme"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="24dp"
+        android:background="#16213E"
+        android:padding="8dp" />
+
+    <!-- Keep Screen On -->
+    <com.google.android.material.switchmaterial.SwitchMaterial
+        android:id="@+id/switchKeepScreenOn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Keep Screen On"
+        android:textColor="#FFFFFF"
+        android:layout_marginBottom="16dp" />
+
+    <!-- Vibrate -->
+    <com.google.android.material.switchmaterial.SwitchMaterial
+        android:id="@+id/switchVibrate"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Vibrate on Key Press"
+        android:textColor="#FFFFFF"
+        android:layout_marginBottom="32dp" />
+
+    <!-- Buttons -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnSaveSettings"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:text="Save"
+        app:cornerRadius="8dp" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnBack"
+        style="@style/Widget.MaterialComponents.Button.TextButton"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:text="Back"
+        android:textColor="#AAAAAA"
+        android:layout_marginTop="8dp" />
+
+</LinearLayout>
