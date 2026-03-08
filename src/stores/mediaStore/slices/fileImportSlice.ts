@@ -59,8 +59,17 @@ function finalizePlaceholder(state: { files: MediaFile[] }, id: string, result: 
   };
 }
 
-export const createFileImportSlice: MediaSliceCreator<FileImportActions> = (set, _get) => ({
+export const createFileImportSlice: MediaSliceCreator<FileImportActions> = (set, get) => ({
   importFile: async (file: File, parentId?: string | null) => {
+    // Deduplication: check if file with same name + size already exists
+    const existing = get().files.find(f =>
+      f.name === file.name && f.fileSize === file.size && !f.isImporting
+    );
+    if (existing) {
+      log.info(`Skipping duplicate: ${file.name} (${file.size} bytes) — already exists as ${existing.id}`);
+      return existing;
+    }
+
     const id = generateId();
     log.info(`Starting: ${file.name} type: ${file.type} size: ${file.size}`);
 

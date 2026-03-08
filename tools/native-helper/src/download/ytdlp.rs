@@ -2,6 +2,7 @@
 //!
 //! Supports all yt-dlp-compatible platforms: YouTube, TikTok, Instagram, Twitter, etc.
 //! Includes deno runtime detection for JavaScript-based extractors.
+//! Auto-retries with browser cookies when YouTube bot detection triggers.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -130,156 +131,408 @@ pub async fn handle_list_formats(id: &str, url: &str) -> Response {
     let ytdlp_cmd = get_ytdlp_command();
     let deno_args = get_deno_args();
 
+    // Try without cookies first, then with cookies if bot-blocked
+    for use_cookies in [false, true] {
+        let mut cmd = TokioCommand::new(&ytdlp_cmd);
+        for arg in &deno_args {
+            cmd.arg(arg);
+        }
+        if use_cookies {
+            info!("Retrying list_formats with --cookies-from-browser chrome");
+            cmd.args(["--cookies-from-browser", "chrome"]);
+        }
+        let result = cmd
+            .args(["--dump-json", "--no-playlist", "--force-ipv4", url])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await;
+
+        match result {
+            Ok(output) if output.status.success() => {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                match serde_json::from_str::<serde_json::Value>(&stdout) {
+                    Ok(info) => {
+                        return build_formats_response(id, &info);
+                    }
+                    Err(e) => return Response::error(id, error_codes::DOWNLOAD_FAILED, format!("Failed to parse yt-dlp output: {}", e)),
+                }
+            }
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let stderr_str = stderr.to_string();
+                // If bot-blocked and haven't tried cookies yet, retry with cookies
+                if !use_cookies && (stderr_str.contains("Sign in to confirm") || stderr_str.contains("not a bot")) {
+                    info!("YouTube bot detection triggered, will retry with cookies");
+                    continue;
+                }
+                // If cookie access failed, that's OK — report the actual download error
+                if use_cookies && (stderr_str.contains("Could not copy") || stderr_str.contains("cookie database")) {
+                    warn!("Could not access browser cookies — YouTube requires authentication for this video");
+                    return Response::error(id, error_codes::DOWNLOAD_FAILED,
+                        "YouTube requires sign-in for this video. Close Chrome and retry, or try a different video.".to_string());
+                }
+                // Filter to only ERROR lines for the response
+                let error_lines: Vec<&str> = stderr_str.lines()
+                    .filter(|l| l.contains("ERROR:"))
+                    .collect();
+                let error_msg = if error_lines.is_empty() { stderr_str } else { error_lines.join("\n") };
+                return Response::error(id, error_codes::DOWNLOAD_FAILED, error_msg);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Response::error(id, error_codes::YTDLP_NOT_FOUND, "yt-dlp not found. Install with: pip install yt-dlp");
+            }
+            Err(e) => return Response::error(id, error_codes::DOWNLOAD_FAILED, e.to_string()),
+        }
+    }
+
+    Response::error(id, error_codes::DOWNLOAD_FAILED, "Download failed after retries")
+}
+
+/// Build format recommendations from yt-dlp JSON info
+fn build_formats_response(id: &str, info: &serde_json::Value) -> Response {
+    let title = info.get("title").and_then(|v| v.as_str()).unwrap_or("Unknown");
+    let uploader = info.get("uploader").and_then(|v| v.as_str()).unwrap_or("Unknown");
+    let duration = info.get("duration").and_then(|v| v.as_f64()).unwrap_or(0.0);
+    let thumbnail = info.get("thumbnail").and_then(|v| v.as_str()).unwrap_or("");
+    let platform = info.get("extractor_key").and_then(|v| v.as_str()).unwrap_or("generic");
+
+    let mut recommendations = Vec::new();
+    if let Some(formats) = info.get("formats").and_then(|v| v.as_array()) {
+        let mut by_height: HashMap<i64, Vec<&serde_json::Value>> = HashMap::new();
+
+        for fmt in formats {
+            let vcodec = fmt.get("vcodec").and_then(|v| v.as_str()).unwrap_or("none");
+            if vcodec == "none" || vcodec.contains("av01") {
+                continue;
+            }
+            if let Some(height) = fmt.get("height").and_then(|v| v.as_i64()) {
+                if height >= 360 {
+                    by_height.entry(height).or_default().push(fmt);
+                }
+            }
+        }
+
+        let mut heights: Vec<_> = by_height.keys().copied().collect();
+        heights.sort_by(|a, b| b.cmp(a));
+
+        for height in heights.into_iter().take(6) {
+            if let Some(fmts) = by_height.get(&height) {
+                let best = fmts.iter()
+                    .max_by_key(|f| {
+                        let vcodec = f.get("vcodec").and_then(|v| v.as_str()).unwrap_or("");
+                        let tbr = f.get("tbr").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                        let codec_score = if vcodec.contains("avc") { 1000.0 } else { 0.0 };
+                        (codec_score + tbr) as i64
+                    });
+
+                if let Some(fmt) = best {
+                    let format_id = fmt.get("format_id").and_then(|v| v.as_str()).unwrap_or("");
+                    let vcodec = fmt.get("vcodec").and_then(|v| v.as_str()).unwrap_or("");
+                    let fps = fmt.get("fps").and_then(|v| v.as_f64()).unwrap_or(30.0);
+                    let filesize = fmt.get("filesize").and_then(|v| v.as_i64())
+                        .or_else(|| fmt.get("filesize_approx").and_then(|v| v.as_i64()));
+
+                    let codec_name = if vcodec.contains("avc") { "H.264" }
+                        else if vcodec.contains("vp9") { "VP9" }
+                        else { vcodec };
+
+                    recommendations.push(serde_json::json!({
+                        "id": format_id,
+                        "label": format!("{}p {} ({:.0}fps)", height, codec_name, fps),
+                        "resolution": format!("{}p", height),
+                        "vcodec": codec_name,
+                        "acodec": serde_json::Value::Null,
+                        "needsMerge": true,
+                        "filesize": filesize,
+                    }));
+                }
+            }
+        }
+
+        // Fallback for platforms without separate streams (TikTok, Instagram, etc.)
+        if recommendations.is_empty() {
+            let mut best_combined: Option<&serde_json::Value> = None;
+            let mut best_score: i64 = 0;
+
+            for fmt in formats {
+                let vcodec = fmt.get("vcodec").and_then(|v| v.as_str()).unwrap_or("none");
+                if vcodec == "none" { continue; }
+                let height = fmt.get("height").and_then(|v| v.as_i64()).unwrap_or(0);
+                let tbr = fmt.get("tbr").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let score = height * 1000 + tbr as i64;
+                if score > best_score {
+                    best_score = score;
+                    best_combined = Some(fmt);
+                }
+            }
+
+            if let Some(fmt) = best_combined {
+                let format_id = fmt.get("format_id").and_then(|v| v.as_str()).unwrap_or("best");
+                let height = fmt.get("height").and_then(|v| v.as_i64()).unwrap_or(0);
+                let fps = fmt.get("fps").and_then(|v| v.as_f64()).unwrap_or(30.0);
+                let filesize = fmt.get("filesize").and_then(|v| v.as_i64())
+                    .or_else(|| fmt.get("filesize_approx").and_then(|v| v.as_i64()));
+
+                let label = if height > 0 {
+                    format!("Best available ({}p, {:.0}fps)", height, fps)
+                } else {
+                    "Best available".to_string()
+                };
+
+                recommendations.push(serde_json::json!({
+                    "id": format_id,
+                    "label": label,
+                    "resolution": if height > 0 { format!("{}p", height) } else { "?".to_string() },
+                    "vcodec": serde_json::Value::Null,
+                    "acodec": serde_json::Value::Null,
+                    "needsMerge": false,
+                    "filesize": filesize,
+                }));
+            }
+        }
+    }
+
+    Response::ok(id, serde_json::json!({
+        "title": title,
+        "uploader": uploader,
+        "duration": duration,
+        "thumbnail": thumbnail,
+        "platform": platform,
+        "recommendations": recommendations,
+    }))
+}
+
+/// Result from a single yt-dlp download attempt
+enum DownloadResult {
+    /// Download succeeded — return the file path
+    Success(String),
+    /// Bot detection triggered — should retry with cookies
+    BotBlocked(String),
+    /// Other failure — don't retry
+    Failed(Response),
+}
+
+/// Run a single yt-dlp download attempt
+async fn run_download(
+    id: &str,
+    url: &str,
+    format_str: &str,
+    output_template: &str,
+    use_cookies: bool,
+    ws_sender: &Option<WsSender>,
+) -> DownloadResult {
+    use std::process::Stdio;
+
+    let ytdlp_cmd = get_ytdlp_command();
+    let deno_args = get_deno_args();
+
     let mut cmd = TokioCommand::new(&ytdlp_cmd);
     for arg in &deno_args {
         cmd.arg(arg);
     }
-    let result = cmd
-        .args(["--dump-json", "--no-playlist", url])
+
+    let mut args = vec![
+        "-f", format_str,
+        "--merge-output-format", "mp4",
+        "-o", output_template,
+        "--print", "after_move:filepath",
+        "--no-playlist",
+        "--newline",
+        "--progress",
+        "--concurrent-fragments", "5",
+        "--restrict-filenames",
+        "--windows-filenames",
+        "--force-ipv4",
+    ];
+    if use_cookies {
+        args.extend_from_slice(&["--cookies-from-browser", "chrome"]);
+    }
+    args.push(url);
+
+    let mut child = match cmd
+        .args(&args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .output()
-        .await;
+        .spawn() {
+            Ok(c) => c,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return DownloadResult::Failed(
+                    Response::error(id, error_codes::YTDLP_NOT_FOUND, "yt-dlp not found. Install with: pip install yt-dlp")
+                );
+            }
+            Err(e) => {
+                return DownloadResult::Failed(
+                    Response::error(id, error_codes::DOWNLOAD_FAILED, e.to_string())
+                );
+            }
+        };
 
-    match result {
-        Ok(output) if output.status.success() => {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            match serde_json::from_str::<serde_json::Value>(&stdout) {
-                Ok(info) => {
-                    let title = info.get("title").and_then(|v| v.as_str()).unwrap_or("Unknown");
-                    let uploader = info.get("uploader").and_then(|v| v.as_str()).unwrap_or("Unknown");
-                    let duration = info.get("duration").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                    let thumbnail = info.get("thumbnail").and_then(|v| v.as_str()).unwrap_or("");
-                    let platform = info.get("extractor_key").and_then(|v| v.as_str()).unwrap_or("generic");
-
-                    // Parse formats — collect video-only formats by resolution
-                    let mut recommendations = Vec::new();
-                    if let Some(formats) = info.get("formats").and_then(|v| v.as_array()) {
-                        let mut by_height: HashMap<i64, Vec<&serde_json::Value>> = HashMap::new();
-
-                        for fmt in formats {
-                            let vcodec = fmt.get("vcodec").and_then(|v| v.as_str()).unwrap_or("none");
-
-                            // Skip audio-only and AV1
-                            if vcodec == "none" || vcodec.contains("av01") {
-                                continue;
-                            }
-
-                            if let Some(height) = fmt.get("height").and_then(|v| v.as_i64()) {
-                                if height >= 360 {
-                                    by_height.entry(height).or_default().push(fmt);
-                                }
-                            }
-                        }
-
-                        // Get best format per resolution, prefer H.264
-                        let mut heights: Vec<_> = by_height.keys().copied().collect();
-                        heights.sort_by(|a, b| b.cmp(a));
-
-                        for height in heights.into_iter().take(6) {
-                            if let Some(fmts) = by_height.get(&height) {
-                                let best = fmts.iter()
-                                    .max_by_key(|f| {
-                                        let vcodec = f.get("vcodec").and_then(|v| v.as_str()).unwrap_or("");
-                                        let tbr = f.get("tbr").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                                        let codec_score = if vcodec.contains("avc") { 1000.0 } else { 0.0 };
-                                        (codec_score + tbr) as i64
-                                    });
-
-                                if let Some(fmt) = best {
-                                    let format_id = fmt.get("format_id").and_then(|v| v.as_str()).unwrap_or("");
-                                    let vcodec = fmt.get("vcodec").and_then(|v| v.as_str()).unwrap_or("");
-                                    let fps = fmt.get("fps").and_then(|v| v.as_f64()).unwrap_or(30.0);
-                                    let filesize = fmt.get("filesize").and_then(|v| v.as_i64())
-                                        .or_else(|| fmt.get("filesize_approx").and_then(|v| v.as_i64()));
-
-                                    let codec_name = if vcodec.contains("avc") { "H.264" }
-                                        else if vcodec.contains("vp9") { "VP9" }
-                                        else { vcodec };
-
-                                    recommendations.push(serde_json::json!({
-                                        "id": format_id,
-                                        "label": format!("{}p {} ({:.0}fps)", height, codec_name, fps),
-                                        "resolution": format!("{}p", height),
-                                        "vcodec": codec_name,
-                                        "acodec": serde_json::Value::Null,
-                                        "needsMerge": true,
-                                        "filesize": filesize,
-                                    }));
-                                }
-                            }
-                        }
-
-                        // Fallback: if no separate video-only formats found (common for TikTok, Instagram),
-                        // add a "Best available" option using the best combined format
-                        if recommendations.is_empty() {
-                            let mut best_combined: Option<&serde_json::Value> = None;
-                            let mut best_score: i64 = 0;
-
-                            for fmt in formats {
-                                let vcodec = fmt.get("vcodec").and_then(|v| v.as_str()).unwrap_or("none");
-                                if vcodec == "none" { continue; }
-
-                                let height = fmt.get("height").and_then(|v| v.as_i64()).unwrap_or(0);
-                                let tbr = fmt.get("tbr").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                                let score = height * 1000 + tbr as i64;
-
-                                if score > best_score {
-                                    best_score = score;
-                                    best_combined = Some(fmt);
-                                }
-                            }
-
-                            if let Some(fmt) = best_combined {
-                                let format_id = fmt.get("format_id").and_then(|v| v.as_str()).unwrap_or("best");
-                                let height = fmt.get("height").and_then(|v| v.as_i64()).unwrap_or(0);
-                                let fps = fmt.get("fps").and_then(|v| v.as_f64()).unwrap_or(30.0);
-                                let filesize = fmt.get("filesize").and_then(|v| v.as_i64())
-                                    .or_else(|| fmt.get("filesize_approx").and_then(|v| v.as_i64()));
-
-                                let label = if height > 0 {
-                                    format!("Best available ({}p, {:.0}fps)", height, fps)
-                                } else {
-                                    "Best available".to_string()
-                                };
-
-                                recommendations.push(serde_json::json!({
-                                    "id": format_id,
-                                    "label": label,
-                                    "resolution": if height > 0 { format!("{}p", height) } else { "?".to_string() },
-                                    "vcodec": serde_json::Value::Null,
-                                    "acodec": serde_json::Value::Null,
-                                    "needsMerge": false,
-                                    "filesize": filesize,
-                                }));
-                            }
-                        }
+    // Read stderr concurrently — collect full output for bot-detection, and ERROR-only for user display
+    let stderr = child.stderr.take();
+    let stderr_handle = tokio::spawn(async move {
+        let mut full_output = String::new();
+        let mut error_output = String::new();
+        if let Some(stderr) = stderr {
+            let reader = BufReader::new(stderr);
+            let mut lines = reader.lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                if !line.is_empty() {
+                    info!("[yt-dlp stderr] {}", line);
+                    if !full_output.is_empty() {
+                        full_output.push('\n');
                     }
-
-                    Response::ok(id, serde_json::json!({
-                        "title": title,
-                        "uploader": uploader,
-                        "duration": duration,
-                        "thumbnail": thumbnail,
-                        "platform": platform,
-                        "recommendations": recommendations,
-                    }))
+                    full_output.push_str(&line);
+                    if line.contains("ERROR:") {
+                        if !error_output.is_empty() {
+                            error_output.push('\n');
+                        }
+                        error_output.push_str(&line);
+                    }
                 }
-                Err(e) => Response::error(id, error_codes::DOWNLOAD_FAILED, format!("Failed to parse yt-dlp output: {}", e)),
             }
         }
-        Ok(output) => {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            Response::error(id, error_codes::DOWNLOAD_FAILED, stderr.to_string())
+        (full_output, error_output)
+    });
+
+    // Stream stdout for progress
+    // yt-dlp downloads video+audio separately: Phase 0 = video (0-80%), Phase 1 = audio (80-95%), Merge = 96-99%
+    let stdout = child.stdout.take();
+    let mut last_sent_percent: u8 = 0;
+    let mut download_phase: u8 = 0;
+    let mut final_filepath: Option<String> = None;
+    if let Some(stdout) = stdout {
+        let reader = BufReader::new(stdout);
+        let mut lines = reader.lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            if line.contains("[download] Destination:") || line.contains("[download] Downloading") {
+                if download_phase == 0 && last_sent_percent > 50 {
+                    download_phase = 1;
+                }
+            }
+
+            if line.contains("[Merger]") || line.contains("Merging") {
+                let merge_percent: u8 = 96;
+                if merge_percent > last_sent_percent {
+                    last_sent_percent = merge_percent;
+                    info!("[yt-dlp] Merging streams...");
+                    if let Some(ref sender) = ws_sender {
+                        let progress_msg = Response::download_progress(id, merge_percent, None, None);
+                        let json = serde_json::to_string(&progress_msg).unwrap();
+                        let mut sender = sender.lock().await;
+                        let _ = sender.send(Message::Text(json)).await;
+                    }
+                }
+                continue;
+            }
+
+            if line.contains('%') {
+                let mut percent_val: Option<f32> = None;
+                if let Some(pct_str) = line.split('%').next() {
+                    let pct_part = pct_str.trim().rsplit_once(' ').map(|(_, p)| p).unwrap_or(pct_str.trim());
+                    if let Ok(pct) = pct_part.trim().parse::<f32>() {
+                        percent_val = Some(pct.min(100.0));
+                    }
+                }
+
+                if let Some(raw_percent) = percent_val {
+                    let speed: Option<String> = if let Some(at_idx) = line.find(" at ") {
+                        let after_at = &line[at_idx + 4..];
+                        let speed_str = after_at.trim().split_whitespace().next().unwrap_or("");
+                        let cleaned = speed_str.trim_start_matches('~');
+                        if cleaned.contains("/s") { Some(cleaned.to_string()) } else { None }
+                    } else {
+                        None
+                    };
+
+                    let eta: Option<String> = if let Some(eta_idx) = line.find("ETA ") {
+                        let after_eta = &line[eta_idx + 4..];
+                        let eta_str = after_eta.trim().split_whitespace().next().unwrap_or("");
+                        if !eta_str.is_empty() && eta_str != "Unknown" { Some(eta_str.to_string()) } else { None }
+                    } else {
+                        None
+                    };
+
+                    let overall = match download_phase {
+                        0 => (raw_percent * 0.80) as u8,
+                        _ => 80 + (raw_percent * 0.15) as u8,
+                    };
+                    let overall = overall.min(99);
+
+                    if overall > last_sent_percent {
+                        last_sent_percent = overall;
+                        info!("[yt-dlp] Phase {} raw={:.1}% overall={}% speed={:?} eta={:?}", download_phase, raw_percent, overall, speed, eta);
+                        if let Some(ref sender) = ws_sender {
+                            let progress_msg = Response::download_progress(
+                                id, overall,
+                                speed.as_deref(), eta.as_deref(),
+                            );
+                            let json = serde_json::to_string(&progress_msg).unwrap();
+                            let mut sender = sender.lock().await;
+                            let _ = sender.send(Message::Text(json)).await;
+                        }
+                    }
+                }
+            } else if line.contains("Downloading") || line.contains("Merging") {
+                info!("[yt-dlp] {}", line);
+            } else if !line.starts_with('[') && !line.is_empty() {
+                info!("[yt-dlp] Captured output path: {}", line);
+                final_filepath = Some(line.trim().to_string());
+            }
+        }
+    }
+
+    let status = child.wait().await;
+    let (full_stderr, error_stderr) = stderr_handle.await.unwrap_or_default();
+
+    match status {
+        Ok(s) if s.success() => {
+            let output_path = final_filepath.unwrap_or_default();
+            if output_path.is_empty() {
+                DownloadResult::Failed(
+                    Response::error(id, error_codes::DOWNLOAD_FAILED, "yt-dlp did not return output path")
+                )
+            } else {
+                info!("Download complete: {}", output_path);
+                DownloadResult::Success(output_path)
+            }
+        }
+        Ok(s) => {
+            // Use full stderr to detect bot-blocking (ERROR line might not always be present)
+            if !use_cookies && (full_stderr.contains("Sign in to confirm") || full_stderr.contains("not a bot") || full_stderr.contains("No title found in player responses")) {
+                warn!("YouTube bot detection triggered, will retry with cookies");
+                return DownloadResult::BotBlocked(full_stderr);
+            }
+
+            // Show ERROR lines to user, or full stderr, or generic message
+            let error_msg = if !error_stderr.is_empty() {
+                error_stderr
+            } else if !full_stderr.is_empty() {
+                full_stderr
+            } else {
+                format!("yt-dlp exited with code {}", s.code().unwrap_or(-1))
+            };
+
+            warn!("yt-dlp failed: {}", error_msg);
+            DownloadResult::Failed(
+                Response::error(id, error_codes::DOWNLOAD_FAILED, error_msg)
+            )
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            Response::error(id, error_codes::YTDLP_NOT_FOUND, "yt-dlp not found. Install with: pip install yt-dlp")
+            DownloadResult::Failed(
+                Response::error(id, error_codes::YTDLP_NOT_FOUND, "yt-dlp not found. Install with: pip install yt-dlp")
+            )
         }
-        Err(e) => Response::error(id, error_codes::DOWNLOAD_FAILED, e.to_string()),
+        Err(e) => {
+            DownloadResult::Failed(
+                Response::error(id, error_codes::DOWNLOAD_FAILED, e.to_string())
+            )
+        }
     }
 }
 
-/// Download a video with progress streaming via WebSocket
+/// Download a video with progress streaming via WebSocket.
+/// Automatically retries with browser cookies if YouTube bot detection triggers.
 pub async fn handle_download(
     id: &str,
     url: &str,
@@ -287,8 +540,6 @@ pub async fn handle_download(
     output_dir: Option<&str>,
     ws_sender: Option<WsSender>,
 ) -> Response {
-    use std::process::Stdio;
-
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Response::error(id, error_codes::INVALID_URL, "URL must start with http:// or https://");
     }
@@ -311,161 +562,30 @@ pub async fn handle_download(
         "bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best[ext=mp4]/best".to_string()
     };
 
-    let ytdlp_cmd = get_ytdlp_command();
-    let deno_args = get_deno_args();
-
-    let mut cmd = TokioCommand::new(&ytdlp_cmd);
-    for arg in &deno_args {
-        cmd.arg(arg);
-    }
-
-    let mut child = match cmd
-        .args([
-            "-f", &format_str,
-            "--merge-output-format", "mp4",
-            "-o", &output_template,
-            "--print", "after_move:filepath",
-            "--no-playlist",
-            "--newline",           // Progress on separate lines
-            "--progress",
-            "--concurrent-fragments", "5", // Download up to 5 fragments in parallel
-            "--restrict-filenames", // Replace special chars with ASCII
-            "--windows-filenames",  // Windows-safe filenames
-            url,
-        ])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn() {
-            Ok(c) => c,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                return Response::error(id, error_codes::YTDLP_NOT_FOUND, "yt-dlp not found. Install with: pip install yt-dlp");
-            }
-            Err(e) => {
-                return Response::error(id, error_codes::DOWNLOAD_FAILED, e.to_string());
-            }
-        };
-
-    // Stream stdout for progress (yt-dlp writes [download] progress to stdout with --newline)
-    // yt-dlp downloads video+audio separately when merging, so we track phases:
-    //   Phase 0 = video (0-80%), Phase 1 = audio (80-95%), Merge = 95-99%
-    let stdout = child.stdout.take();
-    let mut last_sent_percent: u8 = 0;
-    let mut download_phase: u8 = 0; // 0 = first stream (video), 1 = second stream (audio)
-    let mut final_filepath: Option<String> = None;
-    if let Some(stdout) = stdout {
-        let reader = BufReader::new(stdout);
-        let mut lines = reader.lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            // Detect new download phase starting (yt-dlp prints "[download] Destination: ..." for each stream)
-            if line.contains("[download] Destination:") || line.contains("[download] Downloading") {
-                if download_phase == 0 && last_sent_percent > 50 {
-                    // Second stream starting (audio) — switch to phase 1
-                    download_phase = 1;
-                }
-            }
-
-            // Detect merging phase
-            if line.contains("[Merger]") || line.contains("Merging") {
-                let merge_percent: u8 = 96;
-                if merge_percent > last_sent_percent {
-                    last_sent_percent = merge_percent;
-                    info!("[yt-dlp] Merging streams...");
-                    if let Some(ref sender) = ws_sender {
-                        let progress_msg = Response::download_progress(id, merge_percent, None, None);
-                        let json = serde_json::to_string(&progress_msg).unwrap();
-                        let mut sender = sender.lock().await;
-                        let _ = sender.send(Message::Text(json)).await;
-                    }
-                }
-                continue;
-            }
-
-            // Parse progress from yt-dlp output
-            // Format: "[download]  45.2% of 100.00MiB at  5.23MiB/s ETA 00:10"
-            // Fragment format: "[download]  45.2% of ~100.00MiB at  5.23MiB/s ETA 00:10 (frag 5/10)"
-            if line.contains('%') {
-                // Extract percentage
-                let mut percent_val: Option<f32> = None;
-                if let Some(pct_str) = line.split('%').next() {
-                    let pct_part = pct_str.trim().rsplit_once(' ').map(|(_, p)| p).unwrap_or(pct_str.trim());
-                    if let Ok(pct) = pct_part.trim().parse::<f32>() {
-                        percent_val = Some(pct.min(100.0));
-                    }
-                }
-
-                if let Some(raw_percent) = percent_val {
-                    // Extract speed (e.g. "5.23MiB/s" or "~5.23MiB/s")
-                    let speed: Option<String> = if let Some(at_idx) = line.find(" at ") {
-                        let after_at = &line[at_idx + 4..];
-                        let speed_str = after_at.trim().split_whitespace().next().unwrap_or("");
-                        let cleaned = speed_str.trim_start_matches('~');
-                        if cleaned.contains("/s") { Some(cleaned.to_string()) } else { None }
-                    } else {
-                        None
-                    };
-
-                    // Extract ETA (e.g. "00:10")
-                    let eta: Option<String> = if let Some(eta_idx) = line.find("ETA ") {
-                        let after_eta = &line[eta_idx + 4..];
-                        let eta_str = after_eta.trim().split_whitespace().next().unwrap_or("");
-                        if !eta_str.is_empty() && eta_str != "Unknown" { Some(eta_str.to_string()) } else { None }
-                    } else {
-                        None
-                    };
-
-                    // Map raw percent to overall progress based on phase
-                    // Phase 0 (video): 0-80%, Phase 1 (audio): 80-95%
-                    let overall = match download_phase {
-                        0 => (raw_percent * 0.80) as u8,    // 0% → 0%, 100% → 80%
-                        _ => 80 + (raw_percent * 0.15) as u8, // 0% → 80%, 100% → 95%
-                    };
-                    let overall = overall.min(99);
-
-                    // Send if changed by at least 1%
-                    if overall > last_sent_percent {
-                        last_sent_percent = overall;
-                        info!("[yt-dlp] Phase {} raw={:.1}% overall={}% speed={:?} eta={:?}", download_phase, raw_percent, overall, speed, eta);
-                        if let Some(ref sender) = ws_sender {
-                            let progress_msg = Response::download_progress(
-                                id, overall,
-                                speed.as_deref(), eta.as_deref(),
-                            );
-                            let json = serde_json::to_string(&progress_msg).unwrap();
-                            let mut sender = sender.lock().await;
-                            let _ = sender.send(Message::Text(json)).await;
-                        }
-                    }
-                }
-            } else if line.contains("Downloading") || line.contains("Merging") {
-                info!("[yt-dlp] {}", line);
-            } else if !line.starts_with('[') && !line.is_empty() {
-                // Non-bracketed line = likely the filepath from --print after_move:filepath
-                info!("[yt-dlp] Captured output path: {}", line);
-                final_filepath = Some(line.trim().to_string());
-            }
+    // Attempt 1: without cookies
+    match run_download(id, url, &format_str, &output_template, false, &ws_sender).await {
+        DownloadResult::Success(path) => {
+            return Response::ok(id, serde_json::json!({ "path": path }));
+        }
+        DownloadResult::BotBlocked(_) => {
+            // YouTube wants authentication — retry with Chrome cookies
+            info!("Retrying download with --cookies-from-browser chrome");
+        }
+        DownloadResult::Failed(resp) => {
+            return resp;
         }
     }
 
-    // stdout was already consumed above, so just wait for exit status
-    let status = child.wait().await;
-
-    match status {
-        Ok(s) if s.success() => {
-            let output_path = final_filepath.unwrap_or_default();
-
-            if output_path.is_empty() {
-                return Response::error(id, error_codes::DOWNLOAD_FAILED, "yt-dlp did not return output path");
-            }
-
-            info!("Download complete: {}", output_path);
-            Response::ok(id, serde_json::json!({ "path": output_path }))
+    // Attempt 2: with Chrome cookies
+    match run_download(id, url, &format_str, &output_template, true, &ws_sender).await {
+        DownloadResult::Success(path) => {
+            Response::ok(id, serde_json::json!({ "path": path }))
         }
-        Ok(_) => {
-            Response::error(id, error_codes::DOWNLOAD_FAILED, "yt-dlp exited with error")
+        _ => {
+            // If cookies also failed, give a helpful error
+            warn!("Download failed even with cookies");
+            Response::error(id, error_codes::DOWNLOAD_FAILED,
+                "YouTube requires sign-in for this video. Try closing Chrome completely, then retry.".to_string())
         }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            Response::error(id, error_codes::YTDLP_NOT_FOUND, "yt-dlp not found. Install with: pip install yt-dlp")
-        }
-        Err(e) => Response::error(id, error_codes::DOWNLOAD_FAILED, e.to_string()),
     }
 }

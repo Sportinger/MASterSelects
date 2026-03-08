@@ -4,7 +4,6 @@ import type { Composition, MediaSliceCreator, MediaState } from '../types';
 import { generateId } from '../helpers/importPipeline';
 import { useTimelineStore } from '../../timeline';
 import { useSettingsStore } from '../../settingsStore';
-import { DEFAULT_TRACKS } from '../../timeline/constants';
 import { compositionRenderer } from '../../../services/compositionRenderer';
 import { playheadState } from '../../../services/layerBuilder';
 
