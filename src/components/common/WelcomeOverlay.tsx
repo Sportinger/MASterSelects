@@ -331,8 +331,9 @@ export function WelcomeOverlay({ onComplete, noFadeOnClose = false }: WelcomeOve
 
             {!isSupported ? (
               <p className="welcome-note">
-                Your browser does not support local file storage.
-                Please use Chrome, Edge, or another Chromium-based browser.
+                Project folders are not available in {browser.name}.
+                You can still edit — click "Start editing" below.
+                For full project support, use Chrome or Edge.
               </p>
             ) : (
             <div className="welcome-folder-buttons">
