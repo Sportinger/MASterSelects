@@ -3,6 +3,7 @@
 import type { PlaybackActions, SliceCreator } from './types';
 import { MIN_ZOOM, MAX_ZOOM } from './constants';
 import { useMediaStore } from '../mediaStore';
+import { getRuntimeFrameProvider } from '../../services/mediaRuntime/runtimePlayback';
 
 // Playback actions only (RAM preview and proxy cache in separate slices)
 export const createPlaybackSlice: SliceCreator<PlaybackActions> = (set, get) => ({
@@ -18,12 +19,31 @@ export const createPlaybackSlice: SliceCreator<PlaybackActions> = (set, get) => 
 
   play: async () => {
     const { clips, playheadPosition } = get();
+    const needsHtmlPlaybackReadiness = (
+      source: (typeof clips)[number]['source'] | undefined
+    ): source is NonNullable<(typeof clips)[number]['source']> & {
+      videoElement: HTMLVideoElement;
+    } => {
+      if (!source?.videoElement) {
+        return false;
+      }
+
+      const runtimeProvider = getRuntimeFrameProvider(source);
+      const frameProvider =
+        runtimeProvider?.isFullMode()
+          ? runtimeProvider
+          : source.webCodecsPlayer?.isFullMode()
+            ? source.webCodecsPlayer
+            : null;
+
+      return !frameProvider?.isFullMode();
+    };
 
     // Find all video clips at current playhead position that need to be ready
     const clipsAtPlayhead = clips.filter(clip => {
       const isAtPlayhead = playheadPosition >= clip.startTime &&
                            playheadPosition < clip.startTime + clip.duration;
-      const hasVideo = clip.source?.videoElement;
+      const hasVideo = needsHtmlPlaybackReadiness(clip.source);
       return isAtPlayhead && hasVideo;
     });
 
@@ -36,7 +56,7 @@ export const createPlaybackSlice: SliceCreator<PlaybackActions> = (set, get) => 
         if (isAtPlayhead) {
           const compTime = playheadPosition - clip.startTime + clip.inPoint;
           for (const nestedClip of clip.nestedClips) {
-            if (nestedClip.source?.videoElement) {
+            if (needsHtmlPlaybackReadiness(nestedClip.source)) {
               const isNestedAtTime = compTime >= nestedClip.startTime &&
                                      compTime < nestedClip.startTime + nestedClip.duration;
               if (isNestedAtTime) {
@@ -49,10 +69,10 @@ export const createPlaybackSlice: SliceCreator<PlaybackActions> = (set, get) => 
     }
 
     // Collect all videos that need to be ready
-    const videosToCheck = [
+    const videosToCheck = Array.from(new Set([
       ...clipsAtPlayhead.map(c => c.source!.videoElement!),
       ...nestedVideos
-    ];
+    ]));
 
     if (videosToCheck.length > 0) {
       // Wait for all videos to be ready (readyState >= 3 means HAVE_FUTURE_DATA)

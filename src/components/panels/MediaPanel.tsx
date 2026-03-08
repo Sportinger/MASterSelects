@@ -131,6 +131,8 @@ export function MediaPanel() {
   const [viewMode, setViewMode] = useState<'list' | 'grid'>(() => {
     return (localStorage.getItem('media-panel-view-mode') as 'list' | 'grid') || 'list';
   });
+  // Grid view: current open folder (null = root)
+  const [gridFolderId, setGridFolderId] = useState<string | null>(null);
 
   // Column order state
   const [columnOrder, setColumnOrder] = useState<ColumnId[]>(loadColumnOrder);
@@ -316,6 +318,10 @@ export function MediaPanel() {
     // Ignore clicks on buttons, inputs, context menus
     if (target.closest('button, input, .context-menu')) return;
 
+    // Don't start marquee when clicking on an item — let item drag handle it
+    const clickedOnItem = !!target.closest('.media-item, .media-grid-item');
+    if (clickedOnItem) return;
+
     const container = itemListRef.current;
     if (!container) return;
 
@@ -325,7 +331,6 @@ export function MediaPanel() {
     const clientStartX = e.clientX;
     const clientStartY = e.clientY;
 
-    const clickedOnItem = !!target.closest('.media-item');
     const initial = e.ctrlKey || e.metaKey ? [...selectedIds] : [];
     let isDragging = false;
 
@@ -355,7 +360,7 @@ export function MediaPanel() {
       const mTop = Math.min(marqueeRef.current.startY, cy);
       const mBottom = Math.max(marqueeRef.current.startY, cy);
 
-      const itemEls = container.querySelectorAll('.media-item');
+      const itemEls = container.querySelectorAll('.media-item, .media-grid-item');
       const hitIds: string[] = [];
       itemEls.forEach((el) => {
         const elRect = el.getBoundingClientRect();
@@ -374,7 +379,7 @@ export function MediaPanel() {
     };
 
     const handleMouseUp = () => {
-      if (!isDragging && !clickedOnItem) {
+      if (!isDragging) {
         // Clicked on empty space without dragging → deselect all
         if (!e.ctrlKey && !e.metaKey) {
           setSelection([]);
@@ -411,8 +416,12 @@ export function MediaPanel() {
   // Handle double-click (open/expand)
   const handleItemDoubleClick = useCallback(async (item: ProjectItem) => {
     if ('isExpanded' in item) {
-      // It's a folder
-      toggleFolderExpanded(item.id);
+      // It's a folder — in grid view navigate into it, in list view toggle expand
+      if (viewMode === 'grid') {
+        setGridFolderId(item.id);
+      } else {
+        toggleFolderExpanded(item.id);
+      }
     } else if (item.type === 'composition') {
       // Open composition in timeline (as a tab)
       openCompositionTab(item.id);
@@ -426,7 +435,7 @@ export function MediaPanel() {
         log.info('File reloaded successfully');
       }
     }
-  }, [toggleFolderExpanded, openCompositionTab, reloadFile]);
+  }, [toggleFolderExpanded, openCompositionTab, reloadFile, viewMode]);
 
   // Context menu
   const handleContextMenu = useCallback((e: React.MouseEvent, itemId?: string) => {
@@ -510,17 +519,28 @@ export function MediaPanel() {
     closeContextMenu();
   }, [selectedIds, files, compositions, folders, removeFile, removeComposition, removeFolder, closeContextMenu]);
 
+  // Get the active parent folder (grid view: current open folder, list view: selected folder or null)
+  const getActiveParentId = useCallback((): string | null => {
+    if (viewMode === 'grid' && gridFolderId) return gridFolderId;
+    // In list view, if a single folder is selected, create inside it
+    if (selectedIds.length === 1) {
+      const sel = folders.find(f => f.id === selectedIds[0]);
+      if (sel) return sel.id;
+    }
+    return null;
+  }, [viewMode, gridFolderId, selectedIds, folders]);
+
   // New composition
   const handleNewComposition = useCallback(() => {
-    createComposition(`Comp ${compositions.length + 1}`);
+    createComposition(`Comp ${compositions.length + 1}`, { parentId: getActiveParentId() });
     closeContextMenu();
-  }, [compositions.length, createComposition, closeContextMenu]);
+  }, [compositions.length, createComposition, getActiveParentId, closeContextMenu]);
 
   // New folder
   const handleNewFolder = useCallback(() => {
-    createFolder(`New Folder`);
+    createFolder('New Folder', getActiveParentId());
     closeContextMenu();
-  }, [createFolder, closeContextMenu]);
+  }, [createFolder, getActiveParentId, closeContextMenu]);
 
   // New text item (in Media Panel, can be dragged to timeline)
   const handleNewText = useCallback(() => {
@@ -1085,6 +1105,32 @@ export function MediaPanel() {
     );
   };
 
+  // Build hover tooltip for grid items
+  const buildGridTooltip = (item: ProjectItem, isFolder: boolean, isComp: boolean): string => {
+    const parts: string[] = [item.name];
+
+    if (isFolder) {
+      const children = getItemsByFolder(item.id);
+      parts.push(`${children.length} item${children.length !== 1 ? 's' : ''}`);
+    } else if (isComp) {
+      const comp = item as Composition;
+      parts.push(`${comp.width}×${comp.height}`);
+      parts.push(`${comp.frameRate} fps`);
+      if (comp.duration) parts.push(formatDuration(comp.duration));
+    } else if ('type' in item) {
+      const mf = item as MediaFile;
+      if (mf.width && mf.height) parts.push(`${mf.width}×${mf.height}`);
+      if (mf.duration) parts.push(formatDuration(mf.duration));
+      if (mf.codec) parts.push(mf.codec);
+      if (mf.audioCodec) parts.push(mf.audioCodec);
+      if (mf.fps) parts.push(`${mf.fps} fps`);
+      if (mf.fileSize) parts.push(formatFileSize(mf.fileSize));
+      if (mf.bitrate) parts.push(formatBitrate(mf.bitrate));
+    }
+
+    return parts.join('\n');
+  };
+
   // Render a single grid item
   const renderGridItem = (item: ProjectItem) => {
     const isFolder = 'isExpanded' in item;
@@ -1092,29 +1138,44 @@ export function MediaPanel() {
     const isMediaFile = !isFolder && 'type' in item && item.type !== 'composition' && item.type !== 'text' && item.type !== 'solid';
     const mediaFile = isMediaFile ? (item as MediaFile) : null;
     const isComp = !isFolder && 'type' in item && item.type === 'composition';
+    const comp = isComp ? (item as Composition) : null;
     const thumbUrl = mediaFile?.thumbnailUrl;
+    const isDragTarget = isFolder && dragOverFolderId === item.id;
+
+    // Duration badge: videos + compositions
+    const duration = mediaFile?.duration || comp?.duration;
+
+    // Folder item count
+    const folderCount = isFolder ? getItemsByFolder(item.id).length : 0;
 
     return (
       <div key={item.id} data-item-id={item.id}>
         <div
-          className={`media-grid-item ${isSelected ? 'selected' : ''} ${isFolder ? 'folder' : ''}`}
+          className={`media-grid-item ${isSelected ? 'selected' : ''} ${isFolder ? 'folder' : ''} ${isDragTarget ? 'drag-target' : ''}`}
           draggable
           onDragStart={(e) => handleDragStart(e, item)}
           onDragEnd={handleDragEnd}
+          onDragOver={isFolder ? (e) => handleFolderDragOver(e, item.id) : undefined}
+          onDragLeave={isFolder ? handleFolderDragLeave : undefined}
+          onDrop={isFolder ? (e) => handleFolderDrop(e, item.id) : undefined}
           onClick={(e) => handleItemClick(item.id, e)}
           onDoubleClick={() => handleItemDoubleClick(item)}
           onContextMenu={(e) => handleContextMenu(e, item.id)}
+          title={buildGridTooltip(item, isFolder, isComp)}
         >
           <div className="media-grid-thumb">
             {thumbUrl ? (
               <img src={thumbUrl} alt="" draggable={false} />
             ) : (
               <div className="media-grid-thumb-placeholder">
-                <FileTypeIcon type={isFolder ? 'folder' : isComp ? 'composition' : (item as MediaFile).type} />
+                <FileTypeIcon type={isFolder ? 'folder' : isComp ? 'composition' : (item as MediaFile).type} large />
               </div>
             )}
-            {mediaFile?.duration && (
-              <span className="media-grid-duration">{formatDuration(mediaFile.duration)}</span>
+            {duration ? (
+              <span className="media-grid-duration">{formatDuration(duration)}</span>
+            ) : null}
+            {isFolder && folderCount > 0 && (
+              <span className="media-grid-badge">{folderCount}</span>
             )}
           </div>
           <div className="media-grid-name" title={item.name}>{item.name}</div>
@@ -1126,6 +1187,21 @@ export function MediaPanel() {
   // Get root items (with sorting applied)
   const rootItems = sortItems(getItemsByFolder(null));
   const totalItems = files.length + compositions.length;
+
+  // Grid view: items for current folder + breadcrumb path
+  const gridItems = sortItems(getItemsByFolder(gridFolderId));
+  const gridBreadcrumb: Array<{ id: string | null; name: string }> = [];
+  if (gridFolderId) {
+    // Build path from root to current folder
+    const path: Array<{ id: string; name: string }> = [];
+    let current = folders.find(f => f.id === gridFolderId);
+    while (current) {
+      path.unshift({ id: current.id, name: current.name });
+      current = current.parentId ? folders.find(f => f.id === current!.parentId) : undefined;
+    }
+    gridBreadcrumb.push({ id: null, name: '/' });
+    gridBreadcrumb.push(...path);
+  }
 
   // Check if any files need reload (lost permission after refresh)
   const filesNeedReload = files.some(f => !f.file);
@@ -1149,7 +1225,7 @@ export function MediaPanel() {
         <div className="media-panel-actions">
           <button
             className={`btn btn-sm btn-icon media-view-toggle ${viewMode === 'list' ? 'active' : ''}`}
-            onClick={() => { const m = 'list'; setViewMode(m); localStorage.setItem('media-panel-view-mode', m); }}
+            onClick={() => { const m = 'list'; setViewMode(m); setGridFolderId(null); localStorage.setItem('media-panel-view-mode', m); }}
             title="List View"
           >
             <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><rect x="1" y="2" width="14" height="2" rx="0.5"/><rect x="1" y="7" width="14" height="2" rx="0.5"/><rect x="1" y="12" width="14" height="2" rx="0.5"/></svg>
@@ -1298,8 +1374,24 @@ export function MediaPanel() {
             onMouseDown={handleMarqueeMouseDown}
             style={{ position: 'relative' }}
           >
+            {/* Breadcrumb for folder navigation */}
+            {gridFolderId && (
+              <div className="media-grid-breadcrumb">
+                {gridBreadcrumb.map((crumb, i) => (
+                  <React.Fragment key={crumb.id ?? 'root'}>
+                    {i > 0 && <span className="media-grid-breadcrumb-sep">/</span>}
+                    <button
+                      className={`media-grid-breadcrumb-btn ${i === gridBreadcrumb.length - 1 ? 'active' : ''}`}
+                      onClick={() => setGridFolderId(crumb.id)}
+                    >
+                      {crumb.name}
+                    </button>
+                  </React.Fragment>
+                ))}
+              </div>
+            )}
             <div className="media-grid">
-              {rootItems.map(item => renderGridItem(item))}
+              {gridItems.map(item => renderGridItem(item))}
             </div>
             {/* Marquee selection rectangle */}
             {marquee && (() => {

@@ -279,6 +279,11 @@ export class RenderLoop {
       this.idleSuppressed = false;
       log.info('Idle suppression lifted (first play)');
     }
+    if (playing) {
+      // Resume should wake idle immediately and bypass the previous frame limiter window.
+      this.lastRenderTime = 0;
+      this.requestRender();
+    }
   }
 
   setIsScrubbing(scrubbing: boolean): void {

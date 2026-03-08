@@ -28,4 +28,36 @@ export const statsToolDefinitions: ToolDefinition[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'getLogs',
+      description: 'Get recent buffered browser logs for debugging. Supports filtering by level, module name, and search text.',
+      parameters: {
+        type: 'object',
+        properties: {
+          limit: { type: 'number', description: 'Maximum number of recent log entries to return (default: 100, max: 500)' },
+          level: { type: 'string', description: 'Minimum log level filter: DEBUG, INFO, WARN, ERROR' },
+          module: { type: 'string', description: 'Substring filter for the logger module name, e.g. PlaybackHealth or CutTransition' },
+          search: { type: 'string', description: 'Substring filter against the message and serialized data' },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'getPlaybackTrace',
+      description: 'Get raw recent playback pipeline events and health state for debugging WebCodecs/VF playback issues.',
+      parameters: {
+        type: 'object',
+        properties: {
+          windowMs: { type: 'number', description: 'Time window in milliseconds to inspect (default: 5000, max: 30000)' },
+          limit: { type: 'number', description: 'Maximum number of recent WC/VF events to include (default: 120, max: 500)' },
+        },
+        required: [],
+      },
+    },
+  },
 ];

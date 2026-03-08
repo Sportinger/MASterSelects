@@ -1,4 +1,8 @@
 import { useEngineStore } from '../../../stores/engineStore';
+import { Logger } from '../../logger';
+import { playbackHealthMonitor } from '../../playbackHealthMonitor';
+import { vfPipelineMonitor } from '../../vfPipelineMonitor';
+import { wcPipelineMonitor } from '../../wcPipelineMonitor';
 import type { ToolResult } from '../types';
 
 function collectSnapshot() {
@@ -41,6 +45,7 @@ function collectSnapshot() {
       queuePressureEvents: s.playback.queuePressureEvents,
       healthAnomalies: s.playback.healthAnomalies,
       activeVideos: s.playback.activeVideos,
+      playingVideos: s.playback.playingVideos,
       seekingVideos: s.playback.seekingVideos,
       warmingUpVideos: s.playback.warmingUpVideos,
       coldVideos: s.playback.coldVideos,
@@ -50,6 +55,12 @@ function collectSnapshot() {
       avgQueueDepth: s.playback.avgQueueDepth ? round(s.playback.avgQueueDepth) : undefined,
       maxQueueDepth: s.playback.maxQueueDepth ? round(s.playback.maxQueueDepth) : undefined,
       avgAudioDriftMs: s.playback.avgAudioDriftMs ? round(s.playback.avgAudioDriftMs) : undefined,
+      decoderResets: s.playback.decoderResets,
+      pendingSeekResolves: s.playback.pendingSeekResolves,
+      avgPendingSeekMs: s.playback.avgPendingSeekMs ? round(s.playback.avgPendingSeekMs) : undefined,
+      maxPendingSeekMs: s.playback.maxPendingSeekMs ? round(s.playback.maxPendingSeekMs) : undefined,
+      collectorHolds: s.playback.collectorHolds,
+      collectorDrops: s.playback.collectorDrops,
       lastAnomalyType: s.playback.lastAnomalyType,
     };
   }
@@ -112,6 +123,72 @@ export async function handleGetStatsHistory(
         renderTimeAvg: round(totalList.reduce((a, b) => a + b, 0) / totalList.length),
       },
       snapshots: history,
+    },
+  };
+}
+
+export async function handleGetLogs(
+  args: Record<string, unknown>
+): Promise<ToolResult> {
+  const limit = Math.min(Math.max(Number(args.limit) || 100, 1), 500);
+  const moduleFilter = typeof args.module === 'string' ? args.module.trim().toLowerCase() : '';
+  const search = typeof args.search === 'string' ? args.search.trim().toLowerCase() : '';
+  const level = typeof args.level === 'string' ? args.level.toUpperCase() : '';
+
+  let logs = Logger.getBuffer(
+    level === 'DEBUG' || level === 'INFO' || level === 'WARN' || level === 'ERROR'
+      ? level
+      : undefined
+  );
+
+  if (moduleFilter) {
+    logs = logs.filter((entry) => entry.module.toLowerCase().includes(moduleFilter));
+  }
+
+  if (search) {
+    logs = logs.filter((entry) =>
+      entry.message.toLowerCase().includes(search) ||
+      JSON.stringify(entry.data ?? '').toLowerCase().includes(search)
+    );
+  }
+
+  const recentLogs = logs.slice(-limit);
+
+  return {
+    success: true,
+    data: {
+      count: recentLogs.length,
+      totalMatched: logs.length,
+      logs: recentLogs,
+    },
+  };
+}
+
+export async function handleGetPlaybackTrace(
+  args: Record<string, unknown>
+): Promise<ToolResult> {
+  const windowMs = Math.min(Math.max(Number(args.windowMs) || 5000, 100), 30000);
+  const limit = Math.min(Math.max(Number(args.limit) || 120, 1), 500);
+  const { engineStats } = useEngineStore.getState();
+
+  const wcTimeline = wcPipelineMonitor.timeline(windowMs);
+  const vfTimeline = vfPipelineMonitor.timeline(windowMs);
+  const healthVideos = playbackHealthMonitor.videos();
+  const healthAnomalies = playbackHealthMonitor
+    .anomalies()
+    .filter((anomaly) => anomaly.timestamp >= Date.now() - windowMs);
+
+  return {
+    success: true,
+    data: {
+      decoder: engineStats.decoder,
+      windowMs,
+      wcStats: wcPipelineMonitor.stats(),
+      vfStats: vfPipelineMonitor.stats(),
+      wcEvents: wcTimeline.slice(-limit),
+      vfEvents: vfTimeline.slice(-limit),
+      healthVideos,
+      healthAnomalies,
     },
   };
 }

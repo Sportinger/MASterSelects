@@ -114,6 +114,8 @@ import {
 
 import {
   handleGetStats,
+  handleGetLogs,
+  handleGetPlaybackTrace,
   handleGetStatsHistory,
 } from './stats';
 
@@ -202,6 +204,8 @@ const selfContainedHandlers: Record<string, (args: Record<string, unknown>) => P
   // Stats
   getStats: handleGetStats,
   getStatsHistory: handleGetStatsHistory,
+  getLogs: handleGetLogs,
+  getPlaybackTrace: handleGetPlaybackTrace,
 };
 
 // YouTube handlers - self-contained, fetch their own stores
@@ -334,5 +338,7 @@ export {
   handleUpdateVertex,
   // Stats
   handleGetStats,
+  handleGetLogs,
+  handleGetPlaybackTrace,
   handleGetStatsHistory,
 };

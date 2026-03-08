@@ -12,6 +12,7 @@ export interface CompositorState {
   pongView: GPUTextureView;
   outputWidth: number;
   outputHeight: number;
+  skipEffects?: boolean;
   // Additional textures for effect pre-processing
   effectTempTexture?: GPUTexture;
   effectTempView?: GPUTextureView;
@@ -81,7 +82,7 @@ export class Compositor {
       const inlineEffects: InlineEffectParams = { brightness: 0, contrast: 1, saturation: 1, invert: false };
       let complexEffects: typeof layer.effects | undefined;
 
-      if (layer.effects && layer.effects.length > 0) {
+      if (!state.skipEffects && layer.effects && layer.effects.length > 0) {
         const complex: typeof layer.effects = [];
         for (const effect of layer.effects) {
           if (!effect.enabled || effect.type.startsWith('audio-')) continue;

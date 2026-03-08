@@ -1,6 +1,6 @@
 // Export Panel - embedded panel for frame-by-frame video export
 
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { Logger } from '../../services/logger';
 import { downloadFCPXML } from '../../services/export/fcpxmlExport';
 
@@ -27,10 +27,12 @@ import type {
   ProResProfile,
   DnxhrProfile,
 } from '../../engine/ffmpeg';
-import { seekAllClipsToTime, buildLayersAtTime } from './exportHelpers';
+import { FFmpegFrameRenderer } from './exportHelpers';
 import { useExportState, type EncoderType } from './useExportState';
 
 export function ExportPanel() {
+  const ffmpegFrameRendererRef = useRef<FFmpegFrameRenderer | null>(null);
+  const ffmpegAudioPipelineRef = useRef<AudioExportPipeline | null>(null);
   const { duration, inPoint, outPoint, playheadPosition, startExport, setExportProgress, endExport } = useTimelineStore(useShallow(s => ({
     duration: s.duration,
     inPoint: s.inPoint,
@@ -141,6 +143,8 @@ export function ExportPanel() {
       }
       setExporter(null);
     } else {
+      ffmpegFrameRendererRef.current?.cancel();
+      ffmpegAudioPipelineRef.current?.cancel();
       const ffmpeg = getFFmpegBridge();
       ffmpeg.cancel();
     }
@@ -171,11 +175,22 @@ export function ExportPanel() {
     const actualWidth = useCustomResolution ? customWidth : width;
     const actualHeight = useCustomResolution ? customHeight : height;
     const exportFps = useCustomFps ? customFps : fps;
+    const originalDimensions = engine.getOutputDimensions();
+    const ffmpegFrameRenderer = new FFmpegFrameRenderer({
+      width: actualWidth,
+      height: actualHeight,
+      fps: exportFps,
+      startTime,
+      endTime,
+    });
+    ffmpegFrameRendererRef.current = ffmpegFrameRenderer;
 
     // Start export progress in timeline
     startExport(startTime, endTime);
 
     try {
+      await ffmpegFrameRenderer.initialize();
+
       const settings: FFmpegExportSettings = {
         codec: ffmpegCodec,
         container: ffmpegContainer,
@@ -206,22 +221,17 @@ export function ExportPanel() {
       const frameStartTime = performance.now();
 
       for (let i = 0; i < totalFrames; i++) {
+        if (ffmpegFrameRenderer.isCancelled()) {
+          log.info('FFmpeg export cancelled during frame rendering');
+          return;
+        }
+
         const time = startTime + i * frameDuration;
-
-        if (i === 0) log.debug('Frame 0: Starting seek...');
-
-        // Seek all video clips to the exact frame time
-        await seekAllClipsToTime(time);
-
-        if (i === 0) log.debug('Frame 0: Seek complete, waiting for decode...');
-
-        // Small delay to ensure video frame is decoded (browser needs time after seek)
-        await new Promise(resolve => setTimeout(resolve, 16));
 
         if (i === 0) log.debug('Frame 0: Building layers...');
 
         // Build layers at this time and render
-        const layers = buildLayersAtTime(time);
+        const layers = await ffmpegFrameRenderer.buildLayersAtTime(time);
 
         if (i === 0) log.debug(`Frame 0: Got ${layers.length} layers`);
 
@@ -235,6 +245,11 @@ export function ExportPanel() {
 
         // Read pixels
         const pixels = await engine.readPixels();
+
+        if (ffmpegFrameRenderer.isCancelled()) {
+          log.info('FFmpeg export cancelled after frame render');
+          return;
+        }
 
         if (i === 0) log.debug(`Frame 0: Got pixels: ${pixels ? pixels.length : 'null'}`);
         if (pixels) {
@@ -275,6 +290,7 @@ export function ExportPanel() {
 
       // Reset export mode
       engine.setExporting(false);
+      engine.setResolution(originalDimensions.width, originalDimensions.height);
 
       if (frames.length === 0) {
         throw new Error('No frames rendered');
@@ -293,6 +309,7 @@ export function ExportPanel() {
             bitrate: audioBitrate,
             normalize: normalizeAudio,
           });
+          ffmpegAudioPipelineRef.current = audioPipeline;
 
           audioBuffer = await audioPipeline.exportRawAudio(
             startTime,
@@ -313,6 +330,7 @@ export function ExportPanel() {
               setExportProgress(percent, endTime);
             }
           );
+          ffmpegAudioPipelineRef.current = null;
 
           if (audioBuffer && audioBuffer.length > 0) {
             log.info(`Audio extracted: ${audioBuffer.duration.toFixed(2)}s, ${audioBuffer.numberOfChannels}ch, ${audioBuffer.length} samples`);
@@ -344,6 +362,11 @@ export function ExportPanel() {
       // Allow React to render "Encoding..." before FFmpeg blocks the main thread
       await new Promise(resolve => setTimeout(resolve, 50));
 
+      if (ffmpegFrameRenderer.isCancelled()) {
+        log.info('FFmpeg export cancelled before encoding');
+        return;
+      }
+
       const ffmpeg = getFFmpegBridge();
 
       const blob = await ffmpeg.encode(frames, settings, (p: FFmpegProgress) => {
@@ -371,12 +394,20 @@ export function ExportPanel() {
 
       log.info('FFmpeg export complete');
     } catch (e) {
+      if (ffmpegFrameRenderer.isCancelled()) {
+        log.info('FFmpeg export cancelled');
+        return;
+      }
       const msg = e instanceof Error ? e.message : 'Export failed';
       setError(msg);
       log.error('FFmpeg export error', e);
     } finally {
+      ffmpegAudioPipelineRef.current = null;
+      ffmpegFrameRenderer.cleanup();
+      ffmpegFrameRendererRef.current = null;
       // Always reset export mode
       engine.setExporting(false);
+      engine.setResolution(originalDimensions.width, originalDimensions.height);
       setIsExporting(false);
       setExportPhase('idle');
       // End export progress in timeline

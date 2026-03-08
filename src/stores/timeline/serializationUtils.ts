@@ -129,6 +129,47 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
   // Load timeline state from composition data
   loadState: async (data: CompositionTimelineData | undefined) => {
     const { pause, clearTimeline } = get();
+    const wakePreviewAfterRestore = () => {
+      layerBuilder.invalidateCache();
+      engine.requestRender();
+    };
+    const primeRestoredWebCodecsPlayer = (
+      clip: Pick<TimelineClip, 'startTime' | 'duration' | 'inPoint' | 'outPoint' | 'reversed'>,
+      webCodecsPlayer: Pick<WebCodecsPlayer, 'currentTime' | 'seek' | 'hasFrame' | 'getPendingSeekTime' | 'ready'>,
+      attempt = 0
+    ) => {
+      const { isPlaying, playheadPosition } = get();
+      if (isPlaying) {
+        return;
+      }
+
+      const clipEnd = clip.startTime + clip.duration;
+      if (playheadPosition < clip.startTime || playheadPosition >= clipEnd) {
+        return;
+      }
+
+      if (!webCodecsPlayer.ready) {
+        if (attempt < 60) {
+          setTimeout(() => {
+            primeRestoredWebCodecsPlayer(clip, webCodecsPlayer, attempt + 1);
+          }, 32);
+        }
+        return;
+      }
+
+      const clipLocalTime = playheadPosition - clip.startTime;
+      const unclampedTarget = clip.reversed
+        ? clip.outPoint - clipLocalTime
+        : clipLocalTime + clip.inPoint;
+      const targetTime = Math.max(clip.inPoint, Math.min(clip.outPoint, unclampedTarget));
+      const effectiveTime = webCodecsPlayer.getPendingSeekTime?.() ?? webCodecsPlayer.currentTime;
+
+      if ((webCodecsPlayer.hasFrame?.() ?? false) && Math.abs(effectiveTime - targetTime) <= 0.05) {
+        return;
+      }
+
+      webCodecsPlayer.seek(targetTime);
+    };
 
     // Stop playback
     pause();
@@ -437,6 +478,7 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
                           return { ...c, nestedClips: c.nestedClips.map(inner => inner) };
                         }),
                       }));
+                      wakePreviewAfterRestore();
                     }, { once: true });
                   } else if (subType === 'image') {
                     const img = new Image();
@@ -444,6 +486,7 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
                     img.addEventListener('load', () => {
                       nc.source = { type: 'image', imageElement: img };
                       nc.isLoading = false;
+                      wakePreviewAfterRestore();
                     }, { once: true });
                   }
                 }
@@ -615,6 +658,7 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
                       };
                     }),
                   }));
+                  wakePreviewAfterRestore();
                 }, { once: true });
               } else if (nestedType === 'image') {
                 const img = new Image();
@@ -641,11 +685,12 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
                         nestedClips: c.nestedClips.map(nc =>
                           nc.id === nestedClip.id
                             ? { ...nc, source: nestedClip.source, isLoading: false }
-                            : nc
+                          : nc
                         ),
                       };
                     }),
                   }));
+                  wakePreviewAfterRestore();
                 }, { once: true });
               }
             }
@@ -955,6 +1000,8 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
                 : c
             ),
           }));
+          primeRestoredWebCodecsPlayer(clip, cachedWcp);
+          wakePreviewAfterRestore();
 
           // Still load the video element in background for fallback/thumbnails
           video.addEventListener('canplaythrough', () => {
@@ -969,9 +1016,10 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
                         naturalDuration: video.duration,
                       },
                     }
-                  : c
+                : c
               ),
             }));
+            wakePreviewAfterRestore();
             engine.preCacheVideoFrame(video);
           }, { once: true });
         } else {
@@ -989,10 +1037,11 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
                         mediaFileId: serializedClip.mediaFileId,
                       },
                       isLoading: false,
-                    }
-                  : c
+                  }
+                : c
               ),
             }));
+            wakePreviewAfterRestore();
 
             engine.preCacheVideoFrame(video);
 
@@ -1015,6 +1064,8 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
                         : c
                     ),
                   }));
+                  primeRestoredWebCodecsPlayer(clip, webCodecsPlayer);
+                  wakePreviewAfterRestore();
                 }
               } catch (err) {
                 log.warn('WebCodecsPlayer init failed for restored clip, using HTMLVideoElement', err);
@@ -1062,6 +1113,7 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
                 : c
             ),
           }));
+          wakePreviewAfterRestore();
         }, { once: true });
       }
     }

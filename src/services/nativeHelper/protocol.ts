@@ -171,6 +171,56 @@ export interface LocateCommand {
   search_dirs?: string[];
 }
 
+// ── File System Commands ──
+
+export interface WriteFileCommand {
+  cmd: 'write_file';
+  id: string;
+  path: string;
+  data: string;
+  encoding?: 'utf8' | 'base64';
+}
+
+export interface CreateDirCommand {
+  cmd: 'create_dir';
+  id: string;
+  path: string;
+  recursive?: boolean;
+}
+
+export interface ListDirCommand {
+  cmd: 'list_dir';
+  id: string;
+  path: string;
+}
+
+export interface DeleteCommand {
+  cmd: 'delete';
+  id: string;
+  path: string;
+  recursive?: boolean;
+}
+
+export interface ExistsCommand {
+  cmd: 'exists';
+  id: string;
+  path: string;
+}
+
+export interface RenameCommand {
+  cmd: 'rename';
+  id: string;
+  old_path: string;
+  new_path: string;
+}
+
+export interface DirEntry {
+  name: string;
+  kind: 'file' | 'directory';
+  size: number;
+  modified: number;
+}
+
 export type Command =
   | AuthCommand
   | OpenCommand
@@ -188,7 +238,13 @@ export type Command =
   | ListFormatsCommand
   | DownloadCommand
   | GetFileCommand
-  | LocateCommand;
+  | LocateCommand
+  | WriteFileCommand
+  | CreateDirCommand
+  | ListDirCommand
+  | DeleteCommand
+  | ExistsCommand
+  | RenameCommand;
 
 // Encode settings
 export interface EncodeOutput {
@@ -258,11 +314,17 @@ export interface FileMetadata {
 // System info
 export interface SystemInfo {
   version: string;
-  ffmpeg_version: string;
-  hw_accel: string[];
-  cache_used_mb: number;
-  cache_max_mb: number;
-  open_files: number;
+  ffmpeg_version?: string;
+  hw_accel?: string[];
+  cache_used_mb?: number;
+  cache_max_mb?: number;
+  open_files?: number;
+  // v0.3+ fields
+  ytdlp_available?: boolean;
+  download_dir?: string;
+  project_root?: string;
+  /** True if native helper supports file system commands (write_file, create_dir, etc.) */
+  fs_commands?: boolean;
 }
 
 // Frame header (16 bytes)

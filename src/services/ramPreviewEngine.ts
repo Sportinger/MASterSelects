@@ -5,6 +5,11 @@
 
 import type { Layer, NestedCompositionData, TimelineClip, TimelineTrack } from '../types';
 import { RAM_PREVIEW_FPS, FRAME_TOLERANCE } from '../stores/timeline/constants';
+import {
+  getPolicyRuntimeSource,
+  getRuntimeFrameProvider,
+  updateRuntimePlaybackTime,
+} from './mediaRuntime/runtimePlayback';
 
 /** Quantize time to frame grid (same as stores/timeline/utils.quantizeTime) */
 function quantizeTime(time: number): number {
@@ -51,6 +56,18 @@ export class RamPreviewEngine {
 
   constructor(engine: RamPreviewRenderEngine) {
     this.engine = engine;
+  }
+
+  private getRamPreviewSource(
+    clip: TimelineClip,
+    sessionScope?: string
+  ): TimelineClip['source'] {
+    return getPolicyRuntimeSource(
+      clip.source,
+      'ram-preview',
+      clip.id,
+      sessionScope
+    );
   }
 
   /**
@@ -214,7 +231,14 @@ export class RamPreviewEngine {
     clip: TimelineClip, time: number, deps: RamPreviewDeps
   ): Promise<Layer | null> {
     const video = clip.source!.videoElement!;
-    const webCodecsPlayer = clip.source!.webCodecsPlayer;
+    const runtimeSource = this.getRamPreviewSource(clip);
+    const runtimeProvider =
+      getRuntimeFrameProvider(runtimeSource, 'ram-preview') ??
+      clip.source!.webCodecsPlayer ??
+      null;
+    const preciseSeekProvider = runtimeProvider as {
+      seekAsync?: (timeSeconds: number) => Promise<void>;
+    } | null;
 
     // Calculate source time using speed integration (handles keyframes)
     const clipLocalTime = time - clip.startTime;
@@ -224,10 +248,15 @@ export class RamPreviewEngine {
     const clipTime = Math.max(clip.inPoint, Math.min(clip.outPoint, startPoint + sourceTime));
 
     // Seek video
-    if (webCodecsPlayer) {
+    if (runtimeProvider) {
       if (deps.isCancelled()) return null;
       try {
-        await webCodecsPlayer.seekAsync(clipTime);
+        if (typeof preciseSeekProvider?.seekAsync === 'function') {
+          await preciseSeekProvider.seekAsync(clipTime);
+        } else {
+          runtimeProvider.seek(clipTime);
+          await new Promise(r => setTimeout(r, 50));
+        }
       } catch {
         video.currentTime = clipTime;
         await new Promise(r => setTimeout(r, 50));
@@ -238,9 +267,14 @@ export class RamPreviewEngine {
     }
 
     if (deps.isCancelled()) return null;
+    updateRuntimePlaybackTime(runtimeSource, clipTime, 'ram-preview');
 
     return this.clipToLayer(clip, {
-      type: 'video', videoElement: video, webCodecsPlayer,
+      type: 'video',
+      videoElement: video,
+      webCodecsPlayer: runtimeProvider ?? undefined,
+      runtimeSourceId: runtimeSource?.runtimeSourceId,
+      runtimeSessionKey: runtimeSource?.runtimeSessionKey,
     });
   }
 
@@ -276,11 +310,26 @@ export class RamPreviewEngine {
 
       if (nestedClip.source?.videoElement) {
         const nestedVideo = nestedClip.source.videoElement;
-        const nestedWebCodecs = nestedClip.source.webCodecsPlayer;
+        const nestedRuntimeSource = this.getRamPreviewSource(
+          nestedClip,
+          `composition:${clip.compositionId || clip.id}/nested:${nestedClip.id}`
+        );
+        const nestedRuntimeProvider =
+          getRuntimeFrameProvider(nestedRuntimeSource, 'ram-preview') ??
+          nestedClip.source.webCodecsPlayer ??
+          null;
+        const preciseSeekProvider = nestedRuntimeProvider as {
+          seekAsync?: (timeSeconds: number) => Promise<void>;
+        } | null;
 
-        if (nestedWebCodecs) {
+        if (nestedRuntimeProvider) {
           try {
-            await nestedWebCodecs.seekAsync(nestedClipTime);
+            if (typeof preciseSeekProvider?.seekAsync === 'function') {
+              await preciseSeekProvider.seekAsync(nestedClipTime);
+            } else {
+              nestedRuntimeProvider.seek(nestedClipTime);
+              await new Promise(r => setTimeout(r, 50));
+            }
           } catch {
             nestedVideo.currentTime = nestedClipTime;
             await new Promise(r => setTimeout(r, 50));
@@ -288,9 +337,18 @@ export class RamPreviewEngine {
         } else {
           await this.seekHTMLVideo(nestedVideo, nestedClipTime, 150);
         }
+        updateRuntimePlaybackTime(
+          nestedRuntimeSource,
+          nestedClipTime,
+          'ram-preview'
+        );
 
         nestedLayers.push(this.clipToLayer(nestedClip, {
-          type: 'video', videoElement: nestedVideo, webCodecsPlayer: nestedWebCodecs,
+          type: 'video',
+          videoElement: nestedVideo,
+          webCodecsPlayer: nestedRuntimeProvider ?? undefined,
+          runtimeSourceId: nestedRuntimeSource?.runtimeSourceId,
+          runtimeSessionKey: nestedRuntimeSource?.runtimeSessionKey,
         }, `nested-${nestedClip.id}`));
       } else if (nestedClip.source?.imageElement) {
         nestedLayers.push(this.clipToLayer(nestedClip, {
@@ -371,13 +429,19 @@ export class RamPreviewEngine {
       if (clip.source?.type !== 'video' || !clip.source.videoElement) continue;
 
       const video = clip.source.videoElement;
+      const runtimeSource = this.getRamPreviewSource(clip);
+      const runtimeProvider = getRuntimeFrameProvider(runtimeSource, 'ram-preview');
       const localTime = time - clip.startTime;
       const sourceTime = deps.getSourceTimeForClip(clip.id, localTime);
       const initialSpeed = deps.getInterpolatedSpeed(clip.id, 0);
       const startPoint = initialSpeed >= 0 ? clip.inPoint : clip.outPoint;
       const expectedTime = Math.max(clip.inPoint, Math.min(clip.outPoint, startPoint + sourceTime));
 
-      if (Math.abs(video.currentTime - expectedTime) > FRAME_TOLERANCE) {
+      const actualTime = runtimeProvider?.isFullMode()
+        ? runtimeProvider.currentTime
+        : video.currentTime;
+
+      if (Math.abs(actualTime - expectedTime) > FRAME_TOLERANCE) {
         return false;
       }
     }

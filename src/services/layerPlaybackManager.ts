@@ -7,6 +7,12 @@ import { engine } from '../engine/WebGPUEngine';
 import type { Composition } from '../stores/mediaStore/types';
 import { useMediaStore } from '../stores/mediaStore';
 import { DEFAULT_TRANSFORM } from '../stores/timeline/constants';
+import { bindSourceRuntimeForOwner } from './mediaRuntime/clipBindings';
+import { mediaRuntimeRegistry } from './mediaRuntime/registry';
+import {
+  getRuntimeFrameProvider,
+  updateRuntimePlaybackTime,
+} from './mediaRuntime/runtimePlayback';
 import { Logger } from './logger';
 
 const log = Logger.create('LayerPlayback');
@@ -23,6 +29,10 @@ interface LayerCompState {
 }
 
 class LayerPlaybackManager {
+  private getRuntimeOwnerId(layerIndex: number, clipId: string): string {
+    return `background:${layerIndex}:${clipId}`;
+  }
+
   // Layer index (0=A, 1=B, 2=C, 3=D) → loaded composition state
   private layerStates = new Map<number, LayerCompState>();
 
@@ -137,6 +147,16 @@ class LayerPlaybackManager {
         clip.source.audioElement.src = '';
         clip.source.audioElement.load();
       }
+      if (clip.source?.runtimeSourceId && clip.source.runtimeSessionKey) {
+        mediaRuntimeRegistry.releaseSession(
+          clip.source.runtimeSourceId,
+          clip.source.runtimeSessionKey
+        );
+        mediaRuntimeRegistry.releaseRuntime(
+          clip.source.runtimeSourceId,
+          this.getRuntimeOwnerId(layerIndex, clip.id)
+        );
+      }
     }
 
     this.layerStates.delete(layerIndex);
@@ -237,7 +257,10 @@ class LayerPlaybackManager {
 
       // Build transform
       const transform = clip.transform || DEFAULT_TRANSFORM;
-      const layer = this.buildClipLayer(clip, clipLocalTime, transform);
+      const clipTime = clip.reversed
+        ? clip.outPoint - clipLocalTime
+        : clipLocalTime + clip.inPoint;
+      const layer = this.buildClipLayer(clip, clipTime, transform);
       if (layer) {
         layers.push(layer);
       }
@@ -249,7 +272,11 @@ class LayerPlaybackManager {
   /**
    * Build a single layer from a clip
    */
-  private buildClipLayer(clip: TimelineClip, _clipLocalTime: number, transform: typeof DEFAULT_TRANSFORM): Layer | null {
+  private buildClipLayer(
+    clip: TimelineClip,
+    clipTime: number,
+    transform: typeof DEFAULT_TRANSFORM
+  ): Layer | null {
     const baseLayer = {
       id: `bg-clip-${clip.id}`,
       name: clip.name,
@@ -274,12 +301,18 @@ class LayerPlaybackManager {
     };
 
     if (clip.source?.videoElement) {
+      updateRuntimePlaybackTime(clip.source, clipTime, 'background');
+      const runtimeProvider =
+        getRuntimeFrameProvider(clip.source, 'background') ??
+        clip.source.webCodecsPlayer;
       return {
         ...baseLayer,
         source: {
           type: 'video',
           videoElement: clip.source.videoElement,
-          webCodecsPlayer: clip.source.webCodecsPlayer,
+          webCodecsPlayer: runtimeProvider ?? undefined,
+          runtimeSourceId: clip.source.runtimeSourceId,
+          runtimeSessionKey: clip.source.runtimeSessionKey,
         },
       } as Layer;
     }
@@ -394,12 +427,18 @@ class LayerPlaybackManager {
     video.crossOrigin = 'anonymous';
 
     video.addEventListener('canplaythrough', () => {
-      clip.source = {
-        type: 'video',
-        videoElement: video,
-        naturalDuration: video.duration,
+      clip.source = bindSourceRuntimeForOwner({
+        ownerId: this.getRuntimeOwnerId(layerIndex, clip.id),
+        source: {
+          type: 'video',
+          videoElement: video,
+          naturalDuration: video.duration,
+          mediaFileId,
+        },
         mediaFileId,
-      };
+        sessionPolicy: 'background',
+        sessionOwnerId: this.getRuntimeOwnerId(layerIndex, clip.id),
+      });
       clip.isLoading = false;
       log.debug(`Video loaded for background clip ${clip.name} on layer ${layerIndex}`);
       // Pre-cache frame via createImageBitmap for immediate scrubbing without play()
@@ -418,12 +457,18 @@ class LayerPlaybackManager {
     audio.preload = 'auto';
 
     audio.addEventListener('canplaythrough', () => {
-      clip.source = {
-        type: 'audio',
-        audioElement: audio,
-        naturalDuration: audio.duration,
+      clip.source = bindSourceRuntimeForOwner({
+        ownerId: this.getRuntimeOwnerId(layerIndex, clip.id),
+        source: {
+          type: 'audio',
+          audioElement: audio,
+          naturalDuration: audio.duration,
+          mediaFileId,
+        },
         mediaFileId,
-      };
+        sessionPolicy: 'background',
+        sessionOwnerId: this.getRuntimeOwnerId(layerIndex, clip.id),
+      });
       clip.isLoading = false;
       log.debug(`Audio loaded for background clip ${clip.name} on layer ${layerIndex}`);
     }, { once: true });
@@ -440,10 +485,16 @@ class LayerPlaybackManager {
     img.src = url;
 
     img.addEventListener('load', () => {
-      clip.source = {
-        type: 'image',
-        imageElement: img,
-      };
+      clip.source = bindSourceRuntimeForOwner({
+        ownerId: this.getRuntimeOwnerId(layerIndex, clip.id),
+        source: {
+          type: 'image',
+          imageElement: img,
+        },
+        mediaFileId: clip.mediaFileId,
+        sessionPolicy: 'background',
+        sessionOwnerId: this.getRuntimeOwnerId(layerIndex, clip.id),
+      });
       clip.isLoading = false;
       log.debug(`Image loaded for background clip ${clip.name} on layer ${layerIndex}`);
     }, { once: true });

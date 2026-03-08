@@ -2,6 +2,7 @@
 
 import type { TimelineClip, TimelineTrack } from '../../stores/timeline/types';
 import type { BlendMode } from '../../types';
+import type { WebCodecsPlayer } from '../WebCodecsPlayer';
 
 // ============ VIDEO CODECS ============
 
@@ -50,9 +51,11 @@ export interface ExportProgress {
 
 export interface ExportClipState {
   clipId: string;
-  webCodecsPlayer: any; // WebCodecsPlayer
+  webCodecsPlayer: WebCodecsPlayer | null;
   lastSampleIndex: number;
   isSequential: boolean; // true if using sequential decoding
+  runtimeSource?: TimelineClip['source'];
+  runtimeOwnerId?: string;
 }
 
 // ============ PRESETS ============

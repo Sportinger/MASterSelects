@@ -37,6 +37,9 @@ base64 = "0.22"
 http = "1"
 warp = "0.3"
 
+# Native file dialog (folder picker for Firefox)
+rfd = "0.15"
+
 [target.'cfg(windows)'.dependencies]
 # Windows-specific APIs for console hiding, message pump, mutex
 windows-sys = { version = "0.59", features = [

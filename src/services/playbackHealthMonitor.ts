@@ -78,6 +78,18 @@ export class PlaybackHealthMonitor {
   };
   private lastAnomalyTime: Partial<Record<AnomalyType, number>> = {};
 
+  private shouldMonitorHtmlVideoHealth(
+    clip: {
+      source?: {
+        webCodecsPlayer?: {
+          isFullMode?: () => boolean;
+        } | null;
+      } | null;
+    }
+  ): boolean {
+    return !clip.source?.webCodecsPlayer?.isFullMode?.();
+  }
+
   start(): void {
     if (this.intervalId !== null) return;
     this.startTime = performance.now();
@@ -128,12 +140,13 @@ export class PlaybackHealthMonitor {
       (c) => playheadPosition >= c.startTime && playheadPosition < c.startTime + c.duration
     );
     const videoClips = clipsAtTime.filter((c) => c.source?.videoElement);
+    const htmlHealthVideoClips = videoClips.filter((clip) => this.shouldMonitorHtmlVideoHealth(clip));
 
     const vsm = layerBuilder.getVideoSyncManager();
 
     // 1. FRAME_STALL
     if (isPlaying) {
-      for (const clip of videoClips) {
+      for (const clip of htmlHealthVideoClips) {
         const video = clip.source!.videoElement!;
         const tracker = this.videoTimeTracker.get(clip.id);
         if (tracker) {
@@ -187,7 +200,7 @@ export class PlaybackHealthMonitor {
     }
 
     // 4. SEEK_STUCK
-    for (const clip of videoClips) {
+    for (const clip of htmlHealthVideoClips) {
       const video = clip.source!.videoElement!;
       if (video.seeking) {
         const seekStart = this.seekStartTimes.get(clip.id);
@@ -208,7 +221,7 @@ export class PlaybackHealthMonitor {
 
     // 5. READYSTATE_DROP
     if (isPlaying) {
-      for (const clip of videoClips) {
+      for (const clip of htmlHealthVideoClips) {
         const video = clip.source!.videoElement!;
         if (video.readyState < 2 && !video.seeking) {
           this.recordAnomaly('READYSTATE_DROP', clip.id, `readyState=${video.readyState}`);
@@ -220,7 +233,7 @@ export class PlaybackHealthMonitor {
     if (isPlaying) {
       const lc = engine.getLayerCollector();
       if (lc) {
-        for (const clip of videoClips) {
+        for (const clip of htmlHealthVideoClips) {
           const video = clip.source!.videoElement!;
           // Skip if video is currently warming up — warmup will handle GPU readiness
           if (vsm.isVideoWarmingUp(video)) continue;
@@ -254,11 +267,12 @@ export class PlaybackHealthMonitor {
 
     // Cleanup stale tracker entries for clips no longer in timeline
     const currentClipIdSet = new Set(clips.map((c) => c.id));
+    const htmlHealthClipIdSet = new Set(htmlHealthVideoClips.map((c) => c.id));
     for (const id of this.videoTimeTracker.keys()) {
-      if (!currentClipIdSet.has(id)) this.videoTimeTracker.delete(id);
+      if (!currentClipIdSet.has(id) || !htmlHealthClipIdSet.has(id)) this.videoTimeTracker.delete(id);
     }
     for (const id of this.seekStartTimes.keys()) {
-      if (!currentClipIdSet.has(id)) this.seekStartTimes.delete(id);
+      if (!currentClipIdSet.has(id) || !htmlHealthClipIdSet.has(id)) this.seekStartTimes.delete(id);
     }
   }
 
@@ -266,8 +280,8 @@ export class PlaybackHealthMonitor {
 
   private recordAnomaly(type: AnomalyType, clipId?: string, detail?: string): boolean {
     const now = performance.now();
-    const lastTime = this.lastAnomalyTime[type] ?? 0;
-    if (now - lastTime < COOLDOWN_MS) return false;
+    const lastTime = this.lastAnomalyTime[type];
+    if (lastTime !== undefined && now - lastTime < COOLDOWN_MS) return false;
 
     this.lastAnomalyTime[type] = now;
     this.anomalyCounts[type]++;
@@ -520,15 +534,16 @@ export class PlaybackHealthMonitor {
 // --- HMR Singleton ---
 
 const hot = typeof import.meta !== 'undefined'
-  ? (import.meta as { hot?: { data: Record<string, unknown> } }).hot
+  ? (import.meta as { hot?: { data?: Record<string, unknown> } }).hot
   : undefined;
+const hotData = hot ? (hot.data ??= {}) : undefined;
 
 let instance: PlaybackHealthMonitor;
-if (hot?.data?.healthMonitor) {
-  instance = hot.data.healthMonitor as PlaybackHealthMonitor;
+if (hotData?.healthMonitor) {
+  instance = hotData.healthMonitor as PlaybackHealthMonitor;
 } else {
   instance = new PlaybackHealthMonitor();
-  if (hot) hot.data.healthMonitor = instance;
+  if (hotData) hotData.healthMonitor = instance;
 }
 
 export const playbackHealthMonitor = instance;

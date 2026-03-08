@@ -121,17 +121,64 @@ async fn wait_for_quit(tray_state: &Arc<crate::tray::TrayState>) {
 async fn run_http_server(port: u16) {
     let cors = warp::cors()
         .allow_any_origin()
-        .allow_methods(vec!["GET", "OPTIONS"])
+        .allow_methods(vec!["GET", "POST", "OPTIONS"])
         .allow_headers(vec!["Content-Type"]);
 
+    // GET /file?path=... — serve a file
     let file_route = warp::path("file")
         .and(warp::get())
         .and(warp::query::<std::collections::HashMap<String, String>>())
-        .and_then(serve_file)
+        .and_then(serve_file);
+
+    // POST /upload?path=... — write binary body to file
+    let upload_route = warp::path("upload")
+        .and(warp::post())
+        .and(warp::query::<std::collections::HashMap<String, String>>())
+        .and(warp::body::bytes())
+        .and_then(handle_upload);
+
+    // GET /project-root — return the default project root path
+    let project_root_route = warp::path("project-root")
+        .and(warp::get())
+        .and_then(get_project_root);
+
+    let routes = file_route
+        .or(upload_route)
+        .or(project_root_route)
         .with(cors);
 
     info!("HTTP file server listening on http://127.0.0.1:{}", port);
-    warp::serve(file_route).run(([127, 0, 0, 1], port)).await;
+    warp::serve(routes).run(([127, 0, 0, 1], port)).await;
+}
+
+/// Guess Content-Type from file extension
+fn guess_content_type(path: &std::path::Path) -> &'static str {
+    match path.extension().and_then(|e| e.to_str()).unwrap_or("") {
+        "mp4" => "video/mp4",
+        "webm" => "video/webm",
+        "mov" => "video/quicktime",
+        "avi" => "video/x-msvideo",
+        "mkv" => "video/x-matroska",
+        "mp3" => "audio/mpeg",
+        "wav" => "audio/wav",
+        "ogg" => "audio/ogg",
+        "aac" => "audio/aac",
+        "m4a" => "audio/mp4",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "svg" => "image/svg+xml",
+        "json" => "application/json",
+        "xml" => "application/xml",
+        "txt" => "text/plain",
+        "html" | "htm" => "text/html",
+        "css" => "text/css",
+        "js" => "application/javascript",
+        "wasm" => "application/wasm",
+        _ => "application/octet-stream",
+    }
 }
 
 async fn serve_file(
@@ -153,13 +200,84 @@ async fn serve_file(
         return Err(warp::reject::not_found());
     }
 
+    let content_type = guess_content_type(&path);
+
     match tokio::fs::read(&path).await {
         Ok(data) => {
             info!("HTTP: Serving file: {} ({} bytes)", path.display(), data.len());
-            Ok(warp::reply::with_header(data, "Content-Type", "video/mp4"))
+            Ok(warp::reply::with_header(data, "Content-Type", content_type))
         }
         Err(_) => Err(warp::reject::not_found()),
     }
+}
+
+/// POST /upload?path=<absolute_path> — write binary body to disk
+async fn handle_upload(
+    params: std::collections::HashMap<String, String>,
+    body: warp::hyper::body::Bytes,
+) -> Result<impl warp::Reply, warp::Rejection> {
+    let path = params.get("path").ok_or_else(warp::reject::not_found)?;
+    let path = PathBuf::from(path);
+
+    if !path.is_absolute() {
+        warn!("HTTP upload: Rejected non-absolute path");
+        return Err(warp::reject::not_found());
+    }
+
+    if !utils::is_path_allowed(&path) {
+        warn!("HTTP upload: Rejected path: {}", path.display());
+        return Err(warp::reject::not_found());
+    }
+
+    // Ensure parent directory exists
+    if let Some(parent) = path.parent() {
+        if !parent.exists() {
+            if let Err(e) = tokio::fs::create_dir_all(parent).await {
+                warn!("HTTP upload: Cannot create parent dirs: {}", e);
+                return Err(warp::reject::not_found());
+            }
+        }
+    }
+
+    let size = body.len();
+
+    // Atomic write: .tmp then rename
+    let tmp_path = path.with_extension(format!(
+        "{}.tmp",
+        path.extension().and_then(|e| e.to_str()).unwrap_or("")
+    ));
+
+    match tokio::fs::write(&tmp_path, &body).await {
+        Ok(()) => {
+            if let Err(_) = tokio::fs::rename(&tmp_path, &path).await {
+                // Rename failed — fallback to direct write
+                let _ = tokio::fs::remove_file(&tmp_path).await;
+                if let Err(e) = tokio::fs::write(&path, &body).await {
+                    warn!("HTTP upload: Write failed: {}", e);
+                    return Err(warp::reject::not_found());
+                }
+            }
+            info!("HTTP upload: {} ({} bytes)", path.display(), size);
+            Ok(warp::reply::json(&serde_json::json!({
+                "ok": true,
+                "written": true,
+                "size": size
+            })))
+        }
+        Err(e) => {
+            warn!("HTTP upload: Write failed: {}", e);
+            Err(warp::reject::not_found())
+        }
+    }
+}
+
+/// GET /project-root — return the default project root path
+async fn get_project_root() -> Result<impl warp::Reply, warp::Rejection> {
+    let root = utils::get_project_root();
+    Ok(warp::reply::json(&serde_json::json!({
+        "ok": true,
+        "path": root.to_string_lossy()
+    })))
 }
 
 async fn handle_connection(

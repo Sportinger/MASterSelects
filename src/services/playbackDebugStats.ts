@@ -44,6 +44,12 @@ interface WcTimelineSummary {
   avgSeekLatencyMs: number;
   avgQueueDepth: number;
   maxQueueDepth: number;
+  decoderResets: number;
+  pendingSeekResolves: number;
+  avgPendingSeekMs: number;
+  maxPendingSeekMs: number;
+  collectorHolds: number;
+  collectorDrops: number;
 }
 
 interface VfTimelineSummary {
@@ -150,8 +156,13 @@ function summarizeWcTimeline(events: PipelineEvent[]): WcTimelineSummary {
 
   const decodeLatencies: number[] = [];
   const seekDurations: number[] = [];
+  const pendingSeekDurations: number[] = [];
   const queueDepths: number[] = [];
   let lastFeedTime: number | null = null;
+  let decoderResets = 0;
+  let pendingSeekResolves = 0;
+  let collectorHolds = 0;
+  let collectorDrops = 0;
 
   for (const event of events) {
     if (event.type === 'decode_feed') {
@@ -183,6 +194,30 @@ function summarizeWcTimeline(events: PipelineEvent[]): WcTimelineSummary {
       if (durationMs !== undefined) {
         seekDurations.push(durationMs);
       }
+      continue;
+    }
+
+    if (event.type === 'pending_seek_end') {
+      pendingSeekResolves++;
+      const durationMs = getNumericDetail(event.detail, 'durationMs');
+      if (durationMs !== undefined) {
+        pendingSeekDurations.push(durationMs);
+      }
+      continue;
+    }
+
+    if (event.type === 'decoder_reset') {
+      decoderResets++;
+      continue;
+    }
+
+    if (event.type === 'collector_hold') {
+      collectorHolds++;
+      continue;
+    }
+
+    if (event.type === 'collector_drop') {
+      collectorDrops++;
     }
   }
 
@@ -199,6 +234,12 @@ function summarizeWcTimeline(events: PipelineEvent[]): WcTimelineSummary {
     avgSeekLatencyMs: round(average(seekDurations), 1),
     avgQueueDepth: round(average(queueDepths), 1),
     maxQueueDepth: round(max(queueDepths), 1),
+    decoderResets,
+    pendingSeekResolves,
+    avgPendingSeekMs: round(average(pendingSeekDurations), 1),
+    maxPendingSeekMs: round(max(pendingSeekDurations), 1),
+    collectorHolds,
+    collectorDrops,
   };
 }
 
@@ -272,14 +313,26 @@ function derivePlaybackStatus(stats: Omit<PlaybackDebugStats, 'status'>): Playba
   const severeCadence = stats.p95FrameGapMs >= 85 || stats.maxFrameGapMs >= 140;
   const degradedCadence = stats.p95FrameGapMs >= 50 || stats.avgFrameGapMs >= 40;
   const noReadyFrames = stats.activeVideos > 0 && stats.worstReadyState > 0 && stats.worstReadyState < 2;
+  const hasLivePlaybackDemand =
+    (stats.playingVideos ?? 0) > 0 ||
+    stats.frameEvents > 0 ||
+    stats.seeks > 0 ||
+    stats.stalls > 0 ||
+    stats.queuePressureEvents > 0 ||
+    stats.seekingVideos > 0 ||
+    stats.warmingUpVideos > 0;
+  const coldPlayback = stats.coldVideos > 0 && hasLivePlaybackDemand;
+  const healthIssuesDuringPlayback = stats.healthAnomalies > 0 && hasLivePlaybackDemand;
+  const missingReadyFramesDuringPlayback = noReadyFrames && hasLivePlaybackDemand;
 
   if (
     stats.stalls > 0 ||
     severeCadence ||
-    stats.healthAnomalies > 0 ||
+    healthIssuesDuringPlayback ||
     stats.readyStateDrops > 0 ||
-    stats.coldVideos > 0 ||
-    noReadyFrames
+    coldPlayback ||
+    (stats.collectorDrops ?? 0) > 0 ||
+    missingReadyFramesDuringPlayback
   ) {
     return 'bad';
   }
@@ -288,6 +341,8 @@ function derivePlaybackStatus(stats: Omit<PlaybackDebugStats, 'status'>): Playba
     degradedCadence ||
     stats.queuePressureEvents > 30 ||
     stats.seeks >= 3 ||
+    (stats.decoderResets ?? 0) >= 3 ||
+    (stats.maxPendingSeekMs ?? 0) >= 80 ||
     stats.driftCorrections > 0 ||
     stats.seekingVideos > 0 ||
     stats.warmingUpVideos > 0
@@ -338,6 +393,7 @@ export function buildPlaybackDebugStats(params: {
     queuePressureEvents: 0,
     healthAnomalies: recentHealthAnomalies.length,
     activeVideos,
+    playingVideos: healthVideos.filter((video) => !video.paused).length,
     seekingVideos: healthVideos.filter((video) => video.seeking).length,
     warmingUpVideos: healthVideos.filter((video) => video.warmingUp).length,
     coldVideos: healthVideos.filter((video) => !video.gpuReady).length,
@@ -356,6 +412,12 @@ export function buildPlaybackDebugStats(params: {
       avgSeekLatencyMs: wcSummary.avgSeekLatencyMs,
       avgQueueDepth: wcSummary.avgQueueDepth,
       maxQueueDepth: wcSummary.maxQueueDepth,
+      decoderResets: wcSummary.decoderResets,
+      pendingSeekResolves: wcSummary.pendingSeekResolves,
+      avgPendingSeekMs: wcSummary.avgPendingSeekMs,
+      maxPendingSeekMs: wcSummary.maxPendingSeekMs,
+      collectorHolds: wcSummary.collectorHolds,
+      collectorDrops: wcSummary.collectorDrops,
     });
   } else if (pipeline === 'vf') {
     Object.assign(base, vfSummary.cadence, {

@@ -62,6 +62,66 @@ pub enum Command {
         #[serde(default)]
         search_dirs: Vec<String>,
     },
+
+    // ── File System Commands (for project persistence in Firefox) ──
+
+    /// Write data to a file (text or base64-encoded binary)
+    WriteFile {
+        id: String,
+        path: String,
+        data: String,
+        /// "utf8" (default) or "base64"
+        #[serde(default)]
+        encoding: Option<String>,
+    },
+
+    /// Create a directory
+    CreateDir {
+        id: String,
+        path: String,
+        /// Create parent directories if needed (default: true)
+        #[serde(default)]
+        recursive: Option<bool>,
+    },
+
+    /// List directory contents
+    ListDir {
+        id: String,
+        path: String,
+    },
+
+    /// Delete a file or directory
+    Delete {
+        id: String,
+        path: String,
+        /// Delete directories recursively (default: false)
+        #[serde(default)]
+        recursive: Option<bool>,
+    },
+
+    /// Check if a path exists
+    Exists {
+        id: String,
+        path: String,
+    },
+
+    /// Rename or move a file/directory
+    Rename {
+        id: String,
+        old_path: String,
+        new_path: String,
+    },
+
+    /// Open a native OS folder picker dialog
+    PickFolder {
+        id: String,
+        /// Optional dialog title
+        #[serde(default)]
+        title: Option<String>,
+        /// Optional starting directory
+        #[serde(default)]
+        default_path: Option<String>,
+    },
 }
 
 /// Response types
@@ -99,6 +159,8 @@ pub struct SystemInfo {
     pub version: String,
     pub ytdlp_available: bool,
     pub download_dir: String,
+    pub project_root: String,
+    pub fs_commands: bool,
 }
 
 // Helper functions for creating responses
@@ -154,4 +216,7 @@ pub mod error_codes {
     pub const YTDLP_NOT_FOUND: &str = "YTDLP_NOT_FOUND";
     pub const DOWNLOAD_FAILED: &str = "DOWNLOAD_FAILED";
     pub const INVALID_URL: &str = "INVALID_URL";
+    pub const WRITE_FAILED: &str = "WRITE_FAILED";
+    pub const DIR_NOT_EMPTY: &str = "DIR_NOT_EMPTY";
+    pub const ALREADY_EXISTS: &str = "ALREADY_EXISTS";
 }

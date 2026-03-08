@@ -1,50 +1,102 @@
 """
 Qwen3-VL Video Description Server
-Uses Ollama with multi-frame batching for temporal video understanding.
-Extracts frames with PyAV, sends all at once to Qwen3-VL for scene-by-scene analysis.
+Native video understanding using Qwen3-VL-8B via transformers (no Ollama).
+Reads video with PyAV, processes frames with temporal position encoding.
 Runs on http://localhost:5555
 """
 
 import sys
 import os
-import json
 import time
 import re
-import math
+import itertools
 import logging
-import base64
-import io
-import urllib.request
+import gc
+import torch
+import numpy as np
 import av
 from PIL import Image
 from flask import Flask, request, jsonify
+from threading import Lock
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler(os.path.join(os.path.dirname(__file__), 'server.log'), mode='w'),
+    ],
+)
 log = logging.getLogger('qwen3vl')
+log.info("=== Server script starting ===")
 
 app = Flask(__name__)
 
-OLLAMA_URL = os.environ.get('OLLAMA_URL', 'http://localhost:11434')
-MODEL = os.environ.get('MODEL', 'qwen3-vl:8b')
+
+@app.after_request
+def add_cors_headers(response):
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    return response
+
+# Global model state
+model = None
+processor = None
+model_lock = Lock()
+
+MODEL_DIR = None
+MODEL_ID = "Qwen/Qwen3-VL-8B-Instruct"
 
 
-def check_ollama() -> dict:
-    """Check if Ollama is running and model is available."""
-    try:
-        req = urllib.request.Request(f'{OLLAMA_URL}/api/tags', method='GET')
-        resp = urllib.request.urlopen(req, timeout=5)
-        data = json.loads(resp.read())
-        models = [m['name'] for m in data.get('models', [])]
-        has_model = any(MODEL.split(':')[0] in m for m in models)
-        return {"available": True, "model_loaded": has_model, "models": models}
-    except Exception as e:
-        return {"available": False, "model_loaded": False, "error": str(e)}
+def find_model_dir() -> str:
+    """Find the cached model directory."""
+    hf_cache = os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "hub",
+                            "models--Qwen--Qwen3-VL-8B-Instruct", "snapshots")
+    if os.path.isdir(hf_cache):
+        snapshots = os.listdir(hf_cache)
+        if snapshots:
+            return os.path.join(hf_cache, snapshots[0])
+    return MODEL_ID
 
 
-def extract_frames(video_path: str, num_frames: int = 12, max_size: int = 320) -> tuple[list[str], float, float]:
-    """Extract evenly-spaced frames as small JPEG base64 strings.
+def load_model():
+    """Load model: CPU first (no accelerate), then move to CUDA."""
+    global model, processor
 
-    Returns: (list of base64 strings, video_fps, duration_seconds)
+    if model is not None:
+        return
+
+    from transformers import Qwen3VLForConditionalGeneration, AutoProcessor
+
+    model_path = MODEL_DIR or find_model_dir()
+    log.info(f"Loading {model_path}...")
+    start = time.time()
+
+    # device_map=None avoids accelerate dispatch (segfaults on Windows)
+    model = Qwen3VLForConditionalGeneration.from_pretrained(
+        model_path,
+        torch_dtype=torch.bfloat16,
+        device_map=None,
+        local_files_only=os.path.isdir(model_path),
+    )
+
+    log.info("Moving to CUDA...")
+    model = model.cuda()
+    model.eval()
+
+    processor = AutoProcessor.from_pretrained(model_path, local_files_only=os.path.isdir(model_path))
+
+    elapsed = time.time() - start
+    vram = torch.cuda.memory_allocated() / 1024**3
+    log.info(f"Model loaded in {elapsed:.1f}s, VRAM: {vram:.1f} GB")
+
+
+def read_video_frames(video_path: str, target_fps: float = 1.0, max_size: int = 480,
+                      max_frames: int = 48) -> dict:
+    """Read video frames using PyAV at specified FPS.
+
+    Returns dict with: frames (numpy), video_fps, duration, total_frames, frame_indices
     """
     container = av.open(video_path)
     stream = container.streams.video[0]
@@ -58,156 +110,140 @@ def extract_frames(video_path: str, num_frames: int = 12, max_size: int = 320) -
     elif duration == 0 and total_frames > 0:
         duration = total_frames / video_fps
 
-    # Calculate target size maintaining aspect ratio
+    frame_interval = max(1, int(video_fps / target_fps))
+
     w, h = stream.width, stream.height
     if max(w, h) > max_size:
         scale = max_size / max(w, h)
         w = int(w * scale) & ~1
         h = int(h * scale) & ~1
 
-    interval = max(1, total_frames // num_frames)
-    frames_b64 = []
-    frame_times = []
+    frames = []
+    frame_indices = []
     idx = 0
-
     for frame in container.decode(stream):
-        if idx % interval == 0 and len(frames_b64) < num_frames:
+        if idx % frame_interval == 0:
             img = frame.to_image()
             if img.size != (w, h):
                 img = img.resize((w, h), Image.LANCZOS)
-            buf = io.BytesIO()
-            img.save(buf, format='JPEG', quality=60)
-            frames_b64.append(base64.b64encode(buf.getvalue()).decode())
-            frame_times.append(idx / video_fps)
+            frames.append(np.array(img))
+            frame_indices.append(idx)
+            if len(frames) >= max_frames:
+                break
         idx += 1
 
     container.close()
     actual_duration = idx / video_fps if idx > 0 else duration
 
-    log.info(f"Extracted {len(frames_b64)} frames from {video_path} "
-             f"({actual_duration:.1f}s, {sum(len(f) for f in frames_b64)/1024:.0f}KB base64)")
-
-    return frames_b64, video_fps, actual_duration
-
-
-def describe_with_ollama(frames_b64: list[str], duration: float, custom_prompt: str = None) -> dict:
-    """Send all frames to Ollama in one request for temporal understanding."""
-    if custom_prompt:
-        prompt = f"/no_think\n{custom_prompt}"
-    else:
-        prompt = (
-            f"/no_think\n"
-            f"These are {len(frames_b64)} frames evenly sampled from a {duration:.0f} second video. "
-            f"Analyze the complete sequence and describe what happens scene by scene.\n\n"
-            f"Output ONLY lines in this exact format:\n"
-            f"[MM:SS-MM:SS] Description of what happens\n\n"
-            f"Be specific about subjects, actions, camera movements, and visual details. "
-            f"Cover the entire video from start to end. Keep each description to 1-2 sentences. "
-            f"Do not add any introduction or conclusion."
-        )
-
-    payload = {
-        'model': MODEL,
-        'messages': [{
-            'role': 'user',
-            'content': prompt,
-            'images': frames_b64,
-        }],
-        'stream': False,
-        'options': {
-            'num_predict': 4096,
-            'temperature': 0.3,
-        },
+    log.info(f"Video: {actual_duration:.1f}s, {len(frames)} frames ({w}x{h})")
+    return {
+        "frames": frames,
+        "video_fps": video_fps,
+        "duration": actual_duration,
+        "total_frames": total_frames or idx,
+        "frame_indices": frame_indices,
     }
 
-    log.info(f"Sending {len(frames_b64)} frames to Ollama ({MODEL})...")
-    start = time.time()
 
-    data = json.dumps(payload).encode()
-    req = urllib.request.Request(
-        f'{OLLAMA_URL}/api/chat',
-        data=data,
-        headers={'Content-Type': 'application/json'},
-    )
-    resp = urllib.request.urlopen(req, timeout=300)
-    result = json.loads(resp.read())
+def fix_video_grid_thw(inputs: dict) -> dict:
+    """Fix video_grid_thw for transformers 5.3.0 Qwen3-VL processor bug.
 
-    content = result.get('message', {}).get('content', '')
-    thinking = result.get('message', {}).get('thinking', '')
+    The processor creates temporal chunks with vision_start/end markers between them,
+    resulting in N separate video token groups in mm_token_type_ids. But video_grid_thw
+    only has 1 entry [T, H, W]. get_rope_index iterates once per group and expects
+    one grid entry per group, causing StopIteration.
 
-    elapsed = time.time() - start
-    log.info(f"Ollama responded in {elapsed:.1f}s")
+    Fix: split the single [T, H, W] into N entries of [T/N, H, W].
+    """
+    if 'video_grid_thw' not in inputs or 'mm_token_type_ids' not in inputs:
+        return inputs
 
-    # Use content if available, otherwise extract from thinking
-    raw_text = content.strip()
-    if not raw_text and thinking:
-        raw_text = thinking.strip()
-        log.info("Content empty, using thinking field")
+    types = inputs['mm_token_type_ids'][0].tolist()
+    n_video_groups = sum(1 for k, _ in itertools.groupby(types) if k == 2)
+    grid = inputs['video_grid_thw']
 
-    return {"raw_text": raw_text, "elapsed": elapsed}
+    if grid.shape[0] == 1 and n_video_groups > 1:
+        t, h, w = grid[0].tolist()
+        t_per = t // n_video_groups
+        remainder = t % n_video_groups
+        new_grids = []
+        for i in range(n_video_groups):
+            chunk_t = t_per + (1 if i < remainder else 0)
+            new_grids.append([chunk_t, h, w])
+        inputs['video_grid_thw'] = torch.tensor(new_grids, dtype=grid.dtype, device=grid.device)
+        log.info(f"Split video_grid_thw: {grid.tolist()} -> {new_grids}")
+
+    return inputs
 
 
-def parse_segments(raw_text: str, video_duration: float) -> list[dict]:
+def parse_segments(raw_text: str, duration: float) -> list[dict]:
     """Parse model output into timestamped segments."""
     segments = []
 
-    # Pattern 1: [00:00-00:05] Description
-    pattern_range = re.compile(
-        r'\[?\s*(\d{1,2}):(\d{2})\s*[-–]\s*(\d{1,2}):(\d{2})\s*\]?\s*[:\-–]?\s*(.+?)(?=\n\[?\s*\d{1,2}:\d{2}|\Z)',
+    # Clean thinking tags
+    if '</think>' in raw_text:
+        raw_text = raw_text.split('</think>')[-1].strip()
+
+    # Pattern 1: [00:00-00:05] or [00:00:00-00:00:05] Description
+    pattern = re.compile(
+        r'\[(\d{1,2}):(\d{2})(?::(\d{2}))?\s*[-–]\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\]\s*(.+?)(?=\n\[\d|\Z)',
         re.DOTALL
     )
-    matches = pattern_range.findall(raw_text)
-    if matches:
-        for m in matches:
-            start = int(m[0]) * 60 + int(m[1])
-            end = int(m[2]) * 60 + int(m[3])
-            text = m[4].strip().rstrip('.')
-            # Clean markdown formatting
-            text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
-            text = re.sub(r'\s+', ' ', text).strip()
-            if text:
-                segments.append({"start": start, "end": end, "text": text})
-        if segments:
-            return segments
+    for m in pattern.finditer(raw_text):
+        start = int(m.group(1)) * 60 + int(m.group(2))
+        if m.group(3):
+            start = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + int(m.group(3))
+        end = int(m.group(4)) * 60 + int(m.group(5))
+        if m.group(6):
+            end = int(m.group(4)) * 3600 + int(m.group(5)) * 60 + int(m.group(6))
+        text = m.group(7).strip()
+        text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+        text = re.sub(r'\s+', ' ', text).strip()
+        if text:
+            segments.append({"start": start, "end": end, "text": text})
 
-    # Pattern 2: single timestamp per line
-    pattern_single = re.compile(r'[\[*]*(\d{1,2}):(\d{2})[\]*]*\s*[:\-–]?\s*(.+)')
-    timestamps = []
-    for line in raw_text.strip().split('\n'):
-        line = re.sub(r'^\d+[.)]\s*', '', line.strip())
-        if not line:
-            continue
-        m = pattern_single.match(line)
-        if m:
-            t = int(m.group(1)) * 60 + int(m.group(2))
-            text = m.group(3).strip().rstrip('.')
-            text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
-            text = re.sub(r'\s+', ' ', text).strip()
-            if text:
-                timestamps.append({"time": t, "text": text})
-
-    if timestamps:
-        for i, ts in enumerate(timestamps):
-            end = timestamps[i + 1]["time"] if i + 1 < len(timestamps) else video_duration
-            segments.append({"start": ts["time"], "end": end, "text": ts["text"]})
+    if segments:
         return segments
 
-    # Fallback: entire text as one segment
+    # Pattern 2: single timestamps
+    for line in raw_text.strip().split('\n'):
+        line = line.strip()
+        m = re.match(r'\[?(\d{1,2}):(\d{2})\]?\s*[-–:]?\s*(.+)', line)
+        if m:
+            t = int(m.group(1)) * 60 + int(m.group(2))
+            text = re.sub(r'\s+', ' ', m.group(3)).strip()
+            if text and len(text) > 5:
+                segments.append({"time": t, "text": text})
+
+    if segments:
+        result = []
+        for i, s in enumerate(segments):
+            end = segments[i + 1]["time"] if i + 1 < len(segments) else duration
+            result.append({"start": s["time"], "end": end, "text": s["text"]})
+        return result
+
+    # Fallback
     text = raw_text.strip()
     if text:
-        segments.append({"start": 0, "end": video_duration, "text": text})
-    return segments
+        return [{"start": 0, "end": duration, "text": text}]
+    return []
 
 
 @app.route('/api/status', methods=['GET'])
 def status():
-    """Check server and Ollama status."""
-    ollama = check_ollama()
+    """Check server and model status."""
+    vram_used = torch.cuda.memory_allocated() / 1024**3 if torch.cuda.is_available() else 0
+    vram_total = torch.cuda.get_device_properties(0).total_memory / 1024**3 if torch.cuda.is_available() else 0
+    gpu_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "N/A"
+
     return jsonify({
-        "available": ollama["available"],
-        "model_loaded": ollama["model_loaded"],
-        "model_name": MODEL,
-        "backend": "ollama",
+        "available": True,
+        "model_loaded": model is not None,
+        "model_name": MODEL_ID,
+        "backend": "transformers",
+        "gpu": gpu_name,
+        "vram_used_gb": round(vram_used, 1),
+        "vram_total_gb": round(vram_total, 1),
     })
 
 
@@ -219,7 +255,8 @@ def describe():
     {
         "video_path": "C:/path/to/video.mp4",
         "duration": 30.0,
-        "num_frames": 12,
+        "fps": 1.0,
+        "max_frames": 48,
         "prompt": "optional custom prompt"
     }
     """
@@ -231,57 +268,165 @@ def describe():
     if not os.path.isfile(video_path):
         return jsonify({"error": f"File not found: {video_path}"}), 404
 
-    num_frames = data.get('num_frames', 12)
+    target_fps = data.get('fps', 1.0)
+    max_frames = data.get('max_frames', 48)
     custom_prompt = data.get('prompt')
 
-    try:
-        start_time = time.time()
+    with model_lock:
+        try:
+            load_model()
+        except Exception as e:
+            log.error(f"Model load failed: {e}", exc_info=True)
+            return jsonify({"error": f"Model load failed: {str(e)}"}), 500
 
-        # Check Ollama
-        ollama_status = check_ollama()
-        if not ollama_status["available"]:
-            return jsonify({"error": "Ollama not running. Install from ollama.com"}), 503
-        if not ollama_status["model_loaded"]:
-            return jsonify({"error": f"Model {MODEL} not found. Run: ollama pull {MODEL}"}), 503
+        try:
+            start_time = time.time()
 
-        # Extract frames
-        frames_b64, video_fps, duration = extract_frames(video_path, num_frames=num_frames)
-        duration = data.get('duration', duration)
+            # Read video frames with PyAV
+            video_data = read_video_frames(
+                video_path, target_fps=target_fps, max_frames=max_frames)
+            frames = video_data["frames"]
+            duration = data.get('duration', video_data["duration"])
 
-        if not frames_b64:
-            return jsonify({"error": "No frames could be extracted"}), 400
+            if not frames:
+                return jsonify({"error": "No frames extracted from video"}), 400
 
-        # Send to Ollama with all frames
-        result = describe_with_ollama(frames_b64, duration, custom_prompt)
-        raw_text = result["raw_text"]
+            # Build prompt
+            if custom_prompt:
+                prompt_text = custom_prompt
+            else:
+                prompt_text = (
+                    f"This video is {duration:.0f} seconds long. "
+                    "Describe what happens scene by scene. "
+                    "For each scene, output a line in this exact format:\n"
+                    "[MM:SS-MM:SS] Description\n\n"
+                    "Be specific about subjects, actions, camera movements. "
+                    "Cover the full video. 1-2 sentences per scene."
+                )
 
-        # Parse into segments
-        segments = parse_segments(raw_text, duration)
-        for i, seg in enumerate(segments):
-            seg["id"] = f"scene-{i}"
+            # Build chat template with video placeholder
+            messages = [{
+                "role": "user",
+                "content": [
+                    {"type": "video"},
+                    {"type": "text", "text": prompt_text},
+                ],
+            }]
 
-        elapsed = time.time() - start_time
-        log.info(f"Complete: {len(segments)} segments in {elapsed:.1f}s")
+            text_input = processor.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True)
 
-        return jsonify({
-            "segments": segments,
-            "raw_text": raw_text,
-            "elapsed_seconds": round(elapsed, 1),
-            "frames_sampled": len(frames_b64),
-        })
+            # Pass pre-sampled numpy frames directly to processor
+            inputs = processor(
+                text=[text_input],
+                videos=[frames],
+                do_sample_frames=False,
+                video_metadata=[{
+                    "fps": video_data["video_fps"],
+                    "total_num_frames": video_data["total_frames"],
+                    "frames_indices": video_data["frame_indices"],
+                }],
+                padding=True,
+                return_tensors="pt",
+            ).to(model.device)
 
-    except Exception as e:
-        log.error(f"Describe failed: {e}", exc_info=True)
-        return jsonify({"error": str(e)}), 500
+            # Fix video_grid_thw splitting bug
+            inputs = fix_video_grid_thw(inputs)
+
+            prep_time = time.time() - start_time
+            log.info(f"Prepared in {prep_time:.1f}s, generating...")
+
+            with torch.no_grad():
+                output_ids = model.generate(
+                    **inputs,
+                    max_new_tokens=2048,
+                    temperature=0.3,
+                    do_sample=True,
+                    top_p=0.9,
+                )
+
+            generated_ids = output_ids[0][inputs['input_ids'].shape[1]:]
+            raw_text = processor.decode(generated_ids, skip_special_tokens=True)
+
+            elapsed = time.time() - start_time
+            log.info(f"Done in {elapsed:.1f}s\nOutput:\n{raw_text}")
+
+            segments = parse_segments(raw_text, duration)
+            for i, seg in enumerate(segments):
+                seg["id"] = f"scene-{i}"
+
+            return jsonify({
+                "segments": segments,
+                "raw_text": raw_text,
+                "elapsed_seconds": round(elapsed, 1),
+                "frames_sampled": len(frames),
+            })
+
+        except Exception as e:
+            log.error(f"Describe failed: {e}", exc_info=True)
+            return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/upload', methods=['POST'])
+def upload():
+    """Accept a video file upload and save to temp directory.
+    Returns the temp file path for use with /api/describe.
+    """
+    import tempfile
+    if 'video' not in request.files:
+        return jsonify({"error": "No video file in request"}), 400
+
+    video_file = request.files['video']
+    if not video_file.filename:
+        return jsonify({"error": "Empty filename"}), 400
+
+    # Save to temp dir with original extension
+    ext = os.path.splitext(video_file.filename)[1] or '.mp4'
+    fd, temp_path = tempfile.mkstemp(suffix=ext, prefix='qwen3vl_')
+    os.close(fd)
+    video_file.save(temp_path)
+    log.info(f"Uploaded video saved to {temp_path} ({os.path.getsize(temp_path)/1024/1024:.1f}MB)")
+
+    return jsonify({"path": temp_path})
+
+
+@app.route('/api/cleanup', methods=['POST'])
+def cleanup():
+    """Delete a temp file created by /api/upload."""
+    import tempfile
+    data = request.get_json()
+    path = data.get('path', '') if data else ''
+    temp_dir = tempfile.gettempdir()
+    # Only delete files in temp dir that we created
+    if path and os.path.isfile(path) and os.path.dirname(os.path.abspath(path)) == os.path.abspath(temp_dir):
+        if os.path.basename(path).startswith('qwen3vl_'):
+            os.remove(path)
+            log.info(f"Cleaned up temp file: {path}")
+            return jsonify({"status": "deleted"})
+    return jsonify({"status": "skipped"})
 
 
 @app.route('/api/unload', methods=['POST'])
 def unload():
-    """Not needed for Ollama backend, but kept for API compatibility."""
-    return jsonify({"status": "ollama_managed"})
+    """Unload model from GPU."""
+    global model, processor
+    with model_lock:
+        if model is not None:
+            del model
+            del processor
+            model = None
+            processor = None
+            gc.collect()
+            torch.cuda.empty_cache()
+            log.info("Model unloaded")
+            return jsonify({"status": "unloaded"})
+        return jsonify({"status": "already_unloaded"})
 
 
 if __name__ == '__main__':
+    if '--preload' in sys.argv:
+        load_model()
+
     port = int(os.environ.get('PORT', 5555))
-    log.info(f"Starting Qwen3-VL server on http://localhost:{port} (Ollama backend)")
+    log.info(f"Starting Qwen3-VL server on http://localhost:{port}")
     app.run(host='0.0.0.0', port=port, threaded=True)

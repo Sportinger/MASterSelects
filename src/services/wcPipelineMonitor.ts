@@ -7,11 +7,16 @@ export type PipelineEventType =
   | 'decode_output'
   | 'frame_read'
   | 'frame_drop'
+  | 'decoder_reset'
+  | 'pending_seek_start'
+  | 'pending_seek_end'
   | 'seek_start'
   | 'seek_end'
   | 'seek_skip'
   | 'seek_cancel'
   | 'seek_publish'
+  | 'collector_hold'
+  | 'collector_drop'
   | 'drift_correct'
   | 'queue_pressure'
   | 'stall'
@@ -138,7 +143,9 @@ class WcPipelineMonitor {
       e.type === 'seek_skip' ||
       e.type === 'seek_cancel' ||
       e.type === 'seek_publish' ||
-      e.type === 'advance_seek'
+      e.type === 'advance_seek' ||
+      e.type === 'pending_seek_start' ||
+      e.type === 'pending_seek_end'
     );
   }
 
@@ -176,8 +183,12 @@ class WcPipelineMonitor {
       decodeOutput: 0,
       frameReads: 0,
       frameDrops: 0,
+      decoderResets: 0,
       seeks: 0,
       advanceSeeks: 0,
+      pendingSeekResolves: 0,
+      collectorHolds: 0,
+      collectorDrops: 0,
       stalls: 0,
       driftCorrections: 0,
       queuePressure: 0,
@@ -185,6 +196,7 @@ class WcPipelineMonitor {
 
     let decodeLats: number[] = [];
     let seekDurations: number[] = [];
+    let pendingSeekDurations: number[] = [];
     let queueDepths: number[] = [];
     let stallTotalMs = 0;
 
@@ -199,16 +211,25 @@ class WcPipelineMonitor {
           break;
         case 'frame_read': counts.frameReads++; break;
         case 'frame_drop': counts.frameDrops++; break;
+        case 'decoder_reset': counts.decoderResets++; break;
         case 'seek_start': counts.seeks++; break;
         case 'advance_seek':
           counts.seeks++;
           counts.advanceSeeks++;
+          break;
+        case 'pending_seek_end':
+          counts.pendingSeekResolves++;
+          if (e.detail?.durationMs !== undefined) {
+            pendingSeekDurations.push(Number(e.detail.durationMs));
+          }
           break;
         case 'seek_end':
           if (e.detail?.durationMs !== undefined) {
             seekDurations.push(Number(e.detail.durationMs));
           }
           break;
+        case 'collector_hold': counts.collectorHolds++; break;
+        case 'collector_drop': counts.collectorDrops++; break;
         case 'stall':
           counts.stalls++;
           if (e.detail?.gapMs !== undefined) {
@@ -243,6 +264,8 @@ class WcPipelineMonitor {
       maxDecodeLat: Math.round(max(decodeLats) * 100) / 100,
       avgSeekDuration: Math.round(avg(seekDurations) * 100) / 100,
       maxSeekDuration: Math.round(max(seekDurations) * 100) / 100,
+      avgPendingSeekDuration: Math.round(avg(pendingSeekDurations) * 100) / 100,
+      maxPendingSeekDuration: Math.round(max(pendingSeekDurations) * 100) / 100,
       avgQueueDepth: Math.round(avg(queueDepths) * 100) / 100,
       maxQueueDepth: max(queueDepths),
       stallCount: counts.stalls,

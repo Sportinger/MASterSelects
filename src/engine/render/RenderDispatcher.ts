@@ -17,6 +17,7 @@ import type { PerformanceStats } from '../stats/PerformanceStats';
 import type { RenderLoop } from './RenderLoop';
 import { useRenderTargetStore } from '../../stores/renderTargetStore';
 import { useSliceStore } from '../../stores/sliceStore';
+import { useTimelineStore } from '../../stores/timeline';
 import { reportRenderTime } from '../../services/performanceMonitor';
 import { Logger } from '../../services/logger';
 
@@ -75,6 +76,7 @@ export class RenderDispatcher {
 
     const t0 = performance.now();
     const { width, height } = d.renderTargetManager.getResolution();
+    const skipEffects = useTimelineStore.getState().isDraggingPlayhead;
 
     // Collect layer data
     const t1 = performance.now();
@@ -112,7 +114,7 @@ export class RenderDispatcher {
         hasNestedComps = true;
         const nc = data.layer.source.nestedComposition;
         const view = d.nestedCompRenderer!.preRender(
-          nc.compositionId, nc.layers, nc.width, nc.height, preRenderEncoder, d.sampler, nc.currentTime
+          nc.compositionId, nc.layers, nc.width, nc.height, preRenderEncoder, d.sampler, nc.currentTime, 0, skipEffects
         );
         if (view) data.textureView = view;
       }
@@ -133,6 +135,7 @@ export class RenderDispatcher {
 
     const result = d.compositor.composite(layerData, commandEncoder, {
       device, sampler: d.sampler, pingView, pongView, outputWidth: width, outputHeight: height,
+      skipEffects,
       effectTempTexture, effectTempView, effectTempTexture2, effectTempView2,
     });
     const renderTime = performance.now() - t2;

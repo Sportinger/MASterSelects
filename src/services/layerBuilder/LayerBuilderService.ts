@@ -51,6 +51,33 @@ export class LayerBuilderService {
     runtimeProvider: ReturnType<typeof getRuntimeFrameProvider>,
     targetTime: number
   ) {
+    const providerDistance = (
+      provider:
+        | {
+          currentTime: number;
+          getPendingSeekTime?: () => number | null | undefined;
+          hasFrame?: () => boolean;
+          getCurrentFrame?: () => unknown;
+          isFullMode?: () => boolean;
+        }
+        | null
+        | undefined
+    ): number => {
+      if (!provider?.isFullMode?.()) {
+        return Number.POSITIVE_INFINITY;
+      }
+      const hasFrame =
+        (provider.hasFrame?.() ?? false) ||
+        !!provider.getCurrentFrame?.();
+      if (!hasFrame) {
+        return Number.POSITIVE_INFINITY;
+      }
+      const effectiveTime = provider.getPendingSeekTime?.() ?? provider.currentTime;
+      return Number.isFinite(effectiveTime)
+        ? Math.abs(effectiveTime - targetTime)
+        : Number.POSITIVE_INFINITY;
+    };
+
     const runtimeHasFrame =
       (runtimeProvider?.hasFrame?.() ?? false) ||
       !!runtimeProvider?.getCurrentFrame?.();
@@ -68,8 +95,14 @@ export class LayerBuilderService {
     const clipHasFrame =
       (clipPlayer?.hasFrame?.() ?? false) ||
       !!clipPlayer?.getCurrentFrame?.();
+    const runtimeDistance = providerDistance(runtimeProvider);
+    const clipDistance = providerDistance(clipPlayer);
     if (!clipPlayer?.isFullMode()) {
       return runtimeHasFrame && runtimeProvider?.isFullMode() ? runtimeProvider : undefined;
+    }
+
+    if (runtimeHasFrame && runtimeDistance < clipDistance) {
+      return runtimeProvider;
     }
 
     if (clipHasFrame) {
@@ -115,6 +148,26 @@ export class LayerBuilderService {
       primaryLayers = cacheResult.layers;
     } else {
       primaryLayers = this.buildLayers(ctx);
+      if (primaryLayers.length === 0 && ctx.clipsAtTime.length > 0) {
+        log.debug('No primary layers for active clips', {
+          playhead: Math.round(ctx.playheadPosition * 1000) / 1000,
+          activeCompId: ctx.activeCompId,
+          clipCountAtTime: ctx.clipsAtTime.length,
+          videoTrackCount: ctx.videoTracks.length,
+          activeClips: ctx.clipsAtTime.map((clip) => ({
+            id: clip.id,
+            trackId: clip.trackId,
+            sourceType: clip.source?.type,
+            isLoading: clip.isLoading ?? false,
+            hasVideoElement: !!clip.source?.videoElement,
+            videoReadyState: clip.source?.videoElement?.readyState ?? null,
+            hasWebCodecsPlayer: !!clip.source?.webCodecsPlayer,
+            webCodecsFullMode: clip.source?.webCodecsPlayer?.isFullMode?.() ?? false,
+            webCodecsHasFrame: clip.source?.webCodecsPlayer?.hasFrame?.() ?? false,
+            webCodecsPendingSeek: clip.source?.webCodecsPlayer?.getPendingSeekTime?.() ?? null,
+          })),
+        });
+      }
       // Preload upcoming nested comp frames during playback
       if (ctx.isPlaying) {
         this.preloadUpcomingNestedCompFrames(ctx);
@@ -135,7 +188,10 @@ export class LayerBuilderService {
    * The primary composition's layers go at the position of its layer slot.
    */
   private mergeBackgroundLayers(primaryLayers: Layer[], playheadPosition: number): Layer[] {
-    const { activeLayerSlots, activeCompositionId } = useMediaStore.getState();
+    const {
+      activeLayerSlots = {},
+      activeCompositionId,
+    } = useMediaStore.getState();
     const slotEntries = Object.entries(activeLayerSlots);
 
     // No active layer slots → return primary layers as-is (backwards compatible)
@@ -160,7 +216,7 @@ export class LayerBuilderService {
 
     const merged: Layer[] = [];
 
-    const { layerOpacities } = useMediaStore.getState();
+    const { layerOpacities = {} } = useMediaStore.getState();
 
     for (const layerIndex of layerIndices) {
       if (layerIndex === primaryLayerIndex) {
@@ -419,9 +475,12 @@ export class LayerBuilderService {
           allowSharedPreviewSession
         );
     const runtimeProvider = getRuntimeFrameProvider(previewRuntimeSource);
+    const preferHtmlScrubPreview = ctx.isDraggingPlayhead && !!clip.source?.videoElement;
     const visualProvider = ctx.isPlaying
       ? previewRuntimeSource?.webCodecsPlayer ?? clip.source?.webCodecsPlayer
-      : this.getPausedVisualProvider(clip.source, runtimeProvider, timeInfo.clipTime);
+      : preferHtmlScrubPreview
+        ? undefined
+        : this.getPausedVisualProvider(clip.source, runtimeProvider, timeInfo.clipTime);
 
     const layer: Layer = {
       id: `${ctx.activeCompId}_layer_${layerIndex}`,
@@ -433,9 +492,9 @@ export class LayerBuilderService {
         type: 'video',
         videoElement: handoffVideo ?? clip.source!.videoElement,
         // Keep the clip's decoder attached even when audio uses a handoff element.
-        webCodecsPlayer: visualProvider,
-        runtimeSourceId: previewRuntimeSource?.runtimeSourceId,
-        runtimeSessionKey: previewRuntimeSource?.runtimeSessionKey,
+        webCodecsPlayer: visualProvider ?? undefined,
+        runtimeSourceId: preferHtmlScrubPreview ? undefined : previewRuntimeSource?.runtimeSourceId,
+        runtimeSessionKey: preferHtmlScrubPreview ? undefined : previewRuntimeSource?.runtimeSessionKey,
       },
       effects,
       position: transform.position,
@@ -811,6 +870,7 @@ export class LayerBuilderService {
             true
           );
       const runtimeProvider = getRuntimeFrameProvider(previewRuntimeSource);
+      const preferHtmlScrubPreview = ctx.isDraggingPlayhead && !!nestedClip.source?.videoElement;
       const nestedClipTime = nestedClip.reversed
         ? nestedClip.outPoint - nestedClipLocalTime
         : nestedClipLocalTime + nestedClip.inPoint;
@@ -821,9 +881,11 @@ export class LayerBuilderService {
           videoElement: nestedClip.source!.videoElement,
           webCodecsPlayer: ctx.isPlaying
             ? previewRuntimeSource?.webCodecsPlayer ?? nestedClip.source!.webCodecsPlayer
-            : this.getPausedVisualProvider(nestedClip.source, runtimeProvider, nestedClipTime),
-          runtimeSourceId: previewRuntimeSource?.runtimeSourceId,
-          runtimeSessionKey: previewRuntimeSource?.runtimeSessionKey,
+            : preferHtmlScrubPreview
+              ? undefined
+              : this.getPausedVisualProvider(nestedClip.source, runtimeProvider, nestedClipTime),
+          runtimeSourceId: preferHtmlScrubPreview ? undefined : previewRuntimeSource?.runtimeSourceId,
+          runtimeSessionKey: preferHtmlScrubPreview ? undefined : previewRuntimeSource?.runtimeSessionKey,
         },
       } as Layer;
     } else if (nestedClip.source?.imageElement) {

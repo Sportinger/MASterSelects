@@ -2,19 +2,51 @@
 
 import { Logger } from '../../services/logger';
 import type { TimelineClip } from '../../stores/timeline/types';
-
-const log = Logger.create('ClipPreparation');
 import type { ExportSettings, ExportClipState, ExportMode } from './types';
 import { useTimelineStore } from '../../stores/timeline';
 import { useMediaStore } from '../../stores/mediaStore';
 import { fileSystemService } from '../../services/fileSystemService';
+import { bindSourceRuntimeForOwner } from '../../services/mediaRuntime/clipBindings';
+import { mediaRuntimeRegistry } from '../../services/mediaRuntime/registry';
 import { ParallelDecodeManager } from '../ParallelDecodeManager';
+import type { WebCodecsPlayer } from '../WebCodecsPlayer';
+
+const log = Logger.create('ClipPreparation');
 
 export interface ClipPreparationResult {
   clipStates: Map<string, ExportClipState>;
   parallelDecoder: ParallelDecodeManager | null;
   useParallelDecode: boolean;
   exportMode: ExportMode;
+}
+
+function getExportRuntimeOwnerId(clipId: string): string {
+  return `export:${clipId}`;
+}
+
+function createExportRuntimeSource(
+  clip: TimelineClip,
+  runtimeOwnerId: string,
+  overridePlayer?: WebCodecsPlayer | null
+): TimelineClip['source'] {
+  const runtimeSource = bindSourceRuntimeForOwner({
+    ownerId: runtimeOwnerId,
+    source: clip.source,
+    file: clip.file,
+    mediaFileId: clip.mediaFileId ?? clip.source?.mediaFileId,
+    filePath: clip.source?.filePath,
+    sessionPolicy: 'export',
+    sessionOwnerId: runtimeOwnerId,
+  });
+
+  if (!runtimeSource) {
+    return clip.source;
+  }
+
+  return {
+    ...runtimeSource,
+    webCodecsPlayer: overridePlayer ?? undefined,
+  };
 }
 
 /**
@@ -59,17 +91,39 @@ function initializePreciseMode(
   videoClips: TimelineClip[],
   clipStates: Map<string, ExportClipState>
 ): ClipPreparationResult {
-  for (const clip of videoClips) {
-    if (clip.source?.type !== 'video') continue;
+  const registerPreciseClip = (clip: TimelineClip) => {
+    const runtimeOwnerId = getExportRuntimeOwnerId(clip.id);
     clipStates.set(clip.id, {
       clipId: clip.id,
       webCodecsPlayer: null,
       lastSampleIndex: 0,
       isSequential: false,
+      runtimeOwnerId,
+      runtimeSource: createExportRuntimeSource(clip, runtimeOwnerId),
     });
+  };
+
+  let preciseClipCount = 0;
+  let preciseNestedClipCount = 0;
+
+  for (const clip of videoClips) {
+    if (clip.isComposition && clip.nestedClips) {
+      for (const nestedClip of clip.nestedClips) {
+        if (nestedClip.source?.type !== 'video') continue;
+        registerPreciseClip(nestedClip);
+        preciseNestedClipCount += 1;
+      }
+    }
+
+    if (clip.source?.type !== 'video') continue;
+    registerPreciseClip(clip);
+    preciseClipCount += 1;
     log.debug(`Clip ${clip.name}: PRECISE mode (HTMLVideoElement seeking)`);
   }
-  log.info(`All ${videoClips.length} clips using PRECISE HTMLVideoElement seeking`);
+  log.info(`All ${preciseClipCount} clips using PRECISE HTMLVideoElement seeking`);
+  if (preciseNestedClipCount > 0) {
+    log.info(`Registered ${preciseNestedClipCount} nested PRECISE export clips`);
+  }
 
   return {
     clipStates,
@@ -170,12 +224,15 @@ async function initializeFastMode(
     const endSeqPrep = log.time(`prepareForSequentialExport "${clip.name}"`);
     await exportPlayer.prepareForSequentialExport(clipTime);
     endSeqPrep();
+    const runtimeOwnerId = getExportRuntimeOwnerId(clip.id);
 
     clipStates.set(clip.id, {
       clipId: clip.id,
       webCodecsPlayer: exportPlayer,
       lastSampleIndex: exportPlayer.getCurrentSampleIndex(),
       isSequential: true,
+      runtimeOwnerId,
+      runtimeSource: createExportRuntimeSource(clip, runtimeOwnerId, exportPlayer),
     });
 
     log.debug(`Clip ${clip.name}: FAST mode enabled (${exportPlayer.width}x${exportPlayer.height})`);
@@ -361,20 +418,26 @@ async function initializeParallelDecoding(
 
   // Mark clips as using parallel decoding
   for (const clip of clips) {
+    const runtimeOwnerId = getExportRuntimeOwnerId(clip.id);
     clipStates.set(clip.id, {
       clipId: clip.id,
       webCodecsPlayer: null,
       lastSampleIndex: 0,
       isSequential: false,
+      runtimeOwnerId,
+      runtimeSource: createExportRuntimeSource(clip, runtimeOwnerId),
     });
   }
 
   for (const { clip } of nestedClips) {
+    const runtimeOwnerId = getExportRuntimeOwnerId(clip.id);
     clipStates.set(clip.id, {
       clipId: clip.id,
       webCodecsPlayer: null,
       lastSampleIndex: 0,
       isSequential: false,
+      runtimeOwnerId,
+      runtimeSource: createExportRuntimeSource(clip, runtimeOwnerId),
     });
   }
 
@@ -452,6 +515,18 @@ export function cleanupExportMode(
 
   // Destroy all dedicated export WebCodecs players
   for (const state of clipStates.values()) {
+    if (state.runtimeSource?.runtimeSourceId && state.runtimeSource.runtimeSessionKey) {
+      mediaRuntimeRegistry.releaseSession(
+        state.runtimeSource.runtimeSourceId,
+        state.runtimeSource.runtimeSessionKey
+      );
+    }
+    if (state.runtimeSource?.runtimeSourceId && state.runtimeOwnerId) {
+      mediaRuntimeRegistry.releaseRuntime(
+        state.runtimeSource.runtimeSourceId,
+        state.runtimeOwnerId
+      );
+    }
     if (state.webCodecsPlayer && state.isSequential) {
       try {
         state.webCodecsPlayer.endSequentialExport();

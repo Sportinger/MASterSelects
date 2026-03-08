@@ -36,7 +36,7 @@ export const createCompositionSlice: MediaSliceCreator<CompositionActions> = (se
       id: generateId(),
       name,
       type: 'composition',
-      parentId: null,
+      parentId: settings?.parentId ?? null,
       createdAt: Date.now(),
       width: settings?.width ?? outputResolution.width,
       height: settings?.height ?? outputResolution.height,

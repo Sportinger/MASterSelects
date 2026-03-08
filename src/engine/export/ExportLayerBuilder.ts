@@ -64,7 +64,14 @@ export function buildLayersAtTime(
 
     // Handle nested compositions
     if (clip.isComposition && clip.nestedClips && clip.nestedClips.length > 0) {
-      const nestedLayers = buildNestedLayersForExport(clip, clipLocalTime + (clip.inPoint || 0), time, parallelDecoder, useParallelDecode);
+      const nestedLayers = buildNestedLayersForExport(
+        clip,
+        clipLocalTime + (clip.inPoint || 0),
+        time,
+        clipStates,
+        parallelDecoder,
+        useParallelDecode
+      );
 
       if (nestedLayers.length > 0) {
         const composition = useMediaStore.getState().compositions.find(c => c.id === clip.compositionId);
@@ -186,6 +193,7 @@ function buildVideoLayer(
 ): Layer | null {
   const video = clip.source!.videoElement!;
   const clipState = clipStates.get(clip.id);
+  const exportRuntimeSource = clipState?.runtimeSource;
 
   // PARALLEL DECODE MODE - try parallel decode first
   if (useParallelDecode && parallelDecoder) {
@@ -198,6 +206,8 @@ function buildVideoLayer(
             type: 'video',
             videoElement: video,
             videoFrame: videoFrame,
+            runtimeSourceId: exportRuntimeSource?.runtimeSourceId,
+            runtimeSessionKey: exportRuntimeSource?.runtimeSessionKey,
           },
         };
       }
@@ -218,6 +228,8 @@ function buildVideoLayer(
           type: 'video',
           videoElement: video,
           webCodecsPlayer: clipState.webCodecsPlayer,
+          runtimeSourceId: exportRuntimeSource?.runtimeSourceId,
+          runtimeSessionKey: exportRuntimeSource?.runtimeSessionKey,
         },
       };
     }
@@ -232,6 +244,8 @@ function buildVideoLayer(
       source: {
         type: 'video',
         videoElement: video,
+        runtimeSourceId: exportRuntimeSource?.runtimeSourceId,
+        runtimeSessionKey: exportRuntimeSource?.runtimeSessionKey,
       },
     };
   }
@@ -248,6 +262,7 @@ function buildNestedLayersForExport(
   clip: TimelineClip,
   nestedTime: number,
   mainTimelineTime: number,
+  clipStates: Map<string, ExportClipState>,
   parallelDecoder: ParallelDecodeManager | null,
   useParallelDecode: boolean
 ): Layer[] {
@@ -274,6 +289,8 @@ function buildNestedLayersForExport(
 
     // Video clips - try parallel decode first, fallback to HTMLVideoElement
     if (nestedClip.source?.videoElement) {
+      const nestedClipState = clipStates.get(nestedClip.id);
+      const nestedExportRuntimeSource = nestedClipState?.runtimeSource;
       if (useParallelDecode && parallelDecoder) {
         // Try parallel decode if clip is registered
         if (parallelDecoder.hasClip(nestedClip.id)) {
@@ -285,6 +302,8 @@ function buildNestedLayersForExport(
                 type: 'video',
                 videoElement: nestedClip.source.videoElement,
                 videoFrame: videoFrame,
+                runtimeSourceId: nestedExportRuntimeSource?.runtimeSourceId,
+                runtimeSessionKey: nestedExportRuntimeSource?.runtimeSessionKey,
               },
             } as Layer);
             continue;
@@ -304,6 +323,9 @@ function buildNestedLayersForExport(
           source: {
             type: 'video',
             videoElement: video,
+            webCodecsPlayer: nestedClipState?.webCodecsPlayer ?? undefined,
+            runtimeSourceId: nestedExportRuntimeSource?.runtimeSourceId,
+            runtimeSessionKey: nestedExportRuntimeSource?.runtimeSessionKey,
           },
         } as Layer);
       } else {

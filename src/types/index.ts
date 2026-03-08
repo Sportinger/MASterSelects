@@ -72,12 +72,17 @@ export interface LayerSource {
   color?: string;
   texture?: GPUTexture;
   // WebCodecs support for hardware-accelerated video decode
-  webCodecsPlayer?: import('../engine/WebCodecsPlayer').WebCodecsPlayer;
+  webCodecsPlayer?:
+    | import('../engine/WebCodecsPlayer').WebCodecsPlayer
+    | import('../services/mediaRuntime/types').RuntimeFrameProvider;
   videoFrame?: VideoFrame;
   // Native Helper decoder for ProRes/DNxHD (turbo mode)
   nativeDecoder?: import('../services/nativeHelper').NativeDecoder;
   // Path to original file (for native helper to access directly)
   filePath?: string;
+  // Shared media runtime binding
+  runtimeSourceId?: string;
+  runtimeSessionKey?: string;
   // Nested composition support - pre-rendered layers from nested comp
   nestedComposition?: NestedCompositionData;
   // Text clip support
@@ -215,6 +220,64 @@ export interface EngineStats {
     drift: number;         // Max audio drift from expected time in ms
     status: 'sync' | 'drift' | 'silent' | 'error';
   };
+  // Playback pipeline debug snapshot
+  playback?: {
+    windowMs: number;
+    pipeline: 'webcodecs' | 'vf' | 'html' | 'native' | 'parallel' | 'none';
+    status: 'ok' | 'warn' | 'bad';
+    frameEvents: number;
+    cadenceFps: number;
+    avgFrameGapMs: number;
+    p95FrameGapMs: number;
+    maxFrameGapMs: number;
+    stalls: number;
+    seeks: number;
+    advanceSeeks: number;
+    driftCorrections: number;
+    readyStateDrops: number;
+    queuePressureEvents: number;
+    healthAnomalies: number;
+    activeVideos: number;
+    playingVideos: number;
+    seekingVideos: number;
+    warmingUpVideos: number;
+    coldVideos: number;
+    worstReadyState: number;
+    lastAnomalyType?: string;
+    avgDecodeLatencyMs?: number;
+    avgSeekLatencyMs?: number;
+    avgQueueDepth?: number;
+    maxQueueDepth?: number;
+    avgAudioDriftMs?: number;
+    decoderResets?: number;
+    pendingSeekResolves?: number;
+    avgPendingSeekMs?: number;
+    maxPendingSeekMs?: number;
+    collectorHolds?: number;
+    collectorDrops?: number;
+  };
+  // Main-thread frame phase breakdown
+  mainThread?: {
+    windowMs: number;
+    samples: number;
+    liveSamples: number;
+    cachedSamples: number;
+    skippedSamples: number;
+    avgTotalMs: number;
+    p95TotalMs: number;
+    maxTotalMs: number;
+    avgStatsMs: number;
+    avgBuildMs: number;
+    avgRenderMs: number;
+    avgSyncVideoMs: number;
+    avgSyncAudioMs: number;
+    avgCacheMs: number;
+    maxBuildMs: number;
+    maxRenderMs: number;
+    maxSyncVideoMs: number;
+    maxSyncAudioMs: number;
+    maxCacheMs: number;
+  };
   // Idle mode - engine pauses rendering when nothing changes
   isIdle: boolean;
 }
@@ -308,6 +371,8 @@ export interface TimelineClip {
     mediaFileId?: string;  // Reference to MediaFile for proxy lookup
     textCanvas?: HTMLCanvasElement;  // Pre-rendered text/solid canvas for text and solid clips
     filePath?: string;  // Path to original file (for native helper to access directly)
+    runtimeSourceId?: string;
+    runtimeSessionKey?: string;
   } | null;
   thumbnails?: string[];  // Array of data URLs for filmstrip preview
   mediaFileId?: string;   // Reference to MediaFile for audio/proxy lookup (top-level for YouTube downloads)

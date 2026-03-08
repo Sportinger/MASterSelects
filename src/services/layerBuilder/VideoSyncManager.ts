@@ -10,6 +10,14 @@ import { layerPlaybackManager } from '../layerPlaybackManager';
 import { engine } from '../../engine/WebGPUEngine';
 import { useTimelineStore } from '../../stores/timeline';
 import { MAX_NESTING_DEPTH } from '../../stores/timeline/constants';
+import {
+  canUseSharedPreviewRuntimeSession,
+  ensureRuntimeFrameProvider,
+  getPreviewRuntimeSource,
+  getRuntimeFrameProvider,
+  getScrubRuntimeSource,
+  updateRuntimePlaybackTime,
+} from '../mediaRuntime/runtimePlayback';
 import { vfPipelineMonitor } from '../vfPipelineMonitor';
 import { Logger } from '../logger';
 
@@ -22,6 +30,7 @@ export class VideoSyncManager {
   // Video sync throttling
   private lastVideoSyncFrame = -1;
   private lastVideoSyncPlaying = false;
+  private lastVideoSyncClipsRef: TimelineClip[] | null = null;
   private lastSeekRef: Record<string, number> = {};
 
   // Track per-clip playing state to detect playing→paused transitions
@@ -47,6 +56,10 @@ export class VideoSyncManager {
 
   // WebCodecs precise seek debounce
   private wcPreciseSeekTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+  private latestWcPreciseSeekTargets: Record<string, number> = {};
+  private lastWcFastSeekTarget: Record<string, number> = {};
+  private lastWcFastSeekAt: Record<string, number> = {};
+  private lastWcPreciseSeekAt: Record<string, number> = {};
 
   // (lastWcFastSeekTarget removed — replaced by wcp.isDecodePending() check)
 
@@ -76,13 +89,18 @@ export class VideoSyncManager {
     this.forceDecodeInProgress.clear();
     this.rvfcHandles = {};
     this.latestSeekTargets = {};
+    this.lastWcFastSeekTarget = {};
+    this.lastWcFastSeekAt = {};
     this.lastVideoSyncFrame = -1;
     this.lastVideoSyncPlaying = false;
+    this.lastVideoSyncClipsRef = null;
     // Clear debounce timers
     for (const id of Object.values(this.preciseSeekTimers)) clearTimeout(id);
     this.preciseSeekTimers = {};
     for (const id of Object.values(this.wcPreciseSeekTimers)) clearTimeout(id);
     this.wcPreciseSeekTimers = {};
+    this.latestWcPreciseSeekTargets = {};
+    this.lastWcPreciseSeekAt = {};
   }
 
   /**
@@ -94,6 +112,332 @@ export class VideoSyncManager {
     const dur = video.duration;
     if (!isFinite(dur) || dur <= 0) return Math.max(0, time);
     return Math.max(0, Math.min(time, dur - 0.001));
+  }
+
+  private getClipStartTime(ctx: FrameContext, clip: TimelineClip): number {
+    const initialSpeed = ctx.getInterpolatedSpeed(clip.id, 0);
+    const startPoint = initialSpeed >= 0 ? clip.inPoint : clip.outPoint;
+    let sourceTime = 0;
+    try {
+      sourceTime = ctx.getSourceTimeForClip(clip.id, 0);
+    } catch {
+      sourceTime = 0;
+    }
+    return Math.max(clip.inPoint, Math.min(clip.outPoint, startPoint + sourceTime));
+  }
+
+  private sharesActiveTrackDecoder(ctx: FrameContext, clip: TimelineClip): boolean {
+    if (!clip.trackId) {
+      return false;
+    }
+
+    const activeClip = ctx.clipsByTrackId.get(clip.trackId);
+    if (!activeClip?.source || activeClip.id === clip.id) {
+      return false;
+    }
+
+    if (clip.source?.runtimeSourceId && activeClip.source.runtimeSourceId) {
+      return clip.source.runtimeSourceId === activeClip.source.runtimeSourceId;
+    }
+
+    return !!(
+      clip.source?.webCodecsPlayer &&
+      activeClip.source.webCodecsPlayer &&
+      clip.source.webCodecsPlayer === activeClip.source.webCodecsPlayer
+    );
+  }
+
+  private getActiveClipsAtTime(ctx: FrameContext, time: number): TimelineClip[] {
+    return ctx.clips.filter((clip) => time >= clip.startTime && time < clip.startTime + clip.duration);
+  }
+
+  private prewarmUpcomingWebCodecsClip(
+    ctx: FrameContext,
+    clip: TimelineClip,
+    clipTime: number
+  ): void {
+    if (!clip.source || this.sharesActiveTrackDecoder(ctx, clip)) {
+      return;
+    }
+
+    const futureActiveClips = this.getActiveClipsAtTime(
+      ctx,
+      Math.min(clip.startTime + 0.001, clip.startTime + Math.max(clip.duration * 0.25, 0.001))
+    );
+    const previewSource = getPreviewRuntimeSource(
+      clip.source,
+      clip.trackId,
+      canUseSharedPreviewRuntimeSession(clip, futureActiveClips)
+    );
+
+    updateRuntimePlaybackTime(previewSource, clipTime);
+
+    const runtimeProvider = getRuntimeFrameProvider(previewSource);
+    const frameProvider =
+      runtimeProvider?.isFullMode()
+        ? runtimeProvider
+        : clip.source.webCodecsPlayer?.isFullMode()
+          ? clip.source.webCodecsPlayer
+          : null;
+
+    if (!frameProvider) {
+      return;
+    }
+
+    const pendingTarget = frameProvider.getPendingSeekTime?.();
+    const effectiveTime = pendingTarget ?? frameProvider.currentTime;
+    const hasFrame = frameProvider.hasFrame?.() ?? true;
+    if (pendingTarget != null && Math.abs(pendingTarget - clipTime) <= 0.05) {
+      return;
+    }
+    if (hasFrame && Math.abs(effectiveTime - clipTime) <= 0.05) {
+      return;
+    }
+
+    frameProvider.seek(clipTime);
+  }
+
+  private getPlaybackRuntimeSourceForClip(ctx: FrameContext, clip: TimelineClip) {
+    return getPreviewRuntimeSource(
+      clip.source,
+      clip.trackId,
+      canUseSharedPreviewRuntimeSession(clip, ctx.clipsAtTime)
+    );
+  }
+
+  private getScrubRuntimeSourceForClip(ctx: FrameContext, clip: TimelineClip) {
+    return getScrubRuntimeSource(
+      clip.source,
+      clip.trackId,
+      canUseSharedPreviewRuntimeSession(clip, ctx.clipsAtTime)
+    );
+  }
+
+  private providerHasFrame(
+    provider:
+      | {
+        hasFrame?: () => boolean;
+        getCurrentFrame?: () => unknown;
+      }
+      | null
+      | undefined
+  ): boolean {
+    if (!provider) {
+      return false;
+    }
+
+    return (provider.hasFrame?.() ?? false) || !!provider.getCurrentFrame?.();
+  }
+
+  private getPausedWebCodecsProvider(
+    source: TimelineClip['source'],
+    scrubProvider: ReturnType<typeof getRuntimeFrameProvider>,
+    targetTime: number
+  ) {
+    const clipPlayer = source?.webCodecsPlayer?.isFullMode()
+      ? source.webCodecsPlayer
+      : null;
+    const scrubIsFullMode = !!scrubProvider?.isFullMode();
+    const scrubHasFrame = this.providerHasFrame(scrubProvider);
+    const scrubEffectiveTime = scrubProvider?.getPendingSeekTime?.() ?? scrubProvider?.currentTime;
+
+    if (
+      scrubIsFullMode &&
+      scrubHasFrame &&
+      scrubEffectiveTime !== undefined &&
+      Math.abs(scrubEffectiveTime - targetTime) <= 0.05
+    ) {
+      return scrubProvider;
+    }
+
+    if (clipPlayer) {
+      return clipPlayer;
+    }
+
+    return scrubIsFullMode ? scrubProvider : null;
+  }
+
+  private shouldSeekPausedWebCodecsProvider(
+    provider:
+      | {
+        currentTime: number;
+        getPendingSeekTime?: () => number | null | undefined;
+        isDecodePending?: () => boolean;
+        hasFrame?: () => boolean;
+        getCurrentFrame?: () => unknown;
+      }
+      | null
+      | undefined,
+    targetTime: number
+  ): boolean {
+    if (!provider) {
+      return false;
+    }
+
+    const pendingSeek = provider.getPendingSeekTime?.();
+    if (pendingSeek != null && Math.abs(pendingSeek - targetTime) <= 0.05) {
+      return false;
+    }
+
+    if (provider.isDecodePending?.()) {
+      return false;
+    }
+
+    const effectivePos = pendingSeek ?? provider.currentTime;
+    return !this.providerHasFrame(provider) || Math.abs(effectivePos - targetTime) > 0.05;
+  }
+
+  private shouldFastSeekPausedWebCodecsProvider(
+    provider:
+      | {
+        currentTime: number;
+        getPendingSeekTime?: () => number | null | undefined;
+        isDecodePending?: () => boolean;
+        hasFrame?: () => boolean;
+        getCurrentFrame?: () => unknown;
+      }
+      | null
+      | undefined,
+    providerKey: string,
+    targetTime: number
+  ): boolean {
+    if (!provider) {
+      return false;
+    }
+
+    const decodeBusy = provider.isDecodePending?.() ?? false;
+    const hasFrame = this.providerHasFrame(provider);
+    const effectivePos = provider.getPendingSeekTime?.() ?? provider.currentTime;
+    const posDiff = Math.abs(effectivePos - targetTime);
+    const lastFastSeekTarget = this.lastWcFastSeekTarget[providerKey];
+    const targetMovedSinceFastSeek =
+      lastFastSeekTarget === undefined ||
+      Math.abs(lastFastSeekTarget - targetTime) > 0.01;
+    const staleBusySeek =
+      decodeBusy &&
+      targetMovedSinceFastSeek &&
+      performance.now() - (this.lastWcFastSeekAt[providerKey] ?? 0) > 80;
+
+    return (
+      (!decodeBusy || staleBusySeek) &&
+      (!hasFrame || posDiff > 0.05 || targetMovedSinceFastSeek)
+    );
+  }
+
+  private shouldUseSequentialScrubSeek(
+    provider:
+      | {
+        currentTime: number;
+        getPendingSeekTime?: () => number | null | undefined;
+        isDecodePending?: () => boolean;
+        hasFrame?: () => boolean;
+        getCurrentFrame?: () => unknown;
+      }
+      | null
+      | undefined,
+    targetTime: number
+  ): boolean {
+    if (!provider || !this.providerHasFrame(provider)) {
+      return false;
+    }
+
+    if (provider.isDecodePending?.()) {
+      return false;
+    }
+
+    const effectivePos = provider.getPendingSeekTime?.() ?? provider.currentTime;
+    const delta = targetTime - effectivePos;
+
+    return delta > 0.01 && delta <= 0.35;
+  }
+
+  private clearFastSeekTracking(providerKey: string): void {
+    delete this.lastWcFastSeekTarget[providerKey];
+    delete this.lastWcFastSeekAt[providerKey];
+  }
+
+  private isPlaybackProviderReadyForAudioStart(
+    provider:
+      | {
+        currentTime: number;
+        getPendingSeekTime?: () => number | null | undefined;
+        hasFrame?: () => boolean;
+        getCurrentFrame?: () => unknown;
+        isAdvanceSeekPending?: () => boolean;
+      }
+      | null
+      | undefined,
+    targetTime: number
+  ): boolean {
+    if (!provider) {
+      return false;
+    }
+
+    if (!this.providerHasFrame(provider)) {
+      return false;
+    }
+
+    // Wait for advance seek to resolve — the decoder was just reset and
+    // currentFrame is stale from the previous session, not yet replaced.
+    if (provider.isAdvanceSeekPending?.()) {
+      return false;
+    }
+
+    const effectiveTime = provider.getPendingSeekTime?.() ?? provider.currentTime;
+    return Math.abs(effectiveTime - targetTime) <= 0.05;
+  }
+
+  private syncPausedWebCodecsProvider(
+    provider:
+      | {
+        currentTime: number;
+        seek: (time: number) => void;
+        fastSeek?: (time: number) => void;
+        isPlaying?: boolean;
+        pause?: () => void;
+        getPendingSeekTime?: () => number | null | undefined;
+        isDecodePending?: () => boolean;
+        hasFrame?: () => boolean;
+        getCurrentFrame?: () => unknown;
+      }
+      | null
+      | undefined,
+    providerKey: string,
+    targetTime: number,
+    isDragging: boolean,
+    schedulePreciseSeek = false,
+    allowSequentialDuringDrag = true
+  ): void {
+    if (!provider) {
+      return;
+    }
+
+    if (provider.isPlaying) {
+      provider.pause?.();
+    }
+
+    if (isDragging) {
+      if (allowSequentialDuringDrag && this.shouldUseSequentialScrubSeek(provider, targetTime)) {
+        this.clearFastSeekTracking(providerKey);
+        provider.seek(targetTime);
+        return;
+      }
+
+      if (this.shouldFastSeekPausedWebCodecsProvider(provider, providerKey, targetTime)) {
+        provider.fastSeek?.(targetTime);
+        this.lastWcFastSeekTarget[providerKey] = targetTime;
+        this.lastWcFastSeekAt[providerKey] = performance.now();
+        if (schedulePreciseSeek) {
+          this.schedulePreciseWcSeek(providerKey, provider, targetTime);
+        }
+      }
+      return;
+    }
+
+    this.clearFastSeekTracking(providerKey);
+    if (this.shouldSeekPausedWebCodecsProvider(provider, targetTime)) {
+      provider.seek(targetTime);
+    }
   }
 
   /**
@@ -195,11 +539,13 @@ export class VideoSyncManager {
     // Skip if same frame during playback
     if (ctx.isPlaying && !ctx.isDraggingPlayhead &&
         ctx.frameNumber === this.lastVideoSyncFrame &&
-        ctx.isPlaying === this.lastVideoSyncPlaying) {
+        ctx.isPlaying === this.lastVideoSyncPlaying &&
+        ctx.clips === this.lastVideoSyncClipsRef) {
       return;
     }
     this.lastVideoSyncFrame = ctx.frameNumber;
     this.lastVideoSyncPlaying = ctx.isPlaying;
+    this.lastVideoSyncClipsRef = ctx.clips;
 
     // Compute handoffs for seamless cut transitions
     this.computeHandoffs(ctx);
@@ -333,11 +679,26 @@ export class VideoSyncManager {
         }
       }
 
-      // Sync WebCodecsPlayer only when not playing (it handles its own playback)
-      if (webCodecsPlayer && !ctx.isPlaying) {
-        const wcTimeDiff = Math.abs(webCodecsPlayer.currentTime - nestedClipTime);
-        if (wcTimeDiff > 0.05) {
-          webCodecsPlayer.seek(nestedClipTime);
+      // Sync a dedicated scrub provider when paused so playback decode state stays untouched.
+      if (webCodecsPlayer?.isFullMode() && !ctx.isPlaying) {
+        const scrubRuntimeSource = getScrubRuntimeSource(
+          nestedClip.source,
+          nestedClip.trackId,
+          true
+        );
+        updateRuntimePlaybackTime(scrubRuntimeSource, nestedClipTime);
+        void ensureRuntimeFrameProvider(scrubRuntimeSource, 'interactive', nestedClipTime);
+
+        const scrubProvider = getRuntimeFrameProvider(scrubRuntimeSource);
+        const pausedProvider = this.getPausedWebCodecsProvider(
+          nestedClip.source,
+          scrubProvider,
+          nestedClipTime
+        ) ?? webCodecsPlayer;
+        if (pausedProvider?.isFullMode()) {
+          if (this.shouldSeekPausedWebCodecsProvider(pausedProvider, nestedClipTime)) {
+            pausedProvider.seek(nestedClipTime);
+          }
         }
       }
     }
@@ -400,10 +761,10 @@ export class VideoSyncManager {
       return;
     }
 
-    // Full-mode WebCodecs: player handles its own decode loop,
-    // HTMLVideoElement is only used for audio. Can sync even without videoElement
-    // (fast-attach path sets WCP before canplaythrough).
-    if (clip.source?.webCodecsPlayer?.isFullMode()) {
+    // Full-mode WebCodecs normally owns preview sync, but active drag-scrub can
+    // temporarily use HTML video seeking for better responsiveness.
+    if (clip.source?.webCodecsPlayer?.isFullMode() &&
+        !(ctx.isDraggingPlayhead && clip.source.videoElement)) {
       this.syncFullWebCodecs(clip, ctx);
       return;
     }
@@ -717,13 +1078,17 @@ export class VideoSyncManager {
     const lookaheadEnd = ctx.playheadPosition + VideoSyncManager.LOOKAHEAD_TIME;
 
     for (const clip of ctx.clips) {
-      if (!clip.source?.videoElement) continue;
-
-      const video = clip.source.videoElement;
       const clipStart = clip.startTime;
+      const clipTime = this.getClipStartTime(ctx, clip);
 
       // Is this clip about to become active? (starts within lookahead window, not yet active)
       if (clipStart <= ctx.playheadPosition || clipStart > lookaheadEnd) continue;
+
+      this.prewarmUpcomingWebCodecsClip(ctx, clip, clipTime);
+
+      if (!clip.source?.videoElement) continue;
+
+      const video = clip.source.videoElement;
 
       // Skip if GPU already confirmed warm, or warmup in progress
       if (this.gpuWarmedUp.has(video) || this.warmingUpVideos.has(video)) continue;
@@ -737,7 +1102,6 @@ export class VideoSyncManager {
 
       // Start proactive warmup: briefly play to activate GPU surface
       this.warmingUpVideos.add(video);
-      const clipTime = clip.inPoint;
 
       video.muted = true; // Prevent audio blip during warmup
       video.play().then(() => {
@@ -783,6 +1147,7 @@ export class VideoSyncManager {
 
       const video = clip.source.videoElement;
       const clipStart = clip.startTime;
+      const targetTime = this.getClipStartTime(ctx, clip);
 
       // Is this clip about to become active? (starts within lookahead, not yet active)
       if (clipStart <= ctx.playheadPosition || clipStart > lookaheadEnd) continue;
@@ -791,7 +1156,6 @@ export class VideoSyncManager {
       if (this.gpuWarmedUp.has(video) || this.warmingUpVideos.has(video)) continue;
 
       // Pre-seek the video element to inPoint so audio data is buffered
-      const targetTime = clip.inPoint;
       if (Math.abs(video.currentTime - targetTime) > 0.5) {
         video.currentTime = this.safeSeekTime(video, targetTime);
       }
@@ -858,8 +1222,9 @@ export class VideoSyncManager {
    */
   private syncFullWebCodecs(clip: TimelineClip, ctx: FrameContext): void {
     const video = clip.source!.videoElement; // May be undefined (fast-attach before canplaythrough)
-    const wcp = clip.source!.webCodecsPlayer!;
     const timeInfo = getClipTimeInfo(ctx, clip);
+    const playbackRuntimeSource = this.getPlaybackRuntimeSourceForClip(ctx, clip);
+    const scrubRuntimeSource = this.getScrubRuntimeSourceForClip(ctx, clip);
 
     // Use handoff video element for audio continuity at cut points.
     // In full WebCodecs mode, the HTMLVideoElement is only used for audio.
@@ -869,16 +1234,28 @@ export class VideoSyncManager {
     const audioVideo = handoffVideo ?? video;
 
     if (ctx.isPlaying) {
+      updateRuntimePlaybackTime(playbackRuntimeSource, timeInfo.clipTime);
+      const playbackProvider =
+        getRuntimeFrameProvider(playbackRuntimeSource) ??
+        clip.source!.webCodecsPlayer!;
+      if (!playbackProvider?.isFullMode()) {
+        return;
+      }
+
       // Playback takes over — no scrub tracking needed
 
       // Render-loop-driven: advance decoder to clip time each frame.
       // No internal animation loop — advanceToTime handles decode feeding + frame selection.
-      wcp.advanceToTime(timeInfo.clipTime);
+      playbackProvider.advanceToTime?.(timeInfo.clipTime);
 
       // Keep video element in sync for audio (if available)
       // Use handoff element for seamless audio across cuts
       if (audioVideo) {
-        if (audioVideo.paused) {
+        const playbackReadyForAudio = this.isPlaybackProviderReadyForAudioStart(
+          playbackProvider,
+          timeInfo.clipTime
+        );
+        if (audioVideo.paused && playbackReadyForAudio) {
           log.info('Audio element PLAY', {
             clip: clip.id.slice(-6),
             isHandoff: !!handoffVideo,
@@ -900,9 +1277,33 @@ export class VideoSyncManager {
         }
       }
     } else {
+      updateRuntimePlaybackTime(scrubRuntimeSource, timeInfo.clipTime);
+      void ensureRuntimeFrameProvider(scrubRuntimeSource, 'interactive', timeInfo.clipTime);
+      const scrubProvider = getRuntimeFrameProvider(scrubRuntimeSource);
+      const dedicatedScrubProvider = scrubProvider?.isFullMode() ? scrubProvider : null;
+      const pausedProvider = this.getPausedWebCodecsProvider(
+        clip.source,
+        scrubProvider,
+        timeInfo.clipTime
+      );
+      const fallbackProvider =
+        dedicatedScrubProvider && pausedProvider && pausedProvider !== dedicatedScrubProvider
+          ? pausedProvider
+          : null;
+      const scrubProviderReady = this.isPlaybackProviderReadyForAudioStart(
+        dedicatedScrubProvider,
+        timeInfo.clipTime
+      );
+
       // Paused: stop decode loop, seek to frame
-      if (wcp.isPlaying) wcp.pause();
+      if (dedicatedScrubProvider?.isPlaying) dedicatedScrubProvider.pause();
+      if (fallbackProvider?.isPlaying) fallbackProvider.pause();
+      if (pausedProvider?.isPlaying) pausedProvider.pause();
       if (video && !video.paused) video.pause();
+
+      if (!pausedProvider?.isFullMode()) {
+        return;
+      }
 
       // Determine if a new seek is needed.
       // Key constraint: fastSeek calls decoder.reset() which cancels any pending decode.
@@ -911,25 +1312,38 @@ export class VideoSyncManager {
       // output anything → preview freezes. Only issue a new fastSeek when:
       //   1. No decode is currently in progress (decoder finished), AND
       //   2. The actual frame position differs significantly from target
-      const actualPos = wcp.currentTime;
-      const posDiff = Math.abs(actualPos - timeInfo.clipTime);
+      if (dedicatedScrubProvider) {
+        this.syncPausedWebCodecsProvider(
+          dedicatedScrubProvider,
+          `${clip.id}:scrub`,
+          timeInfo.clipTime,
+          ctx.isDraggingPlayhead,
+          true,
+          true
+        );
+      }
 
-      if (ctx.isDraggingPlayhead) {
-        // Fast scrubbing: keyframe-only for instant feedback
-        // Only seek if decoder is idle (previous fastSeek completed) or position changed a lot
-        const decodeBusy = wcp.isDecodePending();
-        if (!decodeBusy && posDiff > 0.05) {
-          wcp.fastSeek(timeInfo.clipTime);
-          // Debounced precise seek when scrubbing pauses
-          this.schedulePreciseWcSeek(clip.id, wcp, timeInfo.clipTime);
-        }
+      if (!dedicatedScrubProvider) {
+        this.syncPausedWebCodecsProvider(
+          pausedProvider,
+          `${clip.id}:fallback`,
+          timeInfo.clipTime,
+          ctx.isDraggingPlayhead,
+          true,
+          true
+        );
+      } else if (fallbackProvider && !scrubProviderReady) {
+        this.syncPausedWebCodecsProvider(
+          fallbackProvider,
+          `${clip.id}:fallback`,
+          timeInfo.clipTime,
+          ctx.isDraggingPlayhead,
+          false,
+          false
+        );
       } else {
-        // Click/arrow: precise seek immediately
-        const pendingSeek = wcp.getPendingSeekTime();
-        const effectivePos = pendingSeek ?? actualPos;
-        if (Math.abs(effectivePos - timeInfo.clipTime) > 0.05) {
-          wcp.seek(timeInfo.clipTime);
-        }
+        this.clearFastSeekTracking(`${clip.id}:fallback`);
+        clearTimeout(this.wcPreciseSeekTimers[`${clip.id}:fallback`]);
       }
 
       // Keep audio element at same position — but NOT during scrubbing.
@@ -951,11 +1365,18 @@ export class VideoSyncManager {
    * When scrubbing pauses (120ms), do a full decode for the exact frame.
    */
   private schedulePreciseWcSeek(clipId: string, wcp: { seek: (t: number) => void; currentTime: number }, time: number): void {
-    clearTimeout(this.wcPreciseSeekTimers[clipId]);
+    this.latestWcPreciseSeekTargets[clipId] = time;
+    if (this.wcPreciseSeekTimers[clipId]) {
+      clearTimeout(this.wcPreciseSeekTimers[clipId]);
+    }
+
     this.wcPreciseSeekTimers[clipId] = setTimeout(() => {
+      delete this.wcPreciseSeekTimers[clipId];
+      const targetTime = this.latestWcPreciseSeekTargets[clipId] ?? time;
       // Only seek if still at a different position
-      if (Math.abs(wcp.currentTime - time) > 0.01) {
-        wcp.seek(time);
+      if (Math.abs(wcp.currentTime - targetTime) > 0.01) {
+        wcp.seek(targetTime);
+        this.lastWcPreciseSeekAt[clipId] = performance.now();
         engine.requestRender();
       }
     }, 120);

@@ -2,7 +2,14 @@
 // This enables multiple previews showing different compositions simultaneously
 
 import { Logger } from './logger';
-import type { Layer, SerializableClip, TimelineTrack, TimelineClip, NestedCompositionData } from '../types';
+import type {
+  Layer,
+  LayerSource,
+  SerializableClip,
+  TimelineTrack,
+  TimelineClip,
+  NestedCompositionData,
+} from '../types';
 
 const log = Logger.create('CompositionRenderer');
 import { useMediaStore } from '../stores/mediaStore';
@@ -10,20 +17,32 @@ import { useTimelineStore } from '../stores/timeline';
 import { calculateSourceTime } from '../utils/speedIntegration';
 import { textRenderer } from './textRenderer';
 import { proxyFrameCache } from './proxyFrameCache';
+import { bindSourceRuntimeForOwner } from './mediaRuntime/clipBindings';
+import {
+  getRuntimeFrameProvider,
+  releaseRuntimePlaybackSession,
+  updateRuntimePlaybackTime,
+} from './mediaRuntime/runtimePlayback';
+import { mediaRuntimeRegistry } from './mediaRuntime/registry';
+
+type CompositionClipSourceEntry = {
+  clipId: string;
+  type: 'video' | 'image' | 'audio' | 'text';
+  videoElement?: HTMLVideoElement;
+  webCodecsPlayer?: LayerSource['webCodecsPlayer'];
+  imageElement?: HTMLImageElement;
+  textCanvas?: HTMLCanvasElement;
+  file?: File;
+  naturalDuration: number;
+  runtimeSourceId?: string;
+  runtimeSessionKey?: string;
+  runtimeOwnerId?: string;
+};
 
 // Source cache entry for a composition
 interface CompositionSources {
   compositionId: string;
-  clipSources: Map<string, {
-    clipId: string;
-    type: 'video' | 'image' | 'audio' | 'text';
-    videoElement?: HTMLVideoElement;
-    webCodecsPlayer?: import('../engine/WebCodecsPlayer').WebCodecsPlayer;
-    imageElement?: HTMLImageElement;
-    textCanvas?: HTMLCanvasElement;
-    file?: File;
-    naturalDuration: number;
-  }>;
+  clipSources: Map<string, CompositionClipSourceEntry>;
   isReady: boolean;
   lastAccessTime: number;
 }
@@ -46,6 +65,91 @@ class CompositionRendererService {
 
   // Track in-flight preparation promises to deduplicate concurrent calls
   private preparingPromises: Map<string, Promise<boolean>> = new Map();
+
+  private getRuntimeOwnerId(compositionId: string, clipId: string): string {
+    return `composition:${compositionId}:clip:${clipId}`;
+  }
+
+  private getBackgroundSessionKey(
+    compositionId: string,
+    clipId: string,
+    source?: Pick<LayerSource, 'runtimeSourceId' | 'runtimeSessionKey'> | null
+  ): string | undefined {
+    if (!source?.runtimeSourceId) {
+      return source?.runtimeSessionKey;
+    }
+    return `background:${this.getRuntimeOwnerId(compositionId, clipId)}`;
+  }
+
+  private getBaseLayerSource(entry: CompositionClipSourceEntry): LayerSource {
+    if (entry.type === 'video') {
+      return {
+        type: 'video',
+        file: entry.file,
+        videoElement: entry.videoElement,
+        webCodecsPlayer: entry.webCodecsPlayer,
+        runtimeSourceId: entry.runtimeSourceId,
+        runtimeSessionKey: entry.runtimeSessionKey,
+      };
+    }
+
+    if (entry.type === 'image') {
+      return {
+        type: 'image',
+        file: entry.file,
+        imageElement: entry.imageElement,
+      };
+    }
+
+    return {
+      type: 'text',
+      textCanvas: entry.textCanvas,
+    };
+  }
+
+  private buildBackgroundVideoLayerSource(
+    entry: CompositionClipSourceEntry,
+    clipTime: number
+  ): LayerSource {
+    const baseSource = this.getBaseLayerSource(entry);
+    const binding = updateRuntimePlaybackTime(baseSource, clipTime, 'background');
+    const runtimeProvider =
+      binding?.frameProvider ?? getRuntimeFrameProvider(baseSource, 'background');
+    const isRuntimeFullWebCodecs =
+      !!baseSource.runtimeSourceId && !!runtimeProvider?.isFullMode();
+
+    if (
+      entry.videoElement &&
+      !isRuntimeFullWebCodecs &&
+      Math.abs(entry.videoElement.currentTime - clipTime) > 0.05
+    ) {
+      entry.videoElement.currentTime = clipTime;
+    }
+
+    return {
+      ...baseSource,
+      webCodecsPlayer: runtimeProvider ?? baseSource.webCodecsPlayer,
+    };
+  }
+
+  private releaseCompositionSourceRuntime(entry: CompositionClipSourceEntry): void {
+    if (!entry.runtimeSourceId) {
+      return;
+    }
+
+    if (entry.runtimeSessionKey) {
+      releaseRuntimePlaybackSession({
+        runtimeSourceId: entry.runtimeSourceId,
+        runtimeSessionKey: entry.runtimeSessionKey,
+      });
+    }
+
+    if (!entry.runtimeOwnerId) {
+      return;
+    }
+
+    mediaRuntimeRegistry.releaseRuntime(entry.runtimeSourceId, entry.runtimeOwnerId);
+  }
 
   /**
    * Prepare a composition for rendering - loads all video/image sources
@@ -133,6 +237,61 @@ class CompositionRendererService {
 
       log.debug(`Processing clip ${clip.id}: sourceType=${sourceType}, mediaFileId=${mediaFileId || 'NONE'}, isActive=${isActiveComp}`);
 
+      if (isActiveComp && timelineClip.source) {
+        if (
+          sourceType === 'video' &&
+          (timelineClip.source.videoElement ||
+            timelineClip.source.webCodecsPlayer ||
+            timelineClip.source.runtimeSourceId)
+        ) {
+          sources.clipSources.set(clip.id, {
+            clipId: clip.id,
+            type: 'video',
+            videoElement: timelineClip.source.videoElement,
+            webCodecsPlayer: timelineClip.source.webCodecsPlayer,
+            file: timelineClip.file,
+            naturalDuration:
+              timelineClip.source.naturalDuration ||
+              timelineClip.source.videoElement?.duration ||
+              0,
+            runtimeSourceId: timelineClip.source.runtimeSourceId,
+            runtimeSessionKey: this.getBackgroundSessionKey(
+              compositionId,
+              clip.id,
+              timelineClip.source
+            ),
+          });
+          continue;
+        }
+
+        if (sourceType === 'image' && timelineClip.source.imageElement) {
+          sources.clipSources.set(clip.id, {
+            clipId: clip.id,
+            type: 'image',
+            imageElement: timelineClip.source.imageElement,
+            file: timelineClip.file,
+            naturalDuration: timelineClip.source.naturalDuration || 5,
+            runtimeSourceId: timelineClip.source.runtimeSourceId,
+            runtimeSessionKey: this.getBackgroundSessionKey(
+              compositionId,
+              clip.id,
+              timelineClip.source
+            ),
+          });
+          continue;
+        }
+
+        if (sourceType === 'text' && timelineClip.source.textCanvas) {
+          sources.clipSources.set(clip.id, {
+            clipId: clip.id,
+            type: 'text',
+            textCanvas: timelineClip.source.textCanvas,
+            naturalDuration: clip.duration,
+          });
+          continue;
+        }
+      }
+
       if (!mediaFileId) {
         // For active composition, the video/image/text elements are already loaded
         if (isActiveComp && timelineClip.source) {
@@ -144,6 +303,12 @@ class CompositionRendererService {
               webCodecsPlayer: timelineClip.source.webCodecsPlayer, // Pass through WebCodecsPlayer for hardware decoding
               file: timelineClip.file,
               naturalDuration: timelineClip.source.naturalDuration || timelineClip.source.videoElement.duration || 0,
+              runtimeSourceId: timelineClip.source.runtimeSourceId,
+              runtimeSessionKey: this.getBackgroundSessionKey(
+                compositionId,
+                clip.id,
+                timelineClip.source
+              ),
             });
           } else if (sourceType === 'image' && timelineClip.source.imageElement) {
             sources.clipSources.set(clip.id, {
@@ -152,6 +317,12 @@ class CompositionRendererService {
               imageElement: timelineClip.source.imageElement,
               file: timelineClip.file,
               naturalDuration: timelineClip.source.naturalDuration || 5,
+              runtimeSourceId: timelineClip.source.runtimeSourceId,
+              runtimeSessionKey: this.getBackgroundSessionKey(
+                compositionId,
+                clip.id,
+                timelineClip.source
+              ),
             });
           } else if (sourceType === 'text' && timelineClip.source.textCanvas) {
             sources.clipSources.set(clip.id, {
@@ -235,12 +406,29 @@ class CompositionRendererService {
       video.preload = 'auto';
 
       video.addEventListener('canplaythrough', () => {
+        const runtimeOwnerId = this.getRuntimeOwnerId(sources.compositionId, clip.id);
+        const runtimeSource = bindSourceRuntimeForOwner({
+          ownerId: runtimeOwnerId,
+          sessionOwnerId: runtimeOwnerId,
+          sessionPolicy: 'background',
+          source: {
+            type: 'video',
+            videoElement: video,
+            mediaFileId: clip.mediaFileId,
+            naturalDuration: video.duration || clip.naturalDuration || 0,
+          },
+          file,
+          mediaFileId: clip.mediaFileId,
+        });
         sources.clipSources.set(clip.id, {
           clipId: clip.id,
           type: 'video',
           videoElement: video,
           file,
           naturalDuration: video.duration || clip.naturalDuration || 0,
+          runtimeSourceId: runtimeSource?.runtimeSourceId,
+          runtimeSessionKey: runtimeSource?.runtimeSessionKey,
+          runtimeOwnerId,
         });
         log.debug(`Video loaded: ${file.name}`);
         resolve();
@@ -262,12 +450,29 @@ class CompositionRendererService {
       img.crossOrigin = 'anonymous';
 
       img.onload = () => {
+        const runtimeOwnerId = this.getRuntimeOwnerId(sources.compositionId, clip.id);
+        const runtimeSource = bindSourceRuntimeForOwner({
+          ownerId: runtimeOwnerId,
+          sessionOwnerId: runtimeOwnerId,
+          sessionPolicy: 'background',
+          source: {
+            type: 'image',
+            imageElement: img,
+            mediaFileId: clip.mediaFileId,
+            naturalDuration: clip.naturalDuration || 5,
+          },
+          file,
+          mediaFileId: clip.mediaFileId,
+        });
         sources.clipSources.set(clip.id, {
           clipId: clip.id,
           type: 'image',
           imageElement: img,
           file,
           naturalDuration: clip.naturalDuration || 5,
+          runtimeSourceId: runtimeSource?.runtimeSourceId,
+          runtimeSessionKey: runtimeSource?.runtimeSessionKey,
+          runtimeOwnerId,
         });
         log.debug(`Image loaded: ${file.name}`);
         resolve();
@@ -379,14 +584,6 @@ class CompositionRendererService {
       const startPoint = defaultSpeed >= 0 ? (clipAtTime.inPoint || 0) : (clipAtTime.outPoint || source.naturalDuration);
       const clipTime = Math.max(0, Math.min(source.naturalDuration, startPoint + sourceTime));
 
-      // Seek video to correct time
-      if (source.videoElement) {
-        // Only seek if significantly different (avoid micro-seeks)
-        if (Math.abs(source.videoElement.currentTime - clipTime) > 0.05) {
-          source.videoElement.currentTime = clipTime;
-        }
-      }
-
       // Build layer object
       const transform = clipAtTime.transform || {
         position: { x: 0, y: 0, z: 0 },
@@ -399,23 +596,14 @@ class CompositionRendererService {
       // Build layer source based on type
       let layerSource: EvaluatedLayer['source'] = null;
       if (source.videoElement) {
-        layerSource = {
-          type: 'video',
-          file: source.file,
-          videoElement: source.videoElement,
-          webCodecsPlayer: source.webCodecsPlayer,
-        };
+        layerSource = this.buildBackgroundVideoLayerSource(
+          source,
+          clipTime
+        );
       } else if (source.imageElement) {
-        layerSource = {
-          type: 'image',
-          file: source.file,
-          imageElement: source.imageElement,
-        };
+        layerSource = this.getBaseLayerSource(source);
       } else if (source.textCanvas) {
-        layerSource = {
-          type: 'text',
-          textCanvas: source.textCanvas,
-        };
+        layerSource = this.getBaseLayerSource(source);
       }
 
       const layer: EvaluatedLayer = {
@@ -544,19 +732,25 @@ class CompositionRendererService {
           }
         }
 
-        // Sync video time
-        const video = nestedClip.source.videoElement;
-        if (Math.abs(video.currentTime - nestedClipTime) > 0.05) {
-          video.currentTime = nestedClipTime;
-        }
-
         nestedLayers.push({
           ...baseLayer,
-          source: {
-            type: 'video',
-            videoElement: video,
-            webCodecsPlayer: nestedClip.source.webCodecsPlayer,
-          },
+          source: this.buildBackgroundVideoLayerSource(
+            {
+              clipId: nestedClip.id,
+              type: 'video',
+              videoElement: nestedClip.source.videoElement,
+              webCodecsPlayer: nestedClip.source.webCodecsPlayer,
+              file: nestedClip.file,
+              naturalDuration: nestedClip.source.naturalDuration || nestedClip.source.videoElement.duration || 0,
+              runtimeSourceId: nestedClip.source.runtimeSourceId,
+              runtimeSessionKey: this.getBackgroundSessionKey(
+                parentCompId,
+                nestedClip.id,
+                nestedClip.source
+              ),
+            },
+            nestedClipTime
+          ),
         } as Layer);
       } else if (nestedClip.source?.imageElement) {
         nestedLayers.push({
@@ -647,6 +841,7 @@ class CompositionRendererService {
     if (!sources) return;
 
     for (const source of sources.clipSources.values()) {
+      this.releaseCompositionSourceRuntime(source);
       if (source.videoElement) {
         source.videoElement.pause();
         URL.revokeObjectURL(source.videoElement.src);
@@ -692,6 +887,9 @@ class CompositionRendererService {
       // Mark as not ready - will be re-prepared on next access
       sources.isReady = false;
       // Clear cached clip sources (they may be stale)
+      for (const entry of sources.clipSources.values()) {
+        this.releaseCompositionSourceRuntime(entry);
+      }
       sources.clipSources.clear();
     }
   }
@@ -705,6 +903,9 @@ class CompositionRendererService {
     for (const [id, sources] of this.compositionSources.entries()) {
       if (id !== activeCompositionId) {
         sources.isReady = false;
+        for (const entry of sources.clipSources.values()) {
+          this.releaseCompositionSourceRuntime(entry);
+        }
         sources.clipSources.clear();
       }
     }
@@ -746,6 +947,9 @@ class CompositionRendererService {
   invalidateAll(): void {
     for (const [, sources] of this.compositionSources.entries()) {
       sources.isReady = false;
+      for (const entry of sources.clipSources.values()) {
+        this.releaseCompositionSourceRuntime(entry);
+      }
       sources.clipSources.clear();
     }
     log.debug('Invalidated ALL compositions');

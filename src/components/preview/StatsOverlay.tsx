@@ -14,6 +14,7 @@ export function StatsOverlay({ stats, resolution, expanded, onToggle }: StatsOve
   const fpsColor = stats.fps >= 55 ? '#4f4' : stats.fps >= 30 ? '#ff4' : '#f44';
   const dropColor = stats.drops.lastSecond > 0 ? '#f44' : '#4f4';
   const decoderColor = stats.decoder === 'NativeHelper' ? '#4af' : stats.decoder === 'WebCodecs' ? '#4f4' : stats.decoder === 'ParallelDecode' ? '#a4f' : stats.decoder.startsWith('HTMLVideo') ? '#fa4' : '#888';
+  const playbackStatusColor = stats.playback?.status === 'bad' ? '#f44' : stats.playback?.status === 'warn' ? '#ff4' : '#4f4';
   // Render time color: green < 10ms, yellow < 16.67ms (60fps target), red >= 16.67ms
   const renderTime = stats.timing.total;
   const renderTimeColor = renderTime < 10 ? '#4f4' : renderTime < 16.67 ? '#ff4' : '#f44';
@@ -30,6 +31,16 @@ export function StatsOverlay({ stats, resolution, expanded, onToggle }: StatsOve
     }
     return 'GPU Submit';
   }, [stats.timing]);
+
+  const playbackBottleneck = useMemo(() => {
+    const playback = stats.playback;
+    if (!playback) return null;
+    if ((playback.collectorDrops ?? 0) > 0) return 'Collector gaps';
+    if ((playback.maxPendingSeekMs ?? 0) >= 80) return 'Pending seek';
+    if ((playback.decoderResets ?? 0) >= 3) return 'Decoder resets';
+    if (playback.queuePressureEvents > 10) return 'Queue pressure';
+    return null;
+  }, [stats.playback]);
 
   if (!expanded) {
     return (
@@ -160,6 +171,12 @@ export function StatsOverlay({ stats, resolution, expanded, onToggle }: StatsOve
             <span style={{ color: '#ff4' }}>{bottleneck}</span>
           </div>
         )}
+        {playbackBottleneck && (
+          <div className="stats-row">
+            <span>Playback Bottleneck</span>
+            <span style={{ color: '#ff4' }}>{playbackBottleneck}</span>
+          </div>
+        )}
       </div>
 
       {/* WebCodecs Debug Section (full mode only) */}
@@ -186,6 +203,44 @@ export function StatsOverlay({ stats, resolution, expanded, onToggle }: StatsOve
             <span>Samples</span>
             <span>{stats.webCodecsInfo.sampleIndex} / {stats.webCodecsInfo.samplesLoaded}</span>
           </div>
+        </div>
+      )}
+
+      {stats.playback && (
+        <div className="stats-section">
+          <div className="stats-label">Playback Debug</div>
+          <div className="stats-row">
+            <span>Status</span>
+            <span style={{ color: playbackStatusColor }}>{stats.playback.status}</span>
+          </div>
+          <div className="stats-row">
+            <span>Pipeline</span>
+            <span>{stats.playback.pipeline}</span>
+          </div>
+          {stats.playback.decoderResets !== undefined && (
+            <div className="stats-row">
+              <span>Decoder Resets</span>
+              <span style={{ color: (stats.playback.decoderResets ?? 0) >= 3 ? '#ff4' : '#aaa' }}>
+                {stats.playback.decoderResets}
+              </span>
+            </div>
+          )}
+          {stats.playback.maxPendingSeekMs !== undefined && (
+            <div className="stats-row">
+              <span>Pending Seek</span>
+              <span style={{ color: (stats.playback.maxPendingSeekMs ?? 0) >= 80 ? '#ff4' : '#aaa' }}>
+                avg {stats.playback.avgPendingSeekMs ?? 0} / max {stats.playback.maxPendingSeekMs ?? 0}ms
+              </span>
+            </div>
+          )}
+          {stats.playback.collectorHolds !== undefined && (
+            <div className="stats-row">
+              <span>Collector Hold/Drop</span>
+              <span style={{ color: (stats.playback.collectorDrops ?? 0) > 0 ? '#f44' : '#aaa' }}>
+                {stats.playback.collectorHolds ?? 0} / {stats.playback.collectorDrops ?? 0}
+              </span>
+            </div>
+          )}
         </div>
       )}
 

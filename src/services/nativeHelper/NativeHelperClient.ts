@@ -13,6 +13,7 @@ import type {
   SystemInfo,
   EncodeOutput,
   VideoInfo,
+  DirEntry,
 } from './protocol';
 
 import {
@@ -558,6 +559,222 @@ class NativeHelperClientImpl {
       return data.path as string;
     }
     return null;
+  }
+
+  // ── File System Commands (for project persistence in Firefox) ──
+
+  /**
+   * Get the HTTP base URL for the native helper file server
+   */
+  getHttpBaseUrl(): string {
+    return `http://127.0.0.1:${this.config.port + 1}`;
+  }
+
+  /**
+   * Get the default project root path from the native helper
+   */
+  async getProjectRoot(): Promise<string | null> {
+    try {
+      const response = await fetch(`${this.getHttpBaseUrl()}/project-root`);
+      if (response.ok) {
+        const data = await response.json();
+        return data.path || null;
+      }
+    } catch {
+      // Fallback to info command
+      try {
+        const info = await this.getInfo();
+        return (info as any).project_root || null;
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Check if the native helper supports file system commands
+   */
+  async hasFsCommands(): Promise<boolean> {
+    try {
+      const info = await this.getInfo();
+      return (info as any).fs_commands === true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Write a text file via WebSocket
+   */
+  async writeFile(path: string, content: string): Promise<boolean> {
+    const id = this.nextId();
+    try {
+      const response = await this.send({ cmd: 'write_file', id, path, data: content, encoding: 'utf8' });
+      return response.ok === true;
+    } catch (e) {
+      log.error('writeFile failed', e);
+      return false;
+    }
+  }
+
+  /**
+   * Write binary data via HTTP POST /upload (efficient, no base64 overhead)
+   * Falls back to WebSocket base64 if HTTP fails.
+   */
+  async writeFileBinary(path: string, data: Blob | ArrayBuffer | Uint8Array): Promise<boolean> {
+    // Try HTTP upload first (no base64 overhead)
+    try {
+      const url = `${this.getHttpBaseUrl()}/upload?path=${encodeURIComponent(path)}`;
+      const body = data instanceof Blob ? data : data instanceof ArrayBuffer ? new Blob([data]) : new Blob([data.buffer as ArrayBuffer]);
+      const response = await fetch(url, { method: 'POST', body });
+      if (response.ok) {
+        return true;
+      }
+    } catch {
+      log.debug('HTTP upload failed, falling back to WebSocket');
+    }
+
+    // Fallback: base64 via WebSocket
+    try {
+      let bytes: Uint8Array;
+      if (data instanceof Blob) {
+        bytes = new Uint8Array(await data.arrayBuffer());
+      } else if (data instanceof ArrayBuffer) {
+        bytes = new Uint8Array(data);
+      } else {
+        bytes = data;
+      }
+
+      // Convert to base64
+      let binary = '';
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      const base64 = btoa(binary);
+
+      const id = this.nextId();
+      const response = await this.send({ cmd: 'write_file', id, path, data: base64, encoding: 'base64' });
+      return response.ok === true;
+    } catch (e) {
+      log.error('writeFileBinary failed', e);
+      return false;
+    }
+  }
+
+  /**
+   * Read a text file and return its contents as string
+   */
+  async readFileText(path: string): Promise<string | null> {
+    const buffer = await this.getDownloadedFile(path);
+    if (!buffer) return null;
+    return new TextDecoder().decode(buffer);
+  }
+
+  /**
+   * Create a directory (recursive by default)
+   */
+  async createDir(path: string, recursive = true): Promise<boolean> {
+    const id = this.nextId();
+    try {
+      const response = await this.send({ cmd: 'create_dir', id, path, recursive });
+      return response.ok === true;
+    } catch (e) {
+      log.error('createDir failed', e);
+      return false;
+    }
+  }
+
+  /**
+   * List directory contents
+   */
+  async listDir(path: string): Promise<DirEntry[]> {
+    const id = this.nextId();
+    try {
+      const response = await this.send({ cmd: 'list_dir', id, path });
+      if (response.ok) {
+        return (response as any).entries || [];
+      }
+    } catch (e) {
+      log.error('listDir failed', e);
+    }
+    return [];
+  }
+
+  /**
+   * Delete a file or directory
+   */
+  async deleteFile(path: string, recursive = false): Promise<boolean> {
+    const id = this.nextId();
+    try {
+      const response = await this.send({ cmd: 'delete', id, path, recursive });
+      return response.ok === true;
+    } catch (e) {
+      log.error('deleteFile failed', e);
+      return false;
+    }
+  }
+
+  /**
+   * Check if a path exists and what type it is
+   */
+  async exists(path: string): Promise<{ exists: boolean; kind: 'file' | 'directory' | 'none' }> {
+    const id = this.nextId();
+    try {
+      const response = await this.send({ cmd: 'exists', id, path });
+      if (response.ok) {
+        return {
+          exists: (response as any).exists ?? false,
+          kind: (response as any).kind ?? 'none',
+        };
+      }
+    } catch (e) {
+      log.error('exists failed', e);
+    }
+    return { exists: false, kind: 'none' };
+  }
+
+  /**
+   * Rename or move a file/directory
+   */
+  async rename(oldPath: string, newPath: string): Promise<boolean> {
+    const id = this.nextId();
+    try {
+      const response = await this.send({ cmd: 'rename', id, old_path: oldPath, new_path: newPath });
+      return response.ok === true;
+    } catch (e) {
+      log.error('rename failed', e);
+      return false;
+    }
+  }
+
+  /**
+   * Open a native OS folder picker dialog via the Native Helper.
+   * Returns the selected folder path, or null if the user cancelled.
+   */
+  async pickFolder(title?: string, defaultPath?: string): Promise<string | null> {
+    const id = this.nextId();
+    try {
+      const cmd: any = { cmd: 'pick_folder', id };
+      if (title) cmd.title = title;
+      if (defaultPath) cmd.default_path = defaultPath;
+      const response = await this.send(cmd);
+      if (response.ok && (response as any).path) {
+        return (response as any).path as string;
+      }
+      return null; // cancelled
+    } catch (e) {
+      log.error('pickFolder failed', e);
+      return null;
+    }
+  }
+
+  /**
+   * Build a URL that serves a file via the native helper HTTP server.
+   * Use this for media src attributes (video, audio, img) in Firefox.
+   */
+  getFileUrl(absolutePath: string): string {
+    return `${this.getHttpBaseUrl()}/file?path=${encodeURIComponent(absolutePath)}`;
   }
 
   /**

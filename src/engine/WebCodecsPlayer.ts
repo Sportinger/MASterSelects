@@ -51,7 +51,8 @@ export class WebCodecsPlayer implements ExportModePlayer {
   private static readonly ADVANCE_SEEK_QUEUE_TARGET = 24;
   private static readonly ADVANCE_SEEK_FORWARD_TOLERANCE = 18;
   private static readonly ADVANCE_SEEK_BACKWARD_TOLERANCE = 2;
-  private static readonly ADVANCE_SEEK_DIVERGENCE_TOLERANCE = 24;
+  private static readonly ADVANCE_SEEK_MAX_PENDING_MS = 2500;
+  private static readonly PAUSED_SEEK_REUSE_SECONDS = 0.35;
 
   // Simple mode (VideoFrame from HTMLVideoElement)
   private useSimpleMode = false;
@@ -87,7 +88,11 @@ export class WebCodecsPlayer implements ExportModePlayer {
   private seekTargetUs: number | null = null;
   private seekTargetToleranceUs = 0;
   private pendingAdvanceSeekTargetIdx: number | null = null;
+  private pendingSeekFeedEndIndex: number | null = null;
   private trackedDecodeQueueSize = 0;
+  private pendingSeekStartedAtMs: number | null = null;
+  private pendingSeekKind: 'seek' | 'advance' | null = null;
+  private pendingSeekTargetDebugUs: number | null = null;
 
   // ExportModePlayer interface implementation
   getDecoder(): VideoDecoder | null { return this.decoder; }
@@ -110,9 +115,20 @@ export class WebCodecsPlayer implements ExportModePlayer {
   isFullMode(): boolean { return !this.useSimpleMode && this.ready; }
   isDestroyed(): boolean { return this._destroyed; }
   isSeeking(): boolean { return this.seekTargetUs !== null; }
-  getPendingSeekTime(): number | null { return this.seekTargetUs !== null ? this.seekTargetUs / 1_000_000 : null; }
+  getPendingSeekTime(): number | null {
+    if (this.seekTargetUs !== null) {
+      return this.seekTargetUs / 1_000_000;
+    }
+    if (this.pendingAdvanceSeekTargetIdx !== null && this.samples.length > 0) {
+      const sample = this.samples[Math.min(this.pendingAdvanceSeekTargetIdx, this.samples.length - 1)];
+      return sample.cts / sample.timescale;
+    }
+    return null;
+  }
   /** True when the decoder has queued work that hasn't produced output yet */
   isDecodePending(): boolean { return this.trackedDecodeQueueSize > 0; }
+  /** True when an advance seek is in flight (decoder reset, target frame not yet produced) */
+  isAdvanceSeekPending(): boolean { return this.pendingAdvanceSeekTargetIdx !== null; }
   getVideoElement(): HTMLVideoElement | null { return this.videoElement; }
 
   constructor(options: WebCodecsPlayerOptions = {}) {
@@ -555,6 +571,8 @@ export class WebCodecsPlayer implements ExportModePlayer {
               });
               this.seekTargetUs = null;
               this.seekTargetToleranceUs = 0;
+              this.clearPendingSeekFeed();
+              this.endPendingSeek('resolved');
               this.onFrame?.(frame);
             } else {
               // Drop intermediate GOP traversal frame to avoid visual jumps.
@@ -573,6 +591,9 @@ export class WebCodecsPlayer implements ExportModePlayer {
             this.currentFrameTimestampUs = frame.timestamp;
             this.onFrame?.(frame);
           }
+        }
+        if (!this.exportMode.isInExportMode && !this._isPlaying && this.pendingSeekFeedEndIndex !== null) {
+          this.feedPendingSeekSamples('seek');
         }
         // Resolve any pending frame wait
         if (this.frameResolve) {
@@ -660,15 +681,13 @@ export class WebCodecsPlayer implements ExportModePlayer {
       this.clearFrameBuffer();
       if (this.seekTargetUs !== null) {
         wcPipelineMonitor.record('seek_cancel', { reason: 'pause' });
+        if (this.pendingSeekKind === 'seek') {
+          this.endPendingSeek('cancelled');
+        }
       }
-      this.seekTargetUs = null;
-      this.seekTargetToleranceUs = 0;
-      this.clearAdvanceSeekState();
-      if (this.decoder && this.codecConfig && !this.exportMode.isInExportMode) {
-        this.decoder.reset();
-        this.decoder.configure(this.codecConfig);
-        this.resetDecodeQueueTracking();
-      }
+      this.clearPendingSeekFeed();
+      this.holdCurrentFrameDuringPause();
+      this.clearAdvanceSeekState('cancelled');
     }
   }
 
@@ -688,7 +707,9 @@ export class WebCodecsPlayer implements ExportModePlayer {
     this.clearFrameBuffer();
     this.seekTargetUs = null;
     this.seekTargetToleranceUs = 0;
-    this.clearAdvanceSeekState();
+    this.clearPendingSeekFeed();
+    this.endPendingSeek('cleared');
+    this.clearAdvanceSeekState('cleared');
     if (this.currentFrame) {
       this.currentFrame.close();
       this.currentFrame = null;
@@ -804,6 +825,7 @@ export class WebCodecsPlayer implements ExportModePlayer {
     if (this.feedIndex >= this.samples.length && this.loop) {
       this.feedIndex = 0;
       this.sampleIndex = 0;
+      this.recordDecoderReset('loop');
       this.decoder.reset();
       this.decoder.configure(this.codecConfig!);
       this.resetDecodeQueueTracking();
@@ -831,6 +853,24 @@ export class WebCodecsPlayer implements ExportModePlayer {
       f.close();
     }
     this.frameBuffer.length = 0;
+  }
+
+  private holdCurrentFrameDuringPause(): void {
+    if (
+      this.exportMode.isInExportMode ||
+      this.currentFrameTimestampUs === null ||
+      !this.videoTrack ||
+      this.samples.length === 0
+    ) {
+      this.seekTargetUs = null;
+      this.seekTargetToleranceUs = 0;
+      return;
+    }
+
+    const targetCts = (this.currentFrameTimestampUs * this.videoTrack.timescale) / 1_000_000;
+    const targetIdx = this.findSampleNearCts(targetCts);
+    this.seekTargetUs = this.currentFrameTimestampUs;
+    this.seekTargetToleranceUs = this.computeSeekToleranceUs(targetIdx);
   }
 
   // === Render-loop-driven playback (replaces internal animation loop) ===
@@ -877,8 +917,70 @@ export class WebCodecsPlayer implements ExportModePlayer {
     return this.findSampleNearCts(currentCts);
   }
 
-  private clearAdvanceSeekState(): void {
+  private getSampleTimestampUs(index: number): number | null {
+    if (index < 0 || index >= this.samples.length) {
+      return null;
+    }
+    const sample = this.samples[index];
+    return (sample.cts * 1_000_000) / sample.timescale;
+  }
+
+  private beginPendingSeek(kind: 'seek' | 'advance', targetUs: number): void {
+    if (!Number.isFinite(targetUs)) {
+      return;
+    }
+    if (this.pendingSeekKind === kind && this.pendingSeekStartedAtMs !== null) {
+      this.pendingSeekTargetDebugUs = targetUs;
+      return;
+    }
+    this.endPendingSeek('replaced');
+    this.pendingSeekStartedAtMs = performance.now();
+    this.pendingSeekKind = kind;
+    this.pendingSeekTargetDebugUs = targetUs;
+    wcPipelineMonitor.record('pending_seek_start', {
+      kind,
+      targetUs: Math.round(targetUs),
+    });
+  }
+
+  private endPendingSeek(reason: 'resolved' | 'cancelled' | 'replaced' | 'cleared'): void {
+    if (this.pendingSeekStartedAtMs === null) {
+      return;
+    }
+    wcPipelineMonitor.record('pending_seek_end', {
+      kind: this.pendingSeekKind ?? 'unknown',
+      durationMs: Math.round(performance.now() - this.pendingSeekStartedAtMs),
+      targetUs: Math.round(this.pendingSeekTargetDebugUs ?? 0),
+      reason,
+    });
+    this.pendingSeekStartedAtMs = null;
+    this.pendingSeekKind = null;
+    this.pendingSeekTargetDebugUs = null;
+  }
+
+  private setPendingAdvanceSeekTarget(targetIdx: number): void {
+    this.pendingAdvanceSeekTargetIdx = targetIdx;
+    const targetUs = this.getSampleTimestampUs(
+      Math.min(targetIdx, this.samples.length - 1)
+    );
+    if (targetUs !== null) {
+      this.beginPendingSeek('advance', targetUs);
+    }
+  }
+
+  private recordDecoderReset(reason: 'loop' | 'advance_seek' | 'seek' | 'fast_seek'): void {
+    wcPipelineMonitor.record('decoder_reset', { reason });
+  }
+
+  private clearAdvanceSeekState(reason: 'resolved' | 'cancelled' | 'replaced' | 'cleared' = 'cleared'): void {
+    if (this.pendingAdvanceSeekTargetIdx !== null && this.pendingSeekKind === 'advance') {
+      this.endPendingSeek(reason);
+    }
     this.pendingAdvanceSeekTargetIdx = null;
+  }
+
+  private clearPendingSeekFeed(): void {
+    this.pendingSeekFeedEndIndex = null;
   }
 
   private resetDecodeQueueTracking(): void {
@@ -911,6 +1013,134 @@ export class WebCodecsPlayer implements ExportModePlayer {
     return this.getEffectiveDecodeQueueSize();
   }
 
+  private getResumeQueueSize(targetUs: number): number {
+    const reportedQueueSize = this.decoder?.decodeQueueSize ?? 0;
+    const hasHotCurrentFrame =
+      this.currentFrameTimestampUs !== null &&
+      Math.abs(this.currentFrameTimestampUs - targetUs) <= (1_000_000 / Math.max(this.frameRate, 1)) * 1.5;
+    const pendingTargetUs = this.getPendingSeekTime();
+    const isFeedNearCurrentFrame =
+      pendingTargetUs == null &&
+      this.feedIndex >= this.sampleIndex &&
+      this.feedIndex <= this.sampleIndex + WebCodecsPlayer.FEED_LOOKAHEAD;
+
+    if (hasHotCurrentFrame && isFeedNearCurrentFrame) {
+      if (this.trackedDecodeQueueSize > reportedQueueSize) {
+        this.trackedDecodeQueueSize = reportedQueueSize;
+      }
+      return reportedQueueSize;
+    }
+
+    return this.getEffectiveDecodeQueueSize();
+  }
+
+  private feedPendingSeekSamples(mode: 'seek' | 'advance_seek' = 'seek'): void {
+    if (
+      !this.decoder ||
+      this.pendingSeekFeedEndIndex === null ||
+      this.samples.length === 0
+    ) {
+      return;
+    }
+
+    while (
+      this.feedIndex <= this.pendingSeekFeedEndIndex &&
+      this.getEffectiveDecodeQueueSize() < WebCodecsPlayer.ADVANCE_SEEK_QUEUE_TARGET
+    ) {
+      const sample = this.samples[this.feedIndex];
+      if (!sample) {
+        break;
+      }
+
+      const chunk = new EncodedVideoChunk({
+        type: sample.is_sync ? 'key' : 'delta',
+        timestamp: (sample.cts * 1_000_000) / sample.timescale,
+        duration: (sample.duration * 1_000_000) / sample.timescale,
+        data: sample.data,
+      });
+
+      try {
+        this.decoder.decode(chunk);
+        const queueSize = this.noteDecodeQueued();
+        wcPipelineMonitor.record('decode_feed', {
+          sampleIdx: this.feedIndex,
+          type: sample.is_sync ? 'key' : 'delta',
+          queueSize,
+          mode,
+        });
+      } catch {
+        // Skip decode errors
+      }
+
+      this.feedIndex++;
+    }
+
+    if (this.pendingSeekFeedEndIndex !== null && this.feedIndex > this.pendingSeekFeedEndIndex) {
+      this.pendingSeekFeedEndIndex = null;
+    }
+  }
+
+  private canReusePausedSeekPipeline(targetIndex: number): boolean {
+    if (
+      this.useSimpleMode ||
+      this._isPlaying ||
+      !this.decoder ||
+      this.decoder.state !== 'configured' ||
+      this.samples.length === 0
+    ) {
+      return false;
+    }
+
+    const currentFrameIdx = this.getCurrentFrameSampleIndex();
+    if (currentFrameIdx === null) {
+      return false;
+    }
+
+    const maxForwardFrames = Math.max(
+      12,
+      Math.ceil(this.frameRate * WebCodecsPlayer.PAUSED_SEEK_REUSE_SECONDS)
+    );
+    const forwardDistance = targetIndex - currentFrameIdx;
+    if (forwardDistance <= 0 || forwardDistance > maxForwardFrames) {
+      return false;
+    }
+
+    if (this.pendingSeekKind !== null && this.pendingSeekKind !== 'seek') {
+      return false;
+    }
+
+    return this.getEffectiveDecodeQueueSize() < WebCodecsPlayer.ADVANCE_SEEK_QUEUE_TARGET;
+  }
+
+  private canExtendPendingPausedSeek(targetIndex: number): boolean {
+    if (
+      this.useSimpleMode ||
+      this._isPlaying ||
+      !this.decoder ||
+      this.decoder.state !== 'configured' ||
+      this.pendingSeekKind !== 'seek' ||
+      this.samples.length === 0
+    ) {
+      return false;
+    }
+
+    const currentFrameIdx = this.getCurrentFrameSampleIndex();
+    if (currentFrameIdx === null || targetIndex <= currentFrameIdx) {
+      return false;
+    }
+
+    const currentPendingEnd = Math.max(
+      this.pendingSeekFeedEndIndex ?? this.feedIndex - 1,
+      this.sampleIndex
+    );
+    const maxExtensionFrames = Math.max(
+      24,
+      Math.ceil(this.frameRate * 0.75)
+    );
+
+    return targetIndex <= currentPendingEnd + maxExtensionFrames;
+  }
+
   private shouldContinueAdvanceSeek(
     targetIdx: number,
     decodeCoverageEnd: number
@@ -921,9 +1151,21 @@ export class WebCodecsPlayer implements ExportModePlayer {
     }
 
     if (
-      targetIdx < pendingTargetIdx - WebCodecsPlayer.ADVANCE_SEEK_BACKWARD_TOLERANCE ||
-      targetIdx > pendingTargetIdx + WebCodecsPlayer.ADVANCE_SEEK_DIVERGENCE_TOLERANCE
+      targetIdx < pendingTargetIdx - WebCodecsPlayer.ADVANCE_SEEK_BACKWARD_TOLERANCE
     ) {
+      return false;
+    }
+
+    if (
+      this.pendingSeekStartedAtMs !== null &&
+      performance.now() - this.pendingSeekStartedAtMs > WebCodecsPlayer.ADVANCE_SEEK_MAX_PENDING_MS
+    ) {
+      wcPipelineMonitor.record('seek_skip', {
+        reason: 'advance_pending_timeout',
+        targetIdx,
+        pendingTargetIdx,
+        durationMs: Math.round(performance.now() - this.pendingSeekStartedAtMs),
+      });
       return false;
     }
 
@@ -972,19 +1214,22 @@ export class WebCodecsPlayer implements ExportModePlayer {
     if (this.useSimpleMode || !this.decoder || this.samples.length === 0 || !this.videoTrack) return;
 
     const startingPlayback = !this._isPlaying;
-    // Always restart pipeline when starting playback — pause() resets the
-    // decoder to "unconfigured" state and clears the frame buffer, so we
-    // need to reconfigure and re-feed from a keyframe.
+    // Check if pipeline needs restart when starting playback.
+    // The decoder may still be configured and have buffered frames from
+    // the previous play session — skip reset when possible.
     const shouldRestartPlaybackPipeline = startingPlayback;
 
     // Clear any pending seek target from paused seeking
+    if (this.seekTargetUs !== null && this.pendingSeekKind === 'seek') {
+      this.endPendingSeek('replaced');
+    }
     this.seekTargetUs = null;
     this.seekTargetToleranceUs = 0;
+    this.clearPendingSeekFeed();
 
     // Auto-enter playing state so decoder output routes to frame buffer
     if (startingPlayback) {
       this._isPlaying = true;
-      this.clearFrameBuffer();
       if (this.feedIndex < this.sampleIndex) {
         this.feedIndex = this.sampleIndex;
       }
@@ -1010,6 +1255,16 @@ export class WebCodecsPlayer implements ExportModePlayer {
     );
     const forwardGap = targetIdx - decodeCoverageEnd;
 
+    const isDecoderReady = this.decoder?.state === 'configured';
+    const hasHotCurrentFrame =
+      this.currentFrameTimestampUs !== null &&
+      Math.abs(this.currentFrameTimestampUs - targetUs) <= frameDurationUs * 1.5;
+    const isFeedNearTarget =
+      this.feedIndex >= targetIdx &&
+      this.feedIndex <= targetIdx + WebCodecsPlayer.FEED_LOOKAHEAD;
+    const hasLargeDecodeBacklog =
+      this.getResumeQueueSize(targetUs) > WebCodecsPlayer.ADVANCE_SEEK_QUEUE_TARGET;
+
     // Check if decoder needs repositioning:
     // - target is behind current position (backward jump)
     // - target is far ahead of what we've fed (gap/skip/clip start)
@@ -1025,7 +1280,12 @@ export class WebCodecsPlayer implements ExportModePlayer {
       const feedDistFromKeyframe = this.feedIndex - keyframeForTarget;
       const isFeedPositionedCorrectly =
         feedDistFromKeyframe >= 0 && feedDistFromKeyframe <= 8;
-      const isDecoderReady = this.decoder?.state === 'configured';
+      const canResumeFromHotPausedFrame =
+        isDecoderReady &&
+        hasHotCurrentFrame &&
+        isFeedNearTarget &&
+        !hasLargeDecodeBacklog;
+
       if (isFeedPositionedCorrectly && isDecoderReady && this.frameBuffer.length > 0) {
         // Decoder is configured, positioned correctly, AND has decoded frames
         // available — safe to skip the heavyweight reset+configure.
@@ -1036,6 +1296,13 @@ export class WebCodecsPlayer implements ExportModePlayer {
           targetIdx,
           feedDist: feedDistFromKeyframe,
         });
+      } else if (canResumeFromHotPausedFrame) {
+        wcPipelineMonitor.record('seek_skip', {
+          reason: 'resume_hot_frame',
+          targetIdx,
+          feedIndex: this.feedIndex,
+          queueSize: this.getEffectiveDecodeQueueSize(),
+        });
       } else {
         restartNeedsReset = true;
       }
@@ -1044,15 +1311,20 @@ export class WebCodecsPlayer implements ExportModePlayer {
       restartNeedsReset ||
       backwardJump ||
       forwardGap > forwardSeekThreshold;
+    const pendingAdvanceTargetIdx = this.pendingAdvanceSeekTargetIdx;
     const keepPendingAdvanceSeekAlive =
       !shouldRestartPlaybackPipeline &&
       this.shouldContinueAdvanceSeek(
       targetIdx,
       decodeCoverageEnd
     );
-    const advanceTargetIdx =
-      keepPendingAdvanceSeekAlive && this.pendingAdvanceSeekTargetIdx !== null
-        ? Math.max(targetIdx, this.pendingAdvanceSeekTargetIdx)
+    const advanceResolveTargetIdx =
+      keepPendingAdvanceSeekAlive && pendingAdvanceTargetIdx !== null
+        ? pendingAdvanceTargetIdx
+        : targetIdx;
+    const advanceFeedTargetIdx =
+      keepPendingAdvanceSeekAlive && pendingAdvanceTargetIdx !== null
+        ? Math.max(targetIdx, pendingAdvanceTargetIdx)
         : targetIdx;
 
     if (needsSeek && keepPendingAdvanceSeekAlive) {
@@ -1060,7 +1332,7 @@ export class WebCodecsPlayer implements ExportModePlayer {
         reason: 'advance_inflight',
         target: Math.round(timeSeconds * 1000) / 1000,
         targetIdx,
-        pendingTargetIdx: this.pendingAdvanceSeekTargetIdx ?? -1,
+        pendingTargetIdx: pendingAdvanceTargetIdx ?? -1,
         coverageEnd: decodeCoverageEnd,
         queueSize: this.getEffectiveDecodeQueueSize(),
       });
@@ -1069,12 +1341,13 @@ export class WebCodecsPlayer implements ExportModePlayer {
 
     if (needsSeek) {
       const keyframe = this.findKeyframeBefore(targetIdx);
+      this.recordDecoderReset('advance_seek');
       this.decoder.reset();
       this.decoder.configure(this.codecConfig!);
       this.resetDecodeQueueTracking();
       this.clearFrameBuffer();
       this.feedIndex = keyframe;
-      this.pendingAdvanceSeekTargetIdx = advanceTargetIdx;
+      this.setPendingAdvanceSeekTarget(advanceResolveTargetIdx);
       wcPipelineMonitor.record('advance_seek', {
         target: timeSeconds,
         keyframeDist: targetIdx - keyframe,
@@ -1082,8 +1355,6 @@ export class WebCodecsPlayer implements ExportModePlayer {
         currentFrameIdx,
         reason: shouldRestartPlaybackPipeline ? 'playback_restart' : 'advance',
       });
-    } else if (keepPendingAdvanceSeekAlive) {
-      this.pendingAdvanceSeekTargetIdx = advanceTargetIdx;
     }
 
     // Pump decoder: feed samples ahead of target position.
@@ -1091,7 +1362,7 @@ export class WebCodecsPlayer implements ExportModePlayer {
     // the decoder processes them off-main-thread in one burst.
     const keepAdvanceFeedActive = needsSeek || keepPendingAdvanceSeekAlive;
     const feedTarget = Math.min(
-      (keepAdvanceFeedActive ? advanceTargetIdx : targetIdx) +
+      (keepAdvanceFeedActive ? advanceFeedTargetIdx : targetIdx) +
         WebCodecsPlayer.FEED_LOOKAHEAD,
       this.samples.length
     );
@@ -1152,17 +1423,25 @@ export class WebCodecsPlayer implements ExportModePlayer {
     // This prevents showing intermediate GOP-traversal frames during seeks —
     // without this, the renderer would flash through keyframe → target visibly.
     if (this.frameBuffer.length > 0) {
+      const selectionTargetUs =
+        this.pendingAdvanceSeekTargetIdx !== null
+          ? this.getSampleTimestampUs(this.pendingAdvanceSeekTargetIdx) ?? targetUs
+          : targetUs;
       let bestIdx = -1;
       let bestDiff = Infinity;
       for (let i = 0; i < this.frameBuffer.length; i++) {
-        const diff = Math.abs(this.frameBuffer[i].timestamp - targetUs);
+        const diff = Math.abs(this.frameBuffer[i].timestamp - selectionTargetUs);
         if (diff < bestDiff) {
           bestDiff = diff;
           bestIdx = i;
         }
       }
 
-      const acceptable = bestIdx >= 0 && bestDiff < frameDurationUs * 1.5;
+      const acceptableToleranceUs =
+        this.pendingAdvanceSeekTargetIdx !== null
+          ? frameDurationUs * 3
+          : frameDurationUs * 1.5;
+      const acceptable = bestIdx >= 0 && bestDiff < acceptableToleranceUs;
 
       if (acceptable) {
         // Accept this frame — close everything before it
@@ -1180,12 +1459,12 @@ export class WebCodecsPlayer implements ExportModePlayer {
         this.onFrame?.(frame);
         this.frameBuffer.splice(0, bestIdx + 1);
         if (this.pendingAdvanceSeekTargetIdx !== null) {
-          this.clearAdvanceSeekState();
+          this.clearAdvanceSeekState('resolved');
         }
       } else {
         // No acceptable frame yet — clean up stale past frames but keep future ones.
         // The decoder is still producing frames; the right one will arrive soon.
-        const expireThreshold = targetUs - frameDurationUs * 2;
+        const expireThreshold = selectionTargetUs - frameDurationUs * 2;
         while (
           this.frameBuffer.length > 0 &&
           this.frameBuffer[0].timestamp < expireThreshold &&
@@ -1272,38 +1551,49 @@ export class WebCodecsPlayer implements ExportModePlayer {
     const targetSample = this.samples[targetIndex];
     this.seekTargetUs = (targetSample.cts * 1_000_000) / targetSample.timescale;
     this.seekTargetToleranceUs = this.computeSeekToleranceUs(targetIndex);
-    this.clearAdvanceSeekState();
+    this.clearAdvanceSeekState('replaced');
+    const canExtendPendingSeek = this.canExtendPendingPausedSeek(targetIndex);
+    const canReusePipeline = canExtendPendingSeek || this.canReusePausedSeekPipeline(targetIndex);
+    if (!canReusePipeline) {
+      this.clearPendingSeekFeed();
+    }
+    this.beginPendingSeek('seek', this.seekTargetUs);
 
     wcPipelineMonitor.record('seek_start', {
       target: timeSeconds,
       keyframeDist: framesDecoded,
     });
 
-    // Reset decoder
-    this.decoder.reset();
-    this.decoder.configure(this.codecConfig!);
-    this.resetDecodeQueueTracking();
-
-    // Decode from keyframe up to target frame to get correct frame
-    for (let i = keyframeIndex; i <= targetIndex; i++) {
-      const sample = this.samples[i];
-      const chunk = new EncodedVideoChunk({
-        type: sample.is_sync ? 'key' : 'delta',
-        timestamp: (sample.cts * 1_000_000) / sample.timescale,
-        duration: (sample.duration * 1_000_000) / sample.timescale,
-        data: sample.data,
+    if (canReusePipeline) {
+      wcPipelineMonitor.record('seek_skip', {
+        reason: canExtendPendingSeek ? 'seek_extend_pending' : 'seek_reuse_pipeline',
+        targetIdx: targetIndex,
+        currentFrameIdx: this.getCurrentFrameSampleIndex() ?? -1,
+        feedIndex: this.feedIndex,
       });
-      try {
-        this.decoder.decode(chunk);
-        this.noteDecodeQueued();
-      } catch {
-        // Skip decode errors
-      }
-    }
 
-    this.sampleIndex = targetIndex;
-    this.feedIndex = targetIndex + 1;
-    this.clearFrameBuffer();
+      this.sampleIndex = targetIndex;
+      if (!canExtendPendingSeek) {
+        this.feedIndex = Math.max(this.feedIndex, (this.getCurrentFrameSampleIndex() ?? targetIndex) + 1);
+      }
+      this.pendingSeekFeedEndIndex = Math.max(
+        this.pendingSeekFeedEndIndex ?? this.feedIndex - 1,
+        targetIndex
+      );
+      this.feedPendingSeekSamples('seek');
+    } else {
+      // Reset decoder
+      this.recordDecoderReset('seek');
+      this.decoder.reset();
+      this.decoder.configure(this.codecConfig!);
+      this.resetDecodeQueueTracking();
+
+      this.sampleIndex = targetIndex;
+      this.feedIndex = keyframeIndex;
+      this.pendingSeekFeedEndIndex = targetIndex;
+      this.clearFrameBuffer();
+      this.feedPendingSeekSamples('seek');
+    }
 
     wcPipelineMonitor.record('seek_end', {
       target: timeSeconds,
@@ -1355,9 +1645,12 @@ export class WebCodecsPlayer implements ExportModePlayer {
     // fastSeek shows keyframe directly — no GOP traversal, so no seekTargetUs needed
     this.seekTargetUs = null;
     this.seekTargetToleranceUs = 0;
-    this.clearAdvanceSeekState();
+    this.endPendingSeek('replaced');
+    this.clearPendingSeekFeed();
+    this.clearAdvanceSeekState('replaced');
 
     // Reset decoder and decode just the keyframe
+    this.recordDecoderReset('fast_seek');
     this.decoder.reset();
     this.decoder.configure(this.codecConfig!);
     this.resetDecodeQueueTracking();
@@ -1483,6 +1776,7 @@ export class WebCodecsPlayer implements ExportModePlayer {
 
     this.seekTargetUs = null;
     this.seekTargetToleranceUs = 0;
+    this.clearPendingSeekFeed();
     this.clearAdvanceSeekState();
 
     const targetTime = timeSeconds * this.videoTrack.timescale;

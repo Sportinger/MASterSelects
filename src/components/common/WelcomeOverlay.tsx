@@ -1,5 +1,6 @@
 // WelcomeOverlay - First-time user welcome with folder picker
 // Shows on first load to ask for project storage folder
+// Supports FSA (Chrome) and Native Helper (Firefox) backends
 
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { Logger } from '../../services/logger';
@@ -8,6 +9,11 @@ const log = Logger.create('WelcomeOverlay');
 import { isFileSystemAccessSupported } from '../../services/fileSystemService';
 import { projectFileService } from '../../services/projectFileService';
 import { openExistingProject } from '../../services/projectSync';
+import { NativeHelperClient } from '../../services/nativeHelper/NativeHelperClient';
+import { loadProjectToStores } from '../../services/project/projectLoad';
+import { syncStoresToProject } from '../../services/project/projectSave';
+
+type NativeStatus = 'checking' | 'available' | 'outdated' | 'unavailable';
 
 // Detect browser name and if it's Chromium-based
 function detectBrowser(): { name: string; isChromium: boolean } {
@@ -69,8 +75,63 @@ export function WelcomeOverlay({ onComplete, noFadeOnClose = false }: WelcomeOve
   const [cursorVisible, setCursorVisible] = useState(false);
   const [cursorBlink, setCursorBlink] = useState(true);
 
+  // Native Helper state (for Firefox project persistence)
+  const [nativeStatus, setNativeStatus] = useState<NativeStatus>('checking');
+  const [nativeProjectRoot, setNativeProjectRoot] = useState<string>('');
+
   const isSupported = isFileSystemAccessSupported();
   const browser = useMemo(() => detectBrowser(), []);
+  const needsNativeHelper = !isSupported && browser.isChromium; // Firefox with WebGPU but no FSA
+
+  // Check Native Helper availability (only when FSA is not supported)
+  useEffect(() => {
+    if (!needsNativeHelper) {
+      setNativeStatus('unavailable');
+      return;
+    }
+
+    let cancelled = false;
+
+    async function checkNativeHelper() {
+      try {
+        // Try to connect if not already
+        if (!NativeHelperClient.isConnected()) {
+          await NativeHelperClient.connect();
+        }
+
+        if (!NativeHelperClient.isConnected()) {
+          if (!cancelled) setNativeStatus('unavailable');
+          return;
+        }
+
+        // Check if fs_commands are available
+        const hasFs = await NativeHelperClient.hasFsCommands();
+        if (cancelled) return;
+
+        if (!hasFs) {
+          setNativeStatus('outdated');
+          return;
+        }
+
+        setNativeStatus('available');
+
+        // Activate native backend
+        projectFileService.activateNativeBackend();
+
+        // Get project root path (used as default for folder picker)
+        const root = await NativeHelperClient.getProjectRoot();
+        if (!cancelled && root) {
+          setNativeProjectRoot(root.replace(/\\/g, '/'));
+        }
+      } catch (e) {
+        log.warn('Native helper check failed', e);
+        if (!cancelled) setNativeStatus('unavailable');
+      }
+    }
+
+    checkNativeHelper();
+    return () => { cancelled = true; };
+  }, [needsNativeHelper]);
 
   // Typewriter effect
   useEffect(() => {
@@ -245,6 +306,91 @@ export function WelcomeOverlay({ onComplete, noFadeOnClose = false }: WelcomeOve
     }
   }, [isSelecting, isClosing, onComplete, noFadeOnClose]);
 
+  // Native Helper: Create new project (opens OS folder picker, like Chrome)
+  const handleNativeNewProject = useCallback(async () => {
+    if (isSelecting || isClosing) return;
+    setIsSelecting(true);
+    setError(null);
+
+    try {
+      // Open OS folder picker — same UX as Chrome's showDirectoryPicker()
+      const folderPath = await NativeHelperClient.pickFolder(
+        'Choose where to save your project',
+        nativeProjectRoot || undefined,
+      );
+
+      if (!folderPath) {
+        // User cancelled
+        return;
+      }
+
+      const nativeCore = projectFileService.getNativeCoreService();
+      if (!nativeCore) {
+        setError('Native backend not active.');
+        return;
+      }
+
+      // Create "Untitled" project in the selected folder (matches Chrome behavior)
+      const normalizedPath = folderPath.replace(/\\/g, '/');
+      const success = await nativeCore.createProjectAtPath(normalizedPath, 'Untitled');
+
+      if (success) {
+        setSelectedFolder('Untitled');
+        await syncStoresToProject();
+        await projectFileService.saveProject();
+
+        setIsClosing(true);
+        setTimeout(() => onComplete(), noFadeOnClose ? 80 : 120);
+      } else {
+        setError('Failed to create project.');
+      }
+    } catch (e: any) {
+      log.error('Native project creation failed', e);
+      setError('Failed to create project.');
+    } finally {
+      setIsSelecting(false);
+    }
+  }, [isSelecting, isClosing, nativeProjectRoot, onComplete, noFadeOnClose]);
+
+  // Native Helper: Open existing project (opens OS folder picker, like Chrome)
+  const handleNativeOpenProject = useCallback(async () => {
+    if (isSelecting || isClosing) return;
+    setIsSelecting(true);
+    setError(null);
+
+    try {
+      // Open OS folder picker — user selects existing project folder
+      const folderPath = await NativeHelperClient.pickFolder(
+        'Select an existing project folder',
+        nativeProjectRoot || undefined,
+      );
+
+      if (!folderPath) {
+        // User cancelled
+        return;
+      }
+
+      const normalizedPath = folderPath.replace(/\\/g, '/');
+      const success = await projectFileService.loadProject(normalizedPath);
+
+      if (success) {
+        const projectData = projectFileService.getProjectData();
+        setSelectedFolder(projectData?.name || 'Project');
+        await loadProjectToStores();
+
+        setIsClosing(true);
+        setTimeout(() => onComplete(), noFadeOnClose ? 80 : 120);
+      } else {
+        setError('No valid project found. Select a folder containing project.json');
+      }
+    } catch (e: any) {
+      log.error('Native project open failed', e);
+      setError('Failed to open project.');
+    } finally {
+      setIsSelecting(false);
+    }
+  }, [isSelecting, isClosing, nativeProjectRoot, onComplete, noFadeOnClose]);
+
   const handleContinue = useCallback(() => {
     if (isClosing) return;
     setIsClosing(true);
@@ -326,18 +472,12 @@ export function WelcomeOverlay({ onComplete, noFadeOnClose = false }: WelcomeOve
           <div className="welcome-folder-card">
             <div className="welcome-folder-card-header">
               <span className="welcome-folder-card-label">Project</span>
-              <span className="welcome-folder-card-optional">required</span>
+              <span className="welcome-folder-card-optional">{isSupported || nativeStatus === 'available' ? 'required' : ''}</span>
             </div>
 
-            {!isSupported ? (
-              <p className="welcome-note">
-                Project folders are not available in {browser.name}.
-                You can still edit — click "Start editing" below.
-                For full project support, use Chrome or Edge.
-              </p>
-            ) : (
+            {/* Mode 1: FSA supported (Chrome/Edge) — existing flow */}
+            {isSupported && (
             <div className="welcome-folder-buttons">
-              {/* New Project Button */}
               <button
                 className={`welcome-folder-btn ${selectedFolder ? 'has-folder' : ''}`}
                 onClick={handleSelectFolder}
@@ -366,7 +506,6 @@ export function WelcomeOverlay({ onComplete, noFadeOnClose = false }: WelcomeOve
                 </svg>
               </button>
 
-              {/* Open Existing Project Button */}
               <button
                 className="welcome-folder-btn welcome-folder-btn-secondary"
                 onClick={handleOpenExisting}
@@ -386,7 +525,89 @@ export function WelcomeOverlay({ onComplete, noFadeOnClose = false }: WelcomeOve
                 </svg>
               </button>
             </div>
-          )}
+            )}
+
+            {/* Mode 2: No FSA + Native Helper available — identical to Chrome via OS folder picker */}
+            {!isSupported && nativeStatus === 'available' && !selectedFolder && (
+            <div className="welcome-folder-buttons">
+              <button
+                className="welcome-folder-btn"
+                onClick={handleNativeNewProject}
+                disabled={isSelecting}
+              >
+                <div className="welcome-folder-btn-icon">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <path d="M12 5v14M5 12h14"/>
+                  </svg>
+                </div>
+                <div className="welcome-folder-btn-text">
+                  <span className="welcome-folder-name">{isSelecting ? 'Creating...' : 'New Project'}</span>
+                  <span className="welcome-folder-change">Create in a new folder</span>
+                </div>
+                <svg className="welcome-folder-btn-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M9 18l6-6-6-6"/>
+                </svg>
+              </button>
+
+              <button
+                className="welcome-folder-btn welcome-folder-btn-secondary"
+                onClick={handleNativeOpenProject}
+                disabled={isSelecting}
+              >
+                <div className="welcome-folder-btn-icon">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                  </svg>
+                </div>
+                <div className="welcome-folder-btn-text">
+                  <span className="welcome-folder-name">Open Existing</span>
+                  <span className="welcome-folder-change">Resume a saved project</span>
+                </div>
+                <svg className="welcome-folder-btn-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M9 18l6-6-6-6"/>
+                </svg>
+              </button>
+            </div>
+            )}
+
+            {/* Mode 2b: Native project selected */}
+            {!isSupported && nativeStatus === 'available' && selectedFolder && (
+              <div className="welcome-folder-buttons">
+                <button className="welcome-folder-btn has-folder" disabled>
+                  <div className="welcome-folder-btn-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                    </svg>
+                  </div>
+                  <div className="welcome-folder-btn-text">
+                    <span className="welcome-folder-name">{selectedFolder}</span>
+                    <span className="welcome-folder-change">Project ready</span>
+                  </div>
+                </button>
+              </div>
+            )}
+
+            {/* Mode 3: No FSA + checking Native Helper */}
+            {!isSupported && nativeStatus === 'checking' && (
+              <p className="welcome-note">Connecting to Native Helper...</p>
+            )}
+
+            {/* Mode 4: No FSA + Native Helper outdated */}
+            {!isSupported && nativeStatus === 'outdated' && (
+              <p className="welcome-note">
+                Native Helper is outdated. Please update to enable project saving in {browser.name}.
+                You can still edit — click "Start editing" below.
+              </p>
+            )}
+
+            {/* Mode 5: No FSA + no Native Helper */}
+            {!isSupported && nativeStatus === 'unavailable' && (
+              <p className="welcome-note">
+                Project saving requires the Native Helper in {browser.name}.
+                Install it for full project support, or use Chrome/Edge.
+                You can still edit — click "Start editing" below.
+              </p>
+            )}
 
             {error && <p className="welcome-error">{error}</p>}
           </div>

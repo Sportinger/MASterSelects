@@ -1,8 +1,11 @@
 // Project File Service Facade
 // Delegates to domain services while maintaining the original API for backward compatibility
+// Supports two backends: FSA (Chrome) and Native Helper (Firefox)
 
 import { Logger } from '../logger';
 import { FileStorageService, fileStorageService } from './core/FileStorageService';
+import { NativeFileStorageService, nativeFileStorageService } from './core/NativeFileStorageService';
+import { NativeProjectCoreService } from './core/NativeProjectCoreService';
 
 const log = Logger.create('ProjectFileService');
 import { ProjectCoreService } from './core/ProjectCoreService';
@@ -14,6 +17,8 @@ import { RawMediaService } from './domains/RawMediaService';
 import { PROJECT_FOLDERS, type ProjectFolderKey } from './core/constants';
 import type { ProjectFile, ProjectMediaFile, ProjectComposition, ProjectFolder } from './types';
 
+export type ProjectBackend = 'fsa' | 'native';
+
 class ProjectFileService {
   // Domain services
   private readonly coreService: ProjectCoreService;
@@ -23,6 +28,11 @@ class ProjectFileService {
   private readonly cacheService: CacheService;
   private readonly proxyStorageService: ProxyStorageService;
   private readonly rawMediaService: RawMediaService;
+
+  // Native Helper backend (lazy-initialized)
+  private nativeCoreService: NativeProjectCoreService | null = null;
+  private nativeFileStorage: NativeFileStorageService | null = null;
+  private _activeBackend: ProjectBackend = 'fsa';
 
   constructor() {
     this.fileStorage = fileStorageService;
@@ -35,107 +45,184 @@ class ProjectFileService {
   }
 
   // ============================================
-  // CORE SERVICE DELEGATION
+  // BACKEND SELECTION
   // ============================================
 
+  /** Get the currently active backend */
+  get activeBackend(): ProjectBackend {
+    return this._activeBackend;
+  }
+
+  /** Check if FSA (File System Access API) is available */
+  get isFsaAvailable(): boolean {
+    return 'showDirectoryPicker' in window && 'showSaveFilePicker' in window;
+  }
+
+  /** Switch to native helper backend (for Firefox) */
+  activateNativeBackend(): void {
+    if (!this.nativeCoreService) {
+      this.nativeCoreService = new NativeProjectCoreService();
+      this.nativeFileStorage = nativeFileStorageService;
+    }
+    this._activeBackend = 'native';
+    log.info('Switched to Native Helper backend');
+  }
+
+  /** Switch back to FSA backend (for Chrome) */
+  activateFsaBackend(): void {
+    this._activeBackend = 'fsa';
+    log.info('Switched to FSA backend');
+  }
+
+  /** Get native core service (for native-specific operations like listProjects) */
+  getNativeCoreService(): NativeProjectCoreService | null {
+    return this.nativeCoreService;
+  }
+
+  /** Get native file storage (for native-specific operations like getFileUrl) */
+  getNativeFileStorage(): NativeFileStorageService | null {
+    return this.nativeFileStorage;
+  }
+
+  // ============================================
+  // CORE SERVICE DELEGATION (routes to FSA or Native)
+  // ============================================
+
+  /** Helper to get the active core service */
+  private get core(): ProjectCoreService | NativeProjectCoreService {
+    if (this._activeBackend === 'native' && this.nativeCoreService) {
+      return this.nativeCoreService;
+    }
+    return this.coreService;
+  }
+
   isSupported(): boolean {
+    if (this._activeBackend === 'native') {
+      return this.nativeCoreService?.isSupported() ?? false;
+    }
     return this.coreService.isSupported();
   }
 
   getProjectHandle(): FileSystemDirectoryHandle | null {
-    return this.coreService.getProjectHandle();
+    // Only FSA backend has a handle
+    if (this._activeBackend === 'fsa') {
+      return this.coreService.getProjectHandle();
+    }
+    return null;
+  }
+
+  /** Get project path (native backend) or null */
+  getProjectPath(): string | null {
+    if (this._activeBackend === 'native' && this.nativeCoreService) {
+      return this.nativeCoreService.getProjectPath();
+    }
+    return null;
   }
 
   getProjectData(): ProjectFile | null {
-    return this.coreService.getProjectData();
+    return this.core.getProjectData();
   }
 
   isProjectOpen(): boolean {
-    return this.coreService.isProjectOpen();
+    return this.core.isProjectOpen();
   }
 
   hasUnsavedChanges(): boolean {
-    return this.coreService.hasUnsavedChanges();
+    return this.core.hasUnsavedChanges();
   }
 
   markDirty(): void {
-    this.coreService.markDirty();
+    this.core.markDirty();
   }
 
   needsPermission(): boolean {
-    return this.coreService.needsPermission();
+    return this.core.needsPermission();
   }
 
   getPendingProjectName(): string | null {
-    return this.coreService.getPendingProjectName();
+    return this.core.getPendingProjectName();
   }
 
   async requestPendingPermission(): Promise<boolean> {
-    return this.coreService.requestPendingPermission();
+    return this.core.requestPendingPermission();
   }
 
   async createProject(name: string): Promise<boolean> {
-    return this.coreService.createProject(name);
+    return this.core.createProject(name);
   }
 
   async createProjectInFolder(handle: FileSystemDirectoryHandle, name: string): Promise<boolean> {
+    // Only FSA supports this
     return this.coreService.createProjectInFolder(handle, name);
   }
 
   async openProject(): Promise<boolean> {
-    return this.coreService.openProject();
+    if (this._activeBackend === 'fsa') {
+      return this.coreService.openProject();
+    }
+    // Native backend doesn't have a directory picker — use loadProject with a path
+    log.warn('openProject() called on native backend — use loadProject(path) instead');
+    return false;
   }
 
-  async loadProject(handle: FileSystemDirectoryHandle): Promise<boolean> {
-    return this.coreService.loadProject(handle);
+  async loadProject(handleOrPath: FileSystemDirectoryHandle | string): Promise<boolean> {
+    if (typeof handleOrPath === 'string') {
+      // Native path
+      if (this.nativeCoreService) {
+        return this.nativeCoreService.loadProject(handleOrPath);
+      }
+      return false;
+    }
+    // FSA handle
+    return this.coreService.loadProject(handleOrPath);
   }
 
   async saveProject(): Promise<boolean> {
-    return this.coreService.saveProject();
+    return this.core.saveProject();
   }
 
   closeProject(): void {
-    this.coreService.closeProject();
+    this.core.closeProject();
   }
 
   async createBackup(): Promise<boolean> {
-    return this.coreService.createBackup();
+    return this.core.createBackup();
   }
 
   async renameProject(newName: string): Promise<boolean> {
-    return this.coreService.renameProject(newName);
+    return this.core.renameProject(newName);
   }
 
   async restoreLastProject(): Promise<boolean> {
-    return this.coreService.restoreLastProject();
+    return this.core.restoreLastProject();
   }
 
   async saveKeysFile(): Promise<void> {
-    return this.coreService.saveKeysFile();
+    return this.core.saveKeysFile();
   }
 
   async loadKeysFile(): Promise<boolean> {
-    return this.coreService.loadKeysFile();
+    return this.core.loadKeysFile();
   }
 
   updateProjectData(updates: Partial<ProjectFile>): void {
-    this.coreService.updateProjectData(updates);
+    this.core.updateProjectData(updates);
   }
 
   updateMedia(media: ProjectMediaFile[]): void {
-    this.coreService.updateMedia(media);
+    this.core.updateMedia(media);
   }
 
   updateCompositions(compositions: ProjectComposition[]): void {
-    this.coreService.updateCompositions(compositions);
+    this.core.updateCompositions(compositions);
   }
 
   updateFolders(folders: ProjectFolder[]): void {
-    this.coreService.updateFolders(folders);
+    this.core.updateFolders(folders);
   }
 
   // ============================================
-  // FILE STORAGE DELEGATION
+  // FILE STORAGE DELEGATION (routes to FSA or Native)
   // ============================================
 
   async getFileHandle(
@@ -143,6 +230,7 @@ class ProjectFileService {
     fileName: string,
     create = false
   ): Promise<FileSystemFileHandle | null> {
+    // Only FSA backend returns file handles
     const handle = this.coreService.getProjectHandle();
     if (!handle) return null;
     return this.fileStorage.getFileHandle(handle, subFolder as ProjectFolderKey, fileName, create);
@@ -153,6 +241,11 @@ class ProjectFileService {
     fileName: string,
     content: Blob | string
   ): Promise<boolean> {
+    if (this._activeBackend === 'native' && this.nativeFileStorage && this.nativeCoreService) {
+      const path = this.nativeCoreService.getProjectPath();
+      if (!path) return false;
+      return this.nativeFileStorage.writeFile(path, subFolder as ProjectFolderKey, fileName, content);
+    }
     const handle = this.coreService.getProjectHandle();
     if (!handle) return false;
     return this.fileStorage.writeFile(handle, subFolder as ProjectFolderKey, fileName, content);
@@ -162,6 +255,14 @@ class ProjectFileService {
     subFolder: keyof typeof PROJECT_FOLDERS,
     fileName: string
   ): Promise<File | null> {
+    if (this._activeBackend === 'native' && this.nativeFileStorage && this.nativeCoreService) {
+      // Native backend: read via HTTP and wrap in File object
+      const path = this.nativeCoreService.getProjectPath();
+      if (!path) return null;
+      const buffer = await this.nativeFileStorage.readFileBinary(path, subFolder as ProjectFolderKey, fileName);
+      if (!buffer) return null;
+      return new File([buffer], fileName);
+    }
     const handle = this.coreService.getProjectHandle();
     if (!handle) return null;
     return this.fileStorage.readFile(handle, subFolder as ProjectFolderKey, fileName);
@@ -171,6 +272,11 @@ class ProjectFileService {
     subFolder: keyof typeof PROJECT_FOLDERS,
     fileName: string
   ): Promise<boolean> {
+    if (this._activeBackend === 'native' && this.nativeFileStorage && this.nativeCoreService) {
+      const path = this.nativeCoreService.getProjectPath();
+      if (!path) return false;
+      return this.nativeFileStorage.fileExists(path, subFolder as ProjectFolderKey, fileName);
+    }
     const handle = this.coreService.getProjectHandle();
     if (!handle) return false;
     return this.fileStorage.fileExists(handle, subFolder as ProjectFolderKey, fileName);
@@ -180,12 +286,22 @@ class ProjectFileService {
     subFolder: keyof typeof PROJECT_FOLDERS,
     fileName: string
   ): Promise<boolean> {
+    if (this._activeBackend === 'native' && this.nativeFileStorage && this.nativeCoreService) {
+      const path = this.nativeCoreService.getProjectPath();
+      if (!path) return false;
+      return this.nativeFileStorage.deleteFile(path, subFolder as ProjectFolderKey, fileName);
+    }
     const handle = this.coreService.getProjectHandle();
     if (!handle) return false;
     return this.fileStorage.deleteFile(handle, subFolder as ProjectFolderKey, fileName);
   }
 
   async listFiles(subFolder: keyof typeof PROJECT_FOLDERS): Promise<string[]> {
+    if (this._activeBackend === 'native' && this.nativeFileStorage && this.nativeCoreService) {
+      const path = this.nativeCoreService.getProjectPath();
+      if (!path) return [];
+      return this.nativeFileStorage.listFiles(path, subFolder as ProjectFolderKey);
+    }
     const handle = this.coreService.getProjectHandle();
     if (!handle) return [];
     return this.fileStorage.listFiles(handle, subFolder as ProjectFolderKey);

@@ -2,6 +2,7 @@
 
 import { Logger } from '../../services/logger';
 import type { ExportClipState, FrameContext } from './types';
+import { updateRuntimePlaybackTime } from '../../services/mediaRuntime/runtimePlayback';
 
 const log = Logger.create('VideoSeeker');
 import { ParallelDecodeManager } from '../ParallelDecodeManager';
@@ -55,7 +56,10 @@ async function seekSequentialMode(
             const nestedClipTime = (nestedClip.reversed !== (nestedSpeed < 0))
               ? nestedClip.outPoint - speedAdjusted
               : nestedClip.inPoint + speedAdjusted;
-            seekPromises.push(seekVideo(nestedClip.source.videoElement, nestedClipTime));
+            const nestedState = clipStates.get(nestedClip.id);
+            seekPromises.push(seekVideo(nestedClip.source.videoElement, nestedClipTime).then(() => {
+              updateRuntimePlaybackTime(nestedState?.runtimeSource, nestedClipTime, 'export');
+            }));
           }
         }
       }
@@ -84,10 +88,14 @@ async function seekSequentialMode(
 
       if (clipState?.isSequential && clipState.webCodecsPlayer) {
         // FAST MODE: WebCodecs sequential decoding
-        seekPromises.push(clipState.webCodecsPlayer.seekDuringExport(clipTime));
+        seekPromises.push(clipState.webCodecsPlayer.seekDuringExport(clipTime).then(() => {
+          updateRuntimePlaybackTime(clipState.runtimeSource, clipTime, 'export');
+        }));
       } else {
         // PRECISE MODE: HTMLVideoElement seeking
-        seekPromises.push(seekVideo(clip.source.videoElement, clipTime));
+        seekPromises.push(seekVideo(clip.source.videoElement, clipTime).then(() => {
+          updateRuntimePlaybackTime(clipState?.runtimeSource, clipTime, 'export');
+        }));
       }
     }
   }

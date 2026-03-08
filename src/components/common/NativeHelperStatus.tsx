@@ -230,7 +230,7 @@ function NativeHelperDialog({
         </h1>
 
         <p className="welcome-subtitle" style={{ animation: 'welcome-fade-up 0.4s ease-out 0.15s both' }}>
-          Video downloads, FFmpeg decoding & more
+          Downloads, project saving & more
         </p>
 
         {/* Content Card */}
@@ -283,16 +283,22 @@ function NativeHelperDialog({
                       <span>Open Files</span>
                     </div>
                   )}
-                  {(info as any).lite && (
-                    <div className="info-feature">
-                      <span className="info-feature-icon">{(info as any).ytdlp_available ? '✓' : '✗'}</span>
-                      <span>YouTube Downloads</span>
-                    </div>
-                  )}
+                  <div className="info-feature">
+                    <span className="info-feature-icon">{(info as any).ytdlp_available ? '✓' : '✗'}</span>
+                    <span>Video Downloads</span>
+                  </div>
+                  <div className="info-feature">
+                    <span className="info-feature-icon">{(info as any).fs_commands ? '✓' : '✗'}</span>
+                    <span>Project Saving</span>
+                  </div>
                 </div>
 
                 <p className="text-xs text-green-400 text-center pt-2">
-                  Downloads & FFmpeg ready
+                  {[
+                    (info as any).ytdlp_available && 'Downloads',
+                    !(info as any).lite && 'FFmpeg',
+                    (info as any).fs_commands && 'Projects',
+                  ].filter(Boolean).join(' · ') || 'Connected'}
                 </p>
 
                 {/* Download link always visible */}
@@ -309,7 +315,7 @@ function NativeHelperDialog({
               /* Not Connected State */
               <div className="space-y-4">
                 <p className="text-sm text-zinc-400">
-                  Download the Native Helper to enable video downloads from YouTube, Instagram, TikTok and more.
+                  Download the Native Helper to enable video downloads, project saving in Firefox, and FFmpeg encoding.
                 </p>
 
                 <a
@@ -389,7 +395,7 @@ function NativeHelperDialog({
               /* Disabled State */
               <div className="space-y-4">
                 <p className="text-sm text-zinc-500 text-center py-2">
-                  Enable Native Helper above to use video downloads and FFmpeg decoding.
+                  Enable Native Helper above to use video downloads, project saving and FFmpeg decoding.
                 </p>
                 <a
                   href={downloadLink}

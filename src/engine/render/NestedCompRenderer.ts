@@ -8,8 +8,15 @@ import type { MaskTextureManager } from '../texture/MaskTextureManager';
 import type { ScrubbingCache } from '../texture/ScrubbingCache';
 import { MAX_NESTING_DEPTH } from '../../stores/timeline/constants';
 import { Logger } from '../../services/logger';
+import {
+  getRuntimeFrameProvider,
+  readRuntimeFrameForSource,
+} from '../../services/mediaRuntime/runtimePlayback';
+import { wcPipelineMonitor } from '../../services/wcPipelineMonitor';
+import { useTimelineStore } from '../../stores/timeline';
 
 const log = Logger.create('NestedCompRenderer');
+const ENABLE_VISUAL_HTML_VIDEO_FALLBACK = false;
 
 interface NestedCompTexture {
   texture: GPUTexture;
@@ -41,6 +48,76 @@ export class NestedCompRenderer {
   // Frame caching: track last render time to skip redundant re-renders
   private lastRenderTime: Map<string, number> = new Map();
   private lastLayerCount: Map<string, number> = new Map();
+  private providerIds = new WeakMap<object, number>();
+  private nextProviderId = 1;
+  private lastSuccessfulVideoProviderKey = new Map<string, string>();
+  private lastCollectorState = new Map<string, 'render' | 'hold' | 'drop'>();
+
+  private isPendingWebCodecsFrameStable(
+    provider: NonNullable<Layer['source']>['webCodecsPlayer'] | undefined
+  ): boolean {
+    if (!provider) {
+      return true;
+    }
+
+    const pendingTarget = provider.getPendingSeekTime?.();
+    if (pendingTarget == null) {
+      return true;
+    }
+
+    const fps = provider.getFrameRate?.() ?? 30;
+    const tolerance = Math.max(1.5 / Math.max(fps, 1), 0.05);
+    return Math.abs(pendingTarget - provider.currentTime) <= tolerance;
+  }
+
+  private getProviderObjectId(provider: object): number {
+    const existing = this.providerIds.get(provider);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const next = this.nextProviderId++;
+    this.providerIds.set(provider, next);
+    return next;
+  }
+
+  private getVideoProviderKey(
+    layer: Layer,
+    frameProvider: NonNullable<Layer['source']>['webCodecsPlayer'] | null,
+    runtimeProvider: NonNullable<Layer['source']>['webCodecsPlayer'] | null
+  ): string | null {
+    if (!frameProvider) {
+      return null;
+    }
+    if (
+      runtimeProvider &&
+      frameProvider === runtimeProvider &&
+      layer.source?.runtimeSourceId &&
+      layer.source.runtimeSessionKey
+    ) {
+      return `runtime:${layer.source.runtimeSourceId}:${layer.source.runtimeSessionKey}`;
+    }
+    return `provider:${this.getProviderObjectId(frameProvider as object)}`;
+  }
+
+  private canReuseLastSuccessfulVideoFrame(layerId: string, providerKey: string | null): boolean {
+    return !!providerKey && this.lastSuccessfulVideoProviderKey.get(layerId) === providerKey;
+  }
+
+  private setCollectorState(
+    layerId: string,
+    state: 'render' | 'hold' | 'drop',
+    detail?: Record<string, number | string>
+  ): void {
+    if (this.lastCollectorState.get(layerId) === state) {
+      return;
+    }
+    this.lastCollectorState.set(layerId, state);
+    if (state === 'hold') {
+      wcPipelineMonitor.record('collector_hold', detail);
+    } else if (state === 'drop') {
+      wcPipelineMonitor.record('collector_drop', detail);
+    }
+  }
 
   constructor(
     device: GPUDevice,
@@ -113,7 +190,8 @@ export class NestedCompRenderer {
     commandEncoder: GPUCommandEncoder,
     sampler: GPUSampler,
     currentTime?: number,
-    depth: number = 0
+    depth: number = 0,
+    skipEffects = false
   ): GPUTextureView | null {
     if (depth >= MAX_NESTING_DEPTH) {
       log.warn('Max nesting depth reached in preRender', { compositionId, depth });
@@ -233,7 +311,7 @@ export class NestedCompRenderer {
       pass.end();
 
       // Apply effects
-      if (layer.effects?.length && this.effectsPipeline) {
+      if (!skipEffects && layer.effects?.length && this.effectsPipeline) {
         const result = this.effectsPipeline.applyEffects(
           commandEncoder, layer.effects, sampler,
           writeView, readView, nestedPingView, nestedPongView, width, height
@@ -285,7 +363,8 @@ export class NestedCompRenderer {
           commandEncoder,
           sampler,
           nc.currentTime,
-          depth + 1
+          depth + 1,
+          skipEffects
         );
         if (subTextureView) {
           result.push({
@@ -329,25 +408,98 @@ export class NestedCompRenderer {
         }
       }
 
+      const runtimeProvider = getRuntimeFrameProvider(layer.source, 'background');
+      const clipProvider = layer.source.webCodecsPlayer?.isFullMode()
+        ? layer.source.webCodecsPlayer
+        : null;
+      const runtimeProviderStable = this.isPendingWebCodecsFrameStable(runtimeProvider ?? undefined);
+      const runtimeHasFrame =
+        (runtimeProvider?.hasFrame?.() ?? false) ||
+        !!runtimeProvider?.getCurrentFrame?.();
+      const allowPendingScrubFrame = useTimelineStore.getState().isDraggingPlayhead;
+      const shouldPreferRuntimeProvider =
+        !!runtimeProvider?.isFullMode() &&
+        runtimeProvider !== clipProvider &&
+        runtimeProviderStable &&
+        runtimeHasFrame;
+      const frameProvider =
+        shouldPreferRuntimeProvider
+          ? runtimeProvider
+          : clipProvider ?? (runtimeProvider?.isFullMode()
+            ? runtimeProvider
+            : null);
+      const providerKey = this.getVideoProviderKey(layer, frameProvider, runtimeProvider);
+      const canReuseLastFrame = this.canReuseLastSuccessfulVideoFrame(layer.id, providerKey);
+      const frameProviderStable = this.isPendingWebCodecsFrameStable(frameProvider ?? undefined);
+      const holdingFrame = !frameProviderStable && canReuseLastFrame;
+      const canReadRuntimeFrame =
+        !!layer.source.runtimeSourceId &&
+        !!layer.source.runtimeSessionKey &&
+        !!runtimeProvider?.isFullMode() &&
+        (!frameProvider || frameProvider === runtimeProvider) &&
+        (runtimeProviderStable || canReuseLastFrame || allowPendingScrubFrame);
+      const runtimeFrameRead = canReadRuntimeFrame
+        ? readRuntimeFrameForSource(layer.source, 'background')
+        : null;
+      const runtimeFrame = runtimeFrameRead?.frameHandle?.frame;
+      if (
+        runtimeFrame &&
+        'displayWidth' in runtimeFrame &&
+        'displayHeight' in runtimeFrame
+      ) {
+        const extTex = this.textureManager.importVideoTexture(runtimeFrame);
+        if (extTex) {
+          if (providerKey) {
+            this.lastSuccessfulVideoProviderKey.set(layer.id, providerKey);
+          }
+          this.setCollectorState(layer.id, holdingFrame ? 'hold' : 'render', {
+            reason: holdingFrame ? 'same_provider_pending' : 'runtime_frame',
+          });
+          result.push({
+            layer, isVideo: true, externalTexture: extTex, textureView: null,
+            sourceWidth: runtimeFrame.displayWidth, sourceHeight: runtimeFrame.displayHeight,
+          });
+          continue;
+        }
+      }
+
       // WebCodecs
-      if (layer.source.webCodecsPlayer) {
-        const frame = layer.source.webCodecsPlayer.getCurrentFrame();
+      if (frameProvider?.isFullMode()) {
+        if (!frameProviderStable && !canReuseLastFrame && !allowPendingScrubFrame) {
+          this.setCollectorState(layer.id, 'drop', {
+            reason: 'pending_unstable',
+          });
+          continue;
+        }
+        const frame = frameProvider.getCurrentFrame();
         if (frame) {
           const extTex = this.textureManager.importVideoTexture(frame);
           if (extTex) {
+            if (providerKey) {
+              this.lastSuccessfulVideoProviderKey.set(layer.id, providerKey);
+            }
+            this.setCollectorState(layer.id, holdingFrame ? 'hold' : 'render', {
+              reason: holdingFrame ? 'same_provider_pending' : 'provider_frame',
+            });
             result.push({
               layer, isVideo: true, externalTexture: extTex, textureView: null,
               sourceWidth: frame.displayWidth, sourceHeight: frame.displayHeight,
             });
             continue;
           }
+          this.setCollectorState(layer.id, 'drop', {
+            reason: 'import_failed',
+          });
         } else {
           // WebCodecs has no frame yet - normal during decode startup
+          this.setCollectorState(layer.id, 'drop', {
+            reason: 'no_frame',
+          });
         }
       }
 
-      // HTMLVideo
-      if (layer.source.videoElement) {
+      // HTMLVideo fallback is intentionally disabled for nested rendering too.
+      if (ENABLE_VISUAL_HTML_VIDEO_FALLBACK && layer.source.videoElement) {
         const video = layer.source.videoElement;
         if (video.readyState >= 2) {
           const extTex = this.textureManager.importVideoTexture(video);

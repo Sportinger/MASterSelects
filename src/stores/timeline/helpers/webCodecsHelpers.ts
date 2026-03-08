@@ -2,10 +2,42 @@
 // Handles WebCodecsPlayer setup and video decoder warm-up
 
 import { WebCodecsPlayer } from '../../../engine/WebCodecsPlayer';
+import { engine } from '../../../engine/WebGPUEngine';
 import { flags } from '../../../engine/featureFlags';
 import { Logger } from '../../../services/logger';
 
 const log = Logger.create('WebCodecsHelpers');
+
+async function waitForFullWebCodecsReady(
+  webCodecsPlayer: WebCodecsPlayer,
+  fileName: string,
+  timeoutMs = 2000
+): Promise<void> {
+  if (webCodecsPlayer.ready) {
+    return;
+  }
+
+  const startedAt = performance.now();
+
+  await new Promise<void>((resolve) => {
+    const poll = () => {
+      if (webCodecsPlayer.ready) {
+        resolve();
+        return;
+      }
+
+      if (performance.now() - startedAt >= timeoutMs) {
+        log.warn('WebCodecs ready wait timed out', { file: fileName, timeoutMs });
+        resolve();
+        return;
+      }
+
+      setTimeout(poll, 16);
+    };
+
+    poll();
+  });
+}
 
 /**
  * Check if WebCodecs API is available in the browser.
@@ -39,16 +71,24 @@ export async function initWebCodecsPlayer(
     const webCodecsPlayer = new WebCodecsPlayer({
       loop: false,
       useSimpleMode: !useFullMode,
+      onFrame: () => {
+        engine.requestNewFrameRender();
+      },
       onError: (error) => {
         log.warn('WebCodecs error', { error: error.message });
+        engine.requestRender();
       },
     });
 
     if (useFullMode) {
       // Full mode: load file via MP4Box + VideoDecoder
       await webCodecsPlayer.loadFile(file);
+      await waitForFullWebCodecsReady(webCodecsPlayer, fileName);
       // Still attach to video element for audio playback reference
-      log.info('WebCodecs full mode ready', { file: fileName });
+      log.info('WebCodecs full mode ready', {
+        file: fileName,
+        ready: webCodecsPlayer.ready,
+      });
     } else {
       // Simple mode: wrap HTMLVideoElement with VideoFrame
       webCodecsPlayer.attachToVideoElement(video);

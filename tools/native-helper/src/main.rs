@@ -166,6 +166,7 @@ fn print_banner(config: &server::ServerConfig) {
         }
     );
     println!("  Downloads: {}", utils::get_download_dir().display());
+    println!("  Projects:  {}", utils::get_project_root().display());
     println!("========================================================");
     println!();
 }

@@ -4,10 +4,15 @@ import type { Layer, LayerRenderData, DetailedStats } from '../core/types';
 import type { TextureManager } from '../texture/TextureManager';
 import type { ScrubbingCache } from '../texture/ScrubbingCache';
 import { Logger } from '../../services/logger';
+import {
+  getRuntimeFrameProvider,
+  readRuntimeFrameForSource,
+} from '../../services/mediaRuntime/runtimePlayback';
 import { wcPipelineMonitor } from '../../services/wcPipelineMonitor';
-import { vfPipelineMonitor } from '../../services/vfPipelineMonitor';
+import { useTimelineStore } from '../../stores/timeline';
 
 const log = Logger.create('LayerCollector');
+const ENABLE_VISUAL_HTML_VIDEO_FALLBACK = false;
 
 export interface LayerCollectorDeps {
   textureManager: TextureManager;
@@ -24,6 +29,76 @@ export class LayerCollector {
   private currentWebCodecsInfo?: DetailedStats['webCodecsInfo'];
   private hasVideo = false;
   private lastCollectedCount = -1;
+  private providerIds = new WeakMap<object, number>();
+  private nextProviderId = 1;
+  private lastSuccessfulVideoProviderKey = new Map<string, string>();
+  private lastCollectorState = new Map<string, 'render' | 'hold' | 'drop'>();
+
+  private isPendingWebCodecsFrameStable(
+    provider: NonNullable<Layer['source']>['webCodecsPlayer'] | undefined
+  ): boolean {
+    if (!provider) {
+      return true;
+    }
+
+    const pendingTarget = provider.getPendingSeekTime?.();
+    if (pendingTarget == null) {
+      return true;
+    }
+
+    const fps = provider.getFrameRate?.() ?? 30;
+    const tolerance = Math.max(1.5 / Math.max(fps, 1), 0.05);
+    return Math.abs(pendingTarget - provider.currentTime) <= tolerance;
+  }
+
+  private getProviderObjectId(provider: object): number {
+    const existing = this.providerIds.get(provider);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const next = this.nextProviderId++;
+    this.providerIds.set(provider, next);
+    return next;
+  }
+
+  private getVideoProviderKey(
+    layer: Layer,
+    frameProvider: NonNullable<Layer['source']>['webCodecsPlayer'] | null,
+    runtimeProvider: NonNullable<Layer['source']>['webCodecsPlayer'] | null
+  ): string | null {
+    if (!frameProvider) {
+      return null;
+    }
+    if (
+      runtimeProvider &&
+      frameProvider === runtimeProvider &&
+      layer.source?.runtimeSourceId &&
+      layer.source.runtimeSessionKey
+    ) {
+      return `runtime:${layer.source.runtimeSourceId}:${layer.source.runtimeSessionKey}`;
+    }
+    return `provider:${this.getProviderObjectId(frameProvider as object)}`;
+  }
+
+  private canReuseLastSuccessfulVideoFrame(layerId: string, providerKey: string | null): boolean {
+    return !!providerKey && this.lastSuccessfulVideoProviderKey.get(layerId) === providerKey;
+  }
+
+  private setCollectorState(
+    layerId: string,
+    state: 'render' | 'hold' | 'drop',
+    detail?: Record<string, number | string>
+  ): void {
+    if (this.lastCollectorState.get(layerId) === state) {
+      return;
+    }
+    this.lastCollectorState.set(layerId, state);
+    if (state === 'hold') {
+      wcPipelineMonitor.record('collector_hold', detail);
+    } else if (state === 'drop') {
+      wcPipelineMonitor.record('collector_drop', detail);
+    }
+  }
 
   collect(layers: Layer[], deps: LayerCollectorDeps): LayerRenderData[] {
     this.layerRenderData.length = 0;
@@ -131,50 +206,128 @@ export class LayerCollector {
         }
       }
 
-      // 3. Try WebCodecs VideoFrame
-      // Skip for videos that haven't been played yet — after page reload,
-      // VideoFrame from a never-played video produces black/empty frames.
-      // Fall through to tryHTMLVideo which has a canvas-based fallback.
-      if (source.webCodecsPlayer && typeof source.webCodecsPlayer.getCurrentFrame === 'function') {
-        // Full mode: frames come from VideoDecoder, no GPU-ready guard needed
-        // Simple mode: frames come from HTMLVideoElement, needs GPU surface ready
-        const needsGpuReady = source.webCodecsPlayer.isSimpleMode();
-        if (!needsGpuReady || !source.videoElement || this.videoGpuReady.has(source.videoElement)) {
-          const frame = source.webCodecsPlayer.getCurrentFrame();
-          if (frame) {
-            const extTex = deps.textureManager.importVideoTexture(frame);
-            if (extTex) {
-              if (source.webCodecsPlayer.isFullMode()) {
-                wcPipelineMonitor.record('frame_read', {
-                  frameTs: frame.timestamp,
-                });
-              } else {
-                vfPipelineMonitor.record('vf_read', {
-                  frameTs: frame.timestamp,
-                });
-              }
-              this.currentDecoder = source.webCodecsPlayer.isFullMode()
-                ? 'WebCodecs'       // Echtes WebCodecs (VideoDecoder API)
-                : 'HTMLVideo(VF)';  // VideoFrame-Wrapper um HTMLVideo
-              this.currentWebCodecsInfo = source.webCodecsPlayer.getDebugInfo() ?? undefined;
-              this.hasVideo = true;
-              return {
-                layer,
-                isVideo: true,
-                externalTexture: extTex,
-                textureView: null,
-                sourceWidth: frame.displayWidth,
-                sourceHeight: frame.displayHeight,
-              };
-            }
+      // 3. Try full WebCodecs VideoFrame.
+      // Visual HTMLVideo-based paths are intentionally disabled.
+      const runtimeProvider = getRuntimeFrameProvider(source);
+      const clipProvider = source.webCodecsPlayer?.isFullMode()
+        ? source.webCodecsPlayer
+        : null;
+      const runtimeProviderStable = this.isPendingWebCodecsFrameStable(runtimeProvider ?? undefined);
+      const runtimeHasFrame =
+        (runtimeProvider?.hasFrame?.() ?? false) ||
+        !!runtimeProvider?.getCurrentFrame?.();
+      const allowPendingScrubFrame =
+        !deps.isPlaying &&
+        useTimelineStore.getState().isDraggingPlayhead;
+      const shouldPreferRuntimeProvider =
+        !!runtimeProvider?.isFullMode() &&
+        runtimeProvider !== clipProvider &&
+        runtimeProviderStable &&
+        runtimeHasFrame;
+      const frameProvider =
+        shouldPreferRuntimeProvider
+          ? runtimeProvider
+          : clipProvider ?? (runtimeProvider?.isFullMode()
+            ? runtimeProvider
+            : null);
+      const providerKey = this.getVideoProviderKey(layer, frameProvider, runtimeProvider);
+      const canReuseLastFrame = this.canReuseLastSuccessfulVideoFrame(layer.id, providerKey);
+      const frameProviderStable = this.isPendingWebCodecsFrameStable(frameProvider ?? undefined);
+      const holdingFrame = !frameProviderStable && canReuseLastFrame;
+
+      const canReadRuntimeFrame =
+        !!source.runtimeSourceId &&
+        !!source.runtimeSessionKey &&
+        !!runtimeProvider?.isFullMode() &&
+        (!frameProvider || frameProvider === runtimeProvider) &&
+        (runtimeProviderStable || canReuseLastFrame || allowPendingScrubFrame);
+
+      const runtimeFrameRead = canReadRuntimeFrame
+        ? readRuntimeFrameForSource(source)
+        : null;
+      const runtimeFrame = runtimeFrameRead?.frameHandle?.frame;
+
+      if (
+        runtimeFrame &&
+        'displayWidth' in runtimeFrame &&
+        'displayHeight' in runtimeFrame
+      ) {
+        const extTex = deps.textureManager.importVideoTexture(runtimeFrame);
+        if (extTex) {
+          wcPipelineMonitor.record('frame_read', {
+            frameTs: runtimeFrame.timestamp,
+          });
+          if (providerKey) {
+            this.lastSuccessfulVideoProviderKey.set(layer.id, providerKey);
           }
+          this.setCollectorState(layer.id, holdingFrame ? 'hold' : 'render', {
+            reason: holdingFrame ? 'same_provider_pending' : 'runtime_frame',
+          });
+          this.currentDecoder = 'WebCodecs';
+          this.currentWebCodecsInfo = frameProvider?.getDebugInfo?.() ?? undefined;
+          this.hasVideo = true;
+          return {
+            layer,
+            isVideo: true,
+            externalTexture: extTex,
+            textureView: null,
+            sourceWidth: runtimeFrame.displayWidth,
+            sourceHeight: runtimeFrame.displayHeight,
+          };
         }
       }
 
-      // 4. HTMLVideoElement fallback — DISABLED for testing.
-      // In full WebCodecs mode, we want to see pure WebCodecs output
-      // to identify timing/decode issues without HTMLVideo masking them.
-      if (source.videoElement && !source.webCodecsPlayer?.isFullMode()) {
+      if (frameProvider && typeof frameProvider.getCurrentFrame === 'function') {
+        if (!frameProviderStable && !canReuseLastFrame && !allowPendingScrubFrame) {
+          this.setCollectorState(layer.id, 'drop', {
+            reason: 'pending_unstable',
+          });
+          return null;
+        }
+        const frame = frameProvider.getCurrentFrame();
+        if (frame) {
+          const extTex = deps.textureManager.importVideoTexture(frame);
+          if (extTex) {
+            wcPipelineMonitor.record('frame_read', {
+              frameTs: frame.timestamp,
+            });
+            if (providerKey) {
+              this.lastSuccessfulVideoProviderKey.set(layer.id, providerKey);
+            }
+            this.setCollectorState(layer.id, holdingFrame ? 'hold' : 'render', {
+              reason: holdingFrame ? 'same_provider_pending' : 'provider_frame',
+            });
+            this.currentDecoder = 'WebCodecs';
+            this.currentWebCodecsInfo = frameProvider.getDebugInfo?.() ?? undefined;
+            this.hasVideo = true;
+            return {
+              layer,
+              isVideo: true,
+              externalTexture: extTex,
+              textureView: null,
+              sourceWidth: frame.displayWidth,
+              sourceHeight: frame.displayHeight,
+            };
+          }
+          this.setCollectorState(layer.id, 'drop', {
+            reason: 'import_failed',
+          });
+        } else {
+          this.setCollectorState(layer.id, 'drop', {
+            reason: 'no_frame',
+          });
+        }
+      }
+
+      const allowHtmlScrubPreview =
+        !deps.isPlaying &&
+        useTimelineStore.getState().isDraggingPlayhead &&
+        !!source.videoElement;
+
+      // 4. HTMLVideoElement visual fallback is intentionally disabled outside active drag-scrub.
+      if ((ENABLE_VISUAL_HTML_VIDEO_FALLBACK || allowHtmlScrubPreview) &&
+          source.videoElement &&
+          !source.webCodecsPlayer?.isFullMode()) {
         return this.tryHTMLVideo(layer, source.videoElement, deps);
       }
     }
