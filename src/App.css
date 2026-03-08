@@ -6515,6 +6515,15 @@ input[type="checkbox"] {
 
 .media-item-list {
   padding: 4px 0;
+  user-select: none;
+}
+
+.media-marquee {
+  position: absolute;
+  border: 1px solid rgba(45, 140, 235, 0.6);
+  background: rgba(45, 140, 235, 0.15);
+  pointer-events: none;
+  z-index: 5;
 }
 
 .media-item {

@@ -11,6 +11,12 @@ import { VideoSyncManager } from './VideoSyncManager';
 import { AudioTrackSyncManager } from './AudioTrackSyncManager';
 import { proxyFrameCache } from '../proxyFrameCache';
 import { layerPlaybackManager } from '../layerPlaybackManager';
+import {
+  canUseSharedPreviewRuntimeSession,
+  getPreviewRuntimeSource,
+  getRuntimeFrameProvider,
+  getScrubRuntimeSource,
+} from '../mediaRuntime/runtimePlayback';
 import { Logger } from '../logger';
 import { getInterpolatedClipTransform } from '../../utils/keyframeInterpolation';
 import { useTimelineStore } from '../../stores/timeline';
@@ -36,6 +42,47 @@ export class LayerBuilderService {
   // Lookahead preloading
   private lastLookaheadTime = 0;
 
+  private hasRenderableVideoSource(source: TimelineClip['source'] | undefined): boolean {
+    return !!source?.videoElement || !!source?.webCodecsPlayer?.isFullMode();
+  }
+
+  private getPausedVisualProvider(
+    source: TimelineClip['source'],
+    runtimeProvider: ReturnType<typeof getRuntimeFrameProvider>,
+    targetTime: number
+  ) {
+    const runtimeHasFrame =
+      (runtimeProvider?.hasFrame?.() ?? false) ||
+      !!runtimeProvider?.getCurrentFrame?.();
+    const runtimeEffectiveTime = runtimeProvider?.getPendingSeekTime?.() ?? runtimeProvider?.currentTime;
+    if (
+      runtimeProvider?.isFullMode() &&
+      runtimeHasFrame &&
+      runtimeEffectiveTime !== undefined &&
+      Math.abs(runtimeEffectiveTime - targetTime) <= 0.05
+    ) {
+      return runtimeProvider;
+    }
+
+    const clipPlayer = source?.webCodecsPlayer;
+    const clipHasFrame =
+      (clipPlayer?.hasFrame?.() ?? false) ||
+      !!clipPlayer?.getCurrentFrame?.();
+    if (!clipPlayer?.isFullMode()) {
+      return runtimeHasFrame && runtimeProvider?.isFullMode() ? runtimeProvider : undefined;
+    }
+
+    if (clipHasFrame) {
+      return clipPlayer;
+    }
+
+    if (runtimeHasFrame && runtimeProvider?.isFullMode()) {
+      return runtimeProvider;
+    }
+
+    return clipPlayer;
+  }
+
   /**
    * Invalidate all caches (layer cache and transform cache)
    */
@@ -55,7 +102,8 @@ export class LayerBuilderService {
     // No active editor composition → no primary layers to build
     // (all active comps are background layers managed by layerPlaybackManager)
     const hasActiveComp = useMediaStore.getState().activeCompositionId != null;
-    if (!hasActiveComp) {
+    const hasStandaloneTimelineContent = ctx.clips.length > 0;
+    if (!hasActiveComp && !hasStandaloneTimelineContent) {
       this.layerCache.invalidate();
       return this.mergeBackgroundLayers([], ctx.playheadPosition);
     }
@@ -232,7 +280,7 @@ export class LayerBuilderService {
     }
 
     // Video clip
-    if (clip.source?.videoElement) {
+    if (this.hasRenderableVideoSource(clip.source)) {
       return this.buildVideoLayer(clip, layerIndex, ctx, opacityOverride);
     }
 
@@ -358,6 +406,22 @@ export class LayerBuilderService {
 
     // Check for seamless cut handoff (same-source sequential clips reuse previous element)
     const handoffVideo = this.videoSyncManager.getHandoffVideoElement(clip.id);
+    const allowSharedPreviewSession = canUseSharedPreviewRuntimeSession(clip, ctx.clipsAtTime);
+    const previewRuntimeSource = ctx.isPlaying
+      ? getPreviewRuntimeSource(
+          clip.source,
+          clip.trackId,
+          allowSharedPreviewSession
+        )
+      : getScrubRuntimeSource(
+          clip.source,
+          clip.trackId,
+          allowSharedPreviewSession
+        );
+    const runtimeProvider = getRuntimeFrameProvider(previewRuntimeSource);
+    const visualProvider = ctx.isPlaying
+      ? previewRuntimeSource?.webCodecsPlayer ?? clip.source?.webCodecsPlayer
+      : this.getPausedVisualProvider(clip.source, runtimeProvider, timeInfo.clipTime);
 
     const layer: Layer = {
       id: `${ctx.activeCompId}_layer_${layerIndex}`,
@@ -368,8 +432,10 @@ export class LayerBuilderService {
       source: {
         type: 'video',
         videoElement: handoffVideo ?? clip.source!.videoElement,
-        // Skip WebCodecs player during handoff — it references the original element
-        webCodecsPlayer: handoffVideo ? undefined : clip.source?.webCodecsPlayer,
+        // Keep the clip's decoder attached even when audio uses a handoff element.
+        webCodecsPlayer: visualProvider,
+        runtimeSourceId: previewRuntimeSource?.runtimeSourceId,
+        runtimeSessionKey: previewRuntimeSource?.runtimeSessionKey,
       },
       effects,
       position: transform.position,
@@ -610,7 +676,7 @@ export class LayerBuilderService {
   /**
    * Build layer for a nested clip
    */
-  private buildNestedClipLayer(nestedClip: TimelineClip, nestedClipLocalTime: number, _ctx: FrameContext, depth: number = 0): Layer | null {
+  private buildNestedClipLayer(nestedClip: TimelineClip, nestedClipLocalTime: number, ctx: FrameContext, depth: number = 0): Layer | null {
     // Get keyframes directly from the store (nested clips aren't in ctx.clips, so we can't use ctx.getInterpolatedTransform)
     const { clipKeyframes } = useTimelineStore.getState();
     const keyframes = clipKeyframes.get(nestedClip.id) || [];
@@ -705,7 +771,7 @@ export class LayerBuilderService {
     if (nestedClip.isComposition && nestedClip.nestedClips && nestedClip.nestedClips.length > 0) {
       // Convert clip-local time to sub-composition timeline time (add inPoint)
       const subCompTime = nestedClipLocalTime + (nestedClip.inPoint || 0);
-      const subLayers = this.buildNestedLayers(nestedClip, subCompTime, _ctx, depth + 1);
+      const subLayers = this.buildNestedLayers(nestedClip, subCompTime, ctx, depth + 1);
       if (subLayers.length === 0) return null;
 
       const compositions = useMediaStore.getState().compositions;
@@ -732,13 +798,32 @@ export class LayerBuilderService {
       return null;
     }
 
-    if (nestedClip.source?.videoElement) {
+    if (this.hasRenderableVideoSource(nestedClip.source)) {
+      const previewRuntimeSource = ctx.isPlaying
+        ? getPreviewRuntimeSource(
+            nestedClip.source,
+            nestedClip.trackId,
+            true
+          )
+        : getScrubRuntimeSource(
+            nestedClip.source,
+            nestedClip.trackId,
+            true
+          );
+      const runtimeProvider = getRuntimeFrameProvider(previewRuntimeSource);
+      const nestedClipTime = nestedClip.reversed
+        ? nestedClip.outPoint - nestedClipLocalTime
+        : nestedClipLocalTime + nestedClip.inPoint;
       return {
         ...baseLayer,
         source: {
           type: 'video',
-          videoElement: nestedClip.source.videoElement,
-          webCodecsPlayer: nestedClip.source.webCodecsPlayer,
+          videoElement: nestedClip.source!.videoElement,
+          webCodecsPlayer: ctx.isPlaying
+            ? previewRuntimeSource?.webCodecsPlayer ?? nestedClip.source!.webCodecsPlayer
+            : this.getPausedVisualProvider(nestedClip.source, runtimeProvider, nestedClipTime),
+          runtimeSourceId: previewRuntimeSource?.runtimeSourceId,
+          runtimeSessionKey: previewRuntimeSource?.runtimeSessionKey,
         },
       } as Layer;
     } else if (nestedClip.source?.imageElement) {

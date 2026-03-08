@@ -111,9 +111,14 @@ export function MediaPanel() {
   } = useMediaStore.getState();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const itemListRef = useRef<HTMLDivElement>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; itemId?: string } | null>(null);
+
+  // Marquee selection state
+  const [marquee, setMarquee] = useState<{ startX: number; startY: number; currentX: number; currentY: number } | null>(null);
+  const marqueeRef = useRef<{ startX: number; startY: number; initialSelection: string[] } | null>(null);
   const { menuRef: contextMenuRef, adjustedPosition: contextMenuPosition } = useContextMenuPosition(contextMenu);
   const [settingsDialog, setSettingsDialog] = useState<{ compositionId: string; width: number; height: number; frameRate: number; duration: number } | null>(null);
   const [solidSettingsDialog, setSolidSettingsDialog] = useState<{ solidItemId: string; width: number; height: number; color: string } | null>(null);
@@ -301,17 +306,88 @@ export function MediaPanel() {
     }
   }, []);
 
+  // Marquee selection handlers
+  const handleMarqueeMouseDown = useCallback((e: React.MouseEvent) => {
+    // Only start marquee on left-click directly on the item list background (not on items)
+    if (e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    // Don't start marquee if clicking on an item
+    if (target.closest('.media-item')) return;
+
+    const container = itemListRef.current;
+    if (!container) return;
+
+    const rect = container.getBoundingClientRect();
+    const x = e.clientX - rect.left + container.scrollLeft;
+    const y = e.clientY - rect.top + container.scrollTop;
+
+    const initial = e.ctrlKey || e.metaKey ? [...selectedIds] : [];
+    marqueeRef.current = { startX: x, startY: y, initialSelection: initial };
+    setMarquee({ startX: x, startY: y, currentX: x, currentY: y });
+
+    if (!e.ctrlKey && !e.metaKey) {
+      setSelection([]);
+    }
+
+    const handleMouseMove = (ev: MouseEvent) => {
+      if (!marqueeRef.current || !container) return;
+      const r = container.getBoundingClientRect();
+      const cx = ev.clientX - r.left + container.scrollLeft;
+      const cy = ev.clientY - r.top + container.scrollTop;
+      setMarquee({ startX: marqueeRef.current.startX, startY: marqueeRef.current.startY, currentX: cx, currentY: cy });
+
+      // Hit-test items
+      const mLeft = Math.min(marqueeRef.current.startX, cx);
+      const mRight = Math.max(marqueeRef.current.startX, cx);
+      const mTop = Math.min(marqueeRef.current.startY, cy);
+      const mBottom = Math.max(marqueeRef.current.startY, cy);
+
+      const itemEls = container.querySelectorAll('.media-item');
+      const hitIds: string[] = [];
+      itemEls.forEach((el) => {
+        const elRect = el.getBoundingClientRect();
+        const elTop = elRect.top - r.top + container.scrollTop;
+        const elBottom = elTop + elRect.height;
+        const elLeft = elRect.left - r.left + container.scrollLeft;
+        const elRight = elLeft + elRect.width;
+        if (elRight > mLeft && elLeft < mRight && elBottom > mTop && elTop < mBottom) {
+          // Find the item id from the closest parent with a key
+          const itemId = el.parentElement?.getAttribute('data-item-id');
+          if (itemId) hitIds.push(itemId);
+        }
+      });
+
+      const combined = [...new Set([...marqueeRef.current.initialSelection, ...hitIds])];
+      setSelection(combined);
+    };
+
+    const handleMouseUp = () => {
+      marqueeRef.current = null;
+      setMarquee(null);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  }, [selectedIds, setSelection]);
+
   // Handle item selection
   const handleItemClick = useCallback((id: string, e: React.MouseEvent) => {
     if (e.ctrlKey || e.metaKey) {
-      addToSelection(id);
+      // Toggle: add or remove
+      if (selectedIds.includes(id)) {
+        const { removeFromSelection } = useMediaStore.getState();
+        removeFromSelection(id);
+      } else {
+        addToSelection(id);
+      }
     } else if (e.shiftKey) {
-      // TODO: Range selection
       addToSelection(id);
     } else {
       setSelection([id]);
     }
-  }, [addToSelection, setSelection]);
+  }, [addToSelection, setSelection, selectedIds]);
 
   // Handle double-click (open/expand)
   const handleItemDoubleClick = useCallback(async (item: ProjectItem) => {
@@ -337,10 +413,15 @@ export function MediaPanel() {
   const handleContextMenu = useCallback((e: React.MouseEvent, itemId?: string) => {
     e.preventDefault();
     if (itemId && !selectedIds.includes(itemId)) {
-      setSelection([itemId]);
+      // If right-clicking an unselected item, select only it (unless Ctrl held)
+      if (e.ctrlKey || e.metaKey) {
+        addToSelection(itemId);
+      } else {
+        setSelection([itemId]);
+      }
     }
     setContextMenu({ x: e.clientX, y: e.clientY, itemId });
-  }, [selectedIds, setSelection]);
+  }, [selectedIds, setSelection, addToSelection]);
 
   const closeContextMenu = useCallback(() => {
     setContextMenu(null);
@@ -957,7 +1038,7 @@ export function MediaPanel() {
     const mediaFile = isMediaFile ? (item as MediaFile) : null;
 
     return (
-      <div key={item.id}>
+      <div key={item.id} data-item-id={item.id}>
         <div
           className={`media-item ${isSelected ? 'selected' : ''} ${isFolder ? 'folder' : ''} ${isMediaFile && !hasFile ? 'no-file' : ''} ${isImporting ? 'importing' : ''} ${isDragTarget ? 'drag-target' : ''} ${isBeingDragged ? 'dragging' : ''}`}
           draggable
@@ -1115,8 +1196,27 @@ export function MediaPanel() {
                 </div>
               ))}
             </div>
-            <div className="media-item-list">
+            <div
+              className="media-item-list"
+              ref={itemListRef}
+              onMouseDown={handleMarqueeMouseDown}
+              style={{ position: 'relative' }}
+            >
               {rootItems.map(item => renderItem(item))}
+              {/* Marquee selection rectangle */}
+              {marquee && (() => {
+                const left = Math.min(marquee.startX, marquee.currentX);
+                const top = Math.min(marquee.startY, marquee.currentY);
+                const width = Math.abs(marquee.currentX - marquee.startX);
+                const height = Math.abs(marquee.currentY - marquee.startY);
+                if (width < 3 && height < 3) return null;
+                return (
+                  <div
+                    className="media-marquee"
+                    style={{ left, top, width, height }}
+                  />
+                );
+              })()}
             </div>
           </div>
         )}
@@ -1138,6 +1238,7 @@ export function MediaPanel() {
 
       {/* Context Menu */}
       {contextMenu && (() => {
+        const multiSelect = selectedIds.length > 1;
         const selectedItem = contextMenu.itemId
           ? files.find(f => f.id === contextMenu.itemId) ||
             compositions.find(c => c.id === contextMenu.itemId) ||
@@ -1152,6 +1253,8 @@ export function MediaPanel() {
         const solidItem = isSolidItem ? (selectedItem as SolidItem) : null;
         const isGenerating = mediaFile?.proxyStatus === 'generating';
         const hasProxy = mediaFile?.proxyStatus === 'ready';
+        // Available folders for "Move to Folder" submenu
+        const availableFolders = folders.filter(f => !selectedIds.includes(f.id));
 
         return (
           <div
@@ -1174,24 +1277,60 @@ export function MediaPanel() {
             <div className="context-menu-item" onClick={handleNewFolder}>
               New Folder
             </div>
-            {contextMenu.itemId && (
+            {(contextMenu.itemId || multiSelect) && (
               <>
                 <div className="context-menu-separator" />
-                <div className="context-menu-item" onClick={() => {
-                  if (selectedItem) startRename(selectedItem.id, selectedItem.name);
-                }}>
-                  Rename
-                </div>
 
-                {/* Composition Settings - only for compositions */}
-                {isComposition && composition && (
+                {/* Rename - only for single selection */}
+                {!multiSelect && selectedItem && (
+                  <div className="context-menu-item" onClick={() => {
+                    startRename(selectedItem.id, selectedItem.name);
+                  }}>
+                    Rename
+                  </div>
+                )}
+
+                {/* Move to Folder submenu */}
+                {availableFolders.length > 0 && (
+                  <div className="context-menu-item has-submenu">
+                    <span>Move to Folder{multiSelect ? ` (${selectedIds.length})` : ''}</span>
+                    <span className="submenu-arrow">▶</span>
+                    <div className="context-submenu">
+                      <div
+                        className="context-menu-item"
+                        onClick={() => {
+                          moveToFolder(selectedIds, null);
+                          closeContextMenu();
+                        }}
+                      >
+                        Root (no folder)
+                      </div>
+                      <div className="context-menu-separator" />
+                      {availableFolders.map(folder => (
+                        <div
+                          key={folder.id}
+                          className="context-menu-item"
+                          onClick={() => {
+                            moveToFolder(selectedIds, folder.id);
+                            closeContextMenu();
+                          }}
+                        >
+                          {folder.name}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Composition Settings - only for single composition */}
+                {!multiSelect && isComposition && composition && (
                   <div className="context-menu-item" onClick={() => openCompositionSettings(composition)}>
                     Composition Settings...
                   </div>
                 )}
 
-                {/* Solid Settings - only for solid items */}
-                {isSolidItem && solidItem && (
+                {/* Solid Settings - only for single solid */}
+                {!multiSelect && isSolidItem && solidItem && (
                   <div className="context-menu-item" onClick={() => {
                     setSolidSettingsDialog({
                       solidItemId: solidItem.id,
@@ -1205,8 +1344,8 @@ export function MediaPanel() {
                   </div>
                 )}
 
-                {/* Proxy Generation - only for video files */}
-                {isVideoFile && mediaFile && (
+                {/* Proxy Generation - only for single video */}
+                {!multiSelect && isVideoFile && mediaFile && (
                   <>
                     <div className="context-menu-separator" />
                     {isGenerating ? (
@@ -1237,8 +1376,8 @@ export function MediaPanel() {
                   </>
                 )}
 
-                {/* Show in Explorer submenu - only for video files with file data */}
-                {isVideoFile && mediaFile?.file && (
+                {/* Show in Explorer submenu - only for single video with file */}
+                {!multiSelect && isVideoFile && mediaFile?.file && (
                   <div className="context-menu-item has-submenu">
                     <span>Show in Explorer</span>
                     <span className="submenu-arrow">▶</span>
@@ -1250,7 +1389,6 @@ export function MediaPanel() {
                           if (result.success) {
                             alert(result.message);
                           } else {
-                            // Fallback: download the file
                             if (mediaFile.file) {
                               const url = URL.createObjectURL(mediaFile.file);
                               const a = document.createElement('a');
@@ -1283,8 +1421,8 @@ export function MediaPanel() {
                   </div>
                 )}
 
-                {/* Set Proxy Folder - for video files */}
-                {isVideoFile && (
+                {/* Set Proxy Folder - for single video */}
+                {!multiSelect && isVideoFile && (
                   <div
                     className="context-menu-item"
                     onClick={async () => {
@@ -1298,7 +1436,7 @@ export function MediaPanel() {
 
                 <div className="context-menu-separator" />
                 <div className="context-menu-item danger" onClick={handleDelete}>
-                  Delete
+                  Delete{multiSelect ? ` (${selectedIds.length} items)` : ''}
                 </div>
               </>
             )}
