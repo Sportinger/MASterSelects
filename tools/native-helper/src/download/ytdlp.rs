@@ -346,25 +346,53 @@ pub async fn handle_download(
         };
 
     // Stream stderr for progress
+    // yt-dlp downloads video+audio separately when merging, so we track phases:
+    //   Phase 0 = video (0-80%), Phase 1 = audio (80-95%), Merge = 95-99%
     let stderr = child.stderr.take();
-    let mut last_percent: u8 = 0;
+    let mut last_sent_percent: u8 = 0;
+    let mut download_phase: u8 = 0; // 0 = first stream (video), 1 = second stream (audio)
     if let Some(stderr) = stderr {
         let reader = BufReader::new(stderr);
         let mut lines = reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
+            // Detect new download phase starting (yt-dlp prints "[download] Destination: ..." for each stream)
+            if line.contains("[download] Destination:") || line.contains("[download] Downloading") {
+                if download_phase == 0 && last_sent_percent > 50 {
+                    // Second stream starting (audio) — switch to phase 1
+                    download_phase = 1;
+                }
+            }
+
+            // Detect merging phase
+            if line.contains("[Merger]") || line.contains("Merging") {
+                let merge_percent: u8 = 96;
+                if merge_percent > last_sent_percent {
+                    last_sent_percent = merge_percent;
+                    info!("[yt-dlp] Merging streams...");
+                    if let Some(ref sender) = ws_sender {
+                        let progress_msg = Response::download_progress(id, merge_percent, None, None);
+                        let json = serde_json::to_string(&progress_msg).unwrap();
+                        let mut sender = sender.lock().await;
+                        let _ = sender.send(Message::Text(json)).await;
+                    }
+                }
+                continue;
+            }
+
             // Parse progress from yt-dlp output
             // Format: "[download]  45.2% of 100.00MiB at  5.23MiB/s ETA 00:10"
+            // Fragment format: "[download]  45.2% of ~100.00MiB at  5.23MiB/s ETA 00:10 (frag 5/10)"
             if line.contains('%') {
                 // Extract percentage
-                let mut percent_val: Option<u8> = None;
+                let mut percent_val: Option<f32> = None;
                 if let Some(pct_str) = line.split('%').next() {
                     let pct_part = pct_str.trim().rsplit_once(' ').map(|(_, p)| p).unwrap_or(pct_str.trim());
                     if let Ok(pct) = pct_part.trim().parse::<f32>() {
-                        percent_val = Some((pct as u8).min(99));
+                        percent_val = Some(pct.min(100.0));
                     }
                 }
 
-                if let Some(percent) = percent_val {
+                if let Some(raw_percent) = percent_val {
                     // Extract speed (e.g. "5.23MiB/s" or "~5.23MiB/s")
                     let speed: Option<String> = if let Some(at_idx) = line.find(" at ") {
                         let after_at = &line[at_idx + 4..];
@@ -384,13 +412,21 @@ pub async fn handle_download(
                         None
                     };
 
+                    // Map raw percent to overall progress based on phase
+                    // Phase 0 (video): 0-80%, Phase 1 (audio): 80-95%
+                    let overall = match download_phase {
+                        0 => (raw_percent * 0.80) as u8,    // 0% → 0%, 100% → 80%
+                        _ => 80 + (raw_percent * 0.15) as u8, // 0% → 80%, 100% → 95%
+                    };
+                    let overall = overall.min(99);
+
                     // Send if changed by at least 1%
-                    if percent > last_percent || percent == 99 {
-                        last_percent = percent;
-                        info!("[yt-dlp] Progress: {}% speed={:?} eta={:?}", percent, speed, eta);
+                    if overall > last_sent_percent {
+                        last_sent_percent = overall;
+                        info!("[yt-dlp] Phase {} raw={:.1}% overall={}% speed={:?} eta={:?}", download_phase, raw_percent, overall, speed, eta);
                         if let Some(ref sender) = ws_sender {
                             let progress_msg = Response::download_progress(
-                                id, percent,
+                                id, overall,
                                 speed.as_deref(), eta.as_deref(),
                             );
                             let json = serde_json::to_string(&progress_msg).unwrap();

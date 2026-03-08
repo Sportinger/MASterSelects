@@ -97,14 +97,15 @@ export async function downloadVideo(
     }
 
     progress.status = 'downloading';
-    progress.progress = 5;
+    progress.progress = 1;
     notifySubscribers(progress);
 
     // Request download from Native Helper
+    // Helper sends 0-99% (video 0-80%, audio 80-95%, merge 96-99%)
     log.info(`Starting download: ${videoId} (${url})`);
 
     const result = await NativeHelperClient.download(url, formatId, (percent, speed) => {
-      progress.progress = 5 + (percent * 0.9); // 5% to 95%
+      progress.progress = Math.max(progress.progress, percent);
       progress.speed = speed;
       notifySubscribers(progress);
     });
@@ -114,7 +115,7 @@ export async function downloadVideo(
     }
 
     progress.status = 'processing';
-    progress.progress = 95;
+    progress.progress = 97;
     notifySubscribers(progress);
 
     // Transfer file from helper via WebSocket
