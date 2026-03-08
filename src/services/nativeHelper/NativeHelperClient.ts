@@ -498,15 +498,20 @@ class NativeHelperClientImpl {
         this.progressCallbacks.set(id, onProgress);
       }
 
+      log.info(`[DOWNLOAD] Starting download with id=${id}, url=${url}`);
       this.pendingRequests.set(id, (response: any) => {
         if (response.type === 'progress' && response.percent !== undefined) {
+          log.info(`[DOWNLOAD] Progress callback: ${response.percent}% speed=${response.speed}`);
           const progressCb = this.progressCallbacks.get(id);
           if (progressCb) {
             progressCb(response.percent, response.speed);
+          } else {
+            log.warn(`[DOWNLOAD] No progressCallback for id=${id}`);
           }
           return;
         }
 
+        log.info(`[DOWNLOAD] Final response for id=${id}: ok=${response.ok}`);
         clearTimeout(timeout);
         this.progressCallbacks.delete(id);
         if (response.ok) {
@@ -664,16 +669,21 @@ class NativeHelperClientImpl {
     if (typeof data === 'string') {
       // JSON response
       try {
-        const response: Response = JSON.parse(data);
+        const response: any = JSON.parse(data);
+        const isProgress = response.type === 'progress';
+        if (isProgress) {
+          log.info(`[WS-PROGRESS] id=${response.id} percent=${response.percent} speed=${response.speed}`);
+        }
         const callback = this.pendingRequests.get(response.id);
 
         if (callback) {
           // Check if this is a progress message - don't delete callback yet
-          const isProgress = (response as any).type === 'progress';
           if (!isProgress) {
             this.pendingRequests.delete(response.id);
           }
           callback(response);
+        } else if (isProgress) {
+          log.warn(`[WS-PROGRESS] No callback found for id=${response.id}, pending keys: ${[...this.pendingRequests.keys()].join(',')}`);
         }
       } catch (err) {
         log.error('Failed to parse response', err);

@@ -345,14 +345,15 @@ pub async fn handle_download(
             }
         };
 
-    // Stream stderr for progress
+    // Stream stdout for progress (yt-dlp writes [download] progress to stdout with --newline)
     // yt-dlp downloads video+audio separately when merging, so we track phases:
     //   Phase 0 = video (0-80%), Phase 1 = audio (80-95%), Merge = 95-99%
-    let stderr = child.stderr.take();
+    let stdout = child.stdout.take();
     let mut last_sent_percent: u8 = 0;
     let mut download_phase: u8 = 0; // 0 = first stream (video), 1 = second stream (audio)
-    if let Some(stderr) = stderr {
-        let reader = BufReader::new(stderr);
+    let mut final_filepath: Option<String> = None;
+    if let Some(stdout) = stdout {
+        let reader = BufReader::new(stdout);
         let mut lines = reader.lines();
         while let Ok(Some(line)) = lines.next_line().await {
             // Detect new download phase starting (yt-dlp prints "[download] Destination: ..." for each stream)
@@ -437,18 +438,20 @@ pub async fn handle_download(
                 }
             } else if line.contains("Downloading") || line.contains("Merging") {
                 info!("[yt-dlp] {}", line);
-            } else if !line.is_empty() && !line.starts_with('[') {
-                warn!("[yt-dlp] {}", line);
+            } else if !line.starts_with('[') && !line.is_empty() {
+                // Non-bracketed line = likely the filepath from --print after_move:filepath
+                info!("[yt-dlp] Captured output path: {}", line);
+                final_filepath = Some(line.trim().to_string());
             }
         }
     }
 
-    let result = child.wait_with_output().await;
+    // stdout was already consumed above, so just wait for exit status
+    let status = child.wait().await;
 
-    match result {
-        Ok(output) if output.status.success() => {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let output_path = stdout.lines().last().unwrap_or("").trim();
+    match status {
+        Ok(s) if s.success() => {
+            let output_path = final_filepath.unwrap_or_default();
 
             if output_path.is_empty() {
                 return Response::error(id, error_codes::DOWNLOAD_FAILED, "yt-dlp did not return output path");
@@ -457,10 +460,8 @@ pub async fn handle_download(
             info!("Download complete: {}", output_path);
             Response::ok(id, serde_json::json!({ "path": output_path }))
         }
-        Ok(output) => {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            warn!("yt-dlp failed: {}", stderr);
-            Response::error(id, error_codes::DOWNLOAD_FAILED, stderr.lines().last().unwrap_or("Unknown error"))
+        Ok(_) => {
+            Response::error(id, error_codes::DOWNLOAD_FAILED, "yt-dlp exited with error")
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             Response::error(id, error_codes::YTDLP_NOT_FOUND, "yt-dlp not found. Install with: pip install yt-dlp")
