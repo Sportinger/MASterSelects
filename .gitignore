@@ -63,6 +63,7 @@ tools/helpers/*/target/
 tools/native-helper/target/
 helpers/*/target/
 masterselects-helper/
+server/target/
 
 # Native helper - bundled FFmpeg binaries (too large for git)
 tools/native-helper/ffmpeg/
