@@ -349,8 +349,13 @@ export function useClipDrag({
           currentX: moveEvent.clientX,
           currentTrackId: newTrackId,
           snappedTime: resistedTime,
-          snapIndicatorTime: snapped && !forcingOverlap ? snapEdgeTime : null,
-          isSnapping: snapped && !forcingOverlap,
+          snapIndicatorTime: snapped && !forcingOverlap
+            ? snapEdgeTime
+            : newTrackId !== drag.originalTrackId
+              ? drag.originalStartTime  // Show guide line at original position when on different track
+              : null,
+          isSnapping: snapped && !forcingOverlap
+            || newTrackId !== drag.originalTrackId,  // Always show guide when on different track
           altKeyPressed: moveEvent.altKey, // Update Alt state dynamically
           forcingOverlap,
           multiSelectTimeDelta,
