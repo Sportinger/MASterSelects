@@ -174,7 +174,7 @@ export function useClipDrag({
 
         // First check for edge snapping (only if snapping should be active)
         // Snap hysteresis: once snapped, user must drag SNAP_BREAKOUT_PX pixels to break free
-        const SNAP_BREAKOUT_PX = 40; // pixels of drag to break out of snap
+        const SNAP_BREAKOUT_PX = 20; // pixels of drag to break out of snap
         let snapped = false;
         let snappedTime = rawTime;
         let snapEdgeTime = 0;
