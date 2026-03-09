@@ -73,6 +73,8 @@ export class WebGPUEngine {
   // Track whether play has ever been pressed — persists across RenderLoop recreations.
   // Before first play, idle detection is suppressed so video GPU surfaces stay warm.
   private hasEverPlayed = false;
+  // Track playing state so it can be carried over when RenderLoop is recreated
+  private _isPlaying = false;
 
   constructor() {
     this.context = new WebGPUContext();
@@ -438,6 +440,7 @@ export class WebGPUEngine {
   }
 
   setIsPlaying(playing: boolean): void {
+    this._isPlaying = playing;
     if (playing) this.hasEverPlayed = true;
     this.renderLoop?.setIsPlaying(playing);
   }
@@ -597,6 +600,14 @@ export class WebGPUEngine {
     // running continuously so syncClipVideo warmup can complete.
     if (!this.hasEverPlayed) {
       this.renderLoop.suppressIdle();
+    }
+
+    // Carry over playing state: when start() is called from a useEffect that
+    // re-runs on isPlaying change, React's effect ordering means setIsPlaying()
+    // may have already fired on the OLD RenderLoop. Transfer the state so the
+    // new RenderLoop has correct frame rate limiting from the first frame.
+    if (this._isPlaying) {
+      this.renderLoop.setIsPlaying(true);
     }
 
     this.renderLoop.start();

@@ -53,6 +53,31 @@ function TimelineKeyframesComponent({
     clipStartTime: number;
   } | null>(null);
 
+  // AI keyframe animation feedback
+  const [aiAnimatedKeyframes, setAiAnimatedKeyframes] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { action } = (e as CustomEvent).detail;
+      if (action === 'add') {
+        // Animate the most recently added keyframe for any clip in this track
+        const allKfs = clips.flatMap(c => (clipKeyframes.get(c.id) || []).map(kf => ({ ...kf, clipId: c.id })));
+        const latest = allKfs[allKfs.length - 1];
+        if (latest) {
+          setAiAnimatedKeyframes(prev => new Set([...prev, latest.id]));
+          setTimeout(() => {
+            setAiAnimatedKeyframes(prev => {
+              const next = new Set(prev);
+              next.delete(latest.id);
+              return next;
+            });
+          }, 350);
+        }
+      }
+    };
+    window.addEventListener('ai-keyframe-feedback', handler);
+    return () => window.removeEventListener('ai-keyframe-feedback', handler);
+  }, [clips, clipKeyframes]);
+
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -242,7 +267,7 @@ function TimelineKeyframesComponent({
         return (
           <div
             key={kf.id}
-            className={`keyframe-diamond easing-${kf.easing} ${isSelected ? 'selected' : ''} ${isDragging ? 'dragging' : ''}`}
+            className={`keyframe-diamond easing-${kf.easing} ${isSelected ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${aiAnimatedKeyframes.has(kf.id) ? 'ai-keyframe-added' : ''}`}
             style={{ left: `${xPos}px` }}
             onMouseDown={(e) => handleMouseDown(e, kf, clip)}
             onContextMenu={(e) => handleContextMenu(e, kf)}

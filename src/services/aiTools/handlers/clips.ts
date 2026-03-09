@@ -7,6 +7,7 @@ import type { TimelineClip } from '../../../types';
 import type { ToolResult } from '../types';
 import { formatClipInfo } from '../utils';
 import { isAIExecutionActive } from '../executionState';
+import { activateDockPanel } from '../aiFeedback';
 
 /** Resolve clip background color for ghost overlays */
 function getClipColor(clip: TimelineClip): string {
@@ -796,6 +797,10 @@ export async function handleSelectClips(
 ): Promise<ToolResult> {
   const clipIds = args.clipIds as string[];
   timelineStore.selectClips(clipIds);
+
+  // Visual feedback: activate properties panel
+  activateDockPanel('clip-properties');
+
   return { success: true, data: { selectedClipIds: clipIds } };
 }
 

@@ -1,5 +1,6 @@
 import { useTimelineStore } from '../../../stores/timeline';
 import type { ToolResult } from '../types';
+import { selectClipAndOpenTab } from '../aiFeedback';
 
 type TimelineStore = ReturnType<typeof useTimelineStore.getState>;
 
@@ -57,6 +58,9 @@ export async function handleAddRectangleMask(
   const { addRectangleMask } = useTimelineStore.getState();
   const maskId = addRectangleMask(clipId);
 
+  // Visual feedback: select clip and open masks tab
+  selectClipAndOpenTab(clipId, 'masks');
+
   return {
     success: true,
     data: { clipId, maskId, type: 'rectangle' },
@@ -73,6 +77,9 @@ export async function handleAddEllipseMask(
 
   const { addEllipseMask } = useTimelineStore.getState();
   const maskId = addEllipseMask(clipId);
+
+  // Visual feedback: select clip and open masks tab
+  selectClipAndOpenTab(clipId, 'masks');
 
   return {
     success: true,
@@ -125,6 +132,9 @@ export async function handleAddMask(
     invalidateCache();
   }
 
+  // Visual feedback: select clip and open masks tab
+  selectClipAndOpenTab(clipId, 'masks');
+
   return {
     success: true,
     data: { clipId, maskId, vertexCount: vertices.length },
@@ -145,6 +155,9 @@ export async function handleRemoveMask(
 
   const { removeMask } = useTimelineStore.getState();
   removeMask(clipId, maskId);
+
+  // Visual feedback: select clip and open masks tab
+  selectClipAndOpenTab(clipId, 'masks');
 
   return {
     success: true,

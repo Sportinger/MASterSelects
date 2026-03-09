@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { flags } from '../../src/engine/featureFlags';
 import { VideoSyncManager } from '../../src/services/layerBuilder/VideoSyncManager';
 
 describe('VideoSyncManager paused WebCodecs provider selection', () => {
   beforeEach(() => {
     vi.useRealTimers();
+    flags.useFullWebCodecsPlayback = true;
   });
 
   it('keeps driving the clip player while the scrub runtime is still cold', () => {
@@ -112,11 +114,25 @@ describe('VideoSyncManager paused WebCodecs provider selection', () => {
     const provider = {
       currentTime: 1.01,
       hasFrame: () => true,
+      hasBufferedFutureFrame: () => true,
       getCurrentFrame: () => ({ timestamp: 1_010_000 }),
       getPendingSeekTime: () => 1.01,
     };
 
     expect(manager.isPlaybackProviderReadyForAudioStart(provider, 1.01)).toBe(true);
+  });
+
+  it('blocks audio start until a future playback frame is buffered', () => {
+    const manager = new VideoSyncManager() as any;
+    const provider = {
+      currentTime: 1.01,
+      hasFrame: () => true,
+      hasBufferedFutureFrame: () => false,
+      getCurrentFrame: () => ({ timestamp: 1_010_000 }),
+      getPendingSeekTime: () => 1.01,
+    };
+
+    expect(manager.isPlaybackProviderReadyForAudioStart(provider, 1.01)).toBe(false);
   });
 
   it('allows a new fast seek when a busy scrub provider is stale and the target moved', () => {
@@ -244,11 +260,136 @@ describe('VideoSyncManager paused WebCodecs provider selection', () => {
       playbackSpeed: 1,
       now: 1000,
       playheadPosition: 1.5,
+      hasKeyframes: () => false,
       getInterpolatedSpeed: () => 1,
       getSourceTimeForClip: () => 1.5,
     } as any);
 
     expect(syncFullWebCodecs).not.toHaveBeenCalled();
     expect(throttledSeek).toHaveBeenCalled();
+  });
+
+  it('routes full WebCodecs clips through HTML sync logic when preview WebCodecs is disabled', () => {
+    flags.useFullWebCodecsPlayback = false;
+
+    const manager = new VideoSyncManager() as any;
+    const syncFullWebCodecs = vi.spyOn(manager, 'syncFullWebCodecs');
+    const throttledSeek = vi.spyOn(manager, 'throttledSeek').mockImplementation(() => {});
+
+    const video = {
+      currentTime: 0,
+      paused: true,
+      seeking: false,
+      readyState: 4,
+      played: { length: 1 },
+      pause: vi.fn(),
+      playbackRate: 1,
+    } as any;
+
+    manager.syncClipVideo({
+      id: 'clip-2',
+      trackId: 'track-v1',
+      startTime: 0,
+      inPoint: 0,
+      outPoint: 10,
+      duration: 10,
+      reversed: false,
+      source: {
+        videoElement: video,
+        webCodecsPlayer: {
+          isFullMode: () => true,
+        },
+      },
+    }, {
+      isPlaying: false,
+      isDraggingPlayhead: false,
+      playbackSpeed: 1,
+      now: 1000,
+      playheadPosition: 1.5,
+      hasKeyframes: () => false,
+      getInterpolatedSpeed: () => 1,
+      getSourceTimeForClip: () => 1.5,
+    } as any);
+
+    expect(syncFullWebCodecs).not.toHaveBeenCalled();
+    expect(throttledSeek).toHaveBeenCalled();
+  });
+
+  it('does not reuse the previous HTML video element across same-source reordered cuts when preview WebCodecs is disabled', () => {
+    flags.useFullWebCodecsPlayback = false;
+
+    const manager = new VideoSyncManager() as any;
+    const previousVideo = {
+      currentTime: 6.35,
+    } as HTMLVideoElement;
+    const nextVideo = {
+      currentTime: 0,
+    } as HTMLVideoElement;
+    const file = new File(['video'], 'reordered.mp4', { type: 'video/mp4' });
+
+    manager.lastTrackState.set('track-v1', {
+      clipId: 'clip-prev',
+      fileId: 'media-1',
+      file,
+      videoElement: previousVideo,
+      outPoint: 1.4,
+    });
+
+    manager.computeHandoffs({
+      isPlaying: true,
+      isDraggingPlayhead: false,
+      clipsAtTime: [{
+        id: 'clip-next',
+        trackId: 'track-v1',
+        file,
+        inPoint: 6.8,
+        outPoint: 8.4,
+        source: {
+          mediaFileId: 'media-1',
+          videoElement: nextVideo,
+        },
+      }],
+    } as any);
+
+    expect(manager.getHandoffVideoElement('clip-next')).toBeNull();
+  });
+
+  it('does not reuse the previous HTML video element across same-source reordered cuts when the source-time jump is too large', () => {
+    flags.useFullWebCodecsPlayback = false;
+
+    const manager = new VideoSyncManager() as any;
+    const previousVideo = {
+      currentTime: 4.2,
+    } as HTMLVideoElement;
+    const nextVideo = {
+      currentTime: 0,
+    } as HTMLVideoElement;
+    const file = new File(['video'], 'reordered-large-jump.mp4', { type: 'video/mp4' });
+
+    manager.lastTrackState.set('track-v1', {
+      clipId: 'clip-prev',
+      fileId: 'media-1',
+      file,
+      videoElement: previousVideo,
+      outPoint: 1.4,
+    });
+
+    manager.computeHandoffs({
+      isPlaying: true,
+      isDraggingPlayhead: false,
+      clipsAtTime: [{
+        id: 'clip-next',
+        trackId: 'track-v1',
+        file,
+        inPoint: 6.8,
+        outPoint: 8.4,
+        source: {
+          mediaFileId: 'media-1',
+          videoElement: nextVideo,
+        },
+      }],
+    } as any);
+
+    expect(manager.getHandoffVideoElement('clip-next')).toBeNull();
   });
 });

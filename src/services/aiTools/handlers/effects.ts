@@ -1,6 +1,7 @@
 import { useTimelineStore } from '../../../stores/timeline';
 import { getAllEffects, getDefaultParams, hasEffect, getCategoriesWithEffects } from '../../../effects';
 import type { ToolResult } from '../types';
+import { selectClipAndOpenTab } from '../aiFeedback';
 
 type TimelineStore = ReturnType<typeof useTimelineStore.getState>;
 
@@ -48,6 +49,9 @@ export async function handleAddEffect(
   const { addClipEffect, updateClipEffect, invalidateCache } = useTimelineStore.getState();
   addClipEffect(clipId, effectType);
 
+  // Visual feedback: select clip and open effects tab
+  selectClipAndOpenTab(clipId, 'effects');
+
   // Find the newly added effect (last one on the clip)
   const updatedClip = useTimelineStore.getState().clips.find(c => c.id === clipId);
   const newEffect = updatedClip?.effects[updatedClip.effects.length - 1];
@@ -87,6 +91,9 @@ export async function handleRemoveEffect(
   removeClipEffect(clipId, effectId);
   invalidateCache();
 
+  // Visual feedback: select clip and open effects tab
+  selectClipAndOpenTab(clipId, 'effects');
+
   return {
     success: true,
     data: { clipId, removedEffectId: effectId, removedEffectType: effect.type },
@@ -110,6 +117,9 @@ export async function handleUpdateEffect(
   const { updateClipEffect, invalidateCache } = useTimelineStore.getState();
   updateClipEffect(clipId, effectId, params as Partial<Record<string, string | number | boolean>>);
   invalidateCache();
+
+  // Visual feedback: select clip and open effects tab
+  selectClipAndOpenTab(clipId, 'effects');
 
   return {
     success: true,

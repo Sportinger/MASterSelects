@@ -97,6 +97,40 @@ function OverlayElement({
         />
       );
 
+    case 'silent-zone': {
+      const zoneWidth = overlay.width
+        ? timeToPixel(overlay.timePosition + overlay.width) - timeToPixel(overlay.timePosition)
+        : 4;
+      return (
+        <div
+          className="ai-silent-zone"
+          style={{
+            left: timeToPixel(overlay.timePosition),
+            width: Math.max(zoneWidth, 4),
+            top: layout.top + 2,
+            height: layout.height - 4,
+          }}
+        />
+      );
+    }
+
+    case 'low-quality-zone': {
+      const lqWidth = overlay.width
+        ? timeToPixel(overlay.timePosition + overlay.width) - timeToPixel(overlay.timePosition)
+        : 4;
+      return (
+        <div
+          className="ai-low-quality-zone"
+          style={{
+            left: timeToPixel(overlay.timePosition),
+            width: Math.max(lqWidth, 4),
+            top: layout.top + 2,
+            height: layout.height - 4,
+          }}
+        />
+      );
+    }
+
     default:
       return null;
   }

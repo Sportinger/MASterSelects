@@ -76,4 +76,15 @@ describe('initWebCodecsPlayer', () => {
     await expect(playerPromise).resolves.toBeTruthy();
     expect(resolved).toBe(true);
   });
+
+  it('returns null when preview WebCodecs is disabled by flag', async () => {
+    flags.useFullWebCodecsPlayback = false;
+
+    const video = document.createElement('video');
+    const file = new File(['video'], 'html-only.mp4', { type: 'video/mp4' });
+    const player = await initWebCodecsPlayer(video, file.name, file);
+
+    expect(player).toBeNull();
+    expect(vi.mocked(WebCodecsPlayer)).not.toHaveBeenCalled();
+  });
 });

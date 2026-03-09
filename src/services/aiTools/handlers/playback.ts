@@ -1,6 +1,7 @@
 import { useTimelineStore } from '../../../stores/timeline';
 import { undo as historyUndo, redo as historyRedo } from '../../../stores/historyStore';
 import type { ToolResult } from '../types';
+import { flashPreviewCanvas, animateMarker } from '../aiFeedback';
 
 type TimelineStore = ReturnType<typeof useTimelineStore.getState>;
 
@@ -67,11 +68,13 @@ export async function handleSetClipSpeed(
 
 export async function handleUndo(): Promise<ToolResult> {
   historyUndo();
+  flashPreviewCanvas('undo');
   return { success: true, data: { action: 'undo' } };
 }
 
 export async function handleRedo(): Promise<ToolResult> {
   historyRedo();
+  flashPreviewCanvas('redo');
   return { success: true, data: { action: 'redo' } };
 }
 
@@ -84,6 +87,9 @@ export async function handleAddMarker(
   const color = args.color as string | undefined;
 
   const markerId = timelineStore.addMarker(time, label, color);
+
+  // Visual feedback: marker pop animation
+  animateMarker(markerId, 'add');
 
   return {
     success: true,
@@ -114,6 +120,10 @@ export async function handleRemoveMarker(
   timelineStore: TimelineStore
 ): Promise<ToolResult> {
   const markerId = args.markerId as string;
+
+  // Visual feedback: marker fade animation before removal
+  animateMarker(markerId, 'remove');
+
   timelineStore.removeMarker(markerId);
   return { success: true, data: { removedMarkerId: markerId } };
 }

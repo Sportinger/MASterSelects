@@ -89,6 +89,7 @@ export class WebCodecsPlayer implements ExportModePlayer {
   private seekTargetToleranceUs = 0;
   private pendingAdvanceSeekTargetIdx: number | null = null;
   private pendingSeekFeedEndIndex: number | null = null;
+  private pausedPrerollEndIndex: number | null = null;
   private trackedDecodeQueueSize = 0;
   private pendingSeekStartedAtMs: number | null = null;
   private pendingSeekKind: 'seek' | 'advance' | null = null;
@@ -556,7 +557,7 @@ export class WebCodecsPlayer implements ExportModePlayer {
         } else {
           // Paused/seeking: keep currentFrame stable during seek traversal.
           // Only publish frame when the seek target is reached.
-          if (this.seekTargetUs !== null) {
+          if (this.seekTargetUs !== null && this.pendingSeekKind !== null) {
             const diff = Math.abs(frame.timestamp - this.seekTargetUs);
             if (diff <= this.seekTargetToleranceUs) {
               if (this.currentFrame && this.currentFrame !== frame) {
@@ -583,6 +584,18 @@ export class WebCodecsPlayer implements ExportModePlayer {
               });
               frame.close();
             }
+          } else if (this.pausedPrerollEndIndex !== null) {
+            if (
+              this.currentFrameTimestampUs !== null &&
+              frame.timestamp <= this.currentFrameTimestampUs
+            ) {
+              frame.close();
+            } else {
+              this.frameBuffer.push(frame);
+              while (this.frameBuffer.length > WebCodecsPlayer.MAX_FRAME_BUFFER) {
+                this.frameBuffer.shift()!.close();
+              }
+            }
           } else {
             if (this.currentFrame && this.currentFrame !== frame) {
               this.currentFrame.close();
@@ -594,6 +607,9 @@ export class WebCodecsPlayer implements ExportModePlayer {
         }
         if (!this.exportMode.isInExportMode && !this._isPlaying && this.pendingSeekFeedEndIndex !== null) {
           this.feedPendingSeekSamples('seek');
+        }
+        if (!this.exportMode.isInExportMode && !this._isPlaying && this.pausedPrerollEndIndex !== null) {
+          this.feedPausedPrerollSamples();
         }
         // Resolve any pending frame wait
         if (this.frameResolve) {
@@ -631,6 +647,7 @@ export class WebCodecsPlayer implements ExportModePlayer {
   play(): void {
     if (this._isPlaying || !this.ready) return;
     this._isPlaying = true;
+    this.clearPausedPreroll();
 
     if (!this.useSimpleMode) {
       wcPipelineMonitor.record('play');
@@ -678,7 +695,14 @@ export class WebCodecsPlayer implements ExportModePlayer {
         cancelAnimationFrame(this.animationId);
         this.animationId = null;
       }
-      this.clearFrameBuffer();
+      const keepBufferedFutureFrames =
+        this.seekTargetUs === null &&
+        this.pendingAdvanceSeekTargetIdx === null &&
+        this.frameBuffer.length > 0;
+      this.clearPausedPreroll();
+      if (!keepBufferedFutureFrames) {
+        this.clearFrameBuffer();
+      }
       if (this.seekTargetUs !== null) {
         wcPipelineMonitor.record('seek_cancel', { reason: 'pause' });
         if (this.pendingSeekKind === 'seek') {
@@ -687,6 +711,7 @@ export class WebCodecsPlayer implements ExportModePlayer {
       }
       this.clearPendingSeekFeed();
       this.holdCurrentFrameDuringPause();
+      this.startPausedPreroll();
       this.clearAdvanceSeekState('cancelled');
     }
   }
@@ -708,6 +733,7 @@ export class WebCodecsPlayer implements ExportModePlayer {
     this.seekTargetUs = null;
     this.seekTargetToleranceUs = 0;
     this.clearPendingSeekFeed();
+    this.clearPausedPreroll();
     this.endPendingSeek('cleared');
     this.clearAdvanceSeekState('cleared');
     if (this.currentFrame) {
@@ -983,6 +1009,10 @@ export class WebCodecsPlayer implements ExportModePlayer {
     this.pendingSeekFeedEndIndex = null;
   }
 
+  private clearPausedPreroll(): void {
+    this.pausedPrerollEndIndex = null;
+  }
+
   private resetDecodeQueueTracking(): void {
     this.trackedDecodeQueueSize = 0;
   }
@@ -1078,6 +1108,71 @@ export class WebCodecsPlayer implements ExportModePlayer {
     if (this.pendingSeekFeedEndIndex !== null && this.feedIndex > this.pendingSeekFeedEndIndex) {
       this.pendingSeekFeedEndIndex = null;
     }
+  }
+
+  private feedPausedPrerollSamples(): void {
+    if (
+      !this.decoder ||
+      this.pausedPrerollEndIndex === null ||
+      this.samples.length === 0
+    ) {
+      return;
+    }
+
+    while (
+      this.feedIndex <= this.pausedPrerollEndIndex &&
+      this.getEffectiveDecodeQueueSize() < WebCodecsPlayer.FEED_QUEUE_TARGET
+    ) {
+      const sample = this.samples[this.feedIndex];
+      if (!sample) {
+        break;
+      }
+
+      const chunk = new EncodedVideoChunk({
+        type: sample.is_sync ? 'key' : 'delta',
+        timestamp: (sample.cts * 1_000_000) / sample.timescale,
+        duration: (sample.duration * 1_000_000) / sample.timescale,
+        data: sample.data,
+      });
+
+      try {
+        this.decoder.decode(chunk);
+        const queueSize = this.noteDecodeQueued();
+        wcPipelineMonitor.record('decode_feed', {
+          sampleIdx: this.feedIndex,
+          type: sample.is_sync ? 'key' : 'delta',
+          queueSize,
+          mode: 'pause_preroll',
+        });
+      } catch {
+        // Skip decode errors
+      }
+
+      this.feedIndex++;
+    }
+  }
+
+  private startPausedPreroll(): void {
+    if (
+      this.useSimpleMode ||
+      this._isPlaying ||
+      !this.decoder ||
+      this.decoder.state !== 'configured' ||
+      this.currentFrameTimestampUs === null ||
+      !this.videoTrack ||
+      this.samples.length === 0
+    ) {
+      return;
+    }
+
+    const currentFrameIdx = this.getCurrentFrameSampleIndex();
+    if (currentFrameIdx === null || currentFrameIdx >= this.samples.length - 1) {
+      return;
+    }
+
+    this.feedIndex = Math.max(this.feedIndex, currentFrameIdx + 1);
+    this.pausedPrerollEndIndex = Math.min(currentFrameIdx + 2, this.samples.length - 1);
+    this.feedPausedPrerollSamples();
   }
 
   private canReusePausedSeekPipeline(targetIndex: number): boolean {
@@ -1226,6 +1321,7 @@ export class WebCodecsPlayer implements ExportModePlayer {
     this.seekTargetUs = null;
     this.seekTargetToleranceUs = 0;
     this.clearPendingSeekFeed();
+    this.clearPausedPreroll();
 
     // Auto-enter playing state so decoder output routes to frame buffer
     if (startingPlayback) {
@@ -1507,6 +1603,16 @@ export class WebCodecsPlayer implements ExportModePlayer {
     return this.currentFrame !== null;
   }
 
+  hasBufferedFutureFrame(minFrameDelta = 0.5): boolean {
+    if (this.currentFrameTimestampUs === null || this.frameBuffer.length === 0) {
+      return false;
+    }
+
+    const frameDurationUs = 1_000_000 / Math.max(this.frameRate, 1);
+    const minFutureTimestampUs = this.currentFrameTimestampUs + frameDurationUs * minFrameDelta;
+    return this.frameBuffer.some((frame) => frame.timestamp >= minFutureTimestampUs);
+  }
+
   /** Debug info for stats overlay (null in simple mode) */
   getDebugInfo(): { codec: string; hwAccel: string; decodeQueueSize: number; samplesLoaded: number; sampleIndex: number } | null {
     if (this.useSimpleMode || !this.codecConfig) return null;
@@ -1552,6 +1658,7 @@ export class WebCodecsPlayer implements ExportModePlayer {
     this.seekTargetUs = (targetSample.cts * 1_000_000) / targetSample.timescale;
     this.seekTargetToleranceUs = this.computeSeekToleranceUs(targetIndex);
     this.clearAdvanceSeekState('replaced');
+    this.clearPausedPreroll();
     const canExtendPendingSeek = this.canExtendPendingPausedSeek(targetIndex);
     const canReusePipeline = canExtendPendingSeek || this.canReusePausedSeekPipeline(targetIndex);
     if (!canReusePipeline) {
@@ -1647,6 +1754,7 @@ export class WebCodecsPlayer implements ExportModePlayer {
     this.seekTargetToleranceUs = 0;
     this.endPendingSeek('replaced');
     this.clearPendingSeekFeed();
+    this.clearPausedPreroll();
     this.clearAdvanceSeekState('replaced');
 
     // Reset decoder and decode just the keyframe

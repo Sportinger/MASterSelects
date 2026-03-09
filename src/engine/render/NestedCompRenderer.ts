@@ -6,6 +6,7 @@ import type { EffectsPipeline } from '../../effects/EffectsPipeline';
 import type { TextureManager } from '../texture/TextureManager';
 import type { MaskTextureManager } from '../texture/MaskTextureManager';
 import type { ScrubbingCache } from '../texture/ScrubbingCache';
+import { flags } from '../featureFlags';
 import { MAX_NESTING_DEPTH } from '../../stores/timeline/constants';
 import { Logger } from '../../services/logger';
 import {
@@ -232,7 +233,7 @@ export class NestedCompRenderer {
     const nestedPongView = texturePair.pongView;
 
     // Collect layer data (including sub-nested compositions)
-    const nestedLayerData = this.collectNestedLayerData(nestedLayers, commandEncoder, sampler, depth);
+    const nestedLayerData = this.collectNestedLayerData(nestedLayers, commandEncoder, sampler, depth, skipEffects);
 
     // Handle empty composition
     if (nestedLayerData.length === 0) {
@@ -344,7 +345,8 @@ export class NestedCompRenderer {
     layers: Layer[],
     commandEncoder?: GPUCommandEncoder,
     sampler?: GPUSampler,
-    depth: number = 0
+    depth: number = 0,
+    skipEffects = false
   ): LayerRenderData[] {
     const result: LayerRenderData[] = [];
 
@@ -403,6 +405,49 @@ export class NestedCompRenderer {
           result.push({
             layer, isVideo: true, externalTexture: extTex, textureView: null,
             sourceWidth: frame.displayWidth, sourceHeight: frame.displayHeight,
+          });
+          continue;
+        }
+      }
+
+      const allowHtmlScrubPreview =
+        useTimelineStore.getState().isDraggingPlayhead &&
+        !!layer.source.videoElement;
+      const allowHtmlVideoPreview =
+        !!layer.source.videoElement &&
+        (!flags.useFullWebCodecsPlayback ||
+          ENABLE_VISUAL_HTML_VIDEO_FALLBACK ||
+          allowHtmlScrubPreview);
+
+      if (allowHtmlVideoPreview) {
+        const video = layer.source.videoElement!;
+        if (video.readyState >= 2) {
+          const extTex = this.textureManager.importVideoTexture(video);
+          if (extTex) {
+            if (this.scrubbingCache) {
+              const now = performance.now();
+              const lastCapture = this.scrubbingCache.getLastCaptureTime(video);
+              if (now - lastCapture > 50) {
+                this.scrubbingCache.captureVideoFrame(video);
+                this.scrubbingCache.setLastCaptureTime(video, now);
+              }
+            }
+            result.push({
+              layer, isVideo: true, externalTexture: extTex, textureView: null,
+              sourceWidth: video.videoWidth, sourceHeight: video.videoHeight,
+            });
+            continue;
+          } else {
+            log.warn('Failed to import video texture', { layerId: layer.id });
+          }
+        }
+
+        const lastFrame = this.scrubbingCache?.getLastFrame(video);
+        if (lastFrame) {
+          log.debug('Using cached frame fallback for nested video', { layerId: layer.id });
+          result.push({
+            layer, isVideo: false, externalTexture: null, textureView: lastFrame.view,
+            sourceWidth: lastFrame.width, sourceHeight: lastFrame.height,
           });
           continue;
         }
@@ -495,45 +540,6 @@ export class NestedCompRenderer {
           this.setCollectorState(layer.id, 'drop', {
             reason: 'no_frame',
           });
-        }
-      }
-
-      // HTMLVideo fallback is intentionally disabled for nested rendering too.
-      if (ENABLE_VISUAL_HTML_VIDEO_FALLBACK && layer.source.videoElement) {
-        const video = layer.source.videoElement;
-        if (video.readyState >= 2) {
-          const extTex = this.textureManager.importVideoTexture(video);
-          if (extTex) {
-            // Opportunistically keep scrubbing cache warm (throttled to ~20fps)
-            if (this.scrubbingCache) {
-              const now = performance.now();
-              const lastCapture = this.scrubbingCache.getLastCaptureTime(video);
-              if (now - lastCapture > 50) {
-                this.scrubbingCache.captureVideoFrame(video);
-                this.scrubbingCache.setLastCaptureTime(video, now);
-              }
-            }
-            result.push({
-              layer, isVideo: true, externalTexture: extTex, textureView: null,
-              sourceWidth: video.videoWidth, sourceHeight: video.videoHeight,
-            });
-            continue;
-          } else {
-            log.warn('Failed to import video texture', { layerId: layer.id });
-          }
-        } else {
-          // Expected during initial load - skip silently
-        }
-
-        // Fallback: use last cached frame when video not ready or import failed
-        const lastFrame = this.scrubbingCache?.getLastFrame(video);
-        if (lastFrame) {
-          log.debug('Using cached frame fallback for nested video', { layerId: layer.id });
-          result.push({
-            layer, isVideo: false, externalTexture: null, textureView: lastFrame.view,
-            sourceWidth: lastFrame.width, sourceHeight: lastFrame.height,
-          });
-          continue;
         }
       }
 

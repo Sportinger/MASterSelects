@@ -42,7 +42,7 @@ export type MaskEditMode = 'none' | 'drawing' | 'editing' | 'drawingRect' | 'dra
 export type TimelineToolMode = 'select' | 'cut';
 
 // AI action visual feedback types
-export type AIActionOverlayType = 'split-glow' | 'delete-ghost' | 'trim-highlight';
+export type AIActionOverlayType = 'split-glow' | 'delete-ghost' | 'trim-highlight' | 'silent-zone' | 'low-quality-zone';
 
 export interface AIActionOverlay {
   id: string;

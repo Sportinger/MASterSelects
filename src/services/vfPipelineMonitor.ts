@@ -15,6 +15,8 @@ export type VFPipelineEventType =
   | 'vf_seek_fast'       // fastSeek() during drag scrub
   | 'vf_seek_precise'    // currentTime = X (exact seek)
   | 'vf_seek_done'       // seeked event / RVFC callback
+  | 'vf_settle_seek'     // precise seek after scrub-stop (HTMLVideo)
+  | 'vf_wc_settle_seek'  // precise seek after scrub-stop (WebCodecs)
   | 'vf_drift'           // drift correction during playback
   // Audio
   | 'audio_drift'        // audio element drift from expected time

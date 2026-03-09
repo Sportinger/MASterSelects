@@ -4,6 +4,7 @@ import { useTimelineStore } from '../../../stores/timeline';
 import { engine } from '../../../engine/WebGPUEngine';
 import type { ToolResult } from '../types';
 import { captureFrameGrid } from '../utils';
+import { flashPreviewCanvas } from '../aiFeedback';
 
 type TimelineStore = ReturnType<typeof useTimelineStore.getState>;
 
@@ -19,6 +20,9 @@ export async function handleCaptureFrame(
     // Wait a frame for render to update
     await new Promise(resolve => setTimeout(resolve, 100));
   }
+
+  // Visual feedback: shutter flash on preview
+  flashPreviewCanvas('shutter');
 
   const pixels = await engine.readPixels();
   if (!pixels) {

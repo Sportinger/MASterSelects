@@ -4,6 +4,21 @@ Anweisungen für AI-Assistenten (Claude, GPT, etc.) bei der Arbeit an diesem Pro
 
 ---
 
+## 0. AI Debug Tools (kein Browser-Plugin nötig!)
+
+Die `/masterselects` Skill stellt 4 Debug-Tools bereit, die über den HTTP Bridge laufen (`POST http://localhost:5173/api/ai-tools`). Voraussetzung: Dev-Server läuft + App in Browser-Tab geöffnet.
+
+| Tool | Parameters | Beschreibung |
+|------|-----------|-------------|
+| `getStats` | _(none)_ | Engine-Snapshot: FPS, Timing, Decoder, Drops, Audio, GPU |
+| `getStatsHistory` | `samples?`, `intervalMs?` | N Snapshots über Zeit sammeln mit min/max/avg Summary |
+| `getLogs` | `limit?`, `level?`, `module?`, `search?` | Browser-Logs filtern nach Level (DEBUG/INFO/WARN/ERROR), Modul, Suchtext |
+| `getPlaybackTrace` | `windowMs?`, `limit?` | WebCodecs/VF Pipeline-Events + Health-State für Playback-Debugging |
+
+**Nutzung:** `/masterselects getLogs module=PlaybackHealth level=WARN` oder `/masterselects getPlaybackTrace windowMs=10000`
+
+---
+
 ## 1. Workflow (WICHTIG!)
 
 ### Branch-Regeln

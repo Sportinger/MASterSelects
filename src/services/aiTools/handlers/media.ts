@@ -4,6 +4,7 @@ import { useMediaStore } from '../../../stores/mediaStore';
 import { useTimelineStore } from '../../../stores/timeline';
 import type { ToolResult } from '../types';
 import { Logger } from '../../logger';
+import { activateDockPanel, flashPreviewCanvas } from '../aiFeedback';
 
 const log = Logger.create('AITool:Media');
 
@@ -232,6 +233,10 @@ export async function handleImportLocalFiles(
 ): Promise<ToolResult> {
   const paths = args.paths as string[];
   const addToTimeline = (args.addToTimeline as boolean) || false;
+
+  // Visual feedback: activate media panel during import
+  activateDockPanel('media');
+  flashPreviewCanvas('import');
 
   const results: Array<{ id: string; name: string; type: string; duration?: number; path: string }> = [];
   const errors: Array<{ path: string; error: string }> = [];

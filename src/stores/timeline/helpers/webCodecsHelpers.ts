@@ -63,6 +63,11 @@ export async function initWebCodecsPlayer(
     return null;
   }
 
+  if (!flags.useFullWebCodecsPlayback) {
+    log.info('WebCodecs preview disabled by flag', { file: fileName });
+    return null;
+  }
+
   const useFullMode = flags.useFullWebCodecsPlayback && !!file;
 
   try {

@@ -8,6 +8,7 @@ import { createFrameContext, getClipTimeInfo, getMediaFileForClip } from './Fram
 import { playheadState } from './PlayheadState';
 import { layerPlaybackManager } from '../layerPlaybackManager';
 import { engine } from '../../engine/WebGPUEngine';
+import { flags } from '../../engine/featureFlags';
 import { useTimelineStore } from '../../stores/timeline';
 import { MAX_NESTING_DEPTH } from '../../stores/timeline/constants';
 import {
@@ -35,6 +36,9 @@ export class VideoSyncManager {
 
   // Track per-clip playing state to detect playing→paused transitions
   private clipWasPlaying = new Set<string>();
+
+  // Track per-clip dragging state to detect scrub-stop transitions
+  private clipWasDragging = new Set<string>();
 
   // Videos currently being warmed up (brief play to activate GPU surface)
   // After page reload, video GPU surfaces are empty — all sync rendering APIs
@@ -86,6 +90,7 @@ export class VideoSyncManager {
     this.handoffElements.clear();
     this.lastSeekRef = {};
     this.clipWasPlaying.clear();
+    this.clipWasDragging.clear();
     this.forceDecodeInProgress.clear();
     this.rvfcHandles = {};
     this.latestSeekTargets = {};
@@ -362,6 +367,7 @@ export class VideoSyncManager {
         currentTime: number;
         getPendingSeekTime?: () => number | null | undefined;
         hasFrame?: () => boolean;
+        hasBufferedFutureFrame?: (minFrameDelta?: number) => boolean;
         getCurrentFrame?: () => unknown;
         isAdvanceSeekPending?: () => boolean;
       }
@@ -384,7 +390,10 @@ export class VideoSyncManager {
     }
 
     const effectiveTime = provider.getPendingSeekTime?.() ?? provider.currentTime;
-    return Math.abs(effectiveTime - targetTime) <= 0.05;
+    return (
+      Math.abs(effectiveTime - targetTime) <= 0.05 &&
+      (provider.hasBufferedFutureFrame?.(0.5) ?? true)
+    );
   }
 
   private syncPausedWebCodecsProvider(
@@ -485,9 +494,9 @@ export class VideoSyncManager {
         continue;
       }
 
-      // Continuous cut: clip's inPoint matches previous clip's outPoint
       const inOutGap = Math.abs(clip.inPoint - prev.outPoint);
-      if (inOutGap > 0.1) {
+      const isContinuousCut = inOutGap <= 0.1;
+      if (!isContinuousCut) {
         log.debug('Handoff SKIP: non-continuous cut', {
           track: clip.trackId,
           inPoint: clip.inPoint.toFixed(3),
@@ -497,8 +506,8 @@ export class VideoSyncManager {
         continue;
       }
 
-      // Previous element should be near the clip's inPoint (playing through)
       const elemDrift = Math.abs(prev.videoElement.currentTime - clip.inPoint);
+      // Continuous cut: previous element should already be near the new inPoint
       if (elemDrift > 0.5) {
         log.debug('Handoff SKIP: element too far from inPoint', {
           track: clip.trackId,
@@ -751,6 +760,63 @@ export class VideoSyncManager {
       });
   }
 
+  private startTargetedWarmup(
+    clipId: string,
+    video: HTMLVideoElement,
+    targetTime: number,
+    options?: { proactive?: boolean; requestRender?: boolean }
+  ): void {
+    const safeTargetTime = this.safeSeekTime(video, targetTime);
+    const proactive = options?.proactive === true;
+    const shouldRequestRender = options?.requestRender !== false;
+
+    this.warmingUpVideos.add(video);
+    video.muted = true;
+
+    if (video.preload !== 'auto') {
+      video.preload = 'auto';
+    }
+
+    try {
+      if (Math.abs(video.currentTime - safeTargetTime) > 0.01) {
+        video.currentTime = safeTargetTime;
+      }
+    } catch {
+      // Ignore if metadata is not fully ready for seeking yet.
+    }
+
+    const finishWarmup = (fallback = false) => {
+      engine.ensureVideoFrameCached(video);
+      video.pause();
+      this.warmingUpVideos.delete(video);
+      this.gpuWarmedUp.add(video);
+      vfPipelineMonitor.record('vf_gpu_ready', {
+        clipId,
+        ...(proactive ? { proactive: 'true' } : {}),
+        ...(fallback ? { fallback: 'true' } : {}),
+      });
+      if (shouldRequestRender) {
+        engine.requestRender();
+      }
+    };
+
+    video.play().then(() => {
+      const rvfc = (video as any).requestVideoFrameCallback;
+      if (typeof rvfc === 'function') {
+        rvfc.call(video, () => {
+          finishWarmup(false);
+        });
+      } else {
+        setTimeout(() => {
+          finishWarmup(true);
+        }, 100);
+      }
+    }).catch(() => {
+      this.warmingUpVideos.delete(video);
+      this.warmupRetryCooldown.set(video, performance.now());
+    });
+  }
+
   /**
    * Sync a single clip's video element
    */
@@ -763,8 +829,12 @@ export class VideoSyncManager {
 
     // Full-mode WebCodecs normally owns preview sync, but active drag-scrub can
     // temporarily use HTML video seeking for better responsiveness.
-    if (clip.source?.webCodecsPlayer?.isFullMode() &&
-        !(ctx.isDraggingPlayhead && clip.source.videoElement)) {
+    const useFullWebCodecsPreview =
+      flags.useFullWebCodecsPlayback &&
+      clip.source?.webCodecsPlayer?.isFullMode();
+
+    if (useFullWebCodecsPreview &&
+        !(ctx.isDraggingPlayhead && clip.source?.videoElement)) {
       this.syncFullWebCodecs(clip, ctx);
       return;
     }
@@ -801,37 +871,14 @@ export class VideoSyncManager {
     const cooldownOk = !warmupCooldown || performance.now() - warmupCooldown > 2000;
     if (!ctx.isPlaying && !video.seeking && hasSrc && cooldownOk &&
         video.played.length === 0 && !this.warmingUpVideos.has(video)) {
-      this.warmingUpVideos.add(video);
       vfPipelineMonitor.record('vf_gpu_cold', { clipId: clip.id });
-      const targetTime = timeInfo.clipTime;
-      video.play().then(() => {
-        // Wait for actual frame presentation via requestVideoFrameCallback
-        const rvfc = (video as any).requestVideoFrameCallback;
-        if (typeof rvfc === 'function') {
-          rvfc.call(video, () => {
-            // Frame is now presented to GPU — capture it
-            engine.ensureVideoFrameCached(video);
-            video.pause();
-            video.currentTime = this.safeSeekTime(video, targetTime);
-            this.warmingUpVideos.delete(video);
-            vfPipelineMonitor.record('vf_gpu_ready', { clipId: clip.id });
-            engine.requestRender();
-          });
-        } else {
-          // Fallback: wait 100ms for frame presentation
-          setTimeout(() => {
-            engine.ensureVideoFrameCached(video);
-            video.pause();
-            video.currentTime = this.safeSeekTime(video, targetTime);
-            this.warmingUpVideos.delete(video);
-            vfPipelineMonitor.record('vf_gpu_ready', { clipId: clip.id, fallback: 'true' });
-            engine.requestRender();
-          }, 100);
-        }
-      }).catch(() => {
-        this.warmingUpVideos.delete(video);
-        this.warmupRetryCooldown.set(video, performance.now());
+      this.startTargetedWarmup(clip.id, video, timeInfo.clipTime, {
+        proactive: false,
+        requestRender: true,
       });
+      if (false) {
+            // Frame is now presented to GPU — capture it
+        }
       return; // Skip normal sync — warmup is handling video state
     }
 
@@ -860,6 +907,20 @@ export class VideoSyncManager {
     if (isReversePlayback) {
       // For reverse: pause video and seek to each frame
       if (!video.paused) video.pause();
+      if (ctx.isDraggingPlayhead) {
+        this.clipWasDragging.add(clip.id);
+      } else if (this.clipWasDragging.has(clip.id)) {
+        // Settle-seek on scrub stop for reverse playback
+        this.clipWasDragging.delete(clip.id);
+        clearTimeout(this.preciseSeekTimers[clip.id]);
+        delete this.preciseSeekTimers[clip.id];
+        if (timeDiff > 0.001) {
+          video.currentTime = this.safeSeekTime(video, timeInfo.clipTime);
+          this.registerRVFC(clip.id, video);
+          video.addEventListener('seeked', () => engine.requestNewFrameRender(), { once: true });
+        }
+        return;
+      }
       const seekThreshold = ctx.isDraggingPlayhead ? 0.04 : 0.02;
       if (timeDiff > seekThreshold) {
         this.throttledSeek(clip.id, video, timeInfo.clipTime, ctx);
@@ -868,6 +929,19 @@ export class VideoSyncManager {
       // Non-standard forward transport speed (2x, 4x, etc.): seek frame-by-frame
       if (!video.paused) video.pause();
       this.clipWasPlaying.delete(clip.id);
+      if (ctx.isDraggingPlayhead) {
+        this.clipWasDragging.add(clip.id);
+      } else if (this.clipWasDragging.has(clip.id)) {
+        this.clipWasDragging.delete(clip.id);
+        clearTimeout(this.preciseSeekTimers[clip.id]);
+        delete this.preciseSeekTimers[clip.id];
+        if (timeDiff > 0.001) {
+          video.currentTime = this.safeSeekTime(video, timeInfo.clipTime);
+          this.registerRVFC(clip.id, video);
+          video.addEventListener('seeked', () => engine.requestNewFrameRender(), { once: true });
+        }
+        return;
+      }
       const seekThreshold = ctx.isDraggingPlayhead ? 0.04 : 0.03;
       if (timeDiff > seekThreshold) {
         this.throttledSeek(clip.id, video, timeInfo.clipTime, ctx);
@@ -956,11 +1030,42 @@ export class VideoSyncManager {
           video.pause();
         }
 
-        // 0.04s ≈ slightly more than 1 frame at 30fps.
-        // Previous 0.1s threshold skipped up to 3 frames during slow scrubbing.
-        const seekThreshold = ctx.isDraggingPlayhead ? 0.04 : 0.04;
-        if (timeDiff > seekThreshold) {
-          this.throttledSeek(clip.id, video, timeInfo.clipTime, ctx);
+        // Detect scrub-stop transition: user just released the playhead.
+        // Force a precise seek to the exact position + RVFC so the correct
+        // frame is displayed once the seek completes.
+        const justStoppedDragging = this.clipWasDragging.has(clip.id) && !ctx.isDraggingPlayhead;
+        if (justStoppedDragging) {
+          this.clipWasDragging.delete(clip.id);
+          // Cancel any pending deferred precise seek from the drag phase
+          clearTimeout(this.preciseSeekTimers[clip.id]);
+          delete this.preciseSeekTimers[clip.id];
+          // Always do a precise seek to the exact playhead position,
+          // bypassing throttle — this is the definitive "settle" seek.
+          if (timeDiff > 0.001) {
+            video.currentTime = this.safeSeekTime(video, timeInfo.clipTime);
+            vfPipelineMonitor.record('vf_settle_seek', {
+              clipId: clip.id,
+              target: Math.round(timeInfo.clipTime * 1000) / 1000,
+            });
+            this.registerRVFC(clip.id, video);
+          }
+          // Also register a seeked listener as fallback — RVFC may not fire
+          // if the video frame doesn't change (same keyframe).
+          video.addEventListener('seeked', () => {
+            engine.requestNewFrameRender();
+          }, { once: true });
+        } else {
+          // 0.04s ≈ slightly more than 1 frame at 30fps.
+          // Previous 0.1s threshold skipped up to 3 frames during slow scrubbing.
+          const seekThreshold = ctx.isDraggingPlayhead ? 0.04 : 0.04;
+          if (timeDiff > seekThreshold) {
+            this.throttledSeek(clip.id, video, timeInfo.clipTime, ctx);
+          }
+        }
+
+        // Track dragging state for next frame
+        if (ctx.isDraggingPlayhead) {
+          this.clipWasDragging.add(clip.id);
         }
 
         // Force decode if readyState dropped after seek
@@ -1084,7 +1189,9 @@ export class VideoSyncManager {
       // Is this clip about to become active? (starts within lookahead window, not yet active)
       if (clipStart <= ctx.playheadPosition || clipStart > lookaheadEnd) continue;
 
-      this.prewarmUpcomingWebCodecsClip(ctx, clip, clipTime);
+      if (flags.useFullWebCodecsPlayback) {
+        this.prewarmUpcomingWebCodecsClip(ctx, clip, clipTime);
+      }
 
       if (!clip.source?.videoElement) continue;
 
@@ -1100,34 +1207,9 @@ export class VideoSyncManager {
       const warmupCooldown = this.warmupRetryCooldown.get(video);
       if (warmupCooldown && performance.now() - warmupCooldown < 2000) continue;
 
-      // Start proactive warmup: briefly play to activate GPU surface
-      this.warmingUpVideos.add(video);
-
-      video.muted = true; // Prevent audio blip during warmup
-      video.play().then(() => {
-        const rvfc = (video as any).requestVideoFrameCallback;
-        if (typeof rvfc === 'function') {
-          rvfc.call(video, () => {
-            engine.ensureVideoFrameCached(video);
-            video.pause();
-            video.currentTime = this.safeSeekTime(video, clipTime);
-            this.warmingUpVideos.delete(video);
-            this.gpuWarmedUp.add(video);
-            vfPipelineMonitor.record('vf_gpu_ready', { clipId: clip.id, proactive: 'true' });
-          });
-        } else {
-          setTimeout(() => {
-            engine.ensureVideoFrameCached(video);
-            video.pause();
-            video.currentTime = this.safeSeekTime(video, clipTime);
-            this.warmingUpVideos.delete(video);
-            this.gpuWarmedUp.add(video);
-            vfPipelineMonitor.record('vf_gpu_ready', { clipId: clip.id, proactive: 'true', fallback: 'true' });
-          }, 50);
-        }
-      }).catch(() => {
-        this.warmingUpVideos.delete(video);
-        this.warmupRetryCooldown.set(video, performance.now());
+      this.startTargetedWarmup(clip.id, video, clipTime, {
+        proactive: true,
+        requestRender: false,
       });
     }
   }
@@ -1154,6 +1236,10 @@ export class VideoSyncManager {
 
       // Skip videos already warmed up or warming up (handled by warmupUpcomingClips)
       if (this.gpuWarmedUp.has(video) || this.warmingUpVideos.has(video)) continue;
+
+      if (video.preload !== 'auto') {
+        video.preload = 'auto';
+      }
 
       // Pre-seek the video element to inPoint so audio data is buffered
       if (Math.abs(video.currentTime - targetTime) > 0.5) {
@@ -1277,13 +1363,37 @@ export class VideoSyncManager {
         }
       }
     } else {
-      updateRuntimePlaybackTime(scrubRuntimeSource, timeInfo.clipTime);
-      void ensureRuntimeFrameProvider(scrubRuntimeSource, 'interactive', timeInfo.clipTime);
-      const scrubProvider = getRuntimeFrameProvider(scrubRuntimeSource);
-      const dedicatedScrubProvider = scrubProvider?.isFullMode() ? scrubProvider : null;
+      // Detect scrub-stop transition for WebCodecs path
+      const justStoppedDraggingWc = this.clipWasDragging.has(clip.id) && !ctx.isDraggingPlayhead;
+      if (ctx.isDraggingPlayhead) {
+        this.clipWasDragging.add(clip.id);
+      } else if (justStoppedDraggingWc) {
+        this.clipWasDragging.delete(clip.id);
+        // Cancel pending deferred precise seeks from drag phase
+        clearTimeout(this.wcPreciseSeekTimers[`${clip.id}:scrub`]);
+        delete this.wcPreciseSeekTimers[`${clip.id}:scrub`];
+        clearTimeout(this.wcPreciseSeekTimers[`${clip.id}:fallback`]);
+        delete this.wcPreciseSeekTimers[`${clip.id}:fallback`];
+      }
+
+      const useDedicatedScrubProvider = ctx.isDraggingPlayhead;
+      const pausedRuntimeSource = useDedicatedScrubProvider
+        ? scrubRuntimeSource
+        : playbackRuntimeSource;
+
+      updateRuntimePlaybackTime(pausedRuntimeSource, timeInfo.clipTime);
+      if (useDedicatedScrubProvider) {
+        void ensureRuntimeFrameProvider(scrubRuntimeSource, 'interactive', timeInfo.clipTime);
+      }
+
+      const pausedRuntimeProvider = getRuntimeFrameProvider(pausedRuntimeSource);
+      const dedicatedScrubProvider =
+        useDedicatedScrubProvider && pausedRuntimeProvider?.isFullMode()
+          ? pausedRuntimeProvider
+          : null;
       const pausedProvider = this.getPausedWebCodecsProvider(
         clip.source,
-        scrubProvider,
+        dedicatedScrubProvider,
         timeInfo.clipTime
       );
       const fallbackProvider =
@@ -1303,6 +1413,20 @@ export class VideoSyncManager {
 
       if (!pausedProvider?.isFullMode()) {
         return;
+      }
+
+      // On scrub-stop: force a precise seek on the playback provider
+      // to ensure the exact frame is decoded (not a cached keyframe from fastSeek)
+      if (justStoppedDraggingWc) {
+        const wcTimeDiff = Math.abs(pausedProvider.currentTime - timeInfo.clipTime);
+        if (wcTimeDiff > 0.001) {
+          pausedProvider.seek(timeInfo.clipTime);
+          engine.requestRender();
+          vfPipelineMonitor.record('vf_wc_settle_seek', {
+            clipId: clip.id,
+            target: Math.round(timeInfo.clipTime * 1000) / 1000,
+          });
+        }
       }
 
       // Determine if a new seek is needed.

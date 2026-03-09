@@ -3,9 +3,9 @@
 // Toggle at runtime via: window.__ENGINE_FLAGS__
 
 export const flags = {
-  useRenderGraph: false,  // Render Graph executor (stubs — not ready)
+  useRenderGraph: false,  // Render Graph executor (stubs - not ready)
   useDecoderPool: false,  // Shared decoder pool (not wired yet)
-  useFullWebCodecsPlayback: true,   // Full WebCodecs for playback — render-loop-driven via advanceToTime()
+  useFullWebCodecsPlayback: false,  // Preview runs HTML-only for now; export WebCodecs stays separate
 };
 
 // Expose for runtime toggling from devtools

@@ -103,8 +103,12 @@ export class RenderLoop {
         return;
       }
 
-      // Frame rate limiting for video
-      if (this.hasActiveVideo) {
+      // Frame rate limiting: during playback always limit to ~60fps even when
+      // the current frame comes from the scrubbing cache (isVideo=false).
+      // Without this, a 30fps video on a 120Hz display causes hasActiveVideo
+      // to oscillate (75% cache-hits → false), disabling the limiter and
+      // rendering at 120fps — double the GPU work for zero visual benefit.
+      if (this.hasActiveVideo || this.isPlaying) {
         const timeSinceLastRender = timestamp - this.lastRenderTime;
         if (this.isPlaying) {
           // Playback: ~60fps target
@@ -287,10 +291,17 @@ export class RenderLoop {
   }
 
   setIsScrubbing(scrubbing: boolean): void {
+    const wasScrubbing = this.isScrubbing;
     this.isScrubbing = scrubbing;
     if (scrubbing) {
       // Reset render time so first scrub frame renders immediately
       this.lastRenderTime = 0;
+    }
+    // Scrub stopped: ensure at least one more render cycle runs
+    // so the settle-seek in VideoSyncManager can fire and the
+    // correct frame is displayed after the seek completes.
+    if (wasScrubbing && !scrubbing) {
+      this.requestRender();
     }
   }
 }

@@ -2,6 +2,7 @@
 
 import type { ClipboardActions, SliceCreator, ClipboardClipData, ClipboardKeyframeData, Keyframe } from './types';
 import type { TimelineClip, EasingType } from '../../types';
+import { flags } from '../../engine/featureFlags';
 import { Logger } from '../../services/logger';
 import { captureSnapshot } from '../historyStore';
 
@@ -338,7 +339,7 @@ export const createClipboardSlice: SliceCreator<ClipboardActions> = (set, get) =
 
             // Try to initialize WebCodecsPlayer
             const hasWebCodecs = 'VideoDecoder' in window && 'VideoFrame' in window;
-            if (hasWebCodecs) {
+            if (hasWebCodecs && flags.useFullWebCodecsPlayback) {
               try {
                 const { WebCodecsPlayer } = await import('../../engine/WebCodecsPlayer');
                 const webCodecsPlayer = new WebCodecsPlayer({

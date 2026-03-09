@@ -29,6 +29,7 @@ vi.mock('../../src/services/wcPipelineMonitor', () => ({
 }));
 
 import { LayerCollector } from '../../src/engine/render/LayerCollector';
+import { flags } from '../../src/engine/featureFlags';
 import { useTimelineStore } from '../../src/stores/timeline';
 
 describe('LayerCollector', () => {
@@ -36,6 +37,7 @@ describe('LayerCollector', () => {
     hoisted.getRuntimeFrameProvider.mockReset();
     hoisted.readRuntimeFrameForSource.mockReset();
     hoisted.wcRecord.mockReset();
+    flags.useFullWebCodecsPlayback = true;
     useTimelineStore.setState({ isDraggingPlayhead: false });
   });
 
@@ -386,5 +388,152 @@ describe('LayerCollector', () => {
 
     expect(result).toHaveLength(1);
     expect(provider.getCurrentFrame).toHaveBeenCalledTimes(1);
+  });
+
+  it('prefers HTML video preview when full WebCodecs playback is disabled', () => {
+    flags.useFullWebCodecsPlayback = false;
+
+    const video = {
+      src: 'blob:test-video',
+      currentTime: 1.25,
+      readyState: 4,
+      seeking: false,
+      paused: false,
+      videoWidth: 1920,
+      videoHeight: 1080,
+    } as any;
+
+    const webCodecsPlayer = {
+      isFullMode: () => true,
+      getCurrentFrame: vi.fn(() => ({
+        timestamp: 1_250_000,
+        displayWidth: 1920,
+        displayHeight: 1080,
+      })),
+    };
+
+    hoisted.getRuntimeFrameProvider.mockReturnValue(null);
+    hoisted.readRuntimeFrameForSource.mockReturnValue(null);
+
+    const textureManager = {
+      importVideoTexture: vi.fn(() => ({ label: 'html-video-texture' })),
+    };
+
+    const collector = new LayerCollector();
+    const result = collector.collect([{
+      id: 'layer-html',
+      name: 'Video',
+      visible: true,
+      opacity: 1,
+      blendMode: 'normal',
+      effects: [],
+      position: { x: 0, y: 0, z: 0 },
+      scale: { x: 1, y: 1 },
+      rotation: 0,
+      source: {
+        type: 'video',
+        videoElement: video,
+        webCodecsPlayer,
+      },
+    } as any], {
+      textureManager: textureManager as any,
+      scrubbingCache: null,
+      getLastVideoTime: () => undefined,
+      setLastVideoTime: () => {},
+      isExporting: false,
+      isPlaying: true,
+    });
+
+    expect(result).toHaveLength(1);
+    expect(textureManager.importVideoTexture).toHaveBeenCalledWith(video);
+    expect(webCodecsPlayer.getCurrentFrame).not.toHaveBeenCalled();
+    expect(collector.getDecoder()).toBe('HTMLVideo');
+  });
+
+  it('tracks paused HTML preview time per video element instead of per shared src', () => {
+    flags.useFullWebCodecsPlayback = false;
+
+    const sharedSrc = 'blob:shared-video';
+    const firstVideo = {
+      src: sharedSrc,
+      currentTime: 1.25,
+      readyState: 4,
+      seeking: false,
+      paused: false,
+      videoWidth: 1920,
+      videoHeight: 1080,
+    } as any;
+    const secondVideo = {
+      src: sharedSrc,
+      currentTime: 1.25,
+      readyState: 4,
+      seeking: false,
+      paused: false,
+      videoWidth: 1920,
+      videoHeight: 1080,
+    } as any;
+
+    const textureManager = {
+      importVideoTexture: vi.fn((video: HTMLVideoElement) => ({ label: `tex-${video === firstVideo ? 'first' : 'second'}` })),
+    };
+    const staleSecondFrame = { view: { label: 'stale-second-frame' }, width: 1920, height: 1080 };
+    const scrubbingCache = {
+      getLastFrame: vi.fn((video: HTMLVideoElement) => video === secondVideo ? staleSecondFrame : null),
+      getCachedFrame: vi.fn(() => null),
+      getLastCaptureTime: vi.fn(() => 0),
+      captureVideoFrame: vi.fn(),
+      setLastCaptureTime: vi.fn(),
+      cacheFrameAtTime: vi.fn(),
+    };
+    const lastVideoTimes = new Map<string, number>();
+    const deps = {
+      textureManager: textureManager as any,
+      scrubbingCache: scrubbingCache as any,
+      getLastVideoTime: (key: string) => lastVideoTimes.get(key),
+      setLastVideoTime: (key: string, time: number) => {
+        lastVideoTimes.set(key, time);
+      },
+      isExporting: false,
+      isPlaying: false,
+    };
+
+    const collector = new LayerCollector();
+
+    collector.collect([{
+      id: 'layer-first',
+      name: 'Video',
+      visible: true,
+      opacity: 1,
+      blendMode: 'normal',
+      effects: [],
+      position: { x: 0, y: 0, z: 0 },
+      scale: { x: 1, y: 1 },
+      rotation: 0,
+      source: {
+        type: 'video',
+        videoElement: firstVideo,
+      },
+    } as any], deps);
+
+    const result = collector.collect([{
+      id: 'layer-second',
+      name: 'Video',
+      visible: true,
+      opacity: 1,
+      blendMode: 'normal',
+      effects: [],
+      position: { x: 0, y: 0, z: 0 },
+      scale: { x: 1, y: 1 },
+      rotation: 0,
+      source: {
+        type: 'video',
+        videoElement: secondVideo,
+      },
+    } as any], deps);
+
+    expect(result).toHaveLength(1);
+    expect(textureManager.importVideoTexture).toHaveBeenCalledTimes(2);
+    expect(textureManager.importVideoTexture).toHaveBeenLastCalledWith(secondVideo);
+    expect(result[0]?.externalTexture).toEqual({ label: 'tex-second' });
   });
 });

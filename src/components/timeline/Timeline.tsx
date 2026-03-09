@@ -361,6 +361,29 @@ export function Timeline() {
     addMarker,
   });
 
+  // AI marker animation feedback (add/remove)
+  const [aiAnimatedMarkers, setAiAnimatedMarkers] = useState<Map<string, 'add' | 'remove'>>(new Map());
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { markerId, action } = (e as CustomEvent).detail;
+      setAiAnimatedMarkers(prev => {
+        const next = new Map(prev);
+        next.set(markerId, action);
+        return next;
+      });
+      // Auto-remove animation class
+      setTimeout(() => {
+        setAiAnimatedMarkers(prev => {
+          const next = new Map(prev);
+          next.delete(markerId);
+          return next;
+        });
+      }, action === 'add' ? 400 : 300);
+    };
+    window.addEventListener('ai-marker-feedback', handler);
+    return () => window.removeEventListener('ai-marker-feedback', handler);
+  }, []);
+
   // Marquee selection - extracted to hook
   const { marquee, handleMarqueeMouseDown } = useMarqueeSelection({
     trackLanesRef,
@@ -1202,7 +1225,7 @@ export function Timeline() {
           {markers.map(marker => (
             <div
               key={marker.id}
-              className={`timeline-marker ${timelineMarkerDrag?.markerId === marker.id ? 'dragging' : ''}`}
+              className={`timeline-marker ${timelineMarkerDrag?.markerId === marker.id ? 'dragging' : ''} ${aiAnimatedMarkers.get(marker.id) === 'add' ? 'ai-marker-added' : aiAnimatedMarkers.get(marker.id) === 'remove' ? 'ai-marker-removed' : ''}`}
               style={{
                 left: timeToPixel(marker.time) - scrollX + 150,
                 '--marker-color': marker.color,

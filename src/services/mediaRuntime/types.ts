@@ -52,6 +52,7 @@ export interface RuntimeFrameProvider {
   isSeeking?(): boolean;
   isDecodePending?(): boolean;
   hasFrame?(): boolean;
+  hasBufferedFutureFrame?(minFrameDelta?: number): boolean;
   getDebugInfo?(): {
     codec: string;
     hwAccel: string;

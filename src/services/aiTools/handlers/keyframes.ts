@@ -1,6 +1,7 @@
 import { useTimelineStore } from '../../../stores/timeline';
 import type { ToolResult } from '../types';
 import type { AnimatableProperty, EasingType } from '../../../types';
+import { animateKeyframe } from '../aiFeedback';
 
 type TimelineStore = ReturnType<typeof useTimelineStore.getState>;
 
@@ -52,6 +53,9 @@ export async function handleAddKeyframe(
   addKeyframe(clipId, property, value, time, easing);
   invalidateCache();
 
+  // Visual feedback: keyframe pop animation
+  animateKeyframe(clipId, 'add');
+
   // Find the newly added keyframe
   const keyframes = useTimelineStore.getState().getClipKeyframes(clipId);
   const newKf = keyframes[keyframes.length - 1];
@@ -77,6 +81,9 @@ export async function handleRemoveKeyframe(
   const { removeKeyframe, invalidateCache } = useTimelineStore.getState();
   removeKeyframe(keyframeId);
   invalidateCache();
+
+  // Visual feedback: keyframe remove animation
+  animateKeyframe('', 'remove');
 
   return {
     success: true,

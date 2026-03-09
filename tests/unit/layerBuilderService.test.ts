@@ -247,4 +247,73 @@ describe('LayerBuilderService paused visual provider selection', () => {
     expect(layers[0]?.source?.webCodecsPlayer).toBeUndefined();
     expect(layers[0]?.source?.runtimeSessionKey).toBeUndefined();
   });
+
+  it('keeps paused timeline preview on the playback runtime when not actively dragging', () => {
+    const service = new LayerBuilderService();
+    const clipPlayer = {
+      isFullMode: () => true,
+      isSimpleMode: () => false,
+      hasFrame: () => true,
+      getCurrentFrame: () => ({ timestamp: 1_250_000 }),
+      getPendingSeekTime: () => null,
+      getDebugInfo: () => null,
+      currentTime: 1.25,
+      isPlaying: false,
+      pause: () => {},
+      seek: () => {},
+    };
+
+    useMediaStore.setState({
+      activeCompositionId: null,
+      activeLayerSlots: {},
+      layerOpacities: {},
+      files: [],
+      compositions: [],
+      proxyEnabled: false,
+    } as any);
+
+    useTimelineStore.setState({
+      tracks: [
+        {
+          id: 'track-v1',
+          name: 'Video 1',
+          type: 'video',
+          visible: true,
+          muted: false,
+          solo: false,
+        },
+      ],
+      clips: [
+        {
+          id: 'clip-1',
+          trackId: 'track-v1',
+          name: 'clip.mp4',
+          startTime: 0,
+          duration: 10,
+          inPoint: 0,
+          outPoint: 10,
+          effects: [],
+          transform: { ...DEFAULT_TRANSFORM },
+          source: {
+            type: 'video',
+            naturalDuration: 10,
+            runtimeSourceId: 'media:clip-1',
+            runtimeSessionKey: 'interactive:clip-1',
+            webCodecsPlayer: clipPlayer,
+          },
+          isLoading: false,
+        },
+      ],
+      playheadPosition: 1.25,
+      isPlaying: false,
+      isDraggingPlayhead: false,
+      playbackSpeed: 1,
+    } as any);
+
+    const layers = service.buildLayersFromStore();
+
+    expect(layers).toHaveLength(1);
+    expect(layers[0]?.source?.webCodecsPlayer).toBe(clipPlayer);
+    expect(layers[0]?.source?.runtimeSessionKey).toBe('interactive-track:track-v1:media:clip-1');
+  });
 });

@@ -185,6 +185,45 @@ describe('WebCodecsPlayer advance playback', () => {
     expect(player.pendingSeekFeedEndIndex).toBeNull();
   });
 
+  it('keeps buffered future frames hot when pausing playback', async () => {
+    const { player, decoder } = await makePlayerHarness();
+    const futureFrameA = { timestamp: 2_033_333, close: vi.fn() };
+    const futureFrameB = { timestamp: 2_066_667, close: vi.fn() };
+
+    player._isPlaying = true;
+    player.sampleIndex = 60;
+    player.feedIndex = 63;
+    player.currentFrame = { timestamp: 2_000_000, close: vi.fn() };
+    player.currentFrameTimestampUs = 2_000_000;
+    player.frameBuffer = [futureFrameA, futureFrameB];
+    player.decoder.state = 'configured';
+
+    player.pause();
+
+    expect(player.frameBuffer).toEqual([futureFrameA, futureFrameB]);
+    expect(futureFrameA.close).not.toHaveBeenCalled();
+    expect(futureFrameB.close).not.toHaveBeenCalled();
+    expect(decoder.decode).not.toHaveBeenCalled();
+    expect(player.hasBufferedFutureFrame()).toBe(true);
+  });
+
+  it('pre-rolls a couple of future frames when pausing without a hot future buffer', async () => {
+    const { player, decoder } = await makePlayerHarness();
+
+    player._isPlaying = true;
+    player.sampleIndex = 60;
+    player.feedIndex = 61;
+    player.currentFrame = { timestamp: 2_000_000, close: vi.fn() };
+    player.currentFrameTimestampUs = 2_000_000;
+    player.decoder.state = 'configured';
+
+    player.pause();
+
+    expect(decoder.decode).toHaveBeenCalledTimes(2);
+    expect(player.feedIndex).toBe(63);
+    expect(player.hasBufferedFutureFrame()).toBe(false);
+  });
+
   it('reuses a hot paused frame without resetting the decoder on resume', async () => {
     const { player, decoder } = await makePlayerHarness();
 

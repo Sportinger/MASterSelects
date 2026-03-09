@@ -3,6 +3,7 @@
 import type { Layer, LayerRenderData, DetailedStats } from '../core/types';
 import type { TextureManager } from '../texture/TextureManager';
 import type { ScrubbingCache } from '../texture/ScrubbingCache';
+import { flags } from '../featureFlags';
 import { Logger } from '../../services/logger';
 import {
   getRuntimeFrameProvider,
@@ -31,8 +32,16 @@ export class LayerCollector {
   private lastCollectedCount = -1;
   private providerIds = new WeakMap<object, number>();
   private nextProviderId = 1;
+  private videoIds = new WeakMap<HTMLVideoElement, number>();
+  private nextVideoId = 1;
   private lastSuccessfulVideoProviderKey = new Map<string, string>();
   private lastCollectorState = new Map<string, 'render' | 'hold' | 'drop'>();
+
+  // Grace period: keep HTMLVideo scrub preview path for a few frames after
+  // scrub stops, so the settle-seek has time to complete before switching
+  // to the WebCodecs path (which may not have the correct frame yet).
+  private scrubGraceUntil = 0;
+  private static readonly SCRUB_GRACE_MS = 150; // ~9 frames at 60fps
 
   private isPendingWebCodecsFrameStable(
     provider: NonNullable<Layer['source']>['webCodecsPlayer'] | undefined
@@ -58,6 +67,16 @@ export class LayerCollector {
     }
     const next = this.nextProviderId++;
     this.providerIds.set(provider, next);
+    return next;
+  }
+
+  private getVideoObjectId(video: HTMLVideoElement): number {
+    const existing = this.videoIds.get(video);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const next = this.nextVideoId++;
+    this.videoIds.set(video, next);
     return next;
   }
 
@@ -206,8 +225,28 @@ export class LayerCollector {
         }
       }
 
+      const isDragging = useTimelineStore.getState().isDraggingPlayhead;
+      // Extend grace period while dragging; after drag stops,
+      // keep HTML preview path briefly so the settle-seek can complete.
+      if (isDragging) {
+        this.scrubGraceUntil = performance.now() + LayerCollector.SCRUB_GRACE_MS;
+      }
+      const inScrubGrace = !isDragging && performance.now() < this.scrubGraceUntil;
+      const allowHtmlScrubPreview =
+        !deps.isPlaying &&
+        (isDragging || inScrubGrace) &&
+        !!source.videoElement;
+      const allowHtmlVideoPreview =
+        !!source.videoElement &&
+        (!flags.useFullWebCodecsPlayback ||
+          ENABLE_VISUAL_HTML_VIDEO_FALLBACK ||
+          allowHtmlScrubPreview);
+
+      if (allowHtmlVideoPreview) {
+        return this.tryHTMLVideo(layer, source.videoElement!, deps);
+      }
+
       // 3. Try full WebCodecs VideoFrame.
-      // Visual HTMLVideo-based paths are intentionally disabled.
       const runtimeProvider = getRuntimeFrameProvider(source);
       const clipProvider = source.webCodecsPlayer?.isFullMode()
         ? source.webCodecsPlayer
@@ -319,17 +358,7 @@ export class LayerCollector {
         }
       }
 
-      const allowHtmlScrubPreview =
-        !deps.isPlaying &&
-        useTimelineStore.getState().isDraggingPlayhead &&
-        !!source.videoElement;
-
-      // 4. HTMLVideoElement visual fallback is intentionally disabled outside active drag-scrub.
-      if ((ENABLE_VISUAL_HTML_VIDEO_FALLBACK || allowHtmlScrubPreview) &&
-          source.videoElement &&
-          !source.webCodecsPlayer?.isFullMode()) {
-        return this.tryHTMLVideo(layer, source.videoElement, deps);
-      }
+      // HTMLVideo preview is handled above when enabled.
     }
 
     return null;
@@ -340,7 +369,7 @@ export class LayerCollector {
   private videoGpuReady = new WeakSet<HTMLVideoElement>();
 
   private tryHTMLVideo(layer: Layer, video: HTMLVideoElement, deps: LayerCollectorDeps): LayerRenderData | null {
-    const videoKey = video.src || layer.id;
+    const videoKey = `video:${this.getVideoObjectId(video)}`;
 
     log.debug(`tryHTMLVideo: readyState=${video.readyState}, seeking=${video.seeking}, videoWidth=${video.videoWidth}, videoHeight=${video.videoHeight}`);
 
@@ -349,8 +378,12 @@ export class LayerCollector {
       const currentTime = video.currentTime;
       const videoTimeChanged = lastTime === undefined || Math.abs(currentTime - lastTime) > 0.001;
 
-      // Use cache for paused videos (skip during export)
-      if (!videoTimeChanged && !deps.isExporting) {
+      // Use cache for paused videos (skip during export and during playback).
+      // During playback the cache may contain a stale frame from before play started
+      // (captureVideoFrame is skipped while playing to save GPU bandwidth).
+      // Falling through to importExternalTexture with an unchanged currentTime is
+      // harmless — it just re-imports the same decoded frame.
+      if (!videoTimeChanged && !deps.isExporting && !deps.isPlaying) {
         const lastFrame = deps.scrubbingCache?.getLastFrame(video);
         if (lastFrame) {
           this.currentDecoder = 'HTMLVideo(paused-cache)';

@@ -310,7 +310,9 @@ export class LayerBuilderService {
       }
 
       // Normal case: single clip or no transition
-      const clip = trackClips[0];
+      const clip = trackClips.length > 1
+        ? trackClips[trackClips.length - 1]
+        : trackClips[0];
       const layer = this.buildLayerForClip(clip, layerIndex, ctx);
       if (layer) {
         layers[layerIndex] = layer;
@@ -463,13 +465,14 @@ export class LayerBuilderService {
     // Check for seamless cut handoff (same-source sequential clips reuse previous element)
     const handoffVideo = this.videoSyncManager.getHandoffVideoElement(clip.id);
     const allowSharedPreviewSession = canUseSharedPreviewRuntimeSession(clip, ctx.clipsAtTime);
-    const previewRuntimeSource = ctx.isPlaying
-      ? getPreviewRuntimeSource(
+    const useScrubRuntime = !ctx.isPlaying && ctx.isDraggingPlayhead;
+    const previewRuntimeSource = useScrubRuntime
+      ? getScrubRuntimeSource(
           clip.source,
           clip.trackId,
           allowSharedPreviewSession
         )
-      : getScrubRuntimeSource(
+      : getPreviewRuntimeSource(
           clip.source,
           clip.trackId,
           allowSharedPreviewSession
@@ -858,13 +861,14 @@ export class LayerBuilderService {
     }
 
     if (this.hasRenderableVideoSource(nestedClip.source)) {
-      const previewRuntimeSource = ctx.isPlaying
-        ? getPreviewRuntimeSource(
+      const useScrubRuntime = !ctx.isPlaying && ctx.isDraggingPlayhead;
+      const previewRuntimeSource = useScrubRuntime
+        ? getScrubRuntimeSource(
             nestedClip.source,
             nestedClip.trackId,
             true
           )
-        : getScrubRuntimeSource(
+        : getPreviewRuntimeSource(
             nestedClip.source,
             nestedClip.trackId,
             true

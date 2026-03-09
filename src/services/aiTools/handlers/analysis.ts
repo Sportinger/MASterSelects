@@ -2,6 +2,8 @@
 
 import { useTimelineStore } from '../../../stores/timeline';
 import type { ToolResult } from '../types';
+import { selectClipAndOpenTab } from '../aiFeedback';
+import { isAIExecutionActive } from '../executionState';
 
 type TimelineStore = ReturnType<typeof useTimelineStore.getState>;
 
@@ -14,6 +16,9 @@ export async function handleGetClipAnalysis(
   if (!clip) {
     return { success: false, error: `Clip not found: ${clipId}` };
   }
+
+  // Visual feedback: select clip and open analysis tab
+  selectClipAndOpenTab(clipId, 'analysis');
 
   if (clip.analysisStatus !== 'ready' || !clip.analysis) {
     return {
@@ -72,6 +77,9 @@ export async function handleGetClipTranscript(
   if (!clip) {
     return { success: false, error: `Clip not found: ${clipId}` };
   }
+
+  // Visual feedback: select clip and open transcript tab
+  selectClipAndOpenTab(clipId, 'transcript');
 
   if (!clip.transcript?.length) {
     return {
@@ -174,6 +182,20 @@ export async function handleFindSilentSections(
     timelineStart: clip.startTime + (s.sourceStart - clip.inPoint),
     timelineEnd: clip.startTime + (s.sourceEnd - clip.inPoint),
   }));
+
+  // Visual feedback: add timeline markers for silent sections
+  if (isAIExecutionActive() && timelineSilentSections.length > 0) {
+    const store = (await import('../../../stores/timeline')).useTimelineStore.getState();
+    for (const section of timelineSilentSections) {
+      store.addAIOverlay({
+        type: 'silent-zone',
+        trackId: clip.trackId,
+        timePosition: section.timelineStart,
+        width: section.duration,
+        duration: 2000,
+      } as any);
+    }
+  }
 
   return {
     success: true,
@@ -293,6 +315,20 @@ export async function handleFindLowQualitySections(
     timelineEnd: clip.startTime + (s.end - clip.inPoint),
   }));
 
+  // Visual feedback: highlight low quality zones on timeline
+  if (isAIExecutionActive() && timelineSections.length > 0) {
+    const store = (await import('../../../stores/timeline')).useTimelineStore.getState();
+    for (const section of timelineSections) {
+      store.addAIOverlay({
+        type: 'low-quality-zone',
+        trackId: clip.trackId,
+        timePosition: section.timelineStart,
+        width: section.duration,
+        duration: 2000,
+      } as any);
+    }
+  }
+
   return {
     success: true,
     data: {
@@ -322,6 +358,9 @@ export async function handleStartClipAnalysis(
     return { success: false, error: 'Analysis already in progress for this clip' };
   }
 
+  // Visual feedback: select clip and open analysis tab
+  selectClipAndOpenTab(clipId, 'analysis');
+
   // Import and start analysis (runs in background)
   const { analyzeClip } = await import('../../clipAnalyzer');
   analyzeClip(clipId); // Don't await - runs in background
@@ -345,6 +384,9 @@ export async function handleStartClipTranscription(
   if (!clip) {
     return { success: false, error: `Clip not found: ${clipId}` };
   }
+
+  // Visual feedback: select clip and open transcript tab
+  selectClipAndOpenTab(clipId, 'transcript');
 
   // Import and start transcription (runs in background)
   const { transcribeClip } = await import('../../clipTranscriber');

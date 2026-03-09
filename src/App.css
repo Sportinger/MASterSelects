@@ -5099,10 +5099,217 @@ input[type="checkbox"] {
   border-radius: 1px;
 }
 
+/* Silent Zone - yellow/amber highlight for detected silent sections */
+@keyframes ai-silent-zone-fade {
+  0% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 0.5;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.ai-silent-zone {
+  position: absolute;
+  border-radius: 3px;
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(251, 191, 36, 0.2),
+    rgba(251, 191, 36, 0.2) 4px,
+    rgba(251, 191, 36, 0.1) 4px,
+    rgba(251, 191, 36, 0.1) 8px
+  );
+  border: 1.5px dashed rgba(251, 191, 36, 0.6);
+  pointer-events: none;
+  z-index: 198;
+  animation: ai-silent-zone-fade 2s ease-out both;
+  box-shadow: inset 0 0 8px rgba(251, 191, 36, 0.3);
+}
+
+/* Low Quality Zone - red/orange highlight for detected low quality sections */
+@keyframes ai-low-quality-zone-fade {
+  0% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 0.5;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.ai-low-quality-zone {
+  position: absolute;
+  border-radius: 3px;
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(239, 68, 68, 0.2),
+    rgba(239, 68, 68, 0.2) 4px,
+    rgba(239, 68, 68, 0.1) 4px,
+    rgba(239, 68, 68, 0.1) 8px
+  );
+  border: 1.5px dashed rgba(239, 68, 68, 0.6);
+  pointer-events: none;
+  z-index: 198;
+  animation: ai-low-quality-zone-fade 2s ease-out both;
+  box-shadow: inset 0 0 8px rgba(239, 68, 68, 0.3);
+}
+
 /* AI Move Animation - blue shadow during FLIP transition */
 .timeline-clip.ai-moving {
   z-index: 100;
   box-shadow: 0 2px 12px rgba(59, 130, 246, 0.4), 0 0 0 1px rgba(59, 130, 246, 0.3);
+}
+
+/* ============================================
+   AI Preview Canvas Flash Overlays
+   ============================================ */
+
+/* Base flash overlay */
+.ai-preview-flash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 500;
+  border-radius: inherit;
+}
+
+/* Capture frame shutter effect - white flash */
+@keyframes ai-shutter-flash {
+  0% {
+    opacity: 0.9;
+    background: white;
+  }
+  40% {
+    opacity: 0.3;
+    background: white;
+  }
+  100% {
+    opacity: 0;
+    background: transparent;
+  }
+}
+
+.ai-preview-flash-shutter {
+  animation: ai-shutter-flash 0.4s ease-out both;
+}
+
+/* Undo flash - brief orange border pulse */
+@keyframes ai-undo-flash {
+  0% {
+    box-shadow: inset 0 0 0 3px rgba(251, 146, 60, 0.8);
+    background: rgba(251, 146, 60, 0.1);
+  }
+  100% {
+    box-shadow: inset 0 0 0 0 transparent;
+    background: transparent;
+  }
+}
+
+.ai-preview-flash-undo {
+  animation: ai-undo-flash 0.6s ease-out both;
+}
+
+/* Redo flash - brief green border pulse */
+@keyframes ai-redo-flash {
+  0% {
+    box-shadow: inset 0 0 0 3px rgba(34, 197, 94, 0.8);
+    background: rgba(34, 197, 94, 0.1);
+  }
+  100% {
+    box-shadow: inset 0 0 0 0 transparent;
+    background: transparent;
+  }
+}
+
+.ai-preview-flash-redo {
+  animation: ai-redo-flash 0.6s ease-out both;
+}
+
+/* Import flash - brief blue border pulse */
+@keyframes ai-import-flash {
+  0% {
+    box-shadow: inset 0 0 0 3px rgba(59, 130, 246, 0.8);
+    background: rgba(59, 130, 246, 0.1);
+  }
+  100% {
+    box-shadow: inset 0 0 0 0 transparent;
+    background: transparent;
+  }
+}
+
+.ai-preview-flash-import {
+  animation: ai-import-flash 0.6s ease-out both;
+}
+
+/* ============================================
+   AI Marker Animations
+   ============================================ */
+
+/* Marker pop-in animation */
+@keyframes ai-marker-pop {
+  0% {
+    transform: scaleY(0);
+    opacity: 0;
+  }
+  60% {
+    transform: scaleY(1.2);
+    opacity: 1;
+  }
+  100% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+.timeline-marker.ai-marker-added {
+  animation: ai-marker-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  transform-origin: bottom center;
+}
+
+/* Marker fade-out animation */
+@keyframes ai-marker-fade {
+  0% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scaleY(0);
+  }
+}
+
+.timeline-marker.ai-marker-removed {
+  animation: ai-marker-fade 0.3s ease-in both;
+  transform-origin: bottom center;
+}
+
+/* ============================================
+   AI Keyframe Animations
+   ============================================ */
+
+/* Keyframe diamond pop animation */
+@keyframes ai-keyframe-pop {
+  0% {
+    transform: scale(0) rotate(45deg);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.4) rotate(45deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(45deg);
+    opacity: 1;
+  }
+}
+
+.keyframe-diamond.ai-keyframe-added {
+  animation: ai-keyframe-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 
 /* Premiere-style drag feedback */

@@ -8,6 +8,64 @@ import { useTimelineStore } from '../../stores/timeline';
 import { useMediaStore } from '../../stores/mediaStore';
 import { getPlayheadPosition } from './PlayheadState';
 
+function getClipsAtTime(clips: TimelineClip[], playheadPosition: number): TimelineClip[] {
+  const EPSILON = 1e-6;
+
+  // Bias the start boundary slightly so tiny floating-point gaps between
+  // sequential clips don't produce an empty frame at the cut.
+  const activeClips = clips.filter(
+    clip =>
+      playheadPosition + EPSILON >= clip.startTime &&
+      playheadPosition < clip.startTime + clip.duration
+  );
+
+  if (activeClips.length <= 1) {
+    return activeClips;
+  }
+
+  // If two sequential clips only "overlap" because the playhead is exactly on
+  // the shared cut boundary, prefer the incoming clip and drop the outgoing one.
+  const activeByTrack = new Map<string, TimelineClip[]>();
+  for (const clip of activeClips) {
+    const key = clip.trackId || clip.id;
+    const trackClips = activeByTrack.get(key);
+    if (trackClips) {
+      trackClips.push(clip);
+    } else {
+      activeByTrack.set(key, [clip]);
+    }
+  }
+
+  const resolvedIds = new Set<string>();
+
+  for (const trackClips of activeByTrack.values()) {
+    if (trackClips.length === 1) {
+      resolvedIds.add(trackClips[0].id);
+      continue;
+    }
+
+    const sortedClips = [...trackClips].sort((a, b) => a.startTime - b.startTime);
+    const latestClip = sortedClips[sortedClips.length - 1];
+    const isBoundaryOnlyOverlap =
+      playheadPosition >= latestClip.startTime &&
+      sortedClips.every(clip =>
+        clip.id === latestClip.id ||
+        clip.startTime + clip.duration <= latestClip.startTime + EPSILON
+      );
+
+    if (isBoundaryOnlyOverlap) {
+      resolvedIds.add(latestClip.id);
+      continue;
+    }
+
+    for (const clip of sortedClips) {
+      resolvedIds.add(clip.id);
+    }
+  }
+
+  return activeClips.filter(clip => resolvedIds.has(clip.id));
+}
+
 /**
  * Create a FrameContext with lazy-computed cached values
  * All store reads happen once here, then values are reused
@@ -135,13 +193,7 @@ export function createFrameContext(): FrameContext {
 
     get clipsAtTime(): TimelineClip[] {
       if (_clipsAtTime === null) {
-        // Use a small epsilon for the end boundary to avoid floating-point gaps
-        // at exact cut points where clip1.endTime === clip2.startTime.
-        // The strict < caused 1-2 frame gaps where clipsAtTime was empty.
-        const EPSILON = 1e-6;
-        _clipsAtTime = clips.filter(
-          c => playheadPosition >= c.startTime && playheadPosition < c.startTime + c.duration + EPSILON
-        );
+        _clipsAtTime = getClipsAtTime(clips, playheadPosition);
       }
       return _clipsAtTime;
     },
