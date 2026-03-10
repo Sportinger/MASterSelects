@@ -260,8 +260,9 @@ export function useTimelineKeyboard({
       if (e.key === 'ArrowLeft') {
         e.preventDefault();
         if (activeComposition) {
-          const frameDuration = 1 / activeComposition.frameRate;
-          const newPosition = Math.max(0, playheadPosition - frameDuration);
+          const frameRate = Math.max(1, activeComposition.frameRate || 30);
+          const currentFrame = Math.round(playheadPosition * frameRate);
+          const newPosition = Math.max(0, (currentFrame - 1) / frameRate);
           setPlayheadPosition(newPosition);
         }
         return;
@@ -271,8 +272,10 @@ export function useTimelineKeyboard({
       if (e.key === 'ArrowRight') {
         e.preventDefault();
         if (activeComposition) {
-          const frameDuration = 1 / activeComposition.frameRate;
-          const newPosition = Math.min(duration, playheadPosition + frameDuration);
+          const frameRate = Math.max(1, activeComposition.frameRate || 30);
+          const currentFrame = Math.round(playheadPosition * frameRate);
+          const maxFrame = Math.round(duration * frameRate);
+          const newPosition = Math.min(duration, (Math.min(maxFrame, currentFrame + 1)) / frameRate);
           setPlayheadPosition(newPosition);
         }
         return;

@@ -210,8 +210,14 @@ export class Compositor {
 
       let pipeline: GPURenderPipeline;
       let bindGroup: GPUBindGroup;
+      const isStaticTextureSource =
+        !!layer.source?.imageElement ||
+        !!layer.source?.textCanvas;
 
       if (useExternalTexture && sourceExternalTexture) {
+        if (!isStaticTextureSource) {
+          this.compositorPipeline.invalidateBindGroupCache(layer.id);
+        }
         pipeline = this.compositorPipeline.getExternalCompositePipeline()!;
         bindGroup = this.compositorPipeline.createExternalCompositeBindGroup(
           state.sampler,
@@ -226,11 +232,15 @@ export class Compositor {
         pipeline = this.compositorPipeline.getCompositePipeline()!;
         // When complex effects are applied, the final texture view alternates between
         // effectTempView/effectTempView2 depending on effect count parity.
-        // Don't use the bind group cache in this case - it would return a stale bind group
-        // pointing to the wrong texture view.
-        const cacheLayerId = (complexEffects || data.isDynamic) ? undefined : layer.id;
-        if (complexEffects || data.isDynamic) {
-          // Invalidate any stale cached bind group for this layer
+        // Only truly static image/text layers may reuse cached bind groups.
+        // Video fallbacks, copied previews, nested comp textures and other
+        // dynamic texture views can change while keeping the same layer.id.
+        const canCacheBindGroup =
+          isStaticTextureSource &&
+          !complexEffects &&
+          !data.isDynamic;
+        const cacheLayerId = canCacheBindGroup ? layer.id : undefined;
+        if (!canCacheBindGroup) {
           this.compositorPipeline.invalidateBindGroupCache(layer.id);
         }
         bindGroup = this.compositorPipeline.createCompositeBindGroup(

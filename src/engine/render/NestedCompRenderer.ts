@@ -13,6 +13,7 @@ import {
   getRuntimeFrameProvider,
   readRuntimeFrameForSource,
 } from '../../services/mediaRuntime/runtimePlayback';
+import { scrubSettleState } from '../../services/scrubSettleState';
 import { wcPipelineMonitor } from '../../services/wcPipelineMonitor';
 import { useTimelineStore } from '../../stores/timeline';
 import { getCopiedHtmlVideoPreviewFrame } from './htmlVideoPreviewFallback';
@@ -54,6 +55,38 @@ export class NestedCompRenderer {
   private nextProviderId = 1;
   private lastSuccessfulVideoProviderKey = new Map<string, string>();
   private lastCollectorState = new Map<string, 'render' | 'hold' | 'drop'>();
+
+  private getSafeLastFrameFallback(layer: Layer, video: HTMLVideoElement, targetTime: number) {
+    if (!this.scrubbingCache) {
+      return null;
+    }
+    const isDragging = useTimelineStore.getState().isDraggingPlayhead;
+    const tolerance = video.seeking || isDragging ? 0.35 : 0.2;
+    return this.scrubbingCache.getLastFrameNearTime(video, targetTime, tolerance, layer.sourceClipId);
+  }
+
+  private getTargetVideoTime(layer: Layer, video: HTMLVideoElement): number {
+    return layer.source?.mediaTime ?? video.currentTime;
+  }
+
+  private getDragHoldFrame(layer: Layer, video: HTMLVideoElement) {
+    if (!layer.sourceClipId) {
+      return null;
+    }
+    return this.scrubbingCache?.getLastFrame(video, layer.sourceClipId) ?? null;
+  }
+
+  private isFrameNearTarget(
+    frame: { mediaTime?: number } | null | undefined,
+    targetTime: number,
+    maxDeltaSeconds: number = 0.35
+  ): boolean {
+    return (
+      typeof frame?.mediaTime === 'number' &&
+      Number.isFinite(frame.mediaTime) &&
+      Math.abs(frame.mediaTime - targetTime) <= maxDeltaSeconds
+    );
+  }
 
   private isPendingWebCodecsFrameStable(
     provider: NonNullable<Layer['source']>['webCodecsPlayer'] | undefined
@@ -412,7 +445,7 @@ export class NestedCompRenderer {
       }
 
       const allowHtmlScrubPreview =
-        useTimelineStore.getState().isDraggingPlayhead &&
+        (useTimelineStore.getState().isDraggingPlayhead || scrubSettleState.isPending(layer.sourceClipId)) &&
         !!layer.source.videoElement;
       const allowHtmlVideoPreview =
         !!layer.source.videoElement &&
@@ -422,24 +455,120 @@ export class NestedCompRenderer {
 
       if (allowHtmlVideoPreview) {
         const video = layer.source.videoElement!;
-        if (video.readyState >= 2) {
-          const copiedFrame = getCopiedHtmlVideoPreviewFrame(video, this.scrubbingCache);
-          if (copiedFrame) {
+        const targetTime = this.getTargetVideoTime(layer, video);
+        const isDragging = useTimelineStore.getState().isDraggingPlayhead;
+        const isSettling = scrubSettleState.isPending(layer.sourceClipId);
+        const isPausedSettle = !useTimelineStore.getState().isPlaying && !isDragging && isSettling;
+        const lastPresentedTime = this.scrubbingCache?.getLastPresentedTime(video);
+        const lastPresentedOwner = this.scrubbingCache?.getLastPresentedOwner(video);
+        const hasPresentedOwnerMismatch =
+          !!layer.sourceClipId &&
+          !!lastPresentedOwner &&
+          lastPresentedOwner !== layer.sourceClipId;
+        const hasConfirmedPresentedFrame =
+          !hasPresentedOwnerMismatch &&
+          typeof lastPresentedTime === 'number' &&
+          Number.isFinite(lastPresentedTime);
+        const displayedTime = hasConfirmedPresentedFrame ? lastPresentedTime : undefined;
+        const hasFreshPresentedFrame =
+          hasConfirmedPresentedFrame &&
+          Math.abs(lastPresentedTime - targetTime) <= 0.12;
+        const awaitingPausedTargetFrame =
+          hasPresentedOwnerMismatch ||
+          !useTimelineStore.getState().isPlaying &&
+          !isDragging &&
+          (!isSettling &&
+            (!hasConfirmedPresentedFrame || Math.abs(lastPresentedTime - targetTime) > 0.05));
+        const cacheSearchDistanceFrames = isDragging ? 12 : 6;
+        const lastSameClipFrame = this.getDragHoldFrame(layer, video);
+        const dragHoldFrame = isDragging
+          ? lastSameClipFrame
+          : (isSettling || awaitingPausedTargetFrame) && this.isFrameNearTarget(lastSameClipFrame, targetTime)
+            ? lastSameClipFrame
+            : null;
+        const emergencyHoldFrame = isDragging ? lastSameClipFrame : dragHoldFrame;
+        const safeFallback = this.getSafeLastFrameFallback(layer, video, targetTime) ?? dragHoldFrame;
+        const allowLiveVideoImport = !hasPresentedOwnerMismatch && (isPausedSettle
+          ? hasFreshPresentedFrame
+          : !awaitingPausedTargetFrame &&
+            (((!isDragging && !isSettling) || hasFreshPresentedFrame || !safeFallback)));
+        const allowConfirmedFrameCaching = !hasPresentedOwnerMismatch && (isPausedSettle
+          ? hasFreshPresentedFrame
+          : !awaitingPausedTargetFrame &&
+            (((!isDragging && !isSettling) || hasFreshPresentedFrame)));
+        const captureOwnerId = allowConfirmedFrameCaching ? layer.sourceClipId : undefined;
+        if ((video.seeking || awaitingPausedTargetFrame) && this.scrubbingCache) {
+          const cachedView =
+            this.scrubbingCache.getCachedFrame(video.src, targetTime) ??
+            this.scrubbingCache.getNearestCachedFrame(video.src, targetTime, cacheSearchDistanceFrames);
+          if (cachedView) {
             result.push({
-              layer, isVideo: false, externalTexture: null, textureView: copiedFrame.view,
-              sourceWidth: copiedFrame.width, sourceHeight: copiedFrame.height,
+              layer, isVideo: false, externalTexture: null, textureView: cachedView,
+              sourceWidth: video.videoWidth, sourceHeight: video.videoHeight,
             });
             continue;
           }
+          if (!allowLiveVideoImport) {
+            if (safeFallback) {
+              result.push({
+                layer, isVideo: false, externalTexture: null, textureView: safeFallback.view,
+                sourceWidth: safeFallback.width, sourceHeight: safeFallback.height,
+              });
+              continue;
+            }
+            if (emergencyHoldFrame) {
+              result.push({
+                layer, isVideo: false, externalTexture: null, textureView: emergencyHoldFrame.view,
+                sourceWidth: emergencyHoldFrame.width, sourceHeight: emergencyHoldFrame.height,
+              });
+              continue;
+            }
+            continue;
+          }
+        }
+        if (video.readyState >= 2) {
+          if (allowLiveVideoImport) {
+            const copiedFrame = getCopiedHtmlVideoPreviewFrame(
+              video,
+              this.scrubbingCache,
+              targetTime,
+              layer.sourceClipId,
+              captureOwnerId
+            );
+            if (copiedFrame) {
+              result.push({
+                layer, isVideo: false, externalTexture: null, textureView: copiedFrame.view,
+                sourceWidth: copiedFrame.width, sourceHeight: copiedFrame.height,
+              });
+              continue;
+            }
+          }
 
-          const extTex = this.textureManager.importVideoTexture(video);
+          const extTex = allowLiveVideoImport
+            ? this.textureManager.importVideoTexture(video)
+            : null;
           if (extTex) {
             if (this.scrubbingCache) {
               const now = performance.now();
               const lastCapture = this.scrubbingCache.getLastCaptureTime(video);
-              if (now - lastCapture > 50) {
-                this.scrubbingCache.captureVideoFrame(video);
+              if (allowConfirmedFrameCaching && now - lastCapture > 50) {
+                this.scrubbingCache.captureVideoFrame(video, captureOwnerId);
                 this.scrubbingCache.setLastCaptureTime(video, now);
+              }
+              if (allowConfirmedFrameCaching) {
+                this.scrubbingCache.cacheFrameAtTime(video, targetTime);
+              } else {
+                if (typeof displayedTime === 'number' && Number.isFinite(displayedTime)) {
+                  this.scrubbingCache.captureVideoFrameIfCloser(
+                    video,
+                    targetTime,
+                    displayedTime,
+                    layer.sourceClipId
+                  );
+                }
+                if (typeof displayedTime === 'number' && Number.isFinite(displayedTime)) {
+                  this.scrubbingCache.cacheFrameAtTime(video, displayedTime);
+                }
               }
             }
             result.push({
@@ -452,12 +581,36 @@ export class NestedCompRenderer {
           }
         }
 
-        const lastFrame = this.scrubbingCache?.getLastFrame(video);
-        if (lastFrame) {
+        const notReadyCachedFrame =
+          this.scrubbingCache?.getCachedFrameEntry(video.src, targetTime) ??
+          this.scrubbingCache?.getNearestCachedFrameEntry(video.src, targetTime, cacheSearchDistanceFrames);
+        if (notReadyCachedFrame) {
+          result.push({
+            layer,
+            isVideo: false,
+            externalTexture: null,
+            textureView: notReadyCachedFrame.view,
+            sourceWidth: video.videoWidth,
+            sourceHeight: video.videoHeight,
+            displayedMediaTime: notReadyCachedFrame.mediaTime,
+            targetMediaTime: targetTime,
+            previewPath: 'not-ready-scrub-cache',
+          });
+          continue;
+        }
+
+        if (safeFallback) {
           log.debug('Using cached frame fallback for nested video', { layerId: layer.id });
           result.push({
-            layer, isVideo: false, externalTexture: null, textureView: lastFrame.view,
-            sourceWidth: lastFrame.width, sourceHeight: lastFrame.height,
+            layer, isVideo: false, externalTexture: null, textureView: safeFallback.view,
+            sourceWidth: safeFallback.width, sourceHeight: safeFallback.height,
+          });
+          continue;
+        }
+        if (emergencyHoldFrame) {
+          result.push({
+            layer, isVideo: false, externalTexture: null, textureView: emergencyHoldFrame.view,
+            sourceWidth: emergencyHoldFrame.width, sourceHeight: emergencyHoldFrame.height,
           });
           continue;
         }

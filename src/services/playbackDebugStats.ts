@@ -54,6 +54,14 @@ interface WcTimelineSummary {
 
 interface VfTimelineSummary {
   cadence: FrameCadenceSummary;
+  previewRenderCadence: FrameCadenceSummary;
+  previewUpdateCadence: FrameCadenceSummary;
+  previewFrames: number;
+  previewUpdates: number;
+  stalePreviewFrames: number;
+  stalePreviewWhileTargetMoved: number;
+  avgPreviewDriftMs: number;
+  maxPreviewDriftMs: number;
   stalls: number;
   seeks: number;
   advanceSeeks: number;
@@ -247,9 +255,17 @@ function summarizeVfTimeline(events: VFPipelineEvent[]): VfTimelineSummary {
   const frameTimes = events
     .filter((event) => event.type === 'vf_capture')
     .map((event) => event.t);
+  const previewEvents = events.filter((event) => event.type === 'vf_preview_frame');
+  const previewRenderTimes = previewEvents.map((event) => event.t);
+  const previewUpdateTimes = previewEvents
+    .filter((event) => event.detail?.changed === 'true')
+    .map((event) => event.t);
 
   const seekDurations: number[] = [];
   const audioDrifts: number[] = [];
+  const previewDrifts: number[] = [];
+  let stalePreviewFrames = 0;
+  let stalePreviewWhileTargetMoved = 0;
   let lastSeekStartTime: number | null = null;
 
   for (const event of events) {
@@ -271,11 +287,33 @@ function summarizeVfTimeline(events: VFPipelineEvent[]): VfTimelineSummary {
       if (driftMs !== undefined) {
         audioDrifts.push(Math.abs(driftMs));
       }
+      continue;
+    }
+
+    if (event.type === 'vf_preview_frame') {
+      if (event.detail?.changed !== 'true') {
+        stalePreviewFrames++;
+        if (event.detail?.targetMoved === 'true') {
+          stalePreviewWhileTargetMoved++;
+        }
+      }
+      const driftMs = getNumericDetail(event.detail, 'driftMs');
+      if (driftMs !== undefined) {
+        previewDrifts.push(Math.abs(driftMs));
+      }
     }
   }
 
   return {
     cadence: summarizeFrameCadence(frameTimes),
+    previewRenderCadence: summarizeFrameCadence(previewRenderTimes),
+    previewUpdateCadence: summarizeFrameCadence(previewUpdateTimes),
+    previewFrames: previewEvents.length,
+    previewUpdates: previewUpdateTimes.length,
+    stalePreviewFrames,
+    stalePreviewWhileTargetMoved,
+    avgPreviewDriftMs: round(average(previewDrifts), 1),
+    maxPreviewDriftMs: round(max(previewDrifts), 1),
     stalls: events.filter((event) => event.type === 'vf_stall').length,
     seeks: events.filter(
       (event) => event.type === 'vf_seek_fast' || event.type === 'vf_seek_precise'
@@ -385,6 +423,20 @@ export function buildPlaybackDebugStats(params: {
     avgFrameGapMs: 0,
     p95FrameGapMs: 0,
     maxFrameGapMs: 0,
+    previewFrames: 0,
+    previewUpdates: 0,
+    previewRenderFps: 0,
+    previewUpdateFps: 0,
+    avgPreviewRenderGapMs: 0,
+    p95PreviewRenderGapMs: 0,
+    maxPreviewRenderGapMs: 0,
+    avgPreviewUpdateGapMs: 0,
+    p95PreviewUpdateGapMs: 0,
+    maxPreviewUpdateGapMs: 0,
+    stalePreviewFrames: 0,
+    stalePreviewWhileTargetMoved: 0,
+    avgPreviewDriftMs: 0,
+    maxPreviewDriftMs: 0,
     stalls: 0,
     seeks: 0,
     advanceSeeks: 0,
@@ -419,8 +471,22 @@ export function buildPlaybackDebugStats(params: {
       collectorHolds: wcSummary.collectorHolds,
       collectorDrops: wcSummary.collectorDrops,
     });
-  } else if (pipeline === 'vf') {
+  } else if (pipeline === 'vf' || pipeline === 'html') {
     Object.assign(base, vfSummary.cadence, {
+      previewFrames: vfSummary.previewFrames,
+      previewUpdates: vfSummary.previewUpdates,
+      previewRenderFps: vfSummary.previewRenderCadence.cadenceFps,
+      previewUpdateFps: vfSummary.previewUpdateCadence.cadenceFps,
+      avgPreviewRenderGapMs: vfSummary.previewRenderCadence.avgFrameGapMs,
+      p95PreviewRenderGapMs: vfSummary.previewRenderCadence.p95FrameGapMs,
+      maxPreviewRenderGapMs: vfSummary.previewRenderCadence.maxFrameGapMs,
+      avgPreviewUpdateGapMs: vfSummary.previewUpdateCadence.avgFrameGapMs,
+      p95PreviewUpdateGapMs: vfSummary.previewUpdateCadence.p95FrameGapMs,
+      maxPreviewUpdateGapMs: vfSummary.previewUpdateCadence.maxFrameGapMs,
+      stalePreviewFrames: vfSummary.stalePreviewFrames,
+      stalePreviewWhileTargetMoved: vfSummary.stalePreviewWhileTargetMoved,
+      avgPreviewDriftMs: vfSummary.avgPreviewDriftMs,
+      maxPreviewDriftMs: vfSummary.maxPreviewDriftMs,
       stalls: vfSummary.stalls,
       seeks: vfSummary.seeks,
       advanceSeeks: vfSummary.advanceSeeks,

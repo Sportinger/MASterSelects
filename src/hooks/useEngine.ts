@@ -407,13 +407,15 @@ export function useEngine() {
         }
 
         // Build layers directly from stores (single source of truth)
-        const buildStart = performance.now();
-        const layers = layerBuilder.buildLayersFromStore();
-        buildMs += performance.now() - buildStart;
+        const syncVideoStart = performance.now();
+        layerBuilder.syncVideoElements();
+        syncVideoMs += performance.now() - syncVideoStart;
 
         // Share pre-built layers with renderScheduler so multi-preview
         // can reuse them instead of re-evaluating and re-seeking videos
-        renderScheduler.setActiveCompLayers(layers);
+        const buildStart = performance.now();
+        const layers = layerBuilder.buildLayersFromStore();
+        buildMs += performance.now() - buildStart;
 
         // During playback: sync video elements FIRST so advanceToTime() prepares the
         // correct VideoFrame before rendering. This eliminates the systematic 1-frame lag
@@ -428,9 +430,7 @@ export function useEngine() {
         // Previously, scrubbing rendered first (stale frame) then seeked after,
         // causing 1-frame-late display. The RVFC re-render handles page-reload
         // robustness (GPU surface cold → warmup play/pause → RVFC triggers render).
-        const syncVideoStart = performance.now();
-        layerBuilder.syncVideoElements();
-        syncVideoMs += performance.now() - syncVideoStart;
+        renderScheduler.setActiveCompLayers(layers);
 
         const renderStart = performance.now();
         engine.render(layers);

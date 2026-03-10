@@ -61,6 +61,9 @@ export interface LayerRenderData {
   textureView: GPUTextureView | null;
   sourceWidth: number;
   sourceHeight: number;
+  displayedMediaTime?: number;
+  targetMediaTime?: number;
+  previewPath?: string;
 }
 
 // Effect pipeline configuration

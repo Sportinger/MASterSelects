@@ -49,15 +49,31 @@ export class CacheManager {
     this.scrubbingCache?.clearScrubbingCache(videoSrc);
   }
 
-  ensureVideoFrameCached(video: HTMLVideoElement): void {
-    if (this.scrubbingCache && !this.scrubbingCache.getLastFrame(video)) {
-      this.scrubbingCache.captureVideoFrame(video);
+  ensureVideoFrameCached(video: HTMLVideoElement, ownerId?: string): void {
+    if (this.scrubbingCache && !this.scrubbingCache.getLastFrame(video, ownerId)) {
+      this.scrubbingCache.captureVideoFrame(video, ownerId);
     }
   }
 
-  async preCacheVideoFrame(video: HTMLVideoElement): Promise<boolean> {
+  captureVideoFrameAtTime(video: HTMLVideoElement, time: number, ownerId?: string): boolean {
+    return this.scrubbingCache?.captureVideoFrameAtTime(video, time, ownerId) ?? false;
+  }
+
+  markVideoFramePresented(video: HTMLVideoElement, time?: number, ownerId?: string): void {
+    this.scrubbingCache?.markFramePresented(video, time, ownerId);
+  }
+
+  getLastPresentedVideoTime(video: HTMLVideoElement): number | undefined {
+    return this.scrubbingCache?.getLastPresentedTime(video);
+  }
+
+  getLastPresentedVideoOwner(video: HTMLVideoElement): string | undefined {
+    return this.scrubbingCache?.getLastPresentedOwner(video);
+  }
+
+  async preCacheVideoFrame(video: HTMLVideoElement, ownerId?: string): Promise<boolean> {
     if (!this.scrubbingCache) return false;
-    return this.scrubbingCache.captureVideoFrameViaImageBitmap(video);
+    return this.scrubbingCache.captureVideoFrameViaImageBitmap(video, ownerId);
   }
 
   cleanupVideoCache(video: HTMLVideoElement): void {

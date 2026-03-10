@@ -6,8 +6,11 @@ function isFirefoxBrowser(): boolean {
 
 export function getCopiedHtmlVideoPreviewFrame(
   video: HTMLVideoElement,
-  scrubbingCache: ScrubbingCache | null
-): { view: GPUTextureView; width: number; height: number } | null {
+  scrubbingCache: ScrubbingCache | null,
+  targetTime?: number,
+  lookupOwnerId?: string,
+  captureOwnerId?: string
+): { view: GPUTextureView; width: number; height: number; mediaTime?: number } | null {
   if (!isFirefoxBrowser() || !scrubbingCache) {
     return null;
   }
@@ -16,13 +19,14 @@ export function getCopiedHtmlVideoPreviewFrame(
     return null;
   }
 
-  const previousFrame = scrubbingCache.getLastFrame(video);
+  const safeTargetTime = targetTime ?? video.currentTime;
+  const previousFrame = scrubbingCache.getLastFrameNearTime(video, safeTargetTime, 0.35, lookupOwnerId);
 
   // Firefox can intermittently sample imported HTML video textures as black
   // during playback. Copying into a persistent texture is slower but stable.
-  const captured = scrubbingCache.captureVideoFrame(video);
+  const captured = scrubbingCache.captureVideoFrame(video, captureOwnerId);
   if (captured) {
-    return scrubbingCache.getLastFrame(video);
+    return scrubbingCache.getLastFrameNearTime(video, safeTargetTime, 0.35, lookupOwnerId);
   }
 
   return previousFrame;

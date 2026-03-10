@@ -69,6 +69,7 @@ export interface LayerSource {
   type: 'video' | 'image' | 'camera' | 'color' | 'text' | 'solid';
   file?: File;
   videoElement?: HTMLVideoElement;
+  mediaTime?: number;
   imageElement?: HTMLImageElement;
   color?: string;
   texture?: GPUTexture;
@@ -231,6 +232,20 @@ export interface EngineStats {
     avgFrameGapMs: number;
     p95FrameGapMs: number;
     maxFrameGapMs: number;
+    previewFrames: number;
+    previewUpdates: number;
+    previewRenderFps: number;
+    previewUpdateFps: number;
+    avgPreviewRenderGapMs: number;
+    p95PreviewRenderGapMs: number;
+    maxPreviewRenderGapMs: number;
+    avgPreviewUpdateGapMs: number;
+    p95PreviewUpdateGapMs: number;
+    maxPreviewUpdateGapMs: number;
+    stalePreviewFrames: number;
+    stalePreviewWhileTargetMoved: number;
+    avgPreviewDriftMs: number;
+    maxPreviewDriftMs: number;
     stalls: number;
     seeks: number;
     advanceSeeks: number;

@@ -20,6 +20,8 @@ import { useSliceStore } from '../../stores/sliceStore';
 import { useTimelineStore } from '../../stores/timeline';
 import { reportRenderTime } from '../../services/performanceMonitor';
 import { Logger } from '../../services/logger';
+import { scrubSettleState } from '../../services/scrubSettleState';
+import { vfPipelineMonitor } from '../../services/vfPipelineMonitor';
 import { getCopiedHtmlVideoPreviewFrame } from './htmlVideoPreviewFallback';
 
 const log = Logger.create('RenderDispatcher');
@@ -53,9 +55,104 @@ export class RenderDispatcher {
   /** Whether the last render() call produced visible content */
   lastRenderHadContent = false;
   private deps: RenderDeps;
+  private lastPreviewSignature = '';
+  private lastPreviewTargetTimeMs?: number;
 
   constructor(deps: RenderDeps) {
     this.deps = deps;
+  }
+
+  private getTargetVideoTime(layer: Layer, video: HTMLVideoElement): number {
+    return layer.source?.mediaTime ?? video.currentTime;
+  }
+
+  private getSafePreviewFallback(
+    layer: Layer,
+    video: HTMLVideoElement
+  ): { view: GPUTextureView; width: number; height: number; mediaTime?: number } | null {
+    const scrubbingCache = this.deps.cacheManager.getScrubbingCache();
+    if (!scrubbingCache) {
+      return null;
+    }
+    const isDragging = useTimelineStore.getState().isDraggingPlayhead;
+    const tolerance = video.seeking || isDragging ? 0.35 : 0.2;
+    return scrubbingCache.getLastFrameNearTime(
+      video,
+      this.getTargetVideoTime(layer, video),
+      tolerance,
+      layer.sourceClipId
+    );
+  }
+
+  private isFrameNearTarget(
+    frame: { mediaTime?: number } | null | undefined,
+    targetTime: number,
+    maxDeltaSeconds: number = 0.35
+  ): boolean {
+    return (
+      typeof frame?.mediaTime === 'number' &&
+      Number.isFinite(frame.mediaTime) &&
+      Math.abs(frame.mediaTime - targetTime) <= maxDeltaSeconds
+    );
+  }
+
+  private toMediaTimeMs(time?: number): number | undefined {
+    if (typeof time !== 'number' || !Number.isFinite(time)) {
+      return undefined;
+    }
+    return Math.round(time * 1000);
+  }
+
+  private recordMainPreviewFrame(
+    mode: string,
+    layerData?: LayerRenderData[],
+    fallback?: { clipId?: string; targetTimeMs?: number; displayedTimeMs?: number }
+  ): void {
+    const primary = layerData?.find((data) => data.layer.source?.type === 'video') ?? layerData?.[0];
+    const clipId = fallback?.clipId ?? primary?.layer.sourceClipId ?? primary?.layer.id;
+    const targetTimeMs =
+      fallback?.targetTimeMs ??
+      this.toMediaTimeMs(primary?.targetMediaTime);
+    const displayedTimeMs =
+      fallback?.displayedTimeMs ??
+      this.toMediaTimeMs(primary?.displayedMediaTime ?? primary?.targetMediaTime);
+    const previewPath =
+      primary?.previewPath ??
+      primary?.layer.source?.type ??
+      mode;
+    const signature = layerData && layerData.length > 0
+      ? layerData
+        .slice(0, 4)
+        .map((data) => {
+          const id = data.layer.sourceClipId ?? data.layer.id;
+          const mediaTimeMs = this.toMediaTimeMs(data.displayedMediaTime ?? data.targetMediaTime) ?? -1;
+          return `${id}:${data.previewPath ?? data.layer.source?.type ?? 'layer'}:${mediaTimeMs}`;
+        })
+        .join('|')
+      : `${mode}:${clipId ?? 'none'}:${displayedTimeMs ?? -1}`;
+    const changed = signature !== this.lastPreviewSignature;
+    const targetMoved =
+      targetTimeMs !== undefined &&
+      this.lastPreviewTargetTimeMs !== undefined &&
+      Math.abs(targetTimeMs - this.lastPreviewTargetTimeMs) >= 12;
+    const driftMs =
+      targetTimeMs !== undefined && displayedTimeMs !== undefined
+        ? Math.abs(targetTimeMs - displayedTimeMs)
+        : undefined;
+
+    vfPipelineMonitor.record('vf_preview_frame', {
+      mode,
+      changed: changed ? 'true' : 'false',
+      targetMoved: targetMoved ? 'true' : 'false',
+      previewPath,
+      ...(clipId ? { clipId } : {}),
+      ...(targetTimeMs !== undefined ? { targetTimeMs } : {}),
+      ...(displayedTimeMs !== undefined ? { displayedTimeMs } : {}),
+      ...(driftMs !== undefined ? { driftMs } : {}),
+    });
+
+    this.lastPreviewSignature = signature;
+    this.lastPreviewTargetTimeMs = targetTimeMs;
   }
 
   // === MAIN RENDER ===
@@ -150,6 +247,7 @@ export class RenderDispatcher {
       if (d.previewContext) {
         const mainBindGroup = d.outputPipeline!.createOutputBindGroup(d.sampler, result.finalView, false);
         d.outputPipeline!.renderToCanvas(commandEncoder, d.previewContext, mainBindGroup);
+        this.recordMainPreviewFrame('composite', layerData);
       }
       // Output to all activeComp render targets (from unified store)
       const activeTargets = useRenderTargetStore.getState().getActiveCompTargets();
@@ -177,6 +275,9 @@ export class RenderDispatcher {
           const targetBindGroup = d.outputPipeline!.createOutputBindGroup(d.sampler, result.finalView, target.showTransparencyGrid);
           d.outputPipeline!.renderToCanvas(commandEncoder, ctx, targetBindGroup);
         }
+      }
+      if (!d.previewContext && activeTargets.length > 0) {
+        this.recordMainPreviewFrame('target-composite', layerData);
       }
     }
 
@@ -243,6 +344,7 @@ export class RenderDispatcher {
       if (d.previewContext) {
         const mainBindGroup = d.outputPipeline.createOutputBindGroup(d.sampler, pingView, false);
         d.outputPipeline.renderToCanvas(commandEncoder, d.previewContext, mainBindGroup);
+        this.recordMainPreviewFrame('empty');
       }
       const activeTargets = useRenderTargetStore.getState().getActiveCompTargets();
       for (const target of activeTargets) {
@@ -313,12 +415,101 @@ export class RenderDispatcher {
 
       if (layer.source.videoElement) {
         const video = layer.source.videoElement;
+        const scrubbingCache = d.cacheManager.getScrubbingCache();
+        const targetTime = this.getTargetVideoTime(layer, video);
+        const isDragging = useTimelineStore.getState().isDraggingPlayhead;
+        const isSettling = scrubSettleState.isPending(layer.sourceClipId);
+        const isPausedSettle = !(d.renderLoop?.getIsPlaying() ?? false) && !isDragging && isSettling;
+        const lastPresentedTime = scrubbingCache?.getLastPresentedTime(video);
+        const lastPresentedOwner = scrubbingCache?.getLastPresentedOwner(video);
+        const hasPresentedOwnerMismatch =
+          !!layer.sourceClipId &&
+          !!lastPresentedOwner &&
+          lastPresentedOwner !== layer.sourceClipId;
+        const hasConfirmedPresentedFrame =
+          !hasPresentedOwnerMismatch &&
+          typeof lastPresentedTime === 'number' &&
+          Number.isFinite(lastPresentedTime);
+        const displayedTime = hasConfirmedPresentedFrame ? lastPresentedTime : undefined;
+        const hasFreshPresentedFrame =
+          hasConfirmedPresentedFrame &&
+          Math.abs(lastPresentedTime - targetTime) <= 0.12;
+        const awaitingPausedTargetFrame =
+          hasPresentedOwnerMismatch ||
+          !(d.renderLoop?.getIsPlaying() ?? false) &&
+          !isDragging &&
+          (!isSettling &&
+            (!hasConfirmedPresentedFrame || Math.abs(lastPresentedTime - targetTime) > 0.05));
+        const cacheSearchDistanceFrames = isDragging ? 12 : 6;
+        const lastSameClipFrame = layer.sourceClipId
+          ? scrubbingCache?.getLastFrame(video, layer.sourceClipId) ?? null
+          : null;
+        const dragHoldFrame = isDragging
+          ? lastSameClipFrame
+          : (isSettling || awaitingPausedTargetFrame) && this.isFrameNearTarget(lastSameClipFrame, targetTime)
+            ? lastSameClipFrame
+            : null;
+        const emergencyHoldFrame = isDragging && layer.sourceClipId
+          ? lastSameClipFrame
+          : dragHoldFrame;
+        const safeFallback = this.getSafePreviewFallback(layer, video) ?? dragHoldFrame;
+        const allowLiveVideoImport = !hasPresentedOwnerMismatch && (isPausedSettle
+          ? hasFreshPresentedFrame
+          : !awaitingPausedTargetFrame &&
+            (((!isDragging && !isSettling) || hasFreshPresentedFrame || !safeFallback)));
+        const allowConfirmedFrameCaching = !hasPresentedOwnerMismatch && (isPausedSettle
+          ? hasFreshPresentedFrame
+          : !awaitingPausedTargetFrame &&
+            (((!isDragging && !isSettling) || hasFreshPresentedFrame)));
+        const captureOwnerId = allowConfirmedFrameCaching ? layer.sourceClipId : undefined;
         if (video.readyState >= 2) {
+          if ((video.seeking || awaitingPausedTargetFrame) && scrubbingCache) {
+            const cachedView =
+              scrubbingCache.getCachedFrame(video.src, targetTime) ??
+              scrubbingCache.getNearestCachedFrame(video.src, targetTime, cacheSearchDistanceFrames);
+            if (cachedView) {
+              layerData.push({
+                layer,
+                isVideo: false,
+                externalTexture: null,
+                textureView: cachedView,
+                sourceWidth: video.videoWidth,
+                sourceHeight: video.videoHeight,
+              });
+              continue;
+            }
+            if (!allowLiveVideoImport && safeFallback) {
+              layerData.push({
+                layer,
+                isVideo: false,
+                externalTexture: null,
+                textureView: safeFallback.view,
+                sourceWidth: safeFallback.width,
+                sourceHeight: safeFallback.height,
+              });
+              continue;
+            }
+            if (!allowLiveVideoImport && emergencyHoldFrame) {
+              layerData.push({
+                layer,
+                isVideo: false,
+                externalTexture: null,
+                textureView: emergencyHoldFrame.view,
+                sourceWidth: emergencyHoldFrame.width,
+                sourceHeight: emergencyHoldFrame.height,
+              });
+              continue;
+            }
+          }
+
           const copiedFrame = getCopiedHtmlVideoPreviewFrame(
             video,
-            d.cacheManager.getScrubbingCache()
+            scrubbingCache,
+            targetTime,
+            layer.sourceClipId,
+            captureOwnerId
           );
-          if (copiedFrame) {
+          if (allowLiveVideoImport && copiedFrame) {
             layerData.push({
               layer,
               isVideo: false,
@@ -330,9 +521,73 @@ export class RenderDispatcher {
             continue;
           }
 
-          const extTex = d.textureManager?.importVideoTexture(video);
+          const extTex = allowLiveVideoImport
+            ? d.textureManager?.importVideoTexture(video)
+            : null;
           if (extTex) {
+            if (scrubbingCache && allowConfirmedFrameCaching && !(d.renderLoop?.getIsPlaying() ?? false)) {
+              const now = performance.now();
+              const lastCapture = scrubbingCache.getLastCaptureTime(video);
+              if (now - lastCapture > 50) {
+                scrubbingCache.captureVideoFrame(video, captureOwnerId);
+                scrubbingCache.setLastCaptureTime(video, now);
+              }
+              scrubbingCache.cacheFrameAtTime(video, targetTime);
+            } else if (scrubbingCache && !(d.renderLoop?.getIsPlaying() ?? false)) {
+              if (typeof displayedTime === 'number' && Number.isFinite(displayedTime)) {
+                scrubbingCache.captureVideoFrameIfCloser(
+                  video,
+                  targetTime,
+                  displayedTime,
+                  layer.sourceClipId
+                );
+              }
+              if (typeof displayedTime === 'number' && Number.isFinite(displayedTime)) {
+                scrubbingCache.cacheFrameAtTime(video, displayedTime);
+              }
+            }
             layerData.push({ layer, isVideo: true, externalTexture: extTex, textureView: null, sourceWidth: video.videoWidth, sourceHeight: video.videoHeight });
+            continue;
+        }
+
+        const notReadyCachedFrame =
+          scrubbingCache?.getCachedFrameEntry(video.src, targetTime) ??
+          scrubbingCache?.getNearestCachedFrameEntry(video.src, targetTime, cacheSearchDistanceFrames);
+        if (notReadyCachedFrame) {
+          layerData.push({
+            layer,
+            isVideo: false,
+            externalTexture: null,
+            textureView: notReadyCachedFrame.view,
+            sourceWidth: video.videoWidth,
+            sourceHeight: video.videoHeight,
+            displayedMediaTime: notReadyCachedFrame.mediaTime,
+            targetMediaTime: targetTime,
+            previewPath: 'not-ready-scrub-cache',
+          });
+          continue;
+        }
+
+        if (safeFallback) {
+          layerData.push({
+            layer,
+              isVideo: false,
+              externalTexture: null,
+              textureView: safeFallback.view,
+              sourceWidth: safeFallback.width,
+              sourceHeight: safeFallback.height,
+            });
+            continue;
+          }
+          if (emergencyHoldFrame) {
+            layerData.push({
+              layer,
+              isVideo: false,
+              externalTexture: null,
+              textureView: emergencyHoldFrame.view,
+              sourceWidth: emergencyHoldFrame.width,
+              sourceHeight: emergencyHoldFrame.height,
+            });
             continue;
           }
         }
@@ -370,6 +625,7 @@ export class RenderDispatcher {
         const blackView = blackTex.createView();
         const blackBindGroup = d.outputPipeline.createOutputBindGroup(d.sampler, blackView, showGrid);
         d.outputPipeline.renderToCanvas(commandEncoder, canvasContext, blackBindGroup);
+        this.recordMainPreviewFrame('target-empty');
       }
       device.queue.submit([commandEncoder.finish()]);
       return;
@@ -428,6 +684,7 @@ export class RenderDispatcher {
 
     const outputBindGroup = d.outputPipeline!.createOutputBindGroup(d.sampler!, readView, showGrid);
     d.outputPipeline!.renderToCanvas(commandEncoder, canvasContext, outputBindGroup);
+    this.recordMainPreviewFrame('target-canvas', layerData);
 
     device.queue.submit([commandEncoder.finish()]);
   }
@@ -444,6 +701,10 @@ export class RenderDispatcher {
     if (gpuCached) {
       const commandEncoder = device.createCommandEncoder();
       d.outputPipeline.renderToCanvas(commandEncoder, d.previewContext, gpuCached.bindGroup);
+      this.recordMainPreviewFrame('ram-gpu-cache', undefined, {
+        targetTimeMs: Math.round(time * 1000),
+        displayedTimeMs: Math.round(time * 1000),
+      });
       // Output to all activeComp targets
       const activeTargets = useRenderTargetStore.getState().getActiveCompTargets();
       for (const target of activeTargets) {
@@ -493,6 +754,10 @@ export class RenderDispatcher {
 
       const commandEncoder = device.createCommandEncoder();
       d.outputPipeline.renderToCanvas(commandEncoder, d.previewContext, bindGroup);
+      this.recordMainPreviewFrame('ram-cpu-cache', undefined, {
+        targetTimeMs: Math.round(time * 1000),
+        displayedTimeMs: Math.round(time * 1000),
+      });
       // Output to all activeComp targets
       const cachedActiveTargets = useRenderTargetStore.getState().getActiveCompTargets();
       for (const target of cachedActiveTargets) {

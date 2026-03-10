@@ -18,6 +18,9 @@ export type VFPipelineEventType =
   | 'vf_settle_seek'     // precise seek after scrub-stop (HTMLVideo)
   | 'vf_wc_settle_seek'  // precise seek after scrub-stop (WebCodecs)
   | 'vf_drift'           // drift correction during playback
+  | 'vf_preview_frame'   // main preview render submitted
+  | 'vf_scrub_path'      // HTML scrub path/fallback selection
+  | 'vf_scrub_owner_miss'// cached frame owner mismatched requested clip
   // Audio
   | 'audio_drift'        // audio element drift from expected time
   | 'audio_drift_correct'// audio re-synced (drift > 300ms)
@@ -185,6 +188,10 @@ class VfPipelineMonitor {
       seeksFast: 0,
       seeksPrecise: 0,
       seeksDone: 0,
+      previewFrames: 0,
+      previewUpdates: 0,
+      stalePreviewFrames: 0,
+      stalePreviewWhileTargetMoved: 0,
       driftCorrections: 0,
       stalls: 0,
       readyStateDrops: 0,
@@ -197,6 +204,9 @@ class VfPipelineMonitor {
     let stallTotalMs = 0;
     const audioDrifts: number[] = [];
     const seekDurations: number[] = [];
+    const previewFrameTimes: number[] = [];
+    const previewUpdateTimes: number[] = [];
+    const previewDrifts: number[] = [];
 
     // Track seek pairs for duration calculation
     let lastSeekStartTime = 0;
@@ -225,6 +235,25 @@ class VfPipelineMonitor {
             lastSeekStartTime = 0;
           }
           break;
+        case 'vf_preview_frame': {
+          counts.previewFrames++;
+          previewFrameTimes.push(e.t);
+          const changed = e.detail?.changed === 'true';
+          const targetMoved = e.detail?.targetMoved === 'true';
+          if (changed) {
+            counts.previewUpdates++;
+            previewUpdateTimes.push(e.t);
+          } else {
+            counts.stalePreviewFrames++;
+            if (targetMoved) {
+              counts.stalePreviewWhileTargetMoved++;
+            }
+          }
+          if (e.detail?.driftMs !== undefined) {
+            previewDrifts.push(Math.abs(Number(e.detail.driftMs)));
+          }
+          break;
+        }
         case 'vf_drift': counts.driftCorrections++; break;
         case 'vf_stall':
           counts.stalls++;
@@ -251,6 +280,15 @@ class VfPipelineMonitor {
       stallTotalMs: Math.round(stallTotalMs),
       avgSeekDurationMs: Math.round(avg(seekDurations) * 100) / 100,
       maxSeekDurationMs: Math.round(max(seekDurations) * 100) / 100,
+      previewUpdateRatePct: counts.previewFrames > 0
+        ? Math.round((counts.previewUpdates / counts.previewFrames) * 1000) / 10
+        : 0,
+      avgPreviewFrameGapMs: Math.round(avg(previewFrameTimes.slice(1).map((t, i) => t - previewFrameTimes[i])) * 100) / 100,
+      maxPreviewFrameGapMs: Math.round(max(previewFrameTimes.slice(1).map((t, i) => t - previewFrameTimes[i])) * 100) / 100,
+      avgPreviewUpdateGapMs: Math.round(avg(previewUpdateTimes.slice(1).map((t, i) => t - previewUpdateTimes[i])) * 100) / 100,
+      maxPreviewUpdateGapMs: Math.round(max(previewUpdateTimes.slice(1).map((t, i) => t - previewUpdateTimes[i])) * 100) / 100,
+      avgPreviewDriftMs: Math.round(avg(previewDrifts) * 100) / 100,
+      maxPreviewDriftMs: Math.round(max(previewDrifts) * 100) / 100,
       avgAudioDriftMs: Math.round(avg(audioDrifts) * 100) / 100,
       maxAudioDriftMs: Math.round(max(audioDrifts) * 100) / 100,
     };

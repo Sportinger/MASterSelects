@@ -35,6 +35,7 @@ export function StatsOverlay({ stats, resolution, expanded, onToggle }: StatsOve
   const playbackBottleneck = useMemo(() => {
     const playback = stats.playback;
     if (!playback) return null;
+    if (playback.stalePreviewWhileTargetMoved >= 6) return 'Preview freeze';
     if ((playback.collectorDrops ?? 0) > 0) return 'Collector gaps';
     if ((playback.maxPendingSeekMs ?? 0) >= 80) return 'Pending seek';
     if ((playback.decoderResets ?? 0) >= 3) return 'Decoder resets';
@@ -217,6 +218,30 @@ export function StatsOverlay({ stats, resolution, expanded, onToggle }: StatsOve
             <span>Pipeline</span>
             <span>{stats.playback.pipeline}</span>
           </div>
+          {stats.playback.previewFrames > 0 && (
+            <div className="stats-row">
+              <span>Preview Updates</span>
+              <span style={{ color: stats.playback.stalePreviewWhileTargetMoved > 0 ? '#ff4' : '#aaa' }}>
+                {stats.playback.previewUpdates} / {stats.playback.previewFrames}
+              </span>
+            </div>
+          )}
+          {stats.playback.previewFrames > 0 && (
+            <div className="stats-row">
+              <span>Preview Gap</span>
+              <span style={{ color: stats.playback.maxPreviewUpdateGapMs >= 180 ? '#f44' : stats.playback.avgPreviewUpdateGapMs >= 80 ? '#ff4' : '#aaa' }}>
+                avg {stats.playback.avgPreviewUpdateGapMs} / max {stats.playback.maxPreviewUpdateGapMs}ms
+              </span>
+            </div>
+          )}
+          {stats.playback.previewFrames > 0 && (
+            <div className="stats-row">
+              <span>Preview Drift</span>
+              <span style={{ color: stats.playback.maxPreviewDriftMs >= 160 ? '#f44' : stats.playback.avgPreviewDriftMs >= 60 ? '#ff4' : '#aaa' }}>
+                avg {stats.playback.avgPreviewDriftMs} / max {stats.playback.maxPreviewDriftMs}ms
+              </span>
+            </div>
+          )}
           {stats.playback.decoderResets !== undefined && (
             <div className="stats-row">
               <span>Decoder Resets</span>

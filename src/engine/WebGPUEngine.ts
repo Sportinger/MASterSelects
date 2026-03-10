@@ -561,8 +561,28 @@ export class WebGPUEngine {
    * Ensure the scrubbing cache has at least one frame for this video.
    * Called before seeking to provide a fallback frame during seek.
    */
-  ensureVideoFrameCached(video: HTMLVideoElement): void {
-    this.cacheManager.ensureVideoFrameCached(video);
+  ensureVideoFrameCached(video: HTMLVideoElement, ownerId?: string): void {
+    this.cacheManager.ensureVideoFrameCached(video, ownerId);
+  }
+
+  captureVideoFrameAtTime(video: HTMLVideoElement, time: number, ownerId?: string): boolean {
+    return this.cacheManager.captureVideoFrameAtTime(video, time, ownerId);
+  }
+
+  markVideoFramePresented(video: HTMLVideoElement, time?: number, ownerId?: string): void {
+    this.cacheManager.markVideoFramePresented(video, time, ownerId);
+  }
+
+  getLastPresentedVideoTime(video: HTMLVideoElement): number | undefined {
+    return this.cacheManager.getLastPresentedVideoTime(video);
+  }
+
+  getLastPresentedVideoOwner(video: HTMLVideoElement): string | undefined {
+    return this.cacheManager.getLastPresentedVideoOwner(video);
+  }
+
+  markVideoGpuReady(video: HTMLVideoElement): void {
+    this.layerCollector?.markVideoGpuReady(video);
   }
 
   /**
@@ -570,8 +590,8 @@ export class WebGPUEngine {
    * This is the ONLY way to get a real frame from a never-played video after reload.
    * Call from canplaythrough handlers during project restore.
    */
-  async preCacheVideoFrame(video: HTMLVideoElement): Promise<boolean> {
-    const success = await this.cacheManager.preCacheVideoFrame(video);
+  async preCacheVideoFrame(video: HTMLVideoElement, ownerId?: string): Promise<boolean> {
+    const success = await this.cacheManager.preCacheVideoFrame(video, ownerId);
     if (success) {
       this.requestRender();
     }
