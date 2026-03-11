@@ -135,6 +135,8 @@ export interface TimelineControlsProps {
   onToggleCutTool: () => void;
   onSetDuration: (duration: number) => void;
   onFitToWindow: () => void;
+  onToggleSlotGrid: () => void;
+  slotGridActive: boolean;
   formatTime: (seconds: number) => string;
   parseTime: (timeStr: string) => number | null;
 }

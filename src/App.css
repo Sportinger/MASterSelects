@@ -6164,6 +6164,12 @@ input[type="checkbox"] {
   gap: 6px;
 }
 
+.timeline-slot-toggle {
+  display: flex;
+  align-items: center;
+  margin-left: 4px;
+}
+
 .ram-preview-progress {
   width: 80px;
   height: 6px;

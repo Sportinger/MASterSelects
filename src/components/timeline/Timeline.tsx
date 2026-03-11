@@ -32,6 +32,7 @@ import { PickWhipCables } from './components/PickWhipCables';
 import { ParentChildLinksOverlay } from './components/ParentChildLinksOverlay';
 import { VerticalScrollbar } from './VerticalScrollbar';
 import { SlotGrid } from './SlotGrid';
+import { animateSlotGrid } from './slotGridAnimation';
 import { useTimelineKeyboard } from './hooks/useTimelineKeyboard';
 import { useTimelineZoom } from './hooks/useTimelineZoom';
 import { usePlayheadDrag } from './hooks/usePlayheadDrag';
@@ -181,6 +182,9 @@ export function Timeline() {
 
   // Stable callbacks for TimelineControls (avoids re-renders from inline arrows)
   const toggleProxyEnabled = useMediaStore(state => state.toggleProxyEnabled);
+  const handleToggleSlotGrid = useCallback(() => {
+    animateSlotGrid(slotGridProgress < 0.5 ? 1 : 0);
+  }, [slotGridProgress]);
 
   // Use store toggle directly (no useCallback needed - stable store reference)
 
@@ -841,6 +845,8 @@ export function Timeline() {
         onToggleCutTool={toggleCutTool}
         onSetDuration={setDuration}
         onFitToWindow={handleFitToWindow}
+        onToggleSlotGrid={handleToggleSlotGrid}
+        slotGridActive={slotGridProgress > 0.5}
         formatTime={formatTime}
         parseTime={parseTime}
       />}

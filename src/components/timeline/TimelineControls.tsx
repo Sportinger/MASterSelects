@@ -41,6 +41,8 @@ function TimelineControlsComponent({
   onToggleCutTool,
   onSetDuration,
   onFitToWindow,
+  onToggleSlotGrid,
+  slotGridActive,
   formatTime,
   parseTime,
 }: TimelineControlsProps) {
@@ -268,7 +270,20 @@ function TimelineControlsComponent({
           )}
         </div>
       </div>
-      {/* Track add buttons removed - use right-click on track headers instead */}
+      <div className="timeline-slot-toggle">
+        <button
+          className={`btn btn-sm btn-icon ${slotGridActive ? 'btn-active' : ''}`}
+          onClick={onToggleSlotGrid}
+          title={slotGridActive ? 'Back to Timeline (Ctrl+Shift+Scroll)' : 'Slot Grid View (Ctrl+Shift+Scroll)'}
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="3" width="7" height="7" rx="1" />
+            <rect x="14" y="3" width="7" height="7" rx="1" />
+            <rect x="3" y="14" width="7" height="7" rx="1" />
+            <rect x="14" y="14" width="7" height="7" rx="1" />
+          </svg>
+        </button>
+      </div>
     </div>
   );
 }

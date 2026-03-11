@@ -106,8 +106,8 @@ export function useTimelineZoom({
       const target = e.target as HTMLElement;
       const isOverTrackHeaders = target.closest('.track-headers') !== null;
 
-      // Ctrl+Shift+Scroll: toggle slot grid view (single trigger, 250ms animation)
-      if (e.ctrlKey && e.shiftKey) {
+      // Ctrl+Shift+Scroll (Win/Linux) or Cmd+Shift+Scroll (Mac): toggle slot grid view
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
         e.preventDefault();
         animateSlotGrid(e.deltaY > 0 ? 1 : 0);
         return;
