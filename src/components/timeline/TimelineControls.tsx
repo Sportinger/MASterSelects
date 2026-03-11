@@ -99,6 +99,18 @@ function TimelineControlsComponent({
   };
   return (
     <div className="timeline-toolbar">
+      <div className="timeline-slot-toggle">
+        <button
+          className={`btn btn-sm btn-icon ${slotGridActive ? 'btn-active' : ''}`}
+          onClick={onToggleSlotGrid}
+          title={slotGridActive ? 'Back to Timeline (Ctrl+Shift+Scroll)' : 'Slot Grid View (Ctrl+Shift+Scroll)'}
+        >
+          {slotGridActive
+            ? <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><rect x="1" y="2" width="14" height="2" rx="0.5"/><rect x="1" y="7" width="14" height="2" rx="0.5"/><rect x="1" y="12" width="14" height="2" rx="0.5"/></svg>
+            : <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
+          }
+        </button>
+      </div>
       <div className="timeline-controls">
         <button className="btn btn-sm" onClick={onStop} title="Stop">
           {'\u23F9'}
@@ -269,20 +281,6 @@ function TimelineControlsComponent({
             </div>
           )}
         </div>
-      </div>
-      <div className="timeline-slot-toggle">
-        <button
-          className={`btn btn-sm btn-icon ${slotGridActive ? 'btn-active' : ''}`}
-          onClick={onToggleSlotGrid}
-          title={slotGridActive ? 'Back to Timeline (Ctrl+Shift+Scroll)' : 'Slot Grid View (Ctrl+Shift+Scroll)'}
-        >
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
-            <rect x="3" y="3" width="7" height="7" rx="1" />
-            <rect x="14" y="3" width="7" height="7" rx="1" />
-            <rect x="3" y="14" width="7" height="7" rx="1" />
-            <rect x="14" y="14" width="7" height="7" rx="1" />
-          </svg>
-        </button>
       </div>
     </div>
   );

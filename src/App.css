@@ -6201,7 +6201,7 @@ input[type="checkbox"] {
 .timeline-slot-toggle {
   display: flex;
   align-items: center;
-  margin-left: 4px;
+  margin-right: 4px;
 }
 
 .ram-preview-progress {
