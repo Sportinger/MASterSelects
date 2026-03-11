@@ -5,6 +5,7 @@ import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 import type { RenderTarget, RenderSource } from '../types/renderTarget';
 import { useMediaStore } from './mediaStore';
+import { isRenderTargetRenderable } from '../utils/renderTargetVisibility';
 
 interface RenderTargetState {
   targets: Map<string, RenderTarget>;
@@ -171,7 +172,7 @@ export const useRenderTargetStore = create<RenderTargetState & RenderTargetActio
       const { targets } = get();
       const result: RenderTarget[] = [];
       for (const target of targets.values()) {
-        if (!target.enabled || !target.context) continue;
+        if (!isRenderTargetRenderable(target)) continue;
         if (target.source.type === 'activeComp' || target.source.type === 'program') {
           result.push(target);
         }
@@ -193,7 +194,7 @@ export const useRenderTargetStore = create<RenderTargetState & RenderTargetActio
       const activeCompId = useMediaStore.getState().activeCompositionId;
       const result: RenderTarget[] = [];
       for (const target of targets.values()) {
-        if (!target.enabled || !target.context) continue;
+        if (!isRenderTargetRenderable(target)) continue;
         if (target.source.type === 'composition' && target.source.compositionId !== activeCompId) {
           result.push(target);
         }

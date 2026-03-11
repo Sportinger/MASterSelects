@@ -12,7 +12,7 @@
 
 import { Logger } from './logger';
 import { engine } from '../engine/WebGPUEngine';
-import { layerBuilder } from './layerBuilder';
+import { createFrameContext, getClipTimeInfo, layerBuilder } from './layerBuilder';
 import { useTimelineStore } from '../stores/timeline';
 
 const log = Logger.create('PlaybackHealth');
@@ -52,6 +52,9 @@ const WARMUP_STUCK_MS = 3000;
 const SEEK_STUCK_MS = 2000;
 const RENDER_STALL_MS = 3000;
 const HIGH_DROP_THRESHOLD = 10;
+const CLIP_ESCALATION_WINDOW_MS = 12000;
+const CLIP_ESCALATION_THRESHOLD = 3;
+const CLIP_ESCALATION_COOLDOWN_MS = 15000;
 
 // --- Service ---
 
@@ -63,6 +66,8 @@ export class PlaybackHealthMonitor {
   private videoTimeTracker = new Map<string, VideoTimeTracker>();
   private warmupStartTimes = new WeakMap<HTMLVideoElement, number>();
   private seekStartTimes = new Map<string, number>();
+  private clipEscalationEvents = new Map<string, number[]>();
+  private clipEscalationCooldowns = new Map<string, number>();
 
   // Anomaly log (ring buffer)
   private anomalyLog: AnomalyEvent[] = [];
@@ -155,6 +160,7 @@ export class PlaybackHealthMonitor {
             if (tracker.staleCount >= FRAME_STALL_POLLS) {
               if (this.recordAnomaly('FRAME_STALL', clip.id, `currentTime stuck at ${video.currentTime.toFixed(3)}`)) {
                 this.recoverFrameStall(video);
+                this.maybeEscalateClipRecovery(clip, 'FRAME_STALL');
               }
               tracker.staleCount = 0;
             }
@@ -208,6 +214,7 @@ export class PlaybackHealthMonitor {
           if (now - seekStart > SEEK_STUCK_MS) {
             if (this.recordAnomaly('SEEK_STUCK', clip.id, `seeking for ${((now - seekStart) / 1000).toFixed(1)}s`)) {
               this.recoverSeekStuck(video);
+              this.maybeEscalateClipRecovery(clip, 'SEEK_STUCK');
             }
             this.seekStartTimes.delete(clip.id);
           }
@@ -274,6 +281,12 @@ export class PlaybackHealthMonitor {
     for (const id of this.seekStartTimes.keys()) {
       if (!currentClipIdSet.has(id) || !htmlHealthClipIdSet.has(id)) this.seekStartTimes.delete(id);
     }
+    for (const id of this.clipEscalationEvents.keys()) {
+      if (!currentClipIdSet.has(id) || !htmlHealthClipIdSet.has(id)) this.clipEscalationEvents.delete(id);
+    }
+    for (const id of this.clipEscalationCooldowns.keys()) {
+      if (!currentClipIdSet.has(id)) this.clipEscalationCooldowns.delete(id);
+    }
   }
 
   // --- Anomaly recording with cooldown ---
@@ -339,6 +352,57 @@ export class PlaybackHealthMonitor {
     const time = video.currentTime;
     video.currentTime = time;
     engine.requestRender();
+  }
+
+  private maybeEscalateClipRecovery(
+    clip: { id: string; source?: { videoElement?: HTMLVideoElement } | null },
+    reason: 'FRAME_STALL' | 'SEEK_STUCK'
+  ): void {
+    const video = clip.source?.videoElement;
+    if (!video) return;
+
+    const now = performance.now();
+    const cooldownUntil = this.clipEscalationCooldowns.get(clip.id) ?? 0;
+    const recentEvents = (this.clipEscalationEvents.get(clip.id) ?? [])
+      .filter((timestamp) => now - timestamp <= CLIP_ESCALATION_WINDOW_MS);
+    recentEvents.push(now);
+    this.clipEscalationEvents.set(clip.id, recentEvents);
+
+    if (recentEvents.length < CLIP_ESCALATION_THRESHOLD || now < cooldownUntil) {
+      return;
+    }
+
+    this.clipEscalationCooldowns.set(clip.id, now + CLIP_ESCALATION_COOLDOWN_MS);
+    this.clipEscalationEvents.set(clip.id, []);
+    this.escalateClipRecovery(clip.id, video, reason);
+  }
+
+  private escalateClipRecovery(
+    clipId: string,
+    video: HTMLVideoElement,
+    reason: 'FRAME_STALL' | 'SEEK_STUCK'
+  ): void {
+    const vsm = layerBuilder.getVideoSyncManager();
+    const lc = engine.getLayerCollector();
+    const ctx = createFrameContext();
+    const clip = ctx.clips.find((entry) => entry.id === clipId);
+    if (!clip) return;
+
+    const timeInfo = getClipTimeInfo(ctx, clip);
+    const targetTime = timeInfo.clipTime;
+    const resumePlayback = ctx.isPlaying;
+
+    this.videoTimeTracker.delete(clipId);
+    this.seekStartTimes.delete(clipId);
+    this.warmupStartTimes.delete(video);
+
+    lc?.resetVideoGpuReady(video);
+
+    log.warn(
+      `[CLIP_RECOVERY] clip=${clipId} escalating after repeated ${reason} at ${targetTime.toFixed(3)}`
+    );
+
+    vsm.recoverClipPlaybackState(clipId, video, targetTime, { resumePlayback });
   }
 
   softReset(): void {
@@ -427,6 +491,8 @@ export class PlaybackHealthMonitor {
     this.videoTimeTracker.clear();
     this.warmupStartTimes = new WeakMap();
     this.seekStartTimes.clear();
+    this.clipEscalationEvents.clear();
+    this.clipEscalationCooldowns.clear();
     this.anomalyLog.length = 0;
     for (const key of Object.keys(this.anomalyCounts) as AnomalyType[]) {
       this.anomalyCounts[key] = 0;

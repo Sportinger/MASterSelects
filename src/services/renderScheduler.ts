@@ -12,6 +12,7 @@ import { useMediaStore } from '../stores/mediaStore';
 import { useRenderTargetStore } from '../stores/renderTargetStore';
 import { compositionRenderer } from './compositionRenderer';
 import { engine } from '../engine/WebGPUEngine';
+import { isRenderTargetRenderable } from '../utils/renderTargetVisibility';
 
 interface NestedCompInfo {
   clipId: string;
@@ -242,7 +243,7 @@ class RenderSchedulerService {
 
     for (const targetId of this.registeredTargets) {
       const target = store.targets.get(targetId);
-      if (!target || !target.enabled) continue;
+      if (!target || !isRenderTargetRenderable(target)) continue;
 
       // Resolve source to compositionId
       const compId = store.resolveSourceToCompId(target.source);

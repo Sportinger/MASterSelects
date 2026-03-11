@@ -41,8 +41,22 @@ export class CacheManager {
     return this.scrubbingCache?.getCachedFrame(videoSrc, time) ?? null;
   }
 
-  getScrubbingCacheStats(): { count: number; maxCount: number } {
-    return this.scrubbingCache?.getScrubbingCacheStats() ?? { count: 0, maxCount: 0 };
+  getScrubbingCacheStats(): {
+    count: number;
+    maxCount: number;
+    fillPct: number;
+    approxMemoryMB: number;
+    evictions: number;
+    budgetMode: 'static';
+  } {
+    return this.scrubbingCache?.getScrubbingCacheStats() ?? {
+      count: 0,
+      maxCount: 0,
+      fillPct: 0,
+      approxMemoryMB: 0,
+      evictions: 0,
+      budgetMode: 'static',
+    };
   }
 
   clearScrubbingCache(videoSrc?: string): void {

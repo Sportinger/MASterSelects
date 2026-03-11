@@ -244,6 +244,10 @@ export interface EngineStats {
     maxPreviewUpdateGapMs: number;
     stalePreviewFrames: number;
     stalePreviewWhileTargetMoved: number;
+    previewFreezeEvents: number;
+    previewFreezeFrames: number;
+    longestPreviewFreezeFrames: number;
+    longestPreviewFreezeMs: number;
     avgPreviewDriftMs: number;
     maxPreviewDriftMs: number;
     stalls: number;
@@ -271,6 +275,11 @@ export interface EngineStats {
     maxPendingSeekMs?: number;
     collectorHolds?: number;
     collectorDrops?: number;
+    lastPreviewFreezePath?: string;
+    lastPreviewFreezeClipId?: string;
+    lastPreviewFreezeDurationMs?: number;
+    previewPathCounts?: Record<string, number>;
+    scrubPathCounts?: Record<string, number>;
   };
   // Main-thread frame phase breakdown
   mainThread?: {

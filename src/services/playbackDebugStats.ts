@@ -60,6 +60,15 @@ interface VfTimelineSummary {
   previewUpdates: number;
   stalePreviewFrames: number;
   stalePreviewWhileTargetMoved: number;
+  previewFreezeEvents: number;
+  previewFreezeFrames: number;
+  longestPreviewFreezeFrames: number;
+  longestPreviewFreezeMs: number;
+  lastPreviewFreezePath?: string;
+  lastPreviewFreezeClipId?: string;
+  lastPreviewFreezeDurationMs?: number;
+  previewPathCounts: Record<string, number>;
+  scrubPathCounts: Record<string, number>;
   avgPreviewDriftMs: number;
   maxPreviewDriftMs: number;
   stalls: number;
@@ -125,6 +134,11 @@ function getNumericDetail(
     }
   }
   return undefined;
+}
+
+function incrementCount(counts: Record<string, number>, key: string | undefined): void {
+  const safeKey = key && key.trim().length > 0 ? key : 'unknown';
+  counts[safeKey] = (counts[safeKey] ?? 0) + 1;
 }
 
 export function summarizeFrameCadence(timestamps: number[]): FrameCadenceSummary {
@@ -264,9 +278,48 @@ function summarizeVfTimeline(events: VFPipelineEvent[]): VfTimelineSummary {
   const seekDurations: number[] = [];
   const audioDrifts: number[] = [];
   const previewDrifts: number[] = [];
+  const previewPathCounts: Record<string, number> = {};
+  const scrubPathCounts: Record<string, number> = {};
   let stalePreviewFrames = 0;
   let stalePreviewWhileTargetMoved = 0;
+  let previewFreezeEvents = 0;
+  let previewFreezeFrames = 0;
+  let longestPreviewFreezeFrames = 0;
+  let longestPreviewFreezeMs = 0;
+  let lastPreviewFreezePath: string | undefined;
+  let lastPreviewFreezeClipId: string | undefined;
+  let lastPreviewFreezeDurationMs: number | undefined;
   let lastSeekStartTime: number | null = null;
+  let activeFreeze:
+    | {
+      start: number;
+      end: number;
+      frames: number;
+      previewPath?: string;
+      clipId?: string;
+    }
+    | null = null;
+
+  const finalizeFreeze = () => {
+    if (!activeFreeze) {
+      return;
+    }
+    if (activeFreeze.frames >= 2) {
+      const durationMs = Math.max(0, activeFreeze.end - activeFreeze.start);
+      previewFreezeEvents++;
+      previewFreezeFrames += activeFreeze.frames;
+      if (activeFreeze.frames > longestPreviewFreezeFrames) {
+        longestPreviewFreezeFrames = activeFreeze.frames;
+      }
+      if (durationMs > longestPreviewFreezeMs) {
+        longestPreviewFreezeMs = durationMs;
+      }
+      lastPreviewFreezePath = activeFreeze.previewPath;
+      lastPreviewFreezeClipId = activeFreeze.clipId;
+      lastPreviewFreezeDurationMs = durationMs;
+    }
+    activeFreeze = null;
+  };
 
   for (const event of events) {
     if (event.type === 'vf_seek_fast' || event.type === 'vf_seek_precise') {
@@ -291,6 +344,11 @@ function summarizeVfTimeline(events: VFPipelineEvent[]): VfTimelineSummary {
     }
 
     if (event.type === 'vf_preview_frame') {
+      const previewPath =
+        typeof event.detail?.previewPath === 'string'
+          ? event.detail.previewPath
+          : 'unknown';
+      incrementCount(previewPathCounts, previewPath);
       if (event.detail?.changed !== 'true') {
         stalePreviewFrames++;
         if (event.detail?.targetMoved === 'true') {
@@ -301,8 +359,47 @@ function summarizeVfTimeline(events: VFPipelineEvent[]): VfTimelineSummary {
       if (driftMs !== undefined) {
         previewDrifts.push(Math.abs(driftMs));
       }
+      const isFreezeFrame =
+        event.detail?.changed !== 'true' &&
+        event.detail?.targetMoved === 'true';
+      if (isFreezeFrame) {
+        const clipId =
+          typeof event.detail?.clipId === 'string'
+            ? event.detail.clipId
+            : undefined;
+        if (
+          activeFreeze &&
+          activeFreeze.previewPath === previewPath &&
+          activeFreeze.clipId === clipId
+        ) {
+          activeFreeze.frames++;
+          activeFreeze.end = event.t;
+        } else {
+          finalizeFreeze();
+          activeFreeze = {
+            start: event.t,
+            end: event.t,
+            frames: 1,
+            previewPath,
+            clipId,
+          };
+        }
+      } else {
+        finalizeFreeze();
+      }
+      continue;
+    }
+
+    if (event.type === 'vf_scrub_path') {
+      const scrubPath =
+        typeof event.detail?.path === 'string'
+          ? event.detail.path
+          : 'unknown';
+      incrementCount(scrubPathCounts, scrubPath);
     }
   }
+
+  finalizeFreeze();
 
   return {
     cadence: summarizeFrameCadence(frameTimes),
@@ -312,6 +409,18 @@ function summarizeVfTimeline(events: VFPipelineEvent[]): VfTimelineSummary {
     previewUpdates: previewUpdateTimes.length,
     stalePreviewFrames,
     stalePreviewWhileTargetMoved,
+    previewFreezeEvents,
+    previewFreezeFrames,
+    longestPreviewFreezeFrames,
+    longestPreviewFreezeMs: round(longestPreviewFreezeMs, 1),
+    lastPreviewFreezePath,
+    lastPreviewFreezeClipId,
+    lastPreviewFreezeDurationMs:
+      typeof lastPreviewFreezeDurationMs === 'number'
+        ? round(lastPreviewFreezeDurationMs, 1)
+        : undefined,
+    previewPathCounts,
+    scrubPathCounts,
     avgPreviewDriftMs: round(average(previewDrifts), 1),
     maxPreviewDriftMs: round(max(previewDrifts), 1),
     stalls: events.filter((event) => event.type === 'vf_stall').length,
@@ -435,6 +544,10 @@ export function buildPlaybackDebugStats(params: {
     maxPreviewUpdateGapMs: 0,
     stalePreviewFrames: 0,
     stalePreviewWhileTargetMoved: 0,
+    previewFreezeEvents: 0,
+    previewFreezeFrames: 0,
+    longestPreviewFreezeFrames: 0,
+    longestPreviewFreezeMs: 0,
     avgPreviewDriftMs: 0,
     maxPreviewDriftMs: 0,
     stalls: 0,
@@ -451,6 +564,8 @@ export function buildPlaybackDebugStats(params: {
     coldVideos: healthVideos.filter((video) => !video.gpuReady).length,
     worstReadyState,
     lastAnomalyType: recentHealthAnomalies.at(-1)?.type,
+    previewPathCounts: {},
+    scrubPathCounts: {},
   };
 
   if (pipeline === 'webcodecs') {
@@ -485,6 +600,10 @@ export function buildPlaybackDebugStats(params: {
       maxPreviewUpdateGapMs: vfSummary.previewUpdateCadence.maxFrameGapMs,
       stalePreviewFrames: vfSummary.stalePreviewFrames,
       stalePreviewWhileTargetMoved: vfSummary.stalePreviewWhileTargetMoved,
+      previewFreezeEvents: vfSummary.previewFreezeEvents,
+      previewFreezeFrames: vfSummary.previewFreezeFrames,
+      longestPreviewFreezeFrames: vfSummary.longestPreviewFreezeFrames,
+      longestPreviewFreezeMs: vfSummary.longestPreviewFreezeMs,
       avgPreviewDriftMs: vfSummary.avgPreviewDriftMs,
       maxPreviewDriftMs: vfSummary.maxPreviewDriftMs,
       stalls: vfSummary.stalls,
@@ -494,6 +613,11 @@ export function buildPlaybackDebugStats(params: {
       readyStateDrops: vfSummary.readyStateDrops,
       avgSeekLatencyMs: vfSummary.avgSeekLatencyMs,
       avgAudioDriftMs: vfSummary.avgAudioDriftMs,
+      lastPreviewFreezePath: vfSummary.lastPreviewFreezePath,
+      lastPreviewFreezeClipId: vfSummary.lastPreviewFreezeClipId,
+      lastPreviewFreezeDurationMs: vfSummary.lastPreviewFreezeDurationMs,
+      previewPathCounts: vfSummary.previewPathCounts,
+      scrubPathCounts: vfSummary.scrubPathCounts,
     });
   }
 

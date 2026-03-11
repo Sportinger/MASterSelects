@@ -30,18 +30,19 @@ export class AudioSyncHandler {
     state: AudioSyncState
   ): void {
     const { element, clip, clipTime, absSpeed, isMuted, canBeMaster, type, volume = 1, eqGains } = target;
+    const effectivelyMuted = isMuted || volume <= 0.01;
 
     // Set muted state
-    element.muted = isMuted;
+    element.muted = effectivelyMuted;
 
     // Set pitch preservation
     this.setPitchPreservation(element, clip.preservesPitch !== false);
 
-    const shouldPlay = ctx.isPlaying && !isMuted && !ctx.isDraggingPlayhead && absSpeed > 0.1;
+    const shouldPlay = ctx.isPlaying && !effectivelyMuted && !ctx.isDraggingPlayhead && absSpeed > 0.1;
 
     // Handle scrubbing
-    if (ctx.isDraggingPlayhead && !isMuted) {
-      this.handleScrub(element, clipTime, ctx);
+    if (ctx.isDraggingPlayhead && !effectivelyMuted) {
+      this.handleScrub(element, clipTime, ctx, volume, eqGains);
     } else if (shouldPlay) {
       this.handlePlayback(element, clipTime, absSpeed, clip, canBeMaster, type, state, volume, eqGains);
     } else {
@@ -55,7 +56,9 @@ export class AudioSyncHandler {
   private handleScrub(
     element: HTMLAudioElement | HTMLVideoElement,
     clipTime: number,
-    ctx: FrameContext
+    ctx: FrameContext,
+    volume: number,
+    eqGains?: number[]
   ): void {
     const timeSinceLastScrub = ctx.now - this.lastScrubTime;
     const positionChanged = Math.abs(ctx.playheadPosition - this.lastScrubPosition) > 0.005;
@@ -64,7 +67,30 @@ export class AudioSyncHandler {
       this.lastScrubPosition = ctx.playheadPosition;
       this.lastScrubTime = ctx.now;
       element.playbackRate = 1;
+      this.applyScrubEffects(element, volume, eqGains);
       this.playScrubAudio(element, clipTime);
+    }
+  }
+
+  /**
+   * Standalone audio clips scrub via their media element fallback, so the
+   * element still needs the clip's current volume/EQ applied while dragging.
+   */
+  private applyScrubEffects(
+    element: HTMLAudioElement | HTMLVideoElement,
+    volume: number,
+    eqGains?: number[]
+  ): void {
+    const hasEQ = eqGains?.some(g => Math.abs(g) > 0.01) ?? false;
+
+    if (hasEQ || volume > 1) {
+      void audioRoutingManager.applyEffects(element, volume, eqGains ?? new Array(10).fill(0));
+      return;
+    }
+
+    const targetVolume = Math.max(0, Math.min(1, volume));
+    if (Math.abs(element.volume - targetVolume) > 0.01) {
+      element.volume = targetVolume;
     }
   }
 
@@ -73,7 +99,6 @@ export class AudioSyncHandler {
    */
   private playScrubAudio(element: HTMLAudioElement | HTMLVideoElement, time: number): void {
     element.currentTime = time;
-    element.volume = 0.8;
     element.play().catch(() => {});
 
     // Only set new timeout if none active

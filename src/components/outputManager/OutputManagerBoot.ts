@@ -5,9 +5,14 @@
 import { createRoot } from 'react-dom/client';
 import { createElement } from 'react';
 import { OutputManager } from './OutputManager';
+import { useTimelineStore } from '../../stores/timeline';
 
 let managerWindow: Window | null = null;
 const OM_OPEN_KEY = 'masterselects-om-open';
+
+function shouldTransferPopupFocus(): boolean {
+  return !useTimelineStore.getState().isPlaying;
+}
 
 export function closeOutputManager(): void {
   if (managerWindow && !managerWindow.closed) {
@@ -66,13 +71,16 @@ function injectOutputManagerUI(win: Window): void {
     localStorage.removeItem(OM_OPEN_KEY);
   };
 
-  // Ensure popup gets foreground activation on Windows:
-  // Blur the parent first to release foreground lock, then focus the popup
-  // from its own context so the OS allows it to become the foreground window.
-  window.blur();
-  win.focus();
-  win.setTimeout(() => win.focus(), 50);
-  win.setTimeout(() => win.focus(), 200);
+  // Avoid stealing focus from the main editor during playback.
+  if (shouldTransferPopupFocus()) {
+    // Ensure popup gets foreground activation on Windows:
+    // Blur the parent first to release foreground lock, then focus the popup
+    // from its own context so the OS allows it to become the foreground window.
+    window.blur();
+    win.focus();
+    win.setTimeout(() => win.focus(), 50);
+    win.setTimeout(() => win.focus(), 200);
+  }
 }
 
 export function openOutputManager(): void {

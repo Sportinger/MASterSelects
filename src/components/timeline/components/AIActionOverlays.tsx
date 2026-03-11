@@ -4,6 +4,7 @@
 // - Delete ghost clips fading out
 // - Trim edge highlights
 
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import { useTimelineStore } from '../../../stores/timeline';
 import type { TimelineTrack } from '../../../types';
 import type { AIActionOverlay } from '../../../stores/timeline/types';
@@ -15,56 +16,228 @@ interface AIActionOverlaysProps {
   getExpandedTrackHeight: (trackId: string, baseHeight: number) => number;
 }
 
-function getTrackLayout(
-  trackId: string,
+type TrackLayout = {
+  top: number;
+  height: number;
+};
+
+function buildTrackLayouts(
   tracks: TimelineTrack[],
   isTrackExpanded: (trackId: string) => boolean,
   getExpandedTrackHeight: (trackId: string, baseHeight: number) => number
-): { top: number; height: number } | null {
-  const track = tracks.find(t => t.id === trackId);
-  if (!track) return null;
+): Map<string, TrackLayout> {
+  let top = 0;
+  const layouts = new Map<string, TrackLayout>();
 
-  const trackIndex = tracks.indexOf(track);
-  const top = tracks
-    .slice(0, trackIndex)
-    .reduce((sum, t) => sum + (isTrackExpanded(t.id) ? getExpandedTrackHeight(t.id, t.height) : t.height), 0);
-  const height = isTrackExpanded(track.id) ? getExpandedTrackHeight(track.id, track.height) : track.height;
+  for (const track of tracks) {
+    const height = isTrackExpanded(track.id)
+      ? getExpandedTrackHeight(track.id, track.height)
+      : track.height;
+    layouts.set(track.id, { top, height });
+    top += height;
+  }
 
-  return { top, height };
+  return layouts;
+}
+
+function syncCanvasSize(canvas: HTMLCanvasElement): { width: number; height: number; dpr: number } {
+  const width = canvas.clientWidth;
+  const height = canvas.clientHeight;
+  const dpr = window.devicePixelRatio || 1;
+  const nextWidth = Math.max(1, Math.round(width * dpr));
+  const nextHeight = Math.max(1, Math.round(height * dpr));
+
+  if (canvas.width !== nextWidth || canvas.height !== nextHeight) {
+    canvas.width = nextWidth;
+    canvas.height = nextHeight;
+  }
+
+  return { width, height, dpr };
+}
+
+function getSplitGlowOpacity(progress: number): number {
+  if (progress <= 0.05) return progress / 0.05;
+  if (progress <= 0.3) return 1;
+  return Math.max(0, 1 - (progress - 0.3) / 0.7);
+}
+
+function getSplitGlowScale(progress: number): number {
+  if (progress <= 0.05) return 0.8 + (progress / 0.05) * 0.2;
+  if (progress <= 0.3) return 1;
+  return Math.max(0.95, 1 - ((progress - 0.3) / 0.7) * 0.05);
+}
+
+function drawSplitGlow(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  top: number,
+  height: number,
+  progress: number
+): void {
+  const opacity = getSplitGlowOpacity(progress);
+  if (opacity <= 0) return;
+
+  const scale = getSplitGlowScale(progress);
+  const centerY = top + height / 2;
+  const scaledHeight = Math.max(12, height * scale);
+  const y1 = centerY - scaledHeight / 2;
+  const y2 = centerY + scaledHeight / 2;
+  const crispX = Math.round(x) + 0.5;
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+
+  ctx.globalAlpha = opacity * 0.28;
+  ctx.strokeStyle = '#3b82f6';
+  ctx.lineWidth = 10;
+  ctx.shadowColor = 'rgba(59, 130, 246, 0.9)';
+  ctx.shadowBlur = 26;
+  ctx.beginPath();
+  ctx.moveTo(crispX, y1);
+  ctx.lineTo(crispX, y2);
+  ctx.stroke();
+
+  ctx.globalAlpha = opacity * 0.9;
+  ctx.strokeStyle = '#93c5fd';
+  ctx.lineWidth = 2.5;
+  ctx.shadowBlur = 10;
+  ctx.beginPath();
+  ctx.moveTo(crispX, y1);
+  ctx.lineTo(crispX, y2);
+  ctx.stroke();
+
+  ctx.globalAlpha = opacity * 0.75;
+  ctx.shadowBlur = 12;
+  ctx.fillStyle = '#3b82f6';
+
+  ctx.beginPath();
+  ctx.moveTo(crispX, y1 - 1);
+  ctx.lineTo(crispX - 5, y1 + 7);
+  ctx.lineTo(crispX + 5, y1 + 7);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(crispX, y2 + 1);
+  ctx.lineTo(crispX - 5, y2 - 7);
+  ctx.lineTo(crispX + 5, y2 - 7);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function SplitGlowCanvas({
+  overlays,
+  trackLayouts,
+  timeToPixel,
+}: {
+  overlays: AIActionOverlay[];
+  trackLayouts: Map<string, TrackLayout>;
+  timeToPixel: (time: number) => number;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return undefined;
+
+    const resize = () => {
+      syncCanvasSize(canvas);
+    };
+
+    resize();
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(resize);
+      observer.observe(canvas);
+      return () => observer.disconnect();
+    }
+
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || overlays.length === 0) return undefined;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return undefined;
+
+    let frameId = 0;
+
+    const render = () => {
+      const { width, height, dpr } = syncCanvasSize(canvas);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+
+      const now = Date.now();
+      let hasPendingAnimation = false;
+
+      for (const overlay of overlays) {
+        const layout = trackLayouts.get(overlay.trackId);
+        if (!layout) continue;
+
+        const elapsed = now - overlay.createdAt - (overlay.animationDelay || 0);
+        if (elapsed < overlay.duration) {
+          hasPendingAnimation = true;
+        }
+        if (elapsed < 0 || elapsed > overlay.duration) {
+          continue;
+        }
+
+        drawSplitGlow(
+          ctx,
+          timeToPixel(overlay.timePosition),
+          layout.top,
+          layout.height,
+          elapsed / overlay.duration
+        );
+      }
+
+      if (hasPendingAnimation) {
+        frameId = requestAnimationFrame(render);
+      }
+    };
+
+    render();
+
+    return () => {
+      cancelAnimationFrame(frameId);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    };
+  }, [overlays, timeToPixel, trackLayouts]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      aria-hidden="true"
+      style={{
+        position: 'absolute',
+        inset: 0,
+        width: '100%',
+        height: '100%',
+        pointerEvents: 'none',
+      }}
+    />
+  );
 }
 
 function OverlayElement({
   overlay,
-  tracks,
+  trackLayouts,
   timeToPixel,
-  isTrackExpanded,
-  getExpandedTrackHeight,
 }: {
   overlay: AIActionOverlay;
-  tracks: TimelineTrack[];
+  trackLayouts: Map<string, TrackLayout>;
   timeToPixel: (time: number) => number;
-  isTrackExpanded: (trackId: string) => boolean;
-  getExpandedTrackHeight: (trackId: string, baseHeight: number) => number;
 }) {
-  const layout = getTrackLayout(overlay.trackId, tracks, isTrackExpanded, getExpandedTrackHeight);
+  const layout = trackLayouts.get(overlay.trackId);
   if (!layout) return null;
 
   switch (overlay.type) {
-    case 'split-glow':
-      return (
-        <div
-          className="ai-split-glow"
-          style={{
-            left: timeToPixel(overlay.timePosition),
-            top: layout.top,
-            height: layout.height,
-            animationDelay: overlay.animationDelay ? `${overlay.animationDelay}ms` : undefined,
-          }}
-        />
-      );
-
     case 'delete-ghost': {
-      // Width needs to be calculated as pixel difference, not absolute timeToPixel
       const widthPx = overlay.width
         ? timeToPixel(overlay.timePosition + overlay.width) - timeToPixel(overlay.timePosition)
         : 4;
@@ -147,6 +320,10 @@ export function AIActionOverlays({
 
   if (overlays.length === 0) return null;
 
+  const trackLayouts = buildTrackLayouts(tracks, isTrackExpanded, getExpandedTrackHeight);
+  const splitGlowOverlays = overlays.filter(overlay => overlay.type === 'split-glow');
+  const otherOverlays = overlays.filter(overlay => overlay.type !== 'split-glow');
+
   return (
     <div
       className="ai-action-overlays"
@@ -157,14 +334,20 @@ export function AIActionOverlays({
         zIndex: 200,
       }}
     >
-      {overlays.map(overlay => (
+      {splitGlowOverlays.length > 0 && (
+        <SplitGlowCanvas
+          overlays={splitGlowOverlays}
+          trackLayouts={trackLayouts}
+          timeToPixel={timeToPixel}
+        />
+      )}
+
+      {otherOverlays.map(overlay => (
         <OverlayElement
           key={overlay.id}
           overlay={overlay}
-          tracks={tracks}
+          trackLayouts={trackLayouts}
           timeToPixel={timeToPixel}
-          isTrackExpanded={isTrackExpanded}
-          getExpandedTrackHeight={getExpandedTrackHeight}
         />
       ))}
     </div>

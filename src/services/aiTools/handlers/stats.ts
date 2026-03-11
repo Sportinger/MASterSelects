@@ -1,13 +1,97 @@
 import { useEngineStore } from '../../../stores/engineStore';
+import { engine } from '../../../engine/WebGPUEngine';
 import { Logger } from '../../logger';
+import { getPlaybackDebugStats } from '../../playbackDebugSnapshot';
+import { buildPlaybackDebugStats } from '../../playbackDebugStats';
 import { playbackHealthMonitor } from '../../playbackHealthMonitor';
 import { vfPipelineMonitor } from '../../vfPipelineMonitor';
 import { wcPipelineMonitor } from '../../wcPipelineMonitor';
 import type { ToolResult } from '../types';
 
-function collectSnapshot() {
+const DEFAULT_PLAYBACK_WINDOW_MS = 5000;
+const MAX_TRACE_WINDOW_MS = 120000;
+const MAX_TRACE_EVENTS = 2000;
+
+function roundOptional(v: number | undefined): number | undefined {
+  return typeof v === 'number' ? round(v) : undefined;
+}
+
+function cloneCounts(counts: Record<string, number> | undefined): Record<string, number> | undefined {
+  return counts ? { ...counts } : undefined;
+}
+
+function serializePlayback(playback: ReturnType<typeof getPlaybackDebugStats>): Record<string, unknown> {
+  return {
+    status: playback.status,
+    windowMs: playback.windowMs,
+    pipeline: playback.pipeline,
+    frameEvents: playback.frameEvents,
+    cadenceFps: round(playback.cadenceFps),
+    avgFrameGapMs: round(playback.avgFrameGapMs),
+    p95FrameGapMs: round(playback.p95FrameGapMs),
+    maxFrameGapMs: round(playback.maxFrameGapMs),
+    previewFrames: playback.previewFrames,
+    previewUpdates: playback.previewUpdates,
+    previewRenderFps: round(playback.previewRenderFps),
+    previewUpdateFps: round(playback.previewUpdateFps),
+    avgPreviewRenderGapMs: round(playback.avgPreviewRenderGapMs),
+    p95PreviewRenderGapMs: round(playback.p95PreviewRenderGapMs),
+    maxPreviewRenderGapMs: round(playback.maxPreviewRenderGapMs),
+    avgPreviewUpdateGapMs: round(playback.avgPreviewUpdateGapMs),
+    p95PreviewUpdateGapMs: round(playback.p95PreviewUpdateGapMs),
+    maxPreviewUpdateGapMs: round(playback.maxPreviewUpdateGapMs),
+    stalePreviewFrames: playback.stalePreviewFrames,
+    stalePreviewWhileTargetMoved: playback.stalePreviewWhileTargetMoved,
+    previewFreezeEvents: playback.previewFreezeEvents,
+    previewFreezeFrames: playback.previewFreezeFrames,
+    longestPreviewFreezeFrames: playback.longestPreviewFreezeFrames,
+    longestPreviewFreezeMs: round(playback.longestPreviewFreezeMs),
+    lastPreviewFreezePath: playback.lastPreviewFreezePath,
+    lastPreviewFreezeClipId: playback.lastPreviewFreezeClipId,
+    lastPreviewFreezeDurationMs: roundOptional(playback.lastPreviewFreezeDurationMs),
+    previewPathCounts: cloneCounts(playback.previewPathCounts),
+    scrubPathCounts: cloneCounts(playback.scrubPathCounts),
+    avgPreviewDriftMs: round(playback.avgPreviewDriftMs),
+    maxPreviewDriftMs: round(playback.maxPreviewDriftMs),
+    stalls: playback.stalls,
+    seeks: playback.seeks,
+    advanceSeeks: playback.advanceSeeks,
+    driftCorrections: playback.driftCorrections,
+    readyStateDrops: playback.readyStateDrops,
+    queuePressureEvents: playback.queuePressureEvents,
+    healthAnomalies: playback.healthAnomalies,
+    activeVideos: playback.activeVideos,
+    playingVideos: playback.playingVideos,
+    seekingVideos: playback.seekingVideos,
+    warmingUpVideos: playback.warmingUpVideos,
+    coldVideos: playback.coldVideos,
+    worstReadyState: playback.worstReadyState,
+    avgDecodeLatencyMs: roundOptional(playback.avgDecodeLatencyMs),
+    avgSeekLatencyMs: roundOptional(playback.avgSeekLatencyMs),
+    avgQueueDepth: roundOptional(playback.avgQueueDepth),
+    maxQueueDepth: roundOptional(playback.maxQueueDepth),
+    avgAudioDriftMs: roundOptional(playback.avgAudioDriftMs),
+    decoderResets: playback.decoderResets,
+    pendingSeekResolves: playback.pendingSeekResolves,
+    avgPendingSeekMs: roundOptional(playback.avgPendingSeekMs),
+    maxPendingSeekMs: roundOptional(playback.maxPendingSeekMs),
+    collectorHolds: playback.collectorHolds,
+    collectorDrops: playback.collectorDrops,
+    lastAnomalyType: playback.lastAnomalyType,
+  };
+}
+
+function collectCacheSnapshot(): Record<string, unknown> {
+  return {
+    scrubbing: engine.getScrubbingCacheStats(),
+    composite: engine.getCompositeCacheStats(),
+  };
+}
+
+function collectSnapshot(playbackWindowMs = DEFAULT_PLAYBACK_WINDOW_MS) {
   const { engineStats, gpuInfo, isEngineReady } = useEngineStore.getState();
   const s = engineStats;
+  const playback = getPlaybackDebugStats(s.decoder, playbackWindowMs);
 
   const snapshot: Record<string, unknown> = {
     timestamp: Date.now(),
@@ -26,58 +110,15 @@ function collectSnapshot() {
     decoder: s.decoder,
     layerCount: s.layerCount,
     audio: s.audio,
+    health: playbackHealthMonitor.snapshot(),
+    cache: collectCacheSnapshot(),
+    pipelineStats: {
+      wc: wcPipelineMonitor.stats(),
+      vf: vfPipelineMonitor.stats(),
+    },
   };
 
-  if (s.playback) {
-    snapshot.playback = {
-      status: s.playback.status,
-      pipeline: s.playback.pipeline,
-      frameEvents: s.playback.frameEvents,
-      cadenceFps: round(s.playback.cadenceFps),
-      avgFrameGapMs: round(s.playback.avgFrameGapMs),
-      p95FrameGapMs: round(s.playback.p95FrameGapMs),
-      maxFrameGapMs: round(s.playback.maxFrameGapMs),
-      previewFrames: s.playback.previewFrames,
-      previewUpdates: s.playback.previewUpdates,
-      previewRenderFps: round(s.playback.previewRenderFps),
-      previewUpdateFps: round(s.playback.previewUpdateFps),
-      avgPreviewRenderGapMs: round(s.playback.avgPreviewRenderGapMs),
-      p95PreviewRenderGapMs: round(s.playback.p95PreviewRenderGapMs),
-      maxPreviewRenderGapMs: round(s.playback.maxPreviewRenderGapMs),
-      avgPreviewUpdateGapMs: round(s.playback.avgPreviewUpdateGapMs),
-      p95PreviewUpdateGapMs: round(s.playback.p95PreviewUpdateGapMs),
-      maxPreviewUpdateGapMs: round(s.playback.maxPreviewUpdateGapMs),
-      stalePreviewFrames: s.playback.stalePreviewFrames,
-      stalePreviewWhileTargetMoved: s.playback.stalePreviewWhileTargetMoved,
-      avgPreviewDriftMs: round(s.playback.avgPreviewDriftMs),
-      maxPreviewDriftMs: round(s.playback.maxPreviewDriftMs),
-      stalls: s.playback.stalls,
-      seeks: s.playback.seeks,
-      advanceSeeks: s.playback.advanceSeeks,
-      driftCorrections: s.playback.driftCorrections,
-      readyStateDrops: s.playback.readyStateDrops,
-      queuePressureEvents: s.playback.queuePressureEvents,
-      healthAnomalies: s.playback.healthAnomalies,
-      activeVideos: s.playback.activeVideos,
-      playingVideos: s.playback.playingVideos,
-      seekingVideos: s.playback.seekingVideos,
-      warmingUpVideos: s.playback.warmingUpVideos,
-      coldVideos: s.playback.coldVideos,
-      worstReadyState: s.playback.worstReadyState,
-      avgDecodeLatencyMs: s.playback.avgDecodeLatencyMs ? round(s.playback.avgDecodeLatencyMs) : undefined,
-      avgSeekLatencyMs: s.playback.avgSeekLatencyMs ? round(s.playback.avgSeekLatencyMs) : undefined,
-      avgQueueDepth: s.playback.avgQueueDepth ? round(s.playback.avgQueueDepth) : undefined,
-      maxQueueDepth: s.playback.maxQueueDepth ? round(s.playback.maxQueueDepth) : undefined,
-      avgAudioDriftMs: s.playback.avgAudioDriftMs ? round(s.playback.avgAudioDriftMs) : undefined,
-      decoderResets: s.playback.decoderResets,
-      pendingSeekResolves: s.playback.pendingSeekResolves,
-      avgPendingSeekMs: s.playback.avgPendingSeekMs ? round(s.playback.avgPendingSeekMs) : undefined,
-      maxPendingSeekMs: s.playback.maxPendingSeekMs ? round(s.playback.maxPendingSeekMs) : undefined,
-      collectorHolds: s.playback.collectorHolds,
-      collectorDrops: s.playback.collectorDrops,
-      lastAnomalyType: s.playback.lastAnomalyType,
-    };
-  }
+  snapshot.playback = serializePlayback(playback);
 
   if (s.webCodecsInfo) {
     snapshot.webCodecs = s.webCodecsInfo;
@@ -181,22 +222,42 @@ export async function handleGetLogs(
 export async function handleGetPlaybackTrace(
   args: Record<string, unknown>
 ): Promise<ToolResult> {
-  const windowMs = Math.min(Math.max(Number(args.windowMs) || 5000, 100), 30000);
-  const limit = Math.min(Math.max(Number(args.limit) || 120, 1), 500);
-  const { engineStats } = useEngineStore.getState();
+  const windowMs = Math.min(
+    Math.max(Number(args.windowMs) || DEFAULT_PLAYBACK_WINDOW_MS, 100),
+    MAX_TRACE_WINDOW_MS
+  );
+  const limit = Math.min(Math.max(Number(args.limit) || 200, 1), MAX_TRACE_EVENTS);
+  const { engineStats, isEngineReady, gpuInfo } = useEngineStore.getState();
 
   const wcTimeline = wcPipelineMonitor.timeline(windowMs);
   const vfTimeline = vfPipelineMonitor.timeline(windowMs);
   const healthVideos = playbackHealthMonitor.videos();
+  const now = performance.now();
   const healthAnomalies = playbackHealthMonitor
     .anomalies()
-    .filter((anomaly) => anomaly.timestamp >= Date.now() - windowMs);
+    .filter((anomaly) => anomaly.timestamp >= now - windowMs);
+  const playback = buildPlaybackDebugStats({
+    decoder: engineStats.decoder,
+    now,
+    windowMs,
+    wcTimeline,
+    vfTimeline,
+    healthVideos,
+    healthAnomalies,
+  });
 
   return {
     success: true,
     data: {
+      timestamp: Date.now(),
       decoder: engineStats.decoder,
+      engineReady: isEngineReady,
       windowMs,
+      limit,
+      playback: serializePlayback(playback),
+      health: playbackHealthMonitor.snapshot(),
+      cache: collectCacheSnapshot(),
+      gpu: gpuInfo,
       wcStats: wcPipelineMonitor.stats(),
       vfStats: vfPipelineMonitor.stats(),
       wcEvents: wcTimeline.slice(-limit),

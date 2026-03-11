@@ -34,6 +34,11 @@ export class VideoSyncManager {
   private lastVideoSyncPlaying = false;
   private lastVideoSyncClipsRef: TimelineClip[] | null = null;
   private lastSeekRef: Record<string, number> = {};
+  private lastDisplayedDriftRecoveryAt: Record<string, number> = {};
+  private lastPendingSeekRecoveryAt: Record<string, number> = {};
+  private lastWarmupRetargetAt: Record<string, number> = {};
+  private lastPausedJumpPreloadPosition = Number.NaN;
+  private lastPausedJumpPreloadActiveKey = '';
 
   // Track per-clip playing state to detect playing→paused transitions
   private clipWasPlaying = new Set<string>();
@@ -50,6 +55,11 @@ export class VideoSyncManager {
   private warmingUpVideos = new WeakSet<HTMLVideoElement>();
   // Cooldown for failed warmup attempts (avoids spamming play() every frame)
   private warmupRetryCooldown = new WeakMap<HTMLVideoElement, number>();
+  private warmupAttemptIds = new WeakMap<HTMLVideoElement, number>();
+  private warmupWatchdogs = new WeakMap<HTMLVideoElement, ReturnType<typeof setTimeout>>();
+  private warmupClipIds = new WeakMap<HTMLVideoElement, string>();
+  private warmupTargetTimes = new WeakMap<HTMLVideoElement, number>();
+  private nextWarmupAttemptId = 1;
 
   // Track which videos are being force-decoded to avoid duplicate calls
   private forceDecodeInProgress = new Set<string>();
@@ -85,6 +95,11 @@ export class VideoSyncManager {
   private activeHandoffs = new Map<string, HTMLVideoElement>();
   private handoffElements = new Set<HTMLVideoElement>();
   private static readonly PAUSED_PRECISE_SEEK_THRESHOLD = 0.015;
+  private static readonly PAUSED_JUMP_PRELOAD_THRESHOLD_SECONDS = 0.35;
+  private static readonly PAUSED_JUMP_PRELOAD_LOOKBEHIND = 0.35;
+  private static readonly PAUSED_JUMP_PRELOAD_LOOKAHEAD = 1.5;
+  private static readonly PAUSED_JUMP_PRELOAD_MAX_CLIPS = 3;
+  private static readonly PAUSED_JUMP_PRELOAD_ACTIVE_TARGET_EPSILON = 0.05;
 
   /**
    * Reset all per-clip state. Called during composition switch to prevent
@@ -110,6 +125,16 @@ export class VideoSyncManager {
     this.lastVideoSyncPlaying = false;
     this.lastVideoSyncClipsRef = null;
     scrubSettleState.clear();
+    this.lastDisplayedDriftRecoveryAt = {};
+    this.lastPendingSeekRecoveryAt = {};
+    this.lastWarmupRetargetAt = {};
+    this.lastPausedJumpPreloadPosition = Number.NaN;
+    this.lastPausedJumpPreloadActiveKey = '';
+    this.warmupAttemptIds = new WeakMap();
+    this.warmupWatchdogs = new WeakMap();
+    this.warmupClipIds = new WeakMap();
+    this.warmupTargetTimes = new WeakMap();
+    this.nextWarmupAttemptId = 1;
     // Clear debounce timers
     for (const id of Object.values(this.preciseSeekTimers)) clearTimeout(id);
     this.preciseSeekTimers = {};
@@ -128,6 +153,25 @@ export class VideoSyncManager {
     const dur = video.duration;
     if (!isFinite(dur) || dur <= 0) return Math.max(0, time);
     return Math.max(0, Math.min(time, dur - 0.001));
+  }
+
+  private getFastSeek(video: HTMLVideoElement): ((time: number) => void) | null {
+    const fastSeek = (video as HTMLVideoElement & {
+      fastSeek?: (time: number) => void;
+    }).fastSeek;
+    return typeof fastSeek === 'function' ? fastSeek.bind(video) : null;
+  }
+
+  private clearWarmupWatchdog(video: HTMLVideoElement): void {
+    const watchdog = this.warmupWatchdogs.get(video);
+    if (watchdog) {
+      clearTimeout(watchdog);
+      this.warmupWatchdogs.delete(video);
+    }
+  }
+
+  private isWarmupAttemptCurrent(video: HTMLVideoElement, attemptId: number): boolean {
+    return this.warmupAttemptIds.get(video) === attemptId;
   }
 
   private maybeRecoverScrubSettle(
@@ -181,6 +225,88 @@ export class VideoSyncManager {
     }
   }
 
+  private maybeRecoverDraggingDisplayedDrift(
+    clipId: string,
+    video: HTMLVideoElement,
+    targetTime: number,
+    now: number
+  ): void {
+    if (video.seeking || this.warmingUpVideos.has(video)) {
+      return;
+    }
+
+    const lastPresentedTime = engine.getLastPresentedVideoTime(video);
+    if (typeof lastPresentedTime !== 'number' || !Number.isFinite(lastPresentedTime)) {
+      return;
+    }
+
+    const presentedDrift = Math.abs(lastPresentedTime - targetTime);
+    if (presentedDrift <= VideoSyncManager.SCRUB_DRAG_DISPLAYED_DRIFT_RECOVERY_THRESHOLD) {
+      return;
+    }
+
+    const currentTimeDrift = Math.abs(video.currentTime - targetTime);
+    if (currentTimeDrift > VideoSyncManager.SCRUB_DRAG_DISPLAYED_DRIFT_TARGET_EPSILON) {
+      return;
+    }
+
+    const lastRecoveryAt = this.lastDisplayedDriftRecoveryAt[clipId] ?? 0;
+    if (now - lastRecoveryAt < VideoSyncManager.SCRUB_DRAG_DISPLAYED_DRIFT_RECOVERY_COOLDOWN_MS) {
+      return;
+    }
+
+    this.lastDisplayedDriftRecoveryAt[clipId] = now;
+    vfPipelineMonitor.record('vf_settle_seek', {
+      clipId,
+      target: Math.round(targetTime * 1000) / 1000,
+      recovery: 'displayed-drift',
+      driftMs: Math.round(presentedDrift * 1000),
+    });
+    this.recoverClipPlaybackState(clipId, video, targetTime);
+  }
+
+  private maybeRecoverDraggingPendingSeek(
+    clipId: string,
+    video: HTMLVideoElement,
+    targetTime: number,
+    now: number
+  ): boolean {
+    if (!video.seeking || this.warmingUpVideos.has(video) || video.readyState >= 2) {
+      return false;
+    }
+
+    const pendingStartedAt = this.pendingSeekStartedAt[clipId];
+    if (pendingStartedAt === undefined) {
+      return false;
+    }
+
+    const pendingAge = now - pendingStartedAt;
+    if (pendingAge < VideoSyncManager.SCRUB_DRAG_PENDING_SEEK_RECOVERY_THRESHOLD_MS) {
+      return false;
+    }
+
+    const currentTimeDrift = Math.abs(video.currentTime - targetTime);
+    if (currentTimeDrift < VideoSyncManager.SCRUB_DRAG_PENDING_SEEK_TARGET_DRIFT_THRESHOLD) {
+      return false;
+    }
+
+    const lastRecoveryAt = this.lastPendingSeekRecoveryAt[clipId] ?? 0;
+    if (now - lastRecoveryAt < VideoSyncManager.SCRUB_DRAG_PENDING_SEEK_RECOVERY_COOLDOWN_MS) {
+      return false;
+    }
+
+    this.lastPendingSeekRecoveryAt[clipId] = now;
+    vfPipelineMonitor.record('vf_settle_seek', {
+      clipId,
+      target: Math.round(targetTime * 1000) / 1000,
+      recovery: 'pending-seek-hang',
+      pendingMs: Math.round(pendingAge),
+      driftMs: Math.round(currentTimeDrift * 1000),
+    });
+    this.recoverClipPlaybackState(clipId, video, targetTime);
+    return true;
+  }
+
   private getClipStartTime(ctx: FrameContext, clip: TimelineClip): number {
     const initialSpeed = ctx.getInterpolatedSpeed(clip.id, 0);
     const startPoint = initialSpeed >= 0 ? clip.inPoint : clip.outPoint;
@@ -215,6 +341,134 @@ export class VideoSyncManager {
     }
 
     return Math.max(clip.inPoint, Math.min(clip.outPoint, startPoint + sourceTime));
+  }
+
+  private getClipSampleTimeNearPlayhead(ctx: FrameContext, clip: TimelineClip): number {
+    const clipEnd = clip.startTime + clip.duration;
+    const sampleTimelineTime = Math.max(
+      clip.startTime,
+      Math.min(Math.max(ctx.playheadPosition, clip.startTime), clipEnd - 1 / 120)
+    );
+    const clipLocalTime = Math.max(0, sampleTimelineTime - clip.startTime);
+    const speed = ctx.getInterpolatedSpeed(clip.id, clipLocalTime);
+    const startPoint = speed >= 0 ? clip.inPoint : clip.outPoint;
+
+    let sourceTime = 0;
+    try {
+      sourceTime = ctx.getSourceTimeForClip(clip.id, clipLocalTime);
+    } catch {
+      sourceTime = 0;
+    }
+
+    return Math.max(clip.inPoint, Math.min(clip.outPoint, startPoint + sourceTime));
+  }
+
+  private preloadPausedJumpNeighborhood(ctx: FrameContext): void {
+    if (ctx.isPlaying || ctx.isDraggingPlayhead) {
+      return;
+    }
+
+    const activeClipKey = ctx.clipsAtTime
+      .map((clip) => clip.id)
+      .sort()
+      .join('|');
+    const movedFar =
+      !Number.isFinite(this.lastPausedJumpPreloadPosition) ||
+      Math.abs(ctx.playheadPosition - this.lastPausedJumpPreloadPosition) >=
+        VideoSyncManager.PAUSED_JUMP_PRELOAD_THRESHOLD_SECONDS;
+    const activeChanged = activeClipKey !== this.lastPausedJumpPreloadActiveKey;
+
+    if (!movedFar && !activeChanged) {
+      return;
+    }
+
+    this.lastPausedJumpPreloadPosition = ctx.playheadPosition;
+    this.lastPausedJumpPreloadActiveKey = activeClipKey;
+
+    const activeClipIds = new Set(ctx.clipsAtTime.map((clip) => clip.id));
+    const windowStart = Math.max(
+      0,
+      ctx.playheadPosition - VideoSyncManager.PAUSED_JUMP_PRELOAD_LOOKBEHIND
+    );
+    const windowEnd = ctx.playheadPosition + VideoSyncManager.PAUSED_JUMP_PRELOAD_LOOKAHEAD;
+
+    const candidateClips = ctx.clips
+      .filter((clip) => {
+        if (!clip.source?.videoElement && !clip.source?.webCodecsPlayer) {
+          return false;
+        }
+        if (activeClipIds.has(clip.id)) {
+          return true;
+        }
+        const clipStart = clip.startTime;
+        const clipEnd = clip.startTime + clip.duration;
+        return clipEnd > windowStart && clipStart < windowEnd;
+      })
+      .sort((a, b) => {
+        const aActive = activeClipIds.has(a.id) ? 0 : 1;
+        const bActive = activeClipIds.has(b.id) ? 0 : 1;
+        if (aActive !== bActive) {
+          return aActive - bActive;
+        }
+        const aDistance = Math.abs(
+          Math.max(a.startTime - ctx.playheadPosition, ctx.playheadPosition - (a.startTime + a.duration), 0)
+        );
+        const bDistance = Math.abs(
+          Math.max(b.startTime - ctx.playheadPosition, ctx.playheadPosition - (b.startTime + b.duration), 0)
+        );
+        return aDistance - bDistance;
+      })
+      .slice(0, VideoSyncManager.PAUSED_JUMP_PRELOAD_MAX_CLIPS);
+
+    for (const clip of candidateClips) {
+      const targetTime = activeClipIds.has(clip.id)
+        ? this.getClipSampleTimeNearPlayhead(ctx, clip)
+        : this.getWarmupClipTime({ ...ctx, isDraggingPlayhead: true }, clip);
+
+      if (flags.useFullWebCodecsPlayback) {
+        this.prewarmUpcomingWebCodecsClip(ctx, clip, targetTime);
+      }
+
+      const video = clip.source?.videoElement;
+      if (!video) {
+        continue;
+      }
+
+      if (!video.src && !video.currentSrc) {
+        continue;
+      }
+
+      if (video.preload !== 'auto') {
+        video.preload = 'auto';
+      }
+
+      const isActive = activeClipIds.has(clip.id);
+      const targetDrift = Math.abs(video.currentTime - targetTime);
+      const shouldWarmTargetFrame =
+        isActive &&
+        (targetDrift > VideoSyncManager.PAUSED_JUMP_PRELOAD_ACTIVE_TARGET_EPSILON ||
+          video.readyState < 2 ||
+          video.seeking);
+
+      if (
+        !this.warmingUpVideos.has(video) &&
+        (shouldWarmTargetFrame || !this.gpuWarmedUp.has(video))
+      ) {
+        this.startTargetedWarmup(clip.id, video, targetTime, {
+          proactive: true,
+          requestRender: isActive,
+        });
+        continue;
+      }
+
+      if (isActive && !video.seeking && video.readyState >= 2) {
+        engine.markVideoFramePresented(video, targetTime, clip.id);
+        if (!engine.captureVideoFrameAtTime(video, targetTime, clip.id)) {
+          engine.ensureVideoFrameCached(video, clip.id);
+        }
+        engine.cacheFrameAtTime(video, targetTime);
+      }
+    }
   }
 
   private beginOrQueueSettleSeek(
@@ -324,6 +578,70 @@ export class VideoSyncManager {
     }
 
     frameProvider.seek(clipTime);
+  }
+
+  private clearHtmlSeekState(clipId: string, video?: HTMLVideoElement): void {
+    this.cancelRvfcHandle(clipId, video);
+
+    const preciseSeekTimer = this.preciseSeekTimers[clipId];
+    if (preciseSeekTimer) {
+      clearTimeout(preciseSeekTimer);
+      delete this.preciseSeekTimers[clipId];
+    }
+
+    delete this.latestSeekTargets[clipId];
+    delete this.pendingSeekTargets[clipId];
+    delete this.pendingSeekStartedAt[clipId];
+    delete this.queuedSeekTargets[clipId];
+    this.seekedFlushArmed.delete(clipId);
+  }
+
+  private maybeRetargetActiveWarmup(
+    clipId: string,
+    video: HTMLVideoElement,
+    targetTime: number,
+    now: number,
+    options?: { isPlaying?: boolean; isDragging?: boolean; requestRender?: boolean }
+  ): void {
+    const warmupClipId = this.warmupClipIds.get(video);
+    const warmupTargetTime = this.warmupTargetTimes.get(video);
+    if (
+      warmupClipId !== clipId ||
+      typeof warmupTargetTime !== 'number' ||
+      !Number.isFinite(warmupTargetTime)
+    ) {
+      return;
+    }
+
+    const isDragging = options?.isDragging === true;
+    const isPlaying = options?.isPlaying === true;
+    if (isPlaying && !isDragging) {
+      return;
+    }
+
+    const targetDrift = Math.abs(warmupTargetTime - targetTime);
+    if (targetDrift < VideoSyncManager.WARMUP_RETARGET_THRESHOLD_SECONDS) {
+      return;
+    }
+
+    const lastRetargetAt = this.lastWarmupRetargetAt[clipId] ?? 0;
+    if (now - lastRetargetAt < VideoSyncManager.WARMUP_RETARGET_COOLDOWN_MS) {
+      return;
+    }
+
+    this.lastWarmupRetargetAt[clipId] = now;
+    vfPipelineMonitor.record('vf_settle_seek', {
+      clipId,
+      target: Math.round(targetTime * 1000) / 1000,
+      recovery: 'warmup-retarget',
+      driftMs: Math.round(targetDrift * 1000),
+    });
+    this.clearWarmupState(video);
+    this.startTargetedWarmup(clipId, video, targetTime, {
+      proactive: false,
+      requestRender: options?.requestRender !== false,
+      resumeAfterWarmup: isPlaying,
+    });
   }
 
   private getPlaybackRuntimeSourceForClip(ctx: FrameContext, clip: TimelineClip) {
@@ -505,9 +823,8 @@ export class VideoSyncManager {
     }
 
     const isDragging = useTimelineStore.getState().isDraggingPlayhead;
-    const supportsFastSeek = typeof (video as HTMLVideoElement & {
-      fastSeek?: (time: number) => void;
-    }).fastSeek === 'function';
+    const fastSeek = this.getFastSeek(video);
+    const supportsFastSeek = fastSeek !== null;
     const presentedTime = engine.getLastPresentedVideoTime(video);
     const effectiveTime = typeof presentedTime === 'number' ? presentedTime : video.currentTime;
     const targetDrift = Math.abs(effectiveTime - queuedTarget);
@@ -521,7 +838,10 @@ export class VideoSyncManager {
         return;
       }
 
-      if (targetDrift <= VideoSyncManager.SCRUB_DRAG_RVFC_FOLLOW_THRESHOLD) {
+      if (
+        targetDrift <= VideoSyncManager.SCRUB_DRAG_RVFC_FOLLOW_THRESHOLD ||
+        targetDrift >= VideoSyncManager.SCRUB_DRAG_RVFC_FORCE_PRECISE_THRESHOLD
+      ) {
         this.pendingSeekTargets[clipId] = queuedTarget;
         this.pendingSeekStartedAt[clipId] = performance.now();
         video.currentTime = this.safeSeekTime(video, queuedTarget);
@@ -530,7 +850,10 @@ export class VideoSyncManager {
           clipId,
           target: Math.round(queuedTarget * 1000) / 1000,
           coalesced: source,
-          followup: 'drag-rvfc',
+          followup:
+            targetDrift >= VideoSyncManager.SCRUB_DRAG_RVFC_FORCE_PRECISE_THRESHOLD
+              ? 'drag-rvfc-force'
+              : 'drag-rvfc',
         });
         this.registerRVFC(clipId, video);
         engine.requestNewFrameRender();
@@ -583,7 +906,7 @@ export class VideoSyncManager {
     this.pendingSeekStartedAt[clipId] = performance.now();
     if (isDragging && supportsFastSeek) {
       this.latestSeekTargets[clipId] = queuedTarget;
-      video.fastSeek(this.safeSeekTime(video, queuedTarget));
+      fastSeek(this.safeSeekTime(video, queuedTarget));
       this.armSeekedFlush(clipId, video);
       vfPipelineMonitor.record('vf_seek_fast', {
         clipId,
@@ -954,7 +1277,11 @@ export class VideoSyncManager {
     // Proactively warm upcoming clips before sync so boundary crossings during
     // playback or drag scrubbing are less likely to hit a cold decoder surface.
     if (ctx.isPlaying || ctx.isDraggingPlayhead) {
+      this.lastPausedJumpPreloadPosition = Number.NaN;
+      this.lastPausedJumpPreloadActiveKey = '';
       this.warmupUpcomingClips(ctx);
+    } else {
+      this.preloadPausedJumpNeighborhood(ctx);
     }
     if (ctx.isPlaying) {
       this.preBufferUpcomingVideoAudio(ctx);
@@ -1051,9 +1378,9 @@ export class VideoSyncManager {
       const webCodecsPlayer = nestedClip.source.webCodecsPlayer;
       const timeDiff = Math.abs(video.currentTime - nestedClipTime);
 
-      // Pre-capture: ensure scrubbing cache has a frame before seeking
+      // Pre-capture with clip ownership so scrubbing can reuse the frame.
       if (!video.seeking && video.readyState >= 2) {
-        engine.ensureVideoFrameCached(video);
+        engine.ensureVideoFrameCached(video, nestedClip.id);
       }
 
       // During playback: let video play naturally (like regular clips)
@@ -1181,13 +1508,20 @@ export class VideoSyncManager {
     clipId: string,
     video: HTMLVideoElement,
     targetTime: number,
-    options?: { proactive?: boolean; requestRender?: boolean }
+    options?: { proactive?: boolean; requestRender?: boolean; resumeAfterWarmup?: boolean }
   ): void {
     const safeTargetTime = this.safeSeekTime(video, targetTime);
     const proactive = options?.proactive === true;
     const shouldRequestRender = options?.requestRender !== false;
+    const resumeAfterWarmup = options?.resumeAfterWarmup === true;
+    const attemptId = this.nextWarmupAttemptId++;
 
+    this.clearWarmupWatchdog(video);
+    this.clearHtmlSeekState(clipId, video);
+    this.warmupAttemptIds.set(video, attemptId);
     this.warmingUpVideos.add(video);
+    this.warmupClipIds.set(video, clipId);
+    this.warmupTargetTimes.set(video, safeTargetTime);
     video.muted = true;
 
     if (video.preload !== 'auto') {
@@ -1202,28 +1536,80 @@ export class VideoSyncManager {
       // Ignore if metadata is not fully ready for seeking yet.
     }
 
-    const finishWarmup = (fallback = false) => {
-      const presentedTime = video.currentTime;
-      engine.markVideoFramePresented(video, presentedTime, clipId);
-      if (!engine.captureVideoFrameAtTime(video, presentedTime, clipId)) {
-        engine.ensureVideoFrameCached(video, clipId);
+    const abortWarmup = (reason: 'timeout' | 'play-failed'): void => {
+      if (!this.isWarmupAttemptCurrent(video, attemptId)) {
+        return;
       }
-      engine.markVideoGpuReady(video);
-      scrubSettleState.resolve(clipId);
-      video.pause();
+
+      this.clearWarmupWatchdog(video);
+      this.warmupAttemptIds.delete(video);
       this.warmingUpVideos.delete(video);
-      this.gpuWarmedUp.add(video);
-      vfPipelineMonitor.record('vf_gpu_ready', {
+      this.warmupClipIds.delete(video);
+      this.warmupTargetTimes.delete(video);
+      this.warmupRetryCooldown.set(video, performance.now());
+      delete this.lastWarmupRetargetAt[clipId];
+      if (!resumeAfterWarmup) {
+        video.pause?.();
+      }
+      vfPipelineMonitor.record('vf_settle_seek', {
         clipId,
-        ...(proactive ? { proactive: 'true' } : {}),
-        ...(fallback ? { fallback: 'true' } : {}),
+        target: Math.round(safeTargetTime * 1000) / 1000,
+        recovery: `warmup-${reason}`,
       });
       if (shouldRequestRender) {
         engine.requestRender();
       }
     };
 
+    const finishWarmup = (fallback = false) => {
+      if (!this.isWarmupAttemptCurrent(video, attemptId)) {
+        return;
+      }
+
+      this.clearWarmupWatchdog(video);
+      this.warmupAttemptIds.delete(video);
+      const presentedTime = video.currentTime;
+      engine.markVideoFramePresented(video, presentedTime, clipId);
+      if (!engine.captureVideoFrameAtTime(video, presentedTime, clipId)) {
+        engine.ensureVideoFrameCached(video, clipId);
+      }
+      engine.cacheFrameAtTime(video, safeTargetTime);
+      engine.markVideoGpuReady(video);
+      scrubSettleState.resolve(clipId);
+      this.warmingUpVideos.delete(video);
+      this.warmupClipIds.delete(video);
+      this.warmupTargetTimes.delete(video);
+      this.gpuWarmedUp.add(video);
+      delete this.lastWarmupRetargetAt[clipId];
+      vfPipelineMonitor.record('vf_gpu_ready', {
+        clipId,
+        ...(proactive ? { proactive: 'true' } : {}),
+        ...(fallback ? { fallback: 'true' } : {}),
+      });
+      if (resumeAfterWarmup) {
+        video.play().catch(() => {});
+      } else {
+        video.pause?.();
+      }
+      if (shouldRequestRender) {
+        engine.requestRender();
+      }
+    };
+
+    this.warmupWatchdogs.set(video, setTimeout(() => {
+      const closeToTarget =
+        Math.abs(video.currentTime - safeTargetTime) <= VideoSyncManager.WARMUP_TIMEOUT_TARGET_EPSILON;
+      if (video.readyState >= 2 && closeToTarget) {
+        finishWarmup(true);
+        return;
+      }
+      abortWarmup('timeout');
+    }, VideoSyncManager.WARMUP_WATCHDOG_MS));
+
     video.play().then(() => {
+      if (!this.isWarmupAttemptCurrent(video, attemptId)) {
+        return;
+      }
       const rvfc = (video as any).requestVideoFrameCallback;
       if (typeof rvfc === 'function') {
         rvfc.call(video, () => {
@@ -1235,8 +1621,7 @@ export class VideoSyncManager {
         }, 100);
       }
     }).catch(() => {
-      this.warmingUpVideos.delete(video);
-      this.warmupRetryCooldown.set(video, performance.now());
+      abortWarmup('play-failed');
     });
   }
 
@@ -1289,7 +1674,14 @@ export class VideoSyncManager {
 
     // Skip sync during GPU surface warmup — the video is playing briefly
     // to activate Chrome's GPU decoder. Don't pause or seek it.
-    if (this.warmingUpVideos.has(video)) return;
+    if (this.warmingUpVideos.has(video)) {
+      this.maybeRetargetActiveWarmup(clip.id, video, timeInfo.clipTime, ctx.now, {
+        isPlaying: ctx.isPlaying,
+        isDragging: ctx.isDraggingPlayhead,
+        requestRender: true,
+      });
+      return;
+    }
 
     // Warmup: after page reload, video GPU surfaces are empty.
     // importExternalTexture, canvas.drawImage, etc. all return black.
@@ -1315,9 +1707,9 @@ export class VideoSyncManager {
     // Normal video sync
     const timeDiff = Math.abs(video.currentTime - timeInfo.clipTime);
 
-    // Pre-capture: ensure scrubbing cache has a frame BEFORE seeking
+    // Pre-capture with clip ownership so drag fallback can reuse the frame.
     if (!video.seeking && video.readyState >= 2) {
-      engine.ensureVideoFrameCached(video);
+      engine.ensureVideoFrameCached(video, clip.id);
     }
 
     if (ctx.isPlaying || ctx.isDraggingPlayhead) {
@@ -1535,6 +1927,23 @@ export class VideoSyncManager {
             : VideoSyncManager.PAUSED_PRECISE_SEEK_THRESHOLD;
           if (timeDiff > seekThreshold) {
             this.throttledSeek(clip.id, video, timeInfo.clipTime, ctx);
+          } else {
+            const recoveredPendingSeek = this.maybeRecoverDraggingPendingSeek(
+              clip.id,
+              video,
+              timeInfo.clipTime,
+              ctx.now
+            );
+            if (recoveredPendingSeek) {
+              this.lastSeekRef[clip.id] = ctx.now;
+            } else if (ctx.isDraggingPlayhead) {
+              this.maybeRecoverDraggingDisplayedDrift(
+                clip.id,
+                video,
+                timeInfo.clipTime,
+                ctx.now
+              );
+            }
           }
         }
 
@@ -1576,6 +1985,8 @@ export class VideoSyncManager {
    * actually presented to the compositor — more accurate than the 'seeked' event.
    */
   private throttledSeek(clipId: string, video: HTMLVideoElement, time: number, ctx: FrameContext): void {
+    const fastSeek = this.getFastSeek(video);
+    const supportsFastSeek = fastSeek !== null;
     const presentedTime = engine.getLastPresentedVideoTime(video);
     const effectiveDisplayedTime =
       typeof presentedTime === 'number' ? presentedTime : video.currentTime;
@@ -1589,11 +2000,14 @@ export class VideoSyncManager {
     }
 
     if ((video.seeking || this.rvfcHandles[clipId] !== undefined) && this.pendingSeekTargets[clipId] !== undefined) {
-      const allowInFlightRetarget = ctx.isDraggingPlayhead && 'fastSeek' in video;
+      const allowInFlightRetarget = ctx.isDraggingPlayhead && supportsFastSeek;
       if (ctx.isDraggingPlayhead && !allowInFlightRetarget) {
         this.queuedSeekTargets[clipId] = time;
         this.latestSeekTargets[clipId] = time;
         this.armSeekedFlush(clipId, video);
+        if (this.maybeRecoverDraggingPendingSeek(clipId, video, time, ctx.now)) {
+          this.lastSeekRef[clipId] = ctx.now;
+        }
         return;
       }
       if (this.shouldRetargetPendingSeek(
@@ -1610,8 +2024,8 @@ export class VideoSyncManager {
           this.latestSeekTargets[clipId] = time;
         }
 
-        if (ctx.isDraggingPlayhead && 'fastSeek' in video) {
-          video.fastSeek(this.safeSeekTime(video, time));
+        if (ctx.isDraggingPlayhead && supportsFastSeek) {
+          fastSeek(this.safeSeekTime(video, time));
           this.armSeekedFlush(clipId, video);
           vfPipelineMonitor.record('vf_seek_fast', {
             clipId,
@@ -1656,26 +2070,35 @@ export class VideoSyncManager {
         this.latestSeekTargets[clipId] = time;
       }
       this.armSeekedFlush(clipId, video);
+      if (this.maybeRecoverDraggingPendingSeek(clipId, video, time, ctx.now)) {
+        this.lastSeekRef[clipId] = ctx.now;
+      }
       return;
     }
 
     const lastSeek = this.lastSeekRef[clipId] || 0;
     const dragDrift = Math.abs(effectiveDisplayedTime - time);
     const threshold = ctx.isDraggingPlayhead
-      ? dragDrift >= 1
-        ? 16
-        : dragDrift >= 0.35
-          ? 28
-          : 50
+      ? supportsFastSeek
+        ? dragDrift >= 1
+          ? 16
+          : dragDrift >= 0.35
+            ? 28
+            : 50
+        : dragDrift >= 1
+          ? 60
+          : dragDrift >= 0.35
+            ? 85
+            : 110
       : 33;
     if (ctx.now - lastSeek > threshold) {
-      if (ctx.isDraggingPlayhead && 'fastSeek' in video) {
+      if (ctx.isDraggingPlayhead && supportsFastSeek) {
         // Phase 1: Instant keyframe feedback via fastSeek.
         // For all-intra codecs this IS the exact frame. For long-GOP codecs
         // this shows the nearest keyframe — better than a stale cached frame.
         this.pendingSeekTargets[clipId] = time;
         this.pendingSeekStartedAt[clipId] = ctx.now;
-        video.fastSeek(this.safeSeekTime(video, time));
+        fastSeek(this.safeSeekTime(video, time));
         this.armSeekedFlush(clipId, video);
         vfPipelineMonitor.record('vf_seek_fast', {
           clipId,
@@ -1706,8 +2129,11 @@ export class VideoSyncManager {
           }
         }, 120);
       } else {
-        // Not dragging: precise seek immediately (click, arrow keys, etc.)
-        scrubSettleState.begin(clipId, time, VideoSyncManager.SCRUB_SETTLE_TIMEOUT_MS, 'manual-seek');
+        // Fallback path for precise seeks: manual seeks when paused, or a
+        // rate-limited drag seek when the browser has no usable fastSeek().
+        if (!ctx.isDraggingPlayhead) {
+          scrubSettleState.begin(clipId, time, VideoSyncManager.SCRUB_SETTLE_TIMEOUT_MS, 'manual-seek');
+        }
         this.pendingSeekTargets[clipId] = time;
         this.pendingSeekStartedAt[clipId] = ctx.now;
         video.currentTime = this.safeSeekTime(video, time);
@@ -1759,7 +2185,18 @@ export class VideoSyncManager {
   private static readonly SCRUB_SETTLE_TIMEOUT_MS = 220;
   private static readonly SCRUB_SETTLE_RVFC_DEFER_MS = 90;
   private static readonly SCRUB_DRAG_RVFC_FOLLOW_THRESHOLD = 0.16;
+  private static readonly SCRUB_DRAG_RVFC_FORCE_PRECISE_THRESHOLD = 0.7;
   private static readonly SCRUB_SETTLE_WARMUP_MS = 350;
+  private static readonly WARMUP_WATCHDOG_MS = 900;
+  private static readonly WARMUP_TIMEOUT_TARGET_EPSILON = 0.18;
+  private static readonly SCRUB_DRAG_DISPLAYED_DRIFT_RECOVERY_THRESHOLD = 0.9;
+  private static readonly SCRUB_DRAG_DISPLAYED_DRIFT_TARGET_EPSILON = 0.08;
+  private static readonly SCRUB_DRAG_DISPLAYED_DRIFT_RECOVERY_COOLDOWN_MS = 180;
+  private static readonly SCRUB_DRAG_PENDING_SEEK_RECOVERY_THRESHOLD_MS = 180;
+  private static readonly SCRUB_DRAG_PENDING_SEEK_TARGET_DRIFT_THRESHOLD = 0.45;
+  private static readonly SCRUB_DRAG_PENDING_SEEK_RECOVERY_COOLDOWN_MS = 260;
+  private static readonly WARMUP_RETARGET_THRESHOLD_SECONDS = 0.2;
+  private static readonly WARMUP_RETARGET_COOLDOWN_MS = 120;
 
   /**
    * Warm up video elements for clips that will become active within LOOKAHEAD_TIME.
@@ -1962,7 +2399,78 @@ export class VideoSyncManager {
   }
 
   clearWarmupState(video: HTMLVideoElement): void {
+    const clipId = this.warmupClipIds.get(video);
+    if (clipId) {
+      this.clearHtmlSeekState(clipId, video);
+      delete this.lastWarmupRetargetAt[clipId];
+    }
+    this.clearWarmupWatchdog(video);
+    this.warmupAttemptIds.delete(video);
     this.warmingUpVideos.delete(video);
+    this.warmupClipIds.delete(video);
+    this.warmupTargetTimes.delete(video);
+    this.warmupRetryCooldown.set(video, performance.now());
+    video.pause?.();
+  }
+
+  resetClipRecoveryState(clipId: string, video?: HTMLVideoElement): void {
+    this.clearHtmlSeekState(clipId, video);
+
+    const wcPreciseSeekTimer = this.wcPreciseSeekTimers[clipId];
+    if (wcPreciseSeekTimer) {
+      clearTimeout(wcPreciseSeekTimer);
+      delete this.wcPreciseSeekTimers[clipId];
+    }
+
+    this.clipWasPlaying.delete(clipId);
+    this.clipWasDragging.delete(clipId);
+    this.forceDecodeInProgress.delete(clipId);
+    this.seekedFlushArmed.delete(clipId);
+    scrubSettleState.resolve(clipId);
+
+    delete this.lastSeekRef[clipId];
+    delete this.lastDisplayedDriftRecoveryAt[clipId];
+    delete this.lastPendingSeekRecoveryAt[clipId];
+    delete this.lastWarmupRetargetAt[clipId];
+    delete this.latestWcPreciseSeekTargets[clipId];
+    delete this.lastWcFastSeekTarget[clipId];
+    delete this.lastWcFastSeekAt[clipId];
+    delete this.lastWcPreciseSeekAt[clipId];
+
+    const handoffVideo = this.activeHandoffs.get(clipId);
+    if (handoffVideo) {
+      this.handoffElements.delete(handoffVideo);
+      this.activeHandoffs.delete(clipId);
+    }
+
+    if (video) {
+      this.clearWarmupWatchdog(video);
+      this.warmupAttemptIds.delete(video);
+      this.warmingUpVideos.delete(video);
+      this.warmupClipIds.delete(video);
+      this.warmupTargetTimes.delete(video);
+      this.gpuWarmedUp.delete(video);
+      this.warmupRetryCooldown.delete(video);
+      for (const [trackId, state] of this.lastTrackState.entries()) {
+        if (state.clipId === clipId || state.videoElement === video) {
+          this.lastTrackState.delete(trackId);
+        }
+      }
+    }
+  }
+
+  recoverClipPlaybackState(
+    clipId: string,
+    video: HTMLVideoElement,
+    targetTime: number,
+    options?: { resumePlayback?: boolean }
+  ): void {
+    this.resetClipRecoveryState(clipId, video);
+    this.startTargetedWarmup(clipId, video, targetTime, {
+      proactive: false,
+      requestRender: true,
+      resumeAfterWarmup: options?.resumePlayback === true,
+    });
   }
 
   /**

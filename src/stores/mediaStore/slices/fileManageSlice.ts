@@ -8,6 +8,7 @@ import { projectDB } from '../../../services/projectDB';
 import { useTimelineStore } from '../../timeline';
 import { Logger } from '../../../services/logger';
 import { engine } from '../../../engine/WebGPUEngine';
+import { thumbnailCacheService } from '../../../services/thumbnailCacheService';
 
 const log = Logger.create('Reload');
 
@@ -230,6 +231,7 @@ export async function updateTimelineClips(mediaFileId: string, file: File): Prom
         });
         // Pre-cache frame via createImageBitmap for immediate scrubbing without play()
         engine.preCacheVideoFrame(video);
+        void thumbnailCacheService.generateForSource(mediaFileId, video, naturalDuration);
       }, { once: true });
 
       video.addEventListener('error', () => {

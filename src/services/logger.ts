@@ -82,6 +82,7 @@ const LEVEL_ICONS: Record<LogLevel, string> = {
 
 const logBuffer: LogEntry[] = [];
 const registeredModules = new Set<string>();
+let syncLogsToServer: (() => void) | null = null;
 
 let config: LoggerConfig = {
   enabled: [],
@@ -172,6 +173,9 @@ class ModuleLogger {
 
     const entry = this.createEntry(level, message, data);
     this.addToBuffer(entry);
+    if (LOG_LEVELS[level] >= LOG_LEVELS['WARN']) {
+      syncLogsToServer?.();
+    }
 
     if (!show) return;
 
@@ -437,24 +441,36 @@ if (typeof window !== 'undefined') {
   // ============================================================================
   let syncInterval: number | null = null;
 
+  syncLogsToServer = () => {
+    try {
+      const summary = Logger.summary();
+      const recentLogs = logBuffer.slice(-100);
+      const payload = JSON.stringify({ ...summary, recentLogs });
+
+      if (navigator.sendBeacon) {
+        const sent = navigator.sendBeacon(
+          '/api/logs',
+          new Blob([payload], { type: 'application/json' })
+        );
+        if (sent) return;
+      }
+
+      fetch('/api/logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload,
+        keepalive: true,
+      }).catch(() => {});
+    } catch {
+      // Ignore errors
+    }
+  };
+
   const startLogSync = () => {
     if (syncInterval) return;
 
     const sync = () => {
-      try {
-        const summary = Logger.summary();
-        // Add recent logs for more context
-        const recentLogs = logBuffer.slice(-100);
-        const payload = { ...summary, recentLogs };
-
-        fetch('/api/logs', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        }).catch(() => {}); // Silently fail if dev server not available
-      } catch {
-        // Ignore errors
-      }
+      syncLogsToServer?.();
     };
 
     // Sync immediately and then every 2 seconds
@@ -478,6 +494,7 @@ if (typeof window !== 'undefined') {
   (window as unknown as Record<string, unknown>).LogSync = {
     start: startLogSync,
     stop: stopLogSync,
+    flush: () => syncLogsToServer?.(),
     status: () => syncInterval ? 'running' : 'stopped',
   };
 }

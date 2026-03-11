@@ -483,7 +483,14 @@ export class WebGPUEngine {
     return this.cacheManager.getCachedFrame(videoSrc, time);
   }
 
-  getScrubbingCacheStats(): { count: number; maxCount: number } {
+  getScrubbingCacheStats(): {
+    count: number;
+    maxCount: number;
+    fillPct: number;
+    approxMemoryMB: number;
+    evictions: number;
+    budgetMode: 'static';
+  } {
     return this.cacheManager.getScrubbingCacheStats();
   }
 

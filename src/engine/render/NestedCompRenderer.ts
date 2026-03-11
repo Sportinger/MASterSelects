@@ -37,6 +37,8 @@ interface PooledTexturePair {
 }
 
 export class NestedCompRenderer {
+  private static readonly MAX_DRAG_FALLBACK_DRIFT_SECONDS = 1.2;
+  private static readonly MAX_DRAG_LIVE_IMPORT_DRIFT_SECONDS = 0.9;
   private device: GPUDevice;
   private compositorPipeline: CompositorPipeline;
   private effectsPipeline: EffectsPipeline;
@@ -470,9 +472,19 @@ export class NestedCompRenderer {
           typeof lastPresentedTime === 'number' &&
           Number.isFinite(lastPresentedTime);
         const displayedTime = hasConfirmedPresentedFrame ? lastPresentedTime : undefined;
+        const reportedDisplayedTime =
+          useTimelineStore.getState().isPlaying &&
+          !video.paused &&
+          !video.seeking &&
+          Number.isFinite(video.currentTime)
+            ? video.currentTime
+            : displayedTime;
         const hasFreshPresentedFrame =
           hasConfirmedPresentedFrame &&
           Math.abs(lastPresentedTime - targetTime) <= 0.12;
+        const presentedDriftSeconds = hasConfirmedPresentedFrame
+          ? Math.abs(lastPresentedTime - targetTime)
+          : undefined;
         const awaitingPausedTargetFrame =
           hasPresentedOwnerMismatch ||
           !useTimelineStore.getState().isPlaying &&
@@ -482,16 +494,33 @@ export class NestedCompRenderer {
         const cacheSearchDistanceFrames = isDragging ? 12 : 6;
         const lastSameClipFrame = this.getDragHoldFrame(layer, video);
         const dragHoldFrame = isDragging
-          ? lastSameClipFrame
+          ? this.isFrameNearTarget(
+            lastSameClipFrame,
+            targetTime,
+            NestedCompRenderer.MAX_DRAG_FALLBACK_DRIFT_SECONDS
+          )
+            ? lastSameClipFrame
+            : null
           : (isSettling || awaitingPausedTargetFrame) && this.isFrameNearTarget(lastSameClipFrame, targetTime)
             ? lastSameClipFrame
             : null;
-        const emergencyHoldFrame = isDragging ? lastSameClipFrame : dragHoldFrame;
+        const emergencyHoldFrame = dragHoldFrame;
+        const sameClipHoldFrame =
+          !useTimelineStore.getState().isPlaying &&
+          (isDragging || isSettling || awaitingPausedTargetFrame || video.seeking)
+            ? lastSameClipFrame
+            : null;
         const safeFallback = this.getSafeLastFrameFallback(layer, video, targetTime) ?? dragHoldFrame;
+        const allowDragLiveVideoImport =
+          !video.seeking &&
+          (
+            !hasConfirmedPresentedFrame ||
+            (presentedDriftSeconds ?? 0) <= NestedCompRenderer.MAX_DRAG_LIVE_IMPORT_DRIFT_SECONDS
+          );
         const allowLiveVideoImport = !hasPresentedOwnerMismatch && (isPausedSettle
           ? hasFreshPresentedFrame
           : !awaitingPausedTargetFrame &&
-            (((!isDragging && !isSettling) || hasFreshPresentedFrame || !safeFallback)));
+            (((!isDragging && !isSettling) || hasFreshPresentedFrame || (isDragging ? allowDragLiveVideoImport : !safeFallback))));
         const allowConfirmedFrameCaching = !hasPresentedOwnerMismatch && (isPausedSettle
           ? hasFreshPresentedFrame
           : !awaitingPausedTargetFrame &&
@@ -523,6 +552,16 @@ export class NestedCompRenderer {
               });
               continue;
             }
+            if (sameClipHoldFrame) {
+              result.push({
+                layer, isVideo: false, externalTexture: null, textureView: sameClipHoldFrame.view,
+                sourceWidth: sameClipHoldFrame.width, sourceHeight: sameClipHoldFrame.height,
+                displayedMediaTime: sameClipHoldFrame.mediaTime,
+                targetMediaTime: targetTime,
+                previewPath: 'same-clip-hold',
+              });
+              continue;
+            }
             continue;
           }
         }
@@ -539,6 +578,9 @@ export class NestedCompRenderer {
               result.push({
                 layer, isVideo: false, externalTexture: null, textureView: copiedFrame.view,
                 sourceWidth: copiedFrame.width, sourceHeight: copiedFrame.height,
+                displayedMediaTime: copiedFrame.mediaTime ?? reportedDisplayedTime,
+                targetMediaTime: targetTime,
+                previewPath: 'copied-preview',
               });
               continue;
             }
@@ -574,6 +616,9 @@ export class NestedCompRenderer {
             result.push({
               layer, isVideo: true, externalTexture: extTex, textureView: null,
               sourceWidth: video.videoWidth, sourceHeight: video.videoHeight,
+              displayedMediaTime: reportedDisplayedTime,
+              targetMediaTime: targetTime,
+              previewPath: 'live-import',
             });
             continue;
           } else {
@@ -611,6 +656,19 @@ export class NestedCompRenderer {
           result.push({
             layer, isVideo: false, externalTexture: null, textureView: emergencyHoldFrame.view,
             sourceWidth: emergencyHoldFrame.width, sourceHeight: emergencyHoldFrame.height,
+            displayedMediaTime: emergencyHoldFrame.mediaTime,
+            targetMediaTime: targetTime,
+            previewPath: 'emergency-hold',
+          });
+          continue;
+        }
+        if (sameClipHoldFrame) {
+          result.push({
+            layer, isVideo: false, externalTexture: null, textureView: sameClipHoldFrame.view,
+            sourceWidth: sameClipHoldFrame.width, sourceHeight: sameClipHoldFrame.height,
+            displayedMediaTime: sameClipHoldFrame.mediaTime,
+            targetMediaTime: targetTime,
+            previewPath: 'same-clip-hold',
           });
           continue;
         }

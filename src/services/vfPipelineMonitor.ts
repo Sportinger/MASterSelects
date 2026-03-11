@@ -174,7 +174,7 @@ class VfPipelineMonitor {
   }
 
   /** Aggregate stats */
-  stats(): Record<string, number> {
+  stats(): Record<string, unknown> {
     const all = this.ordered();
     const counts: Record<string, number> = {
       totalEvents: all.length,
@@ -207,9 +207,47 @@ class VfPipelineMonitor {
     const previewFrameTimes: number[] = [];
     const previewUpdateTimes: number[] = [];
     const previewDrifts: number[] = [];
+    const previewPathCounts: Record<string, number> = {};
+    const scrubPathCounts: Record<string, number> = {};
+    let previewFreezeEvents = 0;
+    let previewFreezeFrames = 0;
+    let longestPreviewFreezeFrames = 0;
+    let longestPreviewFreezeMs = 0;
+    let lastPreviewFreezePath: string | undefined;
+    let lastPreviewFreezeClipId: string | undefined;
+    let lastPreviewFreezeDurationMs: number | undefined;
+    let activeFreeze:
+      | {
+        start: number;
+        end: number;
+        frames: number;
+        previewPath?: string;
+        clipId?: string;
+      }
+      | null = null;
 
     // Track seek pairs for duration calculation
     let lastSeekStartTime = 0;
+    const incrementCount = (map: Record<string, number>, key?: string) => {
+      const safeKey = key && key.trim().length > 0 ? key : 'unknown';
+      map[safeKey] = (map[safeKey] ?? 0) + 1;
+    };
+    const finalizeFreeze = () => {
+      if (!activeFreeze) {
+        return;
+      }
+      if (activeFreeze.frames >= 2) {
+        const durationMs = Math.max(0, activeFreeze.end - activeFreeze.start);
+        previewFreezeEvents++;
+        previewFreezeFrames += activeFreeze.frames;
+        longestPreviewFreezeFrames = Math.max(longestPreviewFreezeFrames, activeFreeze.frames);
+        longestPreviewFreezeMs = Math.max(longestPreviewFreezeMs, durationMs);
+        lastPreviewFreezePath = activeFreeze.previewPath;
+        lastPreviewFreezeClipId = activeFreeze.clipId;
+        lastPreviewFreezeDurationMs = durationMs;
+      }
+      activeFreeze = null;
+    };
 
     for (const e of all) {
       switch (e.type) {
@@ -238,15 +276,44 @@ class VfPipelineMonitor {
         case 'vf_preview_frame': {
           counts.previewFrames++;
           previewFrameTimes.push(e.t);
+          const previewPath =
+            typeof e.detail?.previewPath === 'string'
+              ? e.detail.previewPath
+              : 'unknown';
+          incrementCount(previewPathCounts, previewPath);
           const changed = e.detail?.changed === 'true';
           const targetMoved = e.detail?.targetMoved === 'true';
           if (changed) {
             counts.previewUpdates++;
             previewUpdateTimes.push(e.t);
+            finalizeFreeze();
           } else {
             counts.stalePreviewFrames++;
             if (targetMoved) {
               counts.stalePreviewWhileTargetMoved++;
+              const clipId =
+                typeof e.detail?.clipId === 'string'
+                  ? e.detail.clipId
+                  : undefined;
+              if (
+                activeFreeze &&
+                activeFreeze.previewPath === previewPath &&
+                activeFreeze.clipId === clipId
+              ) {
+                activeFreeze.frames++;
+                activeFreeze.end = e.t;
+              } else {
+                finalizeFreeze();
+                activeFreeze = {
+                  start: e.t,
+                  end: e.t,
+                  frames: 1,
+                  previewPath,
+                  clipId,
+                };
+              }
+            } else {
+              finalizeFreeze();
             }
           }
           if (e.detail?.driftMs !== undefined) {
@@ -254,6 +321,12 @@ class VfPipelineMonitor {
           }
           break;
         }
+        case 'vf_scrub_path':
+          incrementCount(
+            scrubPathCounts,
+            typeof e.detail?.path === 'string' ? e.detail.path : 'unknown'
+          );
+          break;
         case 'vf_drift': counts.driftCorrections++; break;
         case 'vf_stall':
           counts.stalls++;
@@ -271,6 +344,7 @@ class VfPipelineMonitor {
         case 'audio_rate_change': counts.audioRateChanges++; break;
       }
     }
+    finalizeFreeze();
 
     const avg = (arr: number[]) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
     const max = (arr: number[]) => arr.length ? Math.max(...arr) : 0;
@@ -287,6 +361,17 @@ class VfPipelineMonitor {
       maxPreviewFrameGapMs: Math.round(max(previewFrameTimes.slice(1).map((t, i) => t - previewFrameTimes[i])) * 100) / 100,
       avgPreviewUpdateGapMs: Math.round(avg(previewUpdateTimes.slice(1).map((t, i) => t - previewUpdateTimes[i])) * 100) / 100,
       maxPreviewUpdateGapMs: Math.round(max(previewUpdateTimes.slice(1).map((t, i) => t - previewUpdateTimes[i])) * 100) / 100,
+      previewFreezeEvents,
+      previewFreezeFrames,
+      longestPreviewFreezeFrames,
+      longestPreviewFreezeMs: Math.round(longestPreviewFreezeMs * 100) / 100,
+      ...(lastPreviewFreezePath ? { lastPreviewFreezePath } : {}),
+      ...(lastPreviewFreezeClipId ? { lastPreviewFreezeClipId } : {}),
+      ...(lastPreviewFreezeDurationMs !== undefined
+        ? { lastPreviewFreezeDurationMs: Math.round(lastPreviewFreezeDurationMs * 100) / 100 }
+        : {}),
+      previewPathCounts,
+      scrubPathCounts,
       avgPreviewDriftMs: Math.round(avg(previewDrifts) * 100) / 100,
       maxPreviewDriftMs: Math.round(max(previewDrifts) * 100) / 100,
       avgAudioDriftMs: Math.round(avg(audioDrifts) * 100) / 100,

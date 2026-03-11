@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { engine } from '../../src/engine/WebGPUEngine';
 import { flags } from '../../src/engine/featureFlags';
 import { VideoSyncManager } from '../../src/services/layerBuilder/VideoSyncManager';
 
@@ -6,6 +7,14 @@ describe('VideoSyncManager paused WebCodecs provider selection', () => {
   beforeEach(() => {
     vi.useRealTimers();
     flags.useFullWebCodecsPlayback = true;
+    (engine as any).ensureVideoFrameCached = vi.fn();
+    (engine as any).getLastPresentedVideoTime = vi.fn(() => undefined);
+    (engine as any).requestNewFrameRender = vi.fn();
+    (engine as any).cacheFrameAtTime = vi.fn();
+    (engine as any).markVideoFramePresented = vi.fn();
+    (engine as any).captureVideoFrameAtTime = vi.fn(() => false);
+    (engine as any).markVideoGpuReady = vi.fn();
+    (engine as any).requestRender = vi.fn();
   });
 
   it('keeps driving the clip player while the scrub runtime is still cold', () => {
@@ -338,6 +347,301 @@ describe('VideoSyncManager paused WebCodecs provider selection', () => {
 
     expect(syncFullWebCodecs).not.toHaveBeenCalled();
     expect(throttledSeek).toHaveBeenCalled();
+  });
+
+  it('pre-captures paused HTML frames with the active clip id as owner', () => {
+    flags.useFullWebCodecsPlayback = false;
+
+    const manager = new VideoSyncManager() as any;
+    const ensureVideoFrameCached = (engine as any).ensureVideoFrameCached;
+
+    const video = {
+      currentTime: 1.5,
+      paused: true,
+      seeking: false,
+      readyState: 4,
+      played: { length: 1 },
+      pause: vi.fn(),
+      playbackRate: 1,
+    } as any;
+
+    manager.syncClipVideo({
+      id: 'clip-owner',
+      trackId: 'track-v1',
+      startTime: 0,
+      inPoint: 0,
+      outPoint: 10,
+      duration: 10,
+      reversed: false,
+      source: {
+        videoElement: video,
+      },
+    }, {
+      isPlaying: false,
+      isDraggingPlayhead: true,
+      playbackSpeed: 1,
+      now: 1000,
+      playheadPosition: 1.5,
+      hasKeyframes: () => false,
+      getInterpolatedSpeed: () => 1,
+      getSourceTimeForClip: () => 1.5,
+    } as any);
+
+    expect(ensureVideoFrameCached).toHaveBeenCalledWith(video, 'clip-owner');
+  });
+
+  it('rate-limits drag precise seeks when fastSeek is unavailable', () => {
+    const manager = new VideoSyncManager() as any;
+
+    let currentTime = 0;
+    const assignedSeekTimes: number[] = [];
+    const video = {
+      duration: 10,
+      seeking: false,
+      addEventListener: vi.fn(),
+    } as any;
+
+    Object.defineProperty(video, 'currentTime', {
+      configurable: true,
+      get: () => currentTime,
+      set: (value: number) => {
+        assignedSeekTimes.push(value);
+        currentTime = value;
+      },
+    });
+
+    manager.throttledSeek('clip-html', video, 1.5, {
+      isDraggingPlayhead: true,
+      now: 1000,
+    } as any);
+
+    manager.throttledSeek('clip-html', video, 2.0, {
+      isDraggingPlayhead: true,
+      now: 1040,
+    } as any);
+
+    expect(assignedSeekTimes).toEqual([1.5]);
+  });
+
+  it('preloads the paused jump neighborhood after a large paused seek', () => {
+    flags.useFullWebCodecsPlayback = false;
+
+    const manager = new VideoSyncManager() as any;
+    const startTargetedWarmup = vi
+      .spyOn(manager, 'startTargetedWarmup')
+      .mockImplementation(() => {});
+
+    const video = {
+      currentTime: 0,
+      readyState: 4,
+      seeking: false,
+      preload: 'metadata',
+      src: 'file:///jump.mp4',
+      currentSrc: 'file:///jump.mp4',
+    } as any;
+
+    manager.preloadPausedJumpNeighborhood({
+      isPlaying: false,
+      isDraggingPlayhead: false,
+      playheadPosition: 5,
+      clips: [{
+        id: 'clip-jump',
+        trackId: 'track-v1',
+        startTime: 0,
+        inPoint: 0,
+        outPoint: 10,
+        duration: 10,
+        source: {
+          videoElement: video,
+        },
+      }],
+      clipsAtTime: [{
+        id: 'clip-jump',
+        trackId: 'track-v1',
+        startTime: 0,
+        inPoint: 0,
+        outPoint: 10,
+        duration: 10,
+        source: {
+          videoElement: video,
+        },
+      }],
+      getInterpolatedSpeed: () => 1,
+      getSourceTimeForClip: () => 5,
+    } as any);
+
+    expect(startTargetedWarmup).toHaveBeenCalledWith('clip-jump', video, 5, {
+      proactive: true,
+      requestRender: true,
+    });
+  });
+
+  it('does not spam paused jump preload for the same paused target', () => {
+    flags.useFullWebCodecsPlayback = false;
+
+    const manager = new VideoSyncManager() as any;
+    const startTargetedWarmup = vi
+      .spyOn(manager, 'startTargetedWarmup')
+      .mockImplementation(() => {});
+
+    const video = {
+      currentTime: 0,
+      readyState: 4,
+      seeking: false,
+      preload: 'metadata',
+      src: 'file:///jump.mp4',
+      currentSrc: 'file:///jump.mp4',
+    } as any;
+
+    const ctx = {
+      isPlaying: false,
+      isDraggingPlayhead: false,
+      playheadPosition: 5,
+      clips: [{
+        id: 'clip-jump',
+        trackId: 'track-v1',
+        startTime: 0,
+        inPoint: 0,
+        outPoint: 10,
+        duration: 10,
+        source: {
+          videoElement: video,
+        },
+      }],
+      clipsAtTime: [{
+        id: 'clip-jump',
+        trackId: 'track-v1',
+        startTime: 0,
+        inPoint: 0,
+        outPoint: 10,
+        duration: 10,
+        source: {
+          videoElement: video,
+        },
+      }],
+      getInterpolatedSpeed: () => 1,
+      getSourceTimeForClip: () => 5,
+    } as any;
+
+    manager.preloadPausedJumpNeighborhood(ctx);
+    manager.preloadPausedJumpNeighborhood(ctx);
+
+    expect(startTargetedWarmup).toHaveBeenCalledTimes(1);
+  });
+
+  it('aborts a stuck targeted warmup when no frame arrives', async () => {
+    vi.useFakeTimers();
+
+    const manager = new VideoSyncManager() as any;
+    const video = {
+      currentTime: 1,
+      readyState: 1,
+      preload: 'metadata',
+      muted: false,
+      play: vi.fn().mockResolvedValue(undefined),
+      pause: vi.fn(),
+      requestVideoFrameCallback: vi.fn(() => 1),
+    } as any;
+
+    manager.startTargetedWarmup('clip-warm', video, 1);
+    await vi.runAllTicks();
+
+    expect(manager.isVideoWarmingUp(video)).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(950);
+
+    expect(manager.isVideoWarmingUp(video)).toBe(false);
+    expect((engine as any).markVideoGpuReady).not.toHaveBeenCalled();
+    expect(video.pause).toHaveBeenCalled();
+  });
+
+  it('falls back to finishing warmup when the target frame is already ready', async () => {
+    vi.useFakeTimers();
+
+    const manager = new VideoSyncManager() as any;
+    const video = {
+      currentTime: 1,
+      readyState: 4,
+      preload: 'metadata',
+      muted: false,
+      play: vi.fn().mockResolvedValue(undefined),
+      pause: vi.fn(),
+      requestVideoFrameCallback: vi.fn(() => 1),
+    } as any;
+
+    manager.startTargetedWarmup('clip-warm', video, 1);
+    await vi.runAllTicks();
+    await vi.advanceTimersByTimeAsync(950);
+
+    expect(manager.isVideoWarmingUp(video)).toBe(false);
+    expect((engine as any).markVideoGpuReady).toHaveBeenCalledWith(video);
+    expect((engine as any).cacheFrameAtTime).toHaveBeenCalledWith(video, 1);
+  });
+
+  it('clears in-flight HTML seek state before starting a targeted warmup', async () => {
+    vi.useFakeTimers();
+
+    const manager = new VideoSyncManager() as any;
+    const video = {
+      currentTime: 1,
+      readyState: 1,
+      preload: 'metadata',
+      muted: false,
+      play: vi.fn().mockResolvedValue(undefined),
+      pause: vi.fn(),
+      requestVideoFrameCallback: vi.fn(() => 3),
+      cancelVideoFrameCallback: vi.fn(),
+    } as any;
+
+    manager.rvfcHandles['clip-warm'] = 7;
+    manager.pendingSeekTargets['clip-warm'] = 2.4;
+    manager.pendingSeekStartedAt['clip-warm'] = 123;
+    manager.queuedSeekTargets['clip-warm'] = 2.8;
+    manager.latestSeekTargets['clip-warm'] = 3.1;
+    manager.seekedFlushArmed.add('clip-warm');
+    manager.preciseSeekTimers['clip-warm'] = setTimeout(() => {}, 5000);
+
+    manager.startTargetedWarmup('clip-warm', video, 1.5);
+    await vi.runAllTicks();
+
+    expect(video.cancelVideoFrameCallback).toHaveBeenCalledWith(7);
+    expect(manager.pendingSeekTargets['clip-warm']).toBeUndefined();
+    expect(manager.pendingSeekStartedAt['clip-warm']).toBeUndefined();
+    expect(manager.queuedSeekTargets['clip-warm']).toBeUndefined();
+    expect(manager.latestSeekTargets['clip-warm']).toBeUndefined();
+    expect(manager.preciseSeekTimers['clip-warm']).toBeUndefined();
+    expect(manager.seekedFlushArmed.has('clip-warm')).toBe(false);
+  });
+
+  it('retargets an active warmup when the paused scrub target jumps far away', () => {
+    const manager = new VideoSyncManager() as any;
+    const video = {
+      pause: vi.fn(),
+    } as any;
+
+    manager.warmingUpVideos.add(video);
+    manager.warmupClipIds.set(video, 'clip-warm');
+    manager.warmupTargetTimes.set(video, 1);
+
+    const clearWarmupState = vi
+      .spyOn(manager, 'clearWarmupState')
+      .mockImplementation(() => {});
+    const startTargetedWarmup = vi
+      .spyOn(manager, 'startTargetedWarmup')
+      .mockImplementation(() => {});
+
+    manager.maybeRetargetActiveWarmup('clip-warm', video, 2.25, 1000, {
+      isPlaying: false,
+      isDragging: true,
+      requestRender: true,
+    });
+
+    expect(clearWarmupState).toHaveBeenCalledWith(video);
+    expect(startTargetedWarmup).toHaveBeenCalledWith('clip-warm', video, 2.25, {
+      proactive: false,
+      requestRender: true,
+      resumeAfterWarmup: false,
+    });
   });
 
   it('does not reuse the previous HTML video element across same-source reordered cuts when preview WebCodecs is disabled', () => {

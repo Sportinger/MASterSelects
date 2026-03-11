@@ -13,6 +13,7 @@ const PRELOAD_AHEAD_FRAMES = 60; // 2 seconds ahead for playback
 const PRELOAD_BEHIND_FRAMES = 30; // 1 second behind for reverse scrubbing
 const PARALLEL_LOAD_COUNT = 16; // More parallel loads for faster preload
 const SCRUB_PRELOAD_RANGE = 90; // 3 seconds around scrub position
+const EQ_FREQUENCIES = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
 
 // Frame cache entry
 interface CachedFrame {
@@ -20,6 +21,11 @@ interface CachedFrame {
   frameIndex: number;
   image: HTMLImageElement;
   timestamp: number; // For LRU eviction
+}
+
+interface ScrubAudioOptions {
+  volume?: number;
+  eqGains?: number[];
 }
 
 class ProxyFrameCache {
@@ -442,6 +448,7 @@ class ProxyFrameCache {
   // Varispeed scrubbing state
   private scrubSource: AudioBufferSourceNode | null = null;
   private scrubSourceGain: GainNode | null = null;
+  private scrubEqFilters: BiquadFilterNode[] = [];
   private scrubStartTime = 0; // AudioContext time when scrub started
   private scrubStartPosition = 0; // Audio position when scrub started
   private scrubCurrentMediaId: string | null = null;
@@ -457,7 +464,7 @@ class ProxyFrameCache {
       this.audioContext = new AudioContext();
       this.scrubGain = this.audioContext.createGain();
       this.scrubGain.connect(this.audioContext.destination);
-      this.scrubGain.gain.value = 0.85;
+      this.scrubGain.gain.value = 1;
       log.debug(`AudioContext created, state: ${this.audioContext.state}`);
     }
     return this.audioContext;
@@ -621,7 +628,13 @@ class ProxyFrameCache {
    * Audio plays continuously and follows the scrub position/speed
    * Like Premiere Pro / DaVinci Resolve
    */
-  playScrubAudio(mediaFileId: string, targetTime: number, _duration: number = 0.15, videoElementSrc?: string): void {
+  playScrubAudio(
+    mediaFileId: string,
+    targetTime: number,
+    _duration: number = 0.15,
+    videoElementSrc?: string,
+    options?: ScrubAudioOptions
+  ): void {
     const buffer = this.audioBufferCache.get(mediaFileId);
     if (!buffer) {
       log.debug(`No AudioBuffer for ${mediaFileId} - loading...`);
@@ -639,6 +652,8 @@ class ProxyFrameCache {
       ctx.resume();
     }
 
+    const scrubVolume = Math.max(0, Math.min(4, options?.volume ?? 1));
+    const scrubEqGains = options?.eqGains ?? [];
     const now = performance.now();
     const clampedTarget = Math.max(0, Math.min(targetTime, buffer.duration - 0.1));
 
@@ -658,15 +673,10 @@ class ProxyFrameCache {
       // Stop existing source
       this.stopScrubAudio();
 
-      // Create new continuous source
-      this.scrubSourceGain = ctx.createGain();
-      this.scrubSourceGain.connect(this.scrubGain!);
-      this.scrubSourceGain.gain.value = 0.9;
-
       this.scrubSource = ctx.createBufferSource();
       this.scrubSource.buffer = buffer;
-      this.scrubSource.connect(this.scrubSourceGain);
       this.scrubSource.playbackRate.value = 1.0;
+      this.attachScrubEffectChain(ctx, this.scrubSource, scrubVolume, scrubEqGains);
 
       // Start playing from target position
       this.scrubSource.start(0, clampedTarget);
@@ -685,6 +695,8 @@ class ProxyFrameCache {
         }
       };
     } else if (this.scrubSource && timeDelta > 0.001) {
+      this.updateScrubEffects(scrubVolume, scrubEqGains);
+
       // Calculate where audio SHOULD be vs where it IS
       const elapsedAudioTime = (ctx.currentTime - this.scrubStartTime) * this.scrubSource.playbackRate.value;
       const currentAudioPos = this.scrubStartPosition + elapsedAudioTime;
@@ -714,6 +726,8 @@ class ProxyFrameCache {
       const currentRate = this.scrubSource.playbackRate.value;
       const smoothedRate = currentRate + (targetRate - currentRate) * 0.3;
       this.scrubSource.playbackRate.value = Math.max(0.25, Math.min(4.0, smoothedRate));
+    } else {
+      this.updateScrubEffects(scrubVolume, scrubEqGains);
     }
   }
 
@@ -735,6 +749,12 @@ class ProxyFrameCache {
       } catch { /* ignore */ }
       this.scrubSourceGain = null;
     }
+    for (const filter of this.scrubEqFilters) {
+      try {
+        filter.disconnect();
+      } catch { /* ignore */ }
+    }
+    this.scrubEqFilters = [];
     this.scrubIsActive = false;
     this.scrubCurrentMediaId = null;
 
@@ -747,6 +767,42 @@ class ProxyFrameCache {
    */
   hasAudioBuffer(mediaFileId: string): boolean {
     return this.audioBufferCache.has(mediaFileId);
+  }
+
+  private attachScrubEffectChain(
+    ctx: AudioContext,
+    source: AudioBufferSourceNode,
+    volume: number,
+    eqGains: number[]
+  ): void {
+    this.scrubSourceGain = ctx.createGain();
+    this.scrubSourceGain.gain.value = volume;
+
+    this.scrubEqFilters = EQ_FREQUENCIES.map((frequency, index) => {
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'peaking';
+      filter.frequency.value = frequency;
+      filter.Q.value = 1.4;
+      filter.gain.value = eqGains[index] ?? 0;
+      return filter;
+    });
+
+    source.connect(this.scrubSourceGain);
+    this.scrubSourceGain.connect(this.scrubEqFilters[0]);
+    for (let i = 0; i < this.scrubEqFilters.length - 1; i++) {
+      this.scrubEqFilters[i].connect(this.scrubEqFilters[i + 1]);
+    }
+    this.scrubEqFilters[this.scrubEqFilters.length - 1].connect(this.scrubGain!);
+  }
+
+  private updateScrubEffects(volume: number, eqGains: number[]): void {
+    if (this.scrubSourceGain) {
+      this.scrubSourceGain.gain.value = Math.max(0, Math.min(4, volume));
+    }
+
+    for (let i = 0; i < this.scrubEqFilters.length; i++) {
+      this.scrubEqFilters[i].gain.value = eqGains[i] ?? 0;
+    }
   }
 
   // Clear cache for a specific media file

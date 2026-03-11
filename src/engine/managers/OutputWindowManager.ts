@@ -3,6 +3,7 @@
 
 import { useRenderTargetStore } from '../../stores/renderTargetStore';
 import { useSliceStore } from '../../stores/sliceStore';
+import { useTimelineStore } from '../../stores/timeline';
 import { Logger } from '../../services/logger';
 
 const log = Logger.create('OutputWindowManager');
@@ -29,6 +30,10 @@ function isWindowKnownOpen(id: string): boolean {
     const ids: string[] = JSON.parse(sessionStorage.getItem(OPEN_WINDOWS_KEY) || '[]');
     return ids.includes(id);
   } catch { return false; }
+}
+
+function shouldTransferPopupFocus(): boolean {
+  return !useTimelineStore.getState().isPlaying;
 }
 
 export class OutputWindowManager {
@@ -141,13 +146,17 @@ export class OutputWindowManager {
       useRenderTargetStore.getState().deactivateTarget(id);
     };
 
-    // Ensure popup gets foreground activation on Windows:
-    // Blur the parent first to release foreground lock, then focus the popup
-    // from its own context so the OS allows it to become the foreground window.
-    window.blur();
-    outputWindow.focus();
-    outputWindow.setTimeout(() => outputWindow.focus(), 50);
-    outputWindow.setTimeout(() => outputWindow.focus(), 200);
+    // Avoid stealing focus while playback is running: backgrounding the editor
+    // can throttle its RAF/render loop and stall HTML video playback.
+    if (shouldTransferPopupFocus()) {
+      // Ensure popup gets foreground activation on Windows:
+      // Blur the parent first to release foreground lock, then focus the popup
+      // from its own context so the OS allows it to become the foreground window.
+      window.blur();
+      outputWindow.focus();
+      outputWindow.setTimeout(() => outputWindow.focus(), 50);
+      outputWindow.setTimeout(() => outputWindow.focus(), 200);
+    }
 
     log.info('Created output window', { id, name });
     return { window: outputWindow, canvas };

@@ -93,17 +93,20 @@ function TimelineClipComponent({
   const clipEntranceKey = useTimelineStore(s => s.clipEntranceAnimationKey);
   const mountKeyRef = useRef(clipEntranceKey);
 
-  // Calculate stagger delay: sort all clips by track order + startTime, then 20ms per clip
-  const clipStaggerIndex = (() => {
-    const sorted = [...clips].sort((a, b) => {
-      const aTrack = tracks.findIndex(t => t.id === a.trackId);
-      const bTrack = tracks.findIndex(t => t.id === b.trackId);
-      if (aTrack !== bTrack) return aTrack - bTrack;
-      return a.startTime - b.startTime;
-    });
-    return sorted.findIndex(c => c.id === clip.id);
-  })();
-  const animationDelay = Math.max(0, clipStaggerIndex) * 0.02;
+  // Only compute stagger order during composition entrance animation. Doing a
+  // full clips sort inside every TimelineClip render gets very expensive once
+  // AI splits create hundreds of clips.
+  const animationDelay = clipAnimationPhase === 'entering'
+    ? Math.max(0, (() => {
+        const sorted = [...clips].sort((a, b) => {
+          const aTrack = tracks.findIndex(t => t.id === a.trackId);
+          const bTrack = tracks.findIndex(t => t.id === b.trackId);
+          if (aTrack !== bTrack) return aTrack - bTrack;
+          return a.startTime - b.startTime;
+        });
+        return sorted.findIndex(c => c.id === clip.id);
+      })()) * 0.02
+    : 0;
 
   // Determine animation class:
   // - 'exiting': apply exit animation
@@ -269,7 +272,7 @@ function TimelineClipComponent({
   // Source-based thumbnail cache: pull thumbnails from cache by mediaFileId
   const sourceMediaFileId = clip.source?.mediaFileId || clip.mediaFileId;
   const isCompositionWithSegments = clip.isComposition && clip.clipSegments && clip.clipSegments.length > 0;
-  const useSourceCache = !!sourceMediaFileId && !isAudioClip && !isCompositionWithSegments;
+  const useSourceCache = clip.source?.type === 'video' && !!sourceMediaFileId && !isCompositionWithSegments;
   const cachedThumbnails = useThumbnailCache(
     useSourceCache ? sourceMediaFileId : undefined,
     displayInPoint,

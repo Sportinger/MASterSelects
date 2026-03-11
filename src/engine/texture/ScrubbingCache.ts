@@ -14,9 +14,11 @@ export class ScrubbingCache {
   // Key: "videoSrc:quantizedFrameTime" -> { texture, view }
   // Time is quantized to frame boundaries (1/30s) for better cache hit rate
   // Uses Map insertion order for O(1) LRU operations
-  private scrubbingCache: Map<string, { texture: GPUTexture; view: GPUTextureView }> = new Map();
+  private scrubbingCache: Map<string, { texture: GPUTexture; view: GPUTextureView; bytes: number }> = new Map();
   private maxScrubbingCacheFrames = 300; // ~10 seconds at 30fps, ~2.4GB VRAM at 1080p
   private readonly SCRUB_CACHE_FPS = 30; // Quantization granularity for scrubbing cache keys
+  private scrubbingCacheBytes = 0;
+  private scrubbingCacheEvictions = 0;
 
   // Last valid frame cache - keeps last frame visible during seeks
   private lastFrameTextures: Map<HTMLVideoElement, GPUTexture> = new Map();
@@ -76,7 +78,7 @@ export class ScrubbingCache {
 
   private touchScrubbingEntry(
     key: string,
-    entry: { texture: GPUTexture; view: GPUTextureView }
+    entry: { texture: GPUTexture; view: GPUTextureView; bytes: number }
   ): { view: GPUTextureView; mediaTime: number } {
     this.scrubbingCache.delete(key);
     this.scrubbingCache.set(key, entry);
@@ -111,13 +113,20 @@ export class ScrubbingCache {
       );
 
       // Add to cache (Map maintains insertion order)
-      this.scrubbingCache.set(key, { texture, view: texture.createView() });
+      const bytes = width * height * 4;
+      this.scrubbingCache.set(key, { texture, view: texture.createView(), bytes });
+      this.scrubbingCacheBytes += bytes;
 
       // LRU eviction - evict oldest (first) entries
       // Don't destroy textures - let GC handle to avoid GPU conflicts
       while (this.scrubbingCache.size > this.maxScrubbingCacheFrames) {
         const oldestKey = this.scrubbingCache.keys().next().value;
         if (oldestKey) {
+          const oldest = this.scrubbingCache.get(oldestKey);
+          if (oldest) {
+            this.scrubbingCacheBytes -= oldest.bytes;
+            this.scrubbingCacheEvictions++;
+          }
           this.scrubbingCache.delete(oldestKey);
         }
       }
@@ -191,10 +200,24 @@ export class ScrubbingCache {
   }
 
   // Get scrubbing cache stats
-  getScrubbingCacheStats(): { count: number; maxCount: number } {
+  getScrubbingCacheStats(): {
+    count: number;
+    maxCount: number;
+    fillPct: number;
+    approxMemoryMB: number;
+    evictions: number;
+    budgetMode: 'static';
+  } {
     return {
       count: this.scrubbingCache.size,
       maxCount: this.maxScrubbingCacheFrames,
+      fillPct:
+        this.maxScrubbingCacheFrames > 0
+          ? Math.round((this.scrubbingCache.size / this.maxScrubbingCacheFrames) * 1000) / 10
+          : 0,
+      approxMemoryMB: Math.round((this.scrubbingCacheBytes / (1024 * 1024)) * 100) / 100,
+      evictions: this.scrubbingCacheEvictions,
+      budgetMode: 'static',
     };
   }
 
@@ -203,14 +226,19 @@ export class ScrubbingCache {
     // Don't destroy textures - let GC handle to avoid GPU conflicts
     if (videoSrc) {
       // Clear only frames from this video
-      for (const key of this.scrubbingCache.keys()) {
+      for (const key of [...this.scrubbingCache.keys()]) {
         if (key.startsWith(videoSrc)) {
+          const entry = this.scrubbingCache.get(key);
+          if (entry) {
+            this.scrubbingCacheBytes -= entry.bytes;
+          }
           this.scrubbingCache.delete(key);
         }
       }
     } else {
       // Clear all
       this.scrubbingCache.clear();
+      this.scrubbingCacheBytes = 0;
     }
   }
 

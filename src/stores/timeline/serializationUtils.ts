@@ -11,6 +11,7 @@ import { Logger } from '../../services/logger';
 import { engine } from '../../engine/WebGPUEngine';
 import { layerBuilder } from '../../services/layerBuilder';
 import { sanitizePlayheadPosition } from '../../services/layerBuilder/PlayheadState';
+import { thumbnailCacheService } from '../../services/thumbnailCacheService';
 import type { WebCodecsPlayer } from '../../engine/WebCodecsPlayer';
 
 const log = Logger.create('Timeline');
@@ -43,6 +44,19 @@ async function getOrCreateWcp(
     log.debug('Created & cached WebCodecsPlayer', { mediaFileId, fileName, fullMode: player.isFullMode() });
   }
   return player;
+}
+
+function restoreSourceThumbnails(
+  mediaFileId: string | undefined,
+  video: HTMLVideoElement,
+  duration: number
+): void {
+  if (!mediaFileId || duration <= 0) {
+    return;
+  }
+
+  const fileHash = useMediaStore.getState().files.find(f => f.id === mediaFileId)?.fileHash;
+  void thumbnailCacheService.generateForSource(mediaFileId, video, duration, fileHash);
 }
 
 type SerializationUtils = Pick<TimelineUtils, 'getSerializableState' | 'loadState' | 'clearTimeline'>;
@@ -1024,6 +1038,7 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
             }));
             wakePreviewAfterRestore();
             engine.preCacheVideoFrame(video);
+            restoreSourceThumbnails(mediaId, video, video.duration || serializedClip.naturalDuration || clip.duration);
           }, { once: true });
         } else {
           // Slow path: no cached WCP — wait for canplaythrough then init
@@ -1047,6 +1062,7 @@ export const createSerializationUtils: SliceCreator<SerializationUtils> = (set, 
             wakePreviewAfterRestore();
 
             engine.preCacheVideoFrame(video);
+            restoreSourceThumbnails(mediaId, video, video.duration || serializedClip.naturalDuration || clip.duration);
 
             if (hasWebCodecs && mediaId) {
               try {

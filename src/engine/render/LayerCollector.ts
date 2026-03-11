@@ -45,6 +45,8 @@ export class LayerCollector {
   // to the WebCodecs path (which may not have the correct frame yet).
   private scrubGraceUntil = 0;
   private static readonly SCRUB_GRACE_MS = 150; // ~9 frames at 60fps
+  private static readonly MAX_DRAG_FALLBACK_DRIFT_SECONDS = 1.2;
+  private static readonly MAX_DRAG_LIVE_IMPORT_DRIFT_SECONDS = 0.9;
 
   private isPendingWebCodecsFrameStable(
     provider: NonNullable<Layer['source']>['webCodecsPlayer'] | undefined
@@ -470,9 +472,23 @@ export class LayerCollector {
         typeof lastPresentedTime === 'number' &&
         Number.isFinite(lastPresentedTime);
       const displayedTime = hasConfirmedPresentedFrame ? lastPresentedTime : undefined;
+      // During active HTML playback the imported frame tracks video.currentTime,
+      // while lastPresentedTime is only refreshed on seek/warmup transitions.
+      // Using currentTime here keeps preview drift telemetry tied to the live frame
+      // instead of a stale "last settled" timestamp.
+      const reportedDisplayedTime =
+        deps.isPlaying &&
+        !video.paused &&
+        !video.seeking &&
+        Number.isFinite(currentTime)
+          ? currentTime
+          : displayedTime;
       const hasFreshPresentedFrame =
         hasConfirmedPresentedFrame &&
         Math.abs(lastPresentedTime - targetTime) <= 0.12;
+      const presentedDriftSeconds = hasConfirmedPresentedFrame
+        ? Math.abs(lastPresentedTime - targetTime)
+        : undefined;
       const awaitingPausedTargetFrame =
         hasPresentedOwnerMismatch ||
         !deps.isPlaying &&
@@ -482,18 +498,33 @@ export class LayerCollector {
       const cacheSearchDistanceFrames = isDragging ? 12 : 6;
       const lastSameClipFrame = this.getDragHoldFrame(layer, video, deps);
       const dragHoldFrame = isDragging
-        ? lastSameClipFrame
-        : (isSettling || awaitingPausedTargetFrame) && this.isFrameNearTarget(lastSameClipFrame, targetTime)
+        ? this.isFrameNearTarget(
+          lastSameClipFrame,
+          targetTime,
+          LayerCollector.MAX_DRAG_FALLBACK_DRIFT_SECONDS
+        )
+          ? lastSameClipFrame
+          : null
+          : (isSettling || awaitingPausedTargetFrame) && this.isFrameNearTarget(lastSameClipFrame, targetTime)
           ? lastSameClipFrame
         : null;
-      const emergencyHoldFrame = isDragging
-        ? lastSameClipFrame
-        : dragHoldFrame;
+      const emergencyHoldFrame = dragHoldFrame;
+      const sameClipHoldFrame =
+        !deps.isPlaying &&
+        (isDragging || isSettling || awaitingPausedTargetFrame || video.seeking)
+          ? lastSameClipFrame
+          : null;
       const safeFallback = this.getSafeLastFrameFallback(layer, video, deps, targetTime) ?? dragHoldFrame;
+      const allowDragLiveVideoImport =
+        !video.seeking &&
+        (
+          !hasConfirmedPresentedFrame ||
+          (presentedDriftSeconds ?? 0) <= LayerCollector.MAX_DRAG_LIVE_IMPORT_DRIFT_SECONDS
+        );
       const allowLiveVideoImport = !hasPresentedOwnerMismatch && (isPausedSettle
         ? hasFreshPresentedFrame
         : !awaitingPausedTargetFrame &&
-          (((!isDragging && !isSettling) || hasFreshPresentedFrame || !safeFallback)));
+          (((!isDragging && !isSettling) || hasFreshPresentedFrame || (isDragging ? allowDragLiveVideoImport : !safeFallback))));
       const allowConfirmedFrameCaching = !hasPresentedOwnerMismatch && (isPausedSettle
         ? hasFreshPresentedFrame
         : !awaitingPausedTargetFrame &&
@@ -561,6 +592,21 @@ export class LayerCollector {
             previewPath: 'emergency-hold',
           };
         }
+        if (sameClipHoldFrame) {
+          this.traceScrubPath(layer, 'same-clip-hold', video, targetTime, lastPresentedTime);
+          this.currentDecoder = 'HTMLVideo(cached)';
+          return {
+            layer,
+            isVideo: false,
+            externalTexture: null,
+            textureView: sameClipHoldFrame.view,
+            sourceWidth: sameClipHoldFrame.width,
+            sourceHeight: sameClipHoldFrame.height,
+            displayedMediaTime: sameClipHoldFrame.mediaTime,
+            targetMediaTime: targetTime,
+            previewPath: 'same-clip-hold',
+          };
+        }
       }
 
       // After page reload, importExternalTexture returns a valid GPUExternalTexture
@@ -618,7 +664,7 @@ export class LayerCollector {
             textureView: copiedFrame.view,
             sourceWidth: copiedFrame.width,
             sourceHeight: copiedFrame.height,
-            displayedMediaTime: copiedFrame.mediaTime ?? displayedTime,
+            displayedMediaTime: copiedFrame.mediaTime ?? reportedDisplayedTime,
             targetMediaTime: targetTime,
             previewPath: 'copied-preview',
           };
@@ -670,7 +716,7 @@ export class LayerCollector {
           textureView: null,
           sourceWidth: video.videoWidth,
           sourceHeight: video.videoHeight,
-          displayedMediaTime: displayedTime,
+          displayedMediaTime: reportedDisplayedTime,
           targetMediaTime: targetTime,
           previewPath: 'live-import',
         };
@@ -707,6 +753,21 @@ export class LayerCollector {
           previewPath: 'emergency-hold',
         };
       }
+      if (sameClipHoldFrame) {
+        this.traceScrubPath(layer, 'same-clip-hold', video, targetTime, lastPresentedTime);
+        this.currentDecoder = 'HTMLVideo(cached)';
+        return {
+          layer,
+          isVideo: false,
+          externalTexture: null,
+          textureView: sameClipHoldFrame.view,
+          sourceWidth: sameClipHoldFrame.width,
+          sourceHeight: sameClipHoldFrame.height,
+          displayedMediaTime: sameClipHoldFrame.mediaTime,
+          targetMediaTime: targetTime,
+          previewPath: 'same-clip-hold',
+        };
+      }
       this.traceScrubPath(layer, 'final-drop', video, targetTime, lastPresentedTime);
     } else {
       // Video not ready - try cache
@@ -714,12 +775,36 @@ export class LayerCollector {
       const isDragging = useTimelineStore.getState().isDraggingPlayhead;
       const cacheSearchDistanceFrames = isDragging ? 12 : 6;
       const isSettling = scrubSettleState.isPending(layer.sourceClipId);
+      const lastSameClipFrame = this.getDragHoldFrame(layer, video, deps);
       const dragHoldFrame = isSettling
-        ? this.getDragHoldFrame(layer, video, deps)
+        ? (() => {
+          const holdFrame = lastSameClipFrame;
+          return this.isFrameNearTarget(
+            holdFrame,
+            targetTime,
+            LayerCollector.MAX_DRAG_FALLBACK_DRIFT_SECONDS
+          )
+            ? holdFrame
+            : null;
+        })()
         : null;
       const emergencyHoldFrame = isDragging
-        ? this.getDragHoldFrame(layer, video, deps)
+        ? (() => {
+          const holdFrame = lastSameClipFrame;
+          return this.isFrameNearTarget(
+            holdFrame,
+            targetTime,
+            LayerCollector.MAX_DRAG_FALLBACK_DRIFT_SECONDS
+          )
+            ? holdFrame
+            : null;
+        })()
         : dragHoldFrame;
+      const sameClipHoldFrame =
+        !deps.isPlaying &&
+        (isDragging || isSettling || video.seeking || video.readyState < 2)
+          ? lastSameClipFrame
+          : null;
       const safeFallback = this.getSafeLastFrameFallback(layer, video, deps, targetTime) ?? dragHoldFrame;
       const cachedFrame =
         deps.scrubbingCache?.getCachedFrameEntry(video.src, targetTime) ??
@@ -764,6 +849,20 @@ export class LayerCollector {
           displayedMediaTime: emergencyHoldFrame.mediaTime,
           targetMediaTime: targetTime,
           previewPath: 'emergency-hold',
+        };
+      }
+      if (sameClipHoldFrame) {
+        this.traceScrubPath(layer, 'same-clip-hold', video, targetTime, deps.scrubbingCache?.getLastPresentedTime(video));
+        return {
+          layer,
+          isVideo: false,
+          externalTexture: null,
+          textureView: sameClipHoldFrame.view,
+          sourceWidth: sameClipHoldFrame.width,
+          sourceHeight: sameClipHoldFrame.height,
+          displayedMediaTime: sameClipHoldFrame.mediaTime,
+          targetMediaTime: targetTime,
+          previewPath: 'same-clip-hold',
         };
       }
       this.traceScrubPath(layer, 'not-ready-drop', video, targetTime, deps.scrubbingCache?.getLastPresentedTime(video));

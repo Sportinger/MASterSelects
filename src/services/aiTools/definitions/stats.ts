@@ -5,7 +5,7 @@ export const statsToolDefinitions: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'getStats',
-      description: 'Get current engine/playback stats snapshot for debugging. Returns FPS, timing breakdown, decoder info, drops, playback health, audio status, GPU info.',
+      description: 'Get current engine/playback stats snapshot for debugging. Returns FPS, timing breakdown, decoder info, drops, playback health, cache/budget stats, freeze/path counters, audio status, and GPU info.',
       parameters: {
         type: 'object',
         properties: {},
@@ -49,12 +49,12 @@ export const statsToolDefinitions: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'getPlaybackTrace',
-      description: 'Get raw recent playback pipeline events and health state for debugging WebCodecs/VF playback issues.',
+      description: 'Get recent playback pipeline events plus derived playback summary, health state, cache/budget stats, and freeze/path counters for debugging WebCodecs/VF/HTML playback issues.',
       parameters: {
         type: 'object',
         properties: {
-          windowMs: { type: 'number', description: 'Time window in milliseconds to inspect (default: 5000, max: 30000)' },
-          limit: { type: 'number', description: 'Maximum number of recent WC/VF events to include (default: 120, max: 500)' },
+          windowMs: { type: 'number', description: 'Time window in milliseconds to inspect (default: 5000, max: 120000)' },
+          limit: { type: 'number', description: 'Maximum number of recent WC/VF events to include (default: 200, max: 2000)' },
         },
         required: [],
       },

@@ -141,4 +141,79 @@ describe('playback debug stats', () => {
     expect(stats.avgAudioDriftMs).toBe(72);
     expect(stats.status).toBe('bad');
   });
+
+  it('summarizes preview freeze streaks and scrub path counts for HTML/VF playback', () => {
+    const vfTimeline: VFPipelineEvent[] = [
+      { type: 'vf_capture', t: 0 },
+      {
+        type: 'vf_preview_frame',
+        t: 0,
+        detail: { changed: 'false', targetMoved: 'true', driftMs: 120, previewPath: 'same-clip-hold', clipId: 'clip-a' },
+      },
+      {
+        type: 'vf_preview_frame',
+        t: 33,
+        detail: { changed: 'false', targetMoved: 'true', driftMs: 140, previewPath: 'same-clip-hold', clipId: 'clip-a' },
+      },
+      {
+        type: 'vf_preview_frame',
+        t: 66,
+        detail: { changed: 'false', targetMoved: 'true', driftMs: 180, previewPath: 'same-clip-hold', clipId: 'clip-a' },
+      },
+      {
+        type: 'vf_preview_frame',
+        t: 99,
+        detail: { changed: 'true', targetMoved: 'true', driftMs: 12, previewPath: 'live-import', clipId: 'clip-a' },
+      },
+      { type: 'vf_scrub_path', t: 110, detail: { path: 'same-clip-hold' } },
+      { type: 'vf_scrub_path', t: 120, detail: { path: 'not-ready-scrub-cache' } },
+      { type: 'vf_scrub_path', t: 130, detail: { path: 'same-clip-hold' } },
+      {
+        type: 'vf_preview_frame',
+        t: 150,
+        detail: { changed: 'false', targetMoved: 'true', driftMs: 200, previewPath: 'not-ready-scrub-cache', clipId: 'clip-b' },
+      },
+      {
+        type: 'vf_preview_frame',
+        t: 183,
+        detail: { changed: 'false', targetMoved: 'true', driftMs: 210, previewPath: 'not-ready-scrub-cache', clipId: 'clip-b' },
+      },
+      {
+        type: 'vf_preview_frame',
+        t: 216,
+        detail: { changed: 'false', targetMoved: 'true', driftMs: 220, previewPath: 'not-ready-scrub-cache', clipId: 'clip-b' },
+      },
+    ];
+
+    const stats = buildPlaybackDebugStats({
+      decoder: 'HTMLVideo',
+      now: 240,
+      windowMs: 500,
+      vfTimeline,
+    });
+
+    expect(stats.pipeline).toBe('html');
+    expect(stats.previewFrames).toBe(7);
+    expect(stats.previewUpdates).toBe(1);
+    expect(stats.stalePreviewFrames).toBe(6);
+    expect(stats.stalePreviewWhileTargetMoved).toBe(6);
+    expect(stats.previewFreezeEvents).toBe(2);
+    expect(stats.previewFreezeFrames).toBe(6);
+    expect(stats.longestPreviewFreezeFrames).toBe(3);
+    expect(stats.longestPreviewFreezeMs).toBe(66);
+    expect(stats.lastPreviewFreezePath).toBe('not-ready-scrub-cache');
+    expect(stats.lastPreviewFreezeClipId).toBe('clip-b');
+    expect(stats.lastPreviewFreezeDurationMs).toBe(66);
+    expect(stats.previewPathCounts).toEqual({
+      'same-clip-hold': 3,
+      'live-import': 1,
+      'not-ready-scrub-cache': 3,
+    });
+    expect(stats.scrubPathCounts).toEqual({
+      'same-clip-hold': 2,
+      'not-ready-scrub-cache': 1,
+    });
+    expect(stats.avgPreviewDriftMs).toBeCloseTo(154.6, 1);
+    expect(stats.maxPreviewDriftMs).toBe(220);
+  });
 });
