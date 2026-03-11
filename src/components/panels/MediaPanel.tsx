@@ -1237,16 +1237,14 @@ export function MediaPanel() {
         <span className="media-panel-count">{totalItems} items</span>
         <div className="media-panel-actions">
           <button
-            className={`btn btn-sm btn-icon media-view-toggle ${viewMode === 'list' ? 'active' : ''}`}
-            onClick={() => { const m = 'list'; setViewMode(m); setGridFolderId(null); localStorage.setItem('media-panel-view-mode', m); }}
-            title="List View"
-          >
-            <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><rect x="1" y="2" width="14" height="2" rx="0.5"/><rect x="1" y="7" width="14" height="2" rx="0.5"/><rect x="1" y="12" width="14" height="2" rx="0.5"/></svg>
-          </button>
-          <button
             className={`btn btn-sm btn-icon media-view-toggle ${viewMode === 'grid' ? 'active' : ''}`}
-            onClick={() => { const m = 'grid'; setViewMode(m); localStorage.setItem('media-panel-view-mode', m); }}
-            title="Grid View"
+            onClick={() => {
+              const m = viewMode === 'grid' ? 'list' : 'grid';
+              setViewMode(m);
+              if (m === 'list') setGridFolderId(null);
+              localStorage.setItem('media-panel-view-mode', m);
+            }}
+            title={viewMode === 'grid' ? 'Switch to List View' : 'Switch to Grid View'}
           >
             <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
           </button>
