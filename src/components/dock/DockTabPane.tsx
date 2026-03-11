@@ -422,8 +422,14 @@ export function DockTabPane({ group }: DockTabPaneProps) {
         className={`dock-tab-bar ${isMiddleDragging ? 'middle-dragging' : ''}`}
         title="Ctrl+Scroll to zoom | Hold to drag | Middle-click drag to scroll"
         onMouseDown={handleTabBarMouseDown}
+        style={hasTimelinePanel && openCompositions.length > 0 && slotGridProgress > 0 ? {
+          height: `${Math.round((1 - slotGridProgress) * 26)}px`,
+          minHeight: 0,
+          opacity: 1 - slotGridProgress,
+          overflow: 'hidden',
+        } : undefined}
       >
-        {/* For timeline panels, show drag handle + composition tabs (hidden in slot view) */}
+        {/* For timeline panels, show drag handle + composition tabs (animated out in slot view) */}
         {hasTimelinePanel && openCompositions.length > 0 && slotGridProgress < 1 ? (
           <>
             {/* Drag handle for repositioning the timeline panel */}

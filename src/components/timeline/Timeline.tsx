@@ -807,49 +807,81 @@ export function Timeline() {
         }
       }}
     >
-      {slotGridProgress < 1 && <TimelineControls
-        isPlaying={isPlaying}
-        loopPlayback={loopPlayback}
-        playheadPosition={playheadPosition}
-        duration={duration}
-        zoom={zoom}
-        snappingEnabled={snappingEnabled}
-        inPoint={inPoint}
-        outPoint={outPoint}
-        ramPreviewEnabled={ramPreviewEnabled}
-        proxyEnabled={proxyEnabled}
-        currentlyGeneratingProxyId={currentlyGeneratingProxyId}
-        mediaFilesWithProxy={mediaFilesWithProxyCount}
-        showTranscriptMarkers={showTranscriptMarkers}
-        thumbnailsEnabled={thumbnailsEnabled}
-        waveformsEnabled={waveformsEnabled}
-        toolMode={toolMode}
-        onPlay={play}
-        onPause={pause}
-        onStop={stop}
-        onToggleLoop={toggleLoopPlayback}
-        onSetZoom={handleSetZoom}
-        onToggleSnapping={toggleSnapping}
-        onSetInPoint={setInPointAtPlayhead}
-        onSetOutPoint={setOutPointAtPlayhead}
-        onClearInOut={clearInOut}
-        onToggleRamPreview={toggleRamPreviewEnabled}
-        onToggleProxy={toggleProxyEnabled}
-        isProxyCaching={isProxyCaching}
-        proxyCacheProgress={proxyCacheProgress}
-        onStartProxyCachePreload={startProxyCachePreload}
-        onCancelProxyCachePreload={cancelProxyCachePreload}
-        onToggleTranscriptMarkers={toggleTranscriptMarkers}
-        onToggleThumbnails={toggleThumbnailsEnabled}
-        onToggleWaveforms={toggleWaveformsEnabled}
-        onToggleCutTool={toggleCutTool}
-        onSetDuration={setDuration}
-        onFitToWindow={handleFitToWindow}
-        onToggleSlotGrid={handleToggleSlotGrid}
-        slotGridActive={slotGridProgress > 0.5}
-        formatTime={formatTime}
-        parseTime={parseTime}
-      />}
+      {/* Timeline toolbar - slides up when entering slot view */}
+      <div className="toolbar-slide-wrapper" style={slotGridProgress > 0 ? {
+        height: `${Math.round((1 - slotGridProgress) * 36)}px`,
+        opacity: 1 - slotGridProgress,
+        overflow: 'hidden',
+      } : undefined}>
+        <TimelineControls
+          isPlaying={isPlaying}
+          loopPlayback={loopPlayback}
+          playheadPosition={playheadPosition}
+          duration={duration}
+          zoom={zoom}
+          snappingEnabled={snappingEnabled}
+          inPoint={inPoint}
+          outPoint={outPoint}
+          ramPreviewEnabled={ramPreviewEnabled}
+          proxyEnabled={proxyEnabled}
+          currentlyGeneratingProxyId={currentlyGeneratingProxyId}
+          mediaFilesWithProxy={mediaFilesWithProxyCount}
+          showTranscriptMarkers={showTranscriptMarkers}
+          thumbnailsEnabled={thumbnailsEnabled}
+          waveformsEnabled={waveformsEnabled}
+          toolMode={toolMode}
+          onPlay={play}
+          onPause={pause}
+          onStop={stop}
+          onToggleLoop={toggleLoopPlayback}
+          onSetZoom={handleSetZoom}
+          onToggleSnapping={toggleSnapping}
+          onSetInPoint={setInPointAtPlayhead}
+          onSetOutPoint={setOutPointAtPlayhead}
+          onClearInOut={clearInOut}
+          onToggleRamPreview={toggleRamPreviewEnabled}
+          onToggleProxy={toggleProxyEnabled}
+          isProxyCaching={isProxyCaching}
+          proxyCacheProgress={proxyCacheProgress}
+          onStartProxyCachePreload={startProxyCachePreload}
+          onCancelProxyCachePreload={cancelProxyCachePreload}
+          onToggleTranscriptMarkers={toggleTranscriptMarkers}
+          onToggleThumbnails={toggleThumbnailsEnabled}
+          onToggleWaveforms={toggleWaveformsEnabled}
+          onToggleCutTool={toggleCutTool}
+          onSetDuration={setDuration}
+          onFitToWindow={handleFitToWindow}
+          onToggleSlotGrid={handleToggleSlotGrid}
+          slotGridActive={slotGridProgress > 0.5}
+          formatTime={formatTime}
+          parseTime={parseTime}
+        />
+      </div>
+
+      {/* Slot Grid toolbar - slides in when entering slot view */}
+      {slotGridProgress > 0 && (
+        <div className="toolbar-slide-wrapper" style={{
+          height: `${Math.round(slotGridProgress * 36)}px`,
+          opacity: slotGridProgress,
+          overflow: 'hidden',
+        }}>
+          <div className="slot-grid-toolbar">
+            <button
+              className="btn btn-sm slot-grid-toolbar-back"
+              onClick={handleToggleSlotGrid}
+              title="Back to Timeline (Ctrl+Shift+Scroll)"
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="4" y1="6" x2="20" y2="6" />
+                <line x1="4" y1="12" x2="20" y2="12" />
+                <line x1="4" y1="18" x2="14" y2="18" />
+              </svg>
+              <span>Timeline</span>
+            </button>
+            <span className="slot-grid-toolbar-title">Slot Grid</span>
+          </div>
+        </div>
+      )}
 
       <div className="timeline-body" ref={timelineBodyRef}>
         {/* SlotGrid — fades in over timeline */}
