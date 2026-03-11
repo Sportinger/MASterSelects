@@ -22,6 +22,26 @@ export const createAIActionFeedbackSlice: SliceCreator<AIActionFeedbackActions> 
     return id;
   },
 
+  addAIOverlaysBatch: (overlays) => {
+    const now = Date.now();
+    const entries = overlays.map((overlay, i) => ({
+      ...overlay,
+      id: `ai-overlay-${now}-${i}-${Math.random().toString(36).substr(2, 3)}`,
+      createdAt: now,
+    }));
+
+    const current = get().aiActionOverlays;
+    set({ aiActionOverlays: [...current, ...entries] });
+
+    // Single cleanup: remove all after the longest animation completes
+    const maxTime = Math.max(...entries.map(e => (e.animationDelay || 0) + e.duration + 50));
+    setTimeout(() => {
+      const ids = new Set(entries.map(e => e.id));
+      const remaining = get().aiActionOverlays.filter(o => !ids.has(o.id));
+      set({ aiActionOverlays: remaining });
+    }, maxTime);
+  },
+
   removeAIOverlay: (id) => {
     const overlays = get().aiActionOverlays;
     set({ aiActionOverlays: overlays.filter(o => o.id !== id) });

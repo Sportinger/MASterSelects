@@ -5000,6 +5000,11 @@ input[type="checkbox"] {
 /* Split Glow - vertical blue glow line at cut position */
 @keyframes ai-split-glow-fade {
   0% {
+    opacity: 0;
+    transform: scaleY(0.8);
+    box-shadow: 0 0 0 0 transparent;
+  }
+  5% {
     opacity: 1;
     transform: scaleY(1);
     box-shadow: 0 0 16px 6px rgba(59, 130, 246, 0.95), 0 0 32px 12px rgba(59, 130, 246, 0.5);
@@ -5023,6 +5028,7 @@ input[type="checkbox"] {
   background: #60a5fa;
   pointer-events: none;
   z-index: 200;
+  opacity: 0;
   animation: ai-split-glow-fade 1s cubic-bezier(0.22, 1, 0.36, 1) both;
   box-shadow: 0 0 16px 6px rgba(59, 130, 246, 0.95), 0 0 32px 12px rgba(59, 130, 246, 0.5);
 }

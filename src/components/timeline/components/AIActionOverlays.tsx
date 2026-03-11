@@ -58,6 +58,7 @@ function OverlayElement({
             left: timeToPixel(overlay.timePosition),
             top: layout.top,
             height: layout.height,
+            animationDelay: overlay.animationDelay ? `${overlay.animationDelay}ms` : undefined,
           }}
         />
       );

@@ -464,6 +464,7 @@ export interface TimelineUtils {
 // AI Action Feedback actions
 export interface AIActionFeedbackActions {
   addAIOverlay: (overlay: Omit<AIActionOverlay, 'id' | 'createdAt'>) => string;
+  addAIOverlaysBatch: (overlays: Omit<AIActionOverlay, 'id' | 'createdAt'>[]) => void;
   removeAIOverlay: (id: string) => void;
   setAIMovingClip: (clipId: string, fromStartTime: number, animationDuration?: number) => void;
   clearAIMovingClip: (clipId: string) => void;

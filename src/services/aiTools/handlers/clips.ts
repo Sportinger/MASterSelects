@@ -6,7 +6,7 @@ import { createVideoElement, createAudioElement, initWebCodecsPlayer } from '../
 import type { TimelineClip } from '../../../types';
 import type { ToolResult } from '../types';
 import { formatClipInfo } from '../utils';
-import { isAIExecutionActive, setStaggerBudget, consumeStaggerDelay } from '../executionState';
+import { isAIExecutionActive, consumeStaggerDelay } from '../executionState';
 import { activateDockPanel } from '../aiFeedback';
 
 /** Resolve clip background color for ghost overlays */
@@ -574,33 +574,20 @@ export async function handleSplitClipEvenly(
     splitTimes.push(clipStart + partDuration * i);
   }
 
-  // Staggered split: each cut happens one by one with visual feedback
   if (isAIExecutionActive()) {
-    setStaggerBudget(3000); // standalone call gets its own 3s budget
     const trackId = clip.trackId;
-    // Do first split immediately
-    splitClipBatch(clip, [splitTimes[0]], withLinked);
-    useTimelineStore.getState().addAIOverlay({
-      type: 'split-glow', trackId, timePosition: splitTimes[0], duration: 1000,
-    });
-    // Schedule remaining splits
-    for (let i = 1; i < splitTimes.length; i++) {
-      const t = splitTimes[i];
-      await new Promise(resolve => setTimeout(resolve, consumeStaggerDelay(splitTimes.length - i)));
-      // Find the clip that contains this split time
-      const currentClips = useTimelineStore.getState().clips;
-      const target = currentClips.find(c =>
-        c.trackId === trackId && c.startTime < t && c.startTime + c.duration > t + 0.001
-      );
-      if (target) {
-        splitClipBatch(target, [t], withLinked);
-      }
-      useTimelineStore.getState().addAIOverlay({
-        type: 'split-glow', trackId, timePosition: t, duration: 1000,
-      });
-    }
+    // Bulk split: single state update for all cuts at once
+    splitClipBatch(clip, splitTimes, withLinked);
+    // Staggered overlays via CSS animation-delay (single state update, no JS timers)
+    const totalAnimMs = Math.min(3000, splitTimes.length * 100);
+    const delayStep = splitTimes.length <= 1 ? 0 : totalAnimMs / (splitTimes.length - 1);
+    useTimelineStore.getState().addAIOverlaysBatch(
+      splitTimes.map((t, i) => ({
+        type: 'split-glow' as const, trackId, timePosition: t,
+        duration: 1000, animationDelay: Math.round(i * delayStep),
+      }))
+    );
   } else {
-    // Non-AI execution: do all splits at once (no visual feedback)
     splitClipBatch(clip, splitTimes, withLinked);
   }
 
@@ -635,31 +622,19 @@ export async function handleSplitClipAtTimes(
     return { success: false, error: `No valid split times within clip range (${clipStart}s - ${clipEnd}s)` };
   }
 
-  // Staggered split: each cut happens one by one with visual feedback
   if (isAIExecutionActive()) {
-    // Note: when called from executeBatch, budget is already set globally.
-    // When called standalone, set a fresh 3s budget.
     const trackId = clip.trackId;
-    // Do first split immediately
-    splitClipBatch(clip, [validTimes[0]], withLinked);
-    useTimelineStore.getState().addAIOverlay({
-      type: 'split-glow', trackId, timePosition: validTimes[0], duration: 1000,
-    });
-    // Schedule remaining splits — consumes from shared stagger budget
-    for (let i = 1; i < validTimes.length; i++) {
-      const t = validTimes[i];
-      await new Promise(resolve => setTimeout(resolve, consumeStaggerDelay(validTimes.length - i)));
-      const currentClips = useTimelineStore.getState().clips;
-      const target = currentClips.find(c =>
-        c.trackId === trackId && c.startTime < t && c.startTime + c.duration > t + 0.001
-      );
-      if (target) {
-        splitClipBatch(target, [t], withLinked);
-      }
-      useTimelineStore.getState().addAIOverlay({
-        type: 'split-glow', trackId, timePosition: t, duration: 1000,
-      });
-    }
+    // Bulk split: single state update for all cuts at once
+    splitClipBatch(clip, validTimes, withLinked);
+    // Staggered overlays via CSS animation-delay (single state update, no JS timers)
+    const totalAnimMs = Math.min(3000, validTimes.length * 100);
+    const delayStep = validTimes.length <= 1 ? 0 : totalAnimMs / (validTimes.length - 1);
+    useTimelineStore.getState().addAIOverlaysBatch(
+      validTimes.map((t, i) => ({
+        type: 'split-glow' as const, trackId, timePosition: t,
+        duration: 1000, animationDelay: Math.round(i * delayStep),
+      }))
+    );
   } else {
     splitClipBatch(clip, validTimes, withLinked);
   }
