@@ -1,37 +1,26 @@
 // Hook to detect mobile devices
+// Only triggers on actual mobile devices, NOT on small desktop windows
 
 import { useState, useEffect } from 'react';
 
-export function useIsMobile(breakpoint: number = 768): boolean {
-  const [isMobile, setIsMobile] = useState(() => {
-    // Check on initial render
-    if (typeof window === 'undefined') return false;
+/** Check if the device is actually mobile (phone/tablet), not just a small window */
+function checkIsMobileDevice(): boolean {
+  if (typeof window === 'undefined') return false;
 
-    // Check for touch capability and screen size
-    const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-    const isSmallScreen = window.innerWidth <= breakpoint;
+  // Modern API - most reliable
+  const nav = navigator as Navigator & { userAgentData?: { mobile: boolean } };
+  if (nav.userAgentData) {
+    return nav.userAgentData.mobile;
+  }
 
-    // Consider mobile if: small screen OR (has touch AND portrait orientation)
-    return isSmallScreen || (hasTouch && window.innerHeight > window.innerWidth);
-  });
+  // Fallback: user agent string check
+  return /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+}
 
-  useEffect(() => {
-    const checkMobile = () => {
-      const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-      const isSmallScreen = window.innerWidth <= breakpoint;
-      setIsMobile(isSmallScreen || (hasTouch && window.innerHeight > window.innerWidth));
-    };
+export function useIsMobile(): boolean {
+  const [isMobile] = useState(() => checkIsMobileDevice());
 
-    // Listen for resize and orientation change
-    window.addEventListener('resize', checkMobile);
-    window.addEventListener('orientationchange', checkMobile);
-
-    return () => {
-      window.removeEventListener('resize', checkMobile);
-      window.removeEventListener('orientationchange', checkMobile);
-    };
-  }, [breakpoint]);
-
+  // Device type doesn't change during session, no need for resize/orientation listeners
   return isMobile;
 }
 
