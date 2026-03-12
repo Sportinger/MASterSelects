@@ -28,6 +28,8 @@ export interface ExportSettings {
   normalizeAudio?: boolean;
   // Export mode
   exportMode?: ExportMode;  // 'fast' = WebCodecs sequential, 'precise' = HTMLVideoElement
+  // Alpha channel
+  stackedAlpha?: boolean;  // Export as double-height video with RGB top / alpha-as-luma bottom
 }
 
 export interface FullExportSettings extends ExportSettings {

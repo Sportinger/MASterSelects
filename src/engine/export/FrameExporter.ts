@@ -46,10 +46,13 @@ export class FrameExporter {
     const frameDuration = 1 / fps;
     const totalFrames = Math.ceil((endTime - startTime) * fps);
 
-    log.info(`Starting export: ${width}x${height} @ ${fps}fps, ${totalFrames} frames, audio: ${includeAudio ? 'yes' : 'no'}`);
+    // For stacked alpha, the encoded video is double height (RGB top + alpha bottom)
+    const encodedHeight = this.settings.stackedAlpha ? height * 2 : height;
 
-    // Initialize encoder
-    this.encoder = new VideoEncoderWrapper(this.settings);
+    log.info(`Starting export: ${width}x${encodedHeight} @ ${fps}fps, ${totalFrames} frames, audio: ${includeAudio ? 'yes' : 'no'}${this.settings.stackedAlpha ? ', stacked alpha' : ''}`);
+
+    // Initialize encoder (with doubled height for stacked alpha)
+    this.encoder = new VideoEncoderWrapper({ ...this.settings, height: encodedHeight });
     const initialized = await this.encoder.init();
     if (!initialized) {
       log.error('Failed to initialize encoder');
@@ -70,7 +73,7 @@ export class FrameExporter {
     engine.setExporting(true);
 
     // Initialize export canvas for zero-copy VideoFrame creation
-    const useZeroCopy = engine.initExportCanvas(width, height);
+    const useZeroCopy = engine.initExportCanvas(width, height, this.settings.stackedAlpha);
     if (useZeroCopy) {
       log.info('Using zero-copy export path (OffscreenCanvas -> VideoFrame)');
     } else {
