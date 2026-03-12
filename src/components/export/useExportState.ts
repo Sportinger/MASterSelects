@@ -64,6 +64,9 @@ export function useExportState(composition: Composition | undefined) {
   const [isFFmpegReady, setIsFFmpegReady] = useState(false);
   const [ffmpegLoadError, setFfmpegLoadError] = useState<string | null>(null);
 
+  // Alpha settings
+  const [stackedAlpha, setStackedAlpha] = useState(false);
+
   // Audio settings
   const [includeAudio, setIncludeAudio] = useState(true);
   const [audioSampleRate, setAudioSampleRate] = useState<44100 | 48000>(48000);
@@ -248,6 +251,8 @@ export function useExportState(composition: Composition | undefined) {
     ffmpegRateControl, setFfmpegRateControl,
     // FFmpeg loading
     isFFmpegLoading, isFFmpegReady, ffmpegLoadError,
+    // Alpha
+    stackedAlpha, setStackedAlpha,
     // Audio
     includeAudio, setIncludeAudio,
     audioSampleRate, setAudioSampleRate,

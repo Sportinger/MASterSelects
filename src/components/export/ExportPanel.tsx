@@ -61,6 +61,7 @@ export function ExportPanel() {
     proresProfile, setProresProfile, dnxhrProfile, setDnxhrProfile,
     ffmpegQuality, setFfmpegQuality, ffmpegBitrate, ffmpegRateControl,
     isFFmpegLoading, isFFmpegReady, ffmpegLoadError,
+    stackedAlpha, setStackedAlpha,
     includeAudio, setIncludeAudio, audioSampleRate, setAudioSampleRate,
     audioBitrate, setAudioBitrate, normalizeAudio, setNormalizeAudio,
     isExporting, setIsExporting, progress, setProgress,
@@ -101,6 +102,8 @@ export function ExportPanel() {
       bitrate,
       startTime,
       endTime,
+      // Alpha
+      stackedAlpha,
       // Audio settings
       includeAudio,
       audioSampleRate,
@@ -570,7 +573,9 @@ export function ExportPanel() {
     return `${m}:${s.padStart(5, '0')}`;
   };
 
-  // Get actual FPS value
+  // Get actual dimensions and FPS
+  const actualWidth = useCustomResolution ? customWidth : width;
+  const actualHeight = useCustomResolution ? customHeight : height;
   const actualFps = useCustomFps ? customFps : fps;
 
   // Format file size estimate - works for both encoders
@@ -1110,6 +1115,39 @@ export function ExportPanel() {
             )}
           </div>
 
+          {/* Alpha Settings */}
+          {(encoder === 'webcodecs' || encoder === 'htmlvideo') && (
+            <div className="export-section">
+              <div className="export-section-header">Alpha</div>
+
+              <div className="control-row">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={stackedAlpha}
+                    onChange={(e) => setStackedAlpha(e.target.checked)}
+                  />
+                  Stacked Alpha (transparent video)
+                </label>
+              </div>
+
+              {stackedAlpha && (
+                <div style={{
+                  padding: '8px 10px',
+                  background: 'rgba(255, 170, 0, 0.1)',
+                  border: '1px solid rgba(255, 170, 0, 0.3)',
+                  borderRadius: '4px',
+                  fontSize: '11px',
+                  color: 'var(--warning, #ffaa00)',
+                  lineHeight: 1.4,
+                }}>
+                  Output: {actualWidth}x{actualHeight * 2}px (doubled height).
+                  Top half = RGB, bottom half = alpha as grayscale.
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Range Settings */}
           <div className="export-section">
             <div className="export-section-header">Range</div>
@@ -1126,6 +1164,7 @@ export function ExportPanel() {
             </div>
 
             <div className="export-summary">
+              <div>Output: {actualWidth}x{stackedAlpha ? actualHeight * 2 : actualHeight}{stackedAlpha ? ' (stacked alpha)' : ''}</div>
               <div>Range: {formatTime(startTime)} - {formatTime(endTime)}</div>
               <div>Duration: {formatTime(endTime - startTime)}</div>
               <div>Frames: {Math.ceil((endTime - startTime) * actualFps)}</div>
