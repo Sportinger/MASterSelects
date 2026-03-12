@@ -10,6 +10,7 @@ export class ExportCanvasManager {
   private exportCanvasContext: GPUCanvasContext | null = null;
   private isExporting = false;
   private isGeneratingRamPreview = false;
+  private stackedAlpha = false;
 
   // --- State Flags ---
 
@@ -45,12 +46,19 @@ export class ExportCanvasManager {
     return this.exportCanvas;
   }
 
+  isStackedAlpha(): boolean {
+    return this.stackedAlpha;
+  }
+
   /**
    * Initialize export canvas for zero-copy VideoFrame creation.
    * Call this before starting export with the target resolution.
+   * When stackedAlpha is true, canvas height is doubled (RGB top + alpha-as-luma bottom).
    */
-  initExportCanvas(device: GPUDevice, width: number, height: number): boolean {
-    this.exportCanvas = new OffscreenCanvas(width, height);
+  initExportCanvas(device: GPUDevice, width: number, height: number, stackedAlpha = false): boolean {
+    this.stackedAlpha = stackedAlpha;
+    const canvasHeight = stackedAlpha ? height * 2 : height;
+    this.exportCanvas = new OffscreenCanvas(width, canvasHeight);
     const ctx = this.exportCanvas.getContext('webgpu');
     if (!ctx) {
       log.error('Failed to get WebGPU context from OffscreenCanvas');
@@ -66,7 +74,7 @@ export class ExportCanvasManager {
     });
 
     this.exportCanvasContext = ctx;
-    log.info('Export canvas initialized', { width, height, format: preferredFormat });
+    log.info('Export canvas initialized', { width, height: canvasHeight, stackedAlpha, format: preferredFormat });
     return true;
   }
 
@@ -103,6 +111,7 @@ export class ExportCanvasManager {
   cleanupExportCanvas(): void {
     this.exportCanvasContext = null;
     this.exportCanvas = null;
+    this.stackedAlpha = false;
     log.debug('Export canvas cleaned up');
   }
 

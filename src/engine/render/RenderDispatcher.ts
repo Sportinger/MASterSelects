@@ -247,7 +247,7 @@ export class RenderDispatcher {
     if (!skipCanvas) {
       // Output to main preview canvas (legacy — no grid)
       if (d.previewContext) {
-        const mainBindGroup = d.outputPipeline!.createOutputBindGroup(d.sampler, result.finalView, false);
+        const mainBindGroup = d.outputPipeline!.createOutputBindGroup(d.sampler, result.finalView, 'normal');
         d.outputPipeline!.renderToCanvas(commandEncoder, d.previewContext, mainBindGroup);
         this.recordMainPreviewFrame('composite', layerData);
       }
@@ -274,7 +274,7 @@ export class RenderDispatcher {
           d.slicePipeline.buildVertexBuffer(enabledSlices);
           d.slicePipeline.renderSlicedOutput(commandEncoder, ctx, result.finalView, d.sampler!);
         } else {
-          const targetBindGroup = d.outputPipeline!.createOutputBindGroup(d.sampler, result.finalView, target.showTransparencyGrid);
+          const targetBindGroup = d.outputPipeline!.createOutputBindGroup(d.sampler, result.finalView, target.showTransparencyGrid ? 'grid' : 'normal');
           d.outputPipeline!.renderToCanvas(commandEncoder, ctx, targetBindGroup);
         }
       }
@@ -286,7 +286,8 @@ export class RenderDispatcher {
     // Render to export canvas for zero-copy VideoFrame creation (never show grid)
     const exportCtx = d.exportCanvasManager.getExportCanvasContext();
     if (d.exportCanvasManager.getIsExporting() && exportCtx) {
-      const exportBindGroup = d.outputPipeline!.createOutputBindGroup(d.sampler, result.finalView, false);
+      const exportMode = d.exportCanvasManager.isStackedAlpha() ? 'stackedAlpha' as const : 'normal' as const;
+      const exportBindGroup = d.outputPipeline!.createOutputBindGroup(d.sampler, result.finalView, exportMode);
       d.outputPipeline!.renderToCanvas(commandEncoder, exportCtx, exportBindGroup);
     }
 
@@ -344,7 +345,7 @@ export class RenderDispatcher {
 
       // Render through output pipeline to main preview (no grid) + all activeComp targets
       if (d.previewContext) {
-        const mainBindGroup = d.outputPipeline.createOutputBindGroup(d.sampler, pingView, false);
+        const mainBindGroup = d.outputPipeline.createOutputBindGroup(d.sampler, pingView, 'normal');
         d.outputPipeline.renderToCanvas(commandEncoder, d.previewContext, mainBindGroup);
         this.recordMainPreviewFrame('empty');
       }
@@ -352,7 +353,7 @@ export class RenderDispatcher {
       for (const target of activeTargets) {
         const ctx = d.targetCanvases.get(target.id)?.context;
         if (!ctx) continue;
-        const targetBindGroup = d.outputPipeline.createOutputBindGroup(d.sampler, pingView, target.showTransparencyGrid);
+        const targetBindGroup = d.outputPipeline.createOutputBindGroup(d.sampler, pingView, target.showTransparencyGrid ? 'grid' : 'normal');
         d.outputPipeline.renderToCanvas(commandEncoder, ctx, targetBindGroup);
       }
     } else {
@@ -697,7 +698,7 @@ export class RenderDispatcher {
       const blackTex = d.renderTargetManager!.getBlackTexture();
       if (blackTex) {
         const blackView = blackTex.createView();
-        const blackBindGroup = d.outputPipeline.createOutputBindGroup(d.sampler, blackView, showGrid);
+        const blackBindGroup = d.outputPipeline.createOutputBindGroup(d.sampler, blackView, showGrid ? 'grid' : 'normal');
         d.outputPipeline.renderToCanvas(commandEncoder, canvasContext, blackBindGroup);
         this.recordMainPreviewFrame('target-empty');
       }
@@ -756,7 +757,7 @@ export class RenderDispatcher {
       usePing = !usePing;
     }
 
-    const outputBindGroup = d.outputPipeline!.createOutputBindGroup(d.sampler!, readView, showGrid);
+    const outputBindGroup = d.outputPipeline!.createOutputBindGroup(d.sampler!, readView, showGrid ? 'grid' : 'normal');
     d.outputPipeline!.renderToCanvas(commandEncoder, canvasContext, outputBindGroup);
     this.recordMainPreviewFrame('target-canvas', layerData);
 

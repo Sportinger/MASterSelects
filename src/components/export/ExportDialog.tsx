@@ -34,6 +34,9 @@ export function ExportDialog({ onClose }: ExportDialogProps) {
     h264: true, h265: false, vp9: true, av1: false
   });
 
+  // Alpha settings
+  const [stackedAlpha, setStackedAlpha] = useState(false);
+
   // Audio settings
   const [includeAudio, setIncludeAudio] = useState(true);
   const [audioSampleRate, setAudioSampleRate] = useState<44100 | 48000>(48000);
@@ -108,6 +111,8 @@ export function ExportDialog({ onClose }: ExportDialogProps) {
       bitrate,
       startTime,
       endTime,
+      // Alpha
+      stackedAlpha,
       // Audio settings
       includeAudio,
       audioSampleRate,
@@ -139,7 +144,7 @@ export function ExportDialog({ onClose }: ExportDialogProps) {
       // End export progress in timeline
       endExport();
     }
-  }, [width, height, fps, codec, container, bitrate, startTime, endTime, filename, isExporting, onClose, includeAudio, audioSampleRate, audioBitrate, normalizeAudio, startExport, setExportProgress, endExport]);
+  }, [width, height, fps, codec, container, bitrate, startTime, endTime, filename, isExporting, onClose, stackedAlpha, includeAudio, audioSampleRate, audioBitrate, normalizeAudio, startExport, setExportProgress, endExport]);
 
   // Handle cancel
   const handleCancel = useCallback(() => {
@@ -315,6 +320,28 @@ export function ExportDialog({ onClose }: ExportDialogProps) {
                 </div>
               </div>
 
+              {/* Alpha Channel */}
+              <div className="export-row">
+                <label>Alpha</label>
+                <div className="export-checkbox-group">
+                  <input
+                    type="checkbox"
+                    id="stackedAlpha"
+                    checked={stackedAlpha}
+                    onChange={(e) => setStackedAlpha(e.target.checked)}
+                  />
+                  <label htmlFor="stackedAlpha" className="checkbox-label">
+                    Stacked Alpha (transparent video)
+                  </label>
+                </div>
+              </div>
+              {stackedAlpha && (
+                <div className="export-warning">
+                  Video height is doubled ({height} &rarr; {height * 2}px). Top half = RGB, bottom half = alpha as grayscale.
+                  Use a stacked-alpha player or shader to composite.
+                </div>
+              )}
+
               {/* Time Range */}
               <div className="export-row">
                 <label>Time Range</label>
@@ -407,6 +434,7 @@ export function ExportDialog({ onClose }: ExportDialogProps) {
 
               {/* Summary */}
               <div className="export-summary">
+                <div>Output: {width}x{stackedAlpha ? height * 2 : height} {stackedAlpha ? '(stacked alpha)' : ''}</div>
                 <div>Duration: {formatTime(endTime - startTime)}</div>
                 <div>Total Frames: {Math.ceil((endTime - startTime) * fps)}</div>
                 <div>Estimated Size: {estimatedSize()}</div>

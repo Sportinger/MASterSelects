@@ -535,13 +535,13 @@ export class WebGPUEngine {
     return this.exportCanvasManager.getIsExporting();
   }
 
-  initExportCanvas(width: number, height: number): boolean {
+  initExportCanvas(width: number, height: number, stackedAlpha = false): boolean {
     const device = this.context.getDevice();
     if (!device) {
       log.error('Cannot init export canvas: no device');
       return false;
     }
-    return this.exportCanvasManager.initExportCanvas(device, width, height);
+    return this.exportCanvasManager.initExportCanvas(device, width, height, stackedAlpha);
   }
 
   async createVideoFrameFromExport(timestamp: number, duration: number): Promise<VideoFrame | null> {
@@ -773,14 +773,14 @@ export class WebGPUEngine {
     this.outputPipeline?.updateResolution(width, height);
     if (this.outputPipeline && this.sampler) {
       if (this.previewContext) {
-        const mainBindGroup = this.outputPipeline.createOutputBindGroup(this.sampler, pingView, false);
+        const mainBindGroup = this.outputPipeline.createOutputBindGroup(this.sampler, pingView, 'normal');
         this.outputPipeline.renderToCanvas(commandEncoder, this.previewContext, mainBindGroup);
       }
       const activeTargets = useRenderTargetStore.getState().getActiveCompTargets();
       for (const target of activeTargets) {
         const ctx = this.targetCanvases.get(target.id)?.context;
         if (!ctx) continue;
-        const targetBindGroup = this.outputPipeline.createOutputBindGroup(this.sampler, pingView, target.showTransparencyGrid);
+        const targetBindGroup = this.outputPipeline.createOutputBindGroup(this.sampler, pingView, target.showTransparencyGrid ? 'grid' : 'normal');
         this.outputPipeline.renderToCanvas(commandEncoder, ctx, targetBindGroup);
       }
     }

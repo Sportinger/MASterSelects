@@ -13,25 +13,31 @@ export class OutputPipeline {
   // Bind group layout
   private outputBindGroupLayout: GPUBindGroupLayout | null = null;
 
-  // Dual uniform buffers: one with grid enabled, one without
+  // Uniform buffers per output mode
   private uniformBufferGridOn: GPUBuffer | null = null;
   private uniformBufferGridOff: GPUBuffer | null = null;
+  private uniformBufferStackedAlpha: GPUBuffer | null = null;
 
-  // Separate caches per grid state (buffer is baked into bind group)
+  // Separate caches per mode (buffer is baked into bind group)
   private bindGroupCacheGridOn = new Map<GPUTextureView, GPUBindGroup>();
   private bindGroupCacheGridOff = new Map<GPUTextureView, GPUBindGroup>();
+  private bindGroupCacheStackedAlpha = new Map<GPUTextureView, GPUBindGroup>();
 
   constructor(device: GPUDevice) {
     this.device = device;
   }
 
   async createPipeline(): Promise<void> {
-    // Create dual uniform buffers (16 bytes each: u32 + f32 + f32 + padding)
+    // Create uniform buffers (16 bytes each: u32 + f32 + f32 + padding)
     this.uniformBufferGridOn = this.device.createBuffer({
       size: 16,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     this.uniformBufferGridOff = this.device.createBuffer({
+      size: 16,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    this.uniformBufferStackedAlpha = this.device.createBuffer({
       size: 16,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
@@ -62,27 +68,38 @@ export class OutputPipeline {
     });
   }
 
-  // Write resolution into both uniform buffers (grid=1 and grid=0)
+  // Write resolution into all uniform buffers (mode: 0=off, 1=grid, 2=stackedAlpha)
   updateResolution(outputWidth: number, outputHeight: number): void {
     if (!this.uniformBufferGridOn || !this.uniformBufferGridOff) return;
 
-    // Grid ON buffer
+    // Grid ON buffer (mode=1)
     const dataOn = new ArrayBuffer(16);
     const viewOn = new DataView(dataOn);
-    viewOn.setUint32(0, 1, true);              // showTransparencyGrid = true
+    viewOn.setUint32(0, 1, true);
     viewOn.setFloat32(4, outputWidth, true);
     viewOn.setFloat32(8, outputHeight, true);
-    viewOn.setFloat32(12, 0, true);            // padding
+    viewOn.setFloat32(12, 0, true);
     this.device.queue.writeBuffer(this.uniformBufferGridOn, 0, dataOn);
 
-    // Grid OFF buffer
+    // Grid OFF buffer (mode=0)
     const dataOff = new ArrayBuffer(16);
     const viewOff = new DataView(dataOff);
-    viewOff.setUint32(0, 0, true);             // showTransparencyGrid = false
+    viewOff.setUint32(0, 0, true);
     viewOff.setFloat32(4, outputWidth, true);
     viewOff.setFloat32(8, outputHeight, true);
-    viewOff.setFloat32(12, 0, true);           // padding
+    viewOff.setFloat32(12, 0, true);
     this.device.queue.writeBuffer(this.uniformBufferGridOff, 0, dataOff);
+
+    // Stacked Alpha buffer (mode=2)
+    if (this.uniformBufferStackedAlpha) {
+      const dataSA = new ArrayBuffer(16);
+      const viewSA = new DataView(dataSA);
+      viewSA.setUint32(0, 2, true);
+      viewSA.setFloat32(4, outputWidth, true);
+      viewSA.setFloat32(8, outputHeight, true);
+      viewSA.setFloat32(12, 0, true);
+      this.device.queue.writeBuffer(this.uniformBufferStackedAlpha, 0, dataSA);
+    }
   }
 
   getOutputPipeline(): GPURenderPipeline | null {
@@ -94,9 +111,14 @@ export class OutputPipeline {
   }
 
   // Create output bind group for a texture view, selecting the appropriate uniform buffer
-  createOutputBindGroup(sampler: GPUSampler, textureView: GPUTextureView, showGrid: boolean = false): GPUBindGroup {
-    const cache = showGrid ? this.bindGroupCacheGridOn : this.bindGroupCacheGridOff;
-    const uniformBuffer = showGrid ? this.uniformBufferGridOn! : this.uniformBufferGridOff!;
+  // mode: 'normal' = no grid, 'grid' = transparency grid, 'stackedAlpha' = stacked alpha export
+  createOutputBindGroup(sampler: GPUSampler, textureView: GPUTextureView, mode: 'normal' | 'grid' | 'stackedAlpha' = 'normal'): GPUBindGroup {
+    const cache = mode === 'grid' ? this.bindGroupCacheGridOn
+      : mode === 'stackedAlpha' ? this.bindGroupCacheStackedAlpha
+      : this.bindGroupCacheGridOff;
+    const uniformBuffer = mode === 'grid' ? this.uniformBufferGridOn!
+      : mode === 'stackedAlpha' ? this.uniformBufferStackedAlpha!
+      : this.uniformBufferGridOff!;
 
     // Check cache first
     let bindGroup = cache.get(textureView);
@@ -123,13 +145,14 @@ export class OutputPipeline {
     textureView: GPUTextureView,
     _isPing: boolean
   ): GPUBindGroup {
-    return this.createOutputBindGroup(sampler, textureView, false);
+    return this.createOutputBindGroup(sampler, textureView, 'normal');
   }
 
   // Invalidate cached bind groups (when textures are recreated)
   invalidateCache(): void {
     this.bindGroupCacheGridOn.clear();
     this.bindGroupCacheGridOff.clear();
+    this.bindGroupCacheStackedAlpha.clear();
   }
 
   // Render to a canvas context
@@ -170,5 +193,7 @@ export class OutputPipeline {
     this.uniformBufferGridOn = null;
     this.uniformBufferGridOff?.destroy();
     this.uniformBufferGridOff = null;
+    this.uniformBufferStackedAlpha?.destroy();
+    this.uniformBufferStackedAlpha = null;
   }
 }
