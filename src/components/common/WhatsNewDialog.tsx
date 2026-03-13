@@ -2,7 +2,7 @@
 // Displays changes categorized as "Today", "Last Week", "This Month", "Earlier"
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { APP_VERSION, BUILD_NOTICE, getGroupedChangelog, type ChangeEntry } from '../../version';
+import { APP_VERSION, BUILD_NOTICE, FEATURED_VIDEO, getGroupedChangelog, type ChangeEntry } from '../../version';
 import { useSettingsStore } from '../../stores/settingsStore';
 
 interface WhatsNewDialogProps {
@@ -218,6 +218,20 @@ export function WhatsNewDialog({ onClose }: WhatsNewDialogProps) {
 
         {/* Scrollable content */}
         <div className="changelog-content">
+          {/* Featured video */}
+          {FEATURED_VIDEO && (
+            <div className="changelog-video">
+              <div className="changelog-video-container">
+                <iframe
+                  src={`https://www.youtube.com/embed/${FEATURED_VIDEO.youtubeId}?rel=0`}
+                  title={FEATURED_VIDEO.title}
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                />
+              </div>
+            </div>
+          )}
+
           {/* Platform notice */}
           {BUILD_NOTICE && (
             <div className={`changelog-notice changelog-notice-${BUILD_NOTICE.type} ${BUILD_NOTICE.animated ? 'changelog-notice-animated' : ''}`}>

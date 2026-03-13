@@ -3,6 +3,15 @@
 // Increment PATCH (0.0.X) for each commit
 export const APP_VERSION = '1.3.4';
 
+// Featured video shown at top of changelog (set to null to hide)
+export const FEATURED_VIDEO: {
+  youtubeId: string;
+  title: string;
+} | null = {
+  youtubeId: '5ezX5ra0RTI',
+  title: 'MasterSelects Demo',
+};
+
 // Build/Platform notice shown at top of changelog (set to null to hide)
 export const BUILD_NOTICE: {
   type: 'info' | 'warning' | 'success';
