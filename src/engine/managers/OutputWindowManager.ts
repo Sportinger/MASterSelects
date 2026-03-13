@@ -5,6 +5,7 @@ import { useRenderTargetStore } from '../../stores/renderTargetStore';
 import { useSliceStore } from '../../stores/sliceStore';
 import { useTimelineStore } from '../../stores/timeline';
 import { Logger } from '../../services/logger';
+import { getRandomPopupPlacement } from './outputWindowPlacement';
 
 const log = Logger.create('OutputWindowManager');
 const OPEN_WINDOWS_KEY = 'masterselects-output-windows-open';
@@ -59,6 +60,18 @@ export class OutputWindowManager {
     let features = `width=${w},height=${h},menubar=no,toolbar=no,location=no,status=no`;
     if (geometry?.screenX != null && geometry?.screenY != null) {
       features += `,left=${geometry.screenX},top=${geometry.screenY}`;
+    } else {
+      const placement = getRandomPopupPlacement(
+        {
+          screenX: window.screenX ?? 0,
+          screenY: window.screenY ?? 0,
+          outerWidth: window.outerWidth || window.screen.availWidth || w + 48,
+          outerHeight: window.outerHeight || window.screen.availHeight || h + 96,
+        },
+        w,
+        h,
+      );
+      features += `,left=${placement.left},top=${placement.top}`;
     }
     const outputWindow = window.open('', `output_${id}`, features);
 
