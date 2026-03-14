@@ -10,6 +10,69 @@ use crate::download::{self, WsSender};
 use crate::protocol::{error_codes, Command, Response, SystemInfo};
 use crate::utils;
 
+/// Open native folder picker. On Windows uses RFD; on macOS uses osascript
+/// (avoids RFD's main-thread requirement in terminal/non-windowed env).
+fn pick_folder_native(
+    title: &str,
+    default_path: Option<String>,
+) -> Result<Option<PathBuf>, anyhow::Error> {
+    #[cfg(windows)]
+    {
+        let mut dialog = rfd::FileDialog::new().set_title(title);
+        if let Some(ref dp) = default_path {
+            dialog = dialog.set_directory(dp);
+        }
+        Ok(dialog.pick_folder())
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        // osascript runs in its own process, so no main-thread constraint.
+        // User cancel -> exit code 1, empty output.
+        let prompt = title.replace('"', "\\\"");
+        let script = if let Some(ref dp) = default_path {
+            let path = std::path::Path::new(dp);
+            if path.exists() && path.is_dir() {
+                format!(
+                    "POSIX path of (choose folder with prompt \"{}\" default location (POSIX file \"{}\"))",
+                    prompt,
+                    path.to_string_lossy().replace('\\', "\\\\").replace('"', "\\\"")
+                )
+            } else {
+                format!("POSIX path of (choose folder with prompt \"{}\")", prompt)
+            }
+        } else {
+            format!("POSIX path of (choose folder with prompt \"{}\")", prompt)
+        };
+
+        let output = std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(&script)
+            .output()?;
+
+        if output.status.success() {
+            let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if path_str.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(PathBuf::from(path_str)))
+            }
+        } else {
+            // User cancelled or error
+            Ok(None)
+        }
+    }
+
+    #[cfg(all(not(windows), not(target_os = "macos")))]
+    {
+        let _ = (title, default_path);
+        Err(anyhow::anyhow!(
+            "Native folder picker is not available on this platform when running from terminal. \
+             Please specify the path manually in the web app."
+        ))
+    }
+}
+
 /// Generate a random auth token
 pub fn generate_auth_token() -> String {
     use rand::Rng;
@@ -164,29 +227,31 @@ impl Session {
             Command::PickFolder { id, title, default_path } => {
                 let title = title.unwrap_or_else(|| "Select folder".to_string());
                 let default_path = default_path.clone();
+                let id = id.clone();
 
-                // Must use spawn_blocking since rfd blocks the thread
-                match tokio::task::spawn_blocking(move || {
-                    let mut dialog = rfd::FileDialog::new().set_title(&title);
-                    if let Some(ref dp) = default_path {
-                        dialog = dialog.set_directory(dp);
-                    }
-                    dialog.pick_folder()
-                })
-                .await
-                {
-                    Ok(Some(path)) => Some(Response::ok(
+                // RFD on macOS requires main thread in NonWindowed env (terminal).
+                // Use osascript subprocess on macOS instead. RFD works on Windows.
+                let result = tokio::task::spawn_blocking(move || pick_folder_native(&title, default_path))
+                    .await;
+
+                match result {
+                    Ok(Ok(Some(path))) => Some(Response::ok(
                         &id,
                         serde_json::json!({ "path": path.to_string_lossy() }),
                     )),
-                    Ok(None) => Some(Response::ok(
+                    Ok(Ok(None)) => Some(Response::ok(
                         &id,
                         serde_json::json!({ "path": serde_json::Value::Null, "cancelled": true }),
+                    )),
+                    Ok(Err(e)) => Some(Response::error(
+                        &id,
+                        error_codes::INTERNAL_ERROR,
+                        format!("Folder picker failed: {}", e),
                     )),
                     Err(e) => Some(Response::error(
                         &id,
                         error_codes::INTERNAL_ERROR,
-                        format!("Folder picker failed: {}", e),
+                        format!("Folder picker task failed: {}", e),
                     )),
                 }
             }
